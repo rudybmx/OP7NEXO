@@ -1,0 +1,45 @@
+version: "3.8"
+
+services:
+  wersun-plataforma:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wersun-plataforma:latest
+    container_name: wersun-plataforma
+    restart: unless-stopped
+    networks:
+      - network_swarm_public
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Auth / GoTrue (já existe no swarm)
+      - AUTH_URL=https://auth.qozt.com.br
+      # Database (Postgres já existe no swarm)
+      - DATABASE_URL=postgres://supabase_auth_admin:WersunAuth2026!@postgres_wersun:5432/wersun?sslmode=disable
+      # JWT Secret (mesmo do GoTrue)
+      - JWT_SECRET=YjR3N2Y4ZHE5MXJlM3c0NWc2Ymg3OHI5
+      # URL pública da aplicação
+      - NEXT_PUBLIC_APP_URL=https://wersun.qozt.com.br
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.wersun-plataforma.rule=Host(`wersun.qozt.com.br`)
+      - traefik.http.routers.wersun-plataforma.entrypoints=websecure
+      - traefik.http.routers.wersun-plataforma.tls.certresolver=letsencryptresolver
+      - traefik.http.routers.wersun-plataforma.service=wersun-plataforma
+      - traefik.http.services.wersun-plataforma.loadbalancer.server.port=3000
+      - traefik.http.services.wersun-plataforma.loadbalancer.passHostHeader=true
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 1G
+
+networks:
+  network_swarm_public:
+    external: true
+    name: network_swarm_public

@@ -55,7 +55,7 @@ export function useMetaOverview(): MetaOverview {
     data: summaryData, 
     error: errorSummary, 
     isLoading: isLoadingSummary 
-  } = useSWR<SummaryResponse[]>('/vw_meta_account_summary', apiGet)
+  } = useSWR<SummaryResponse>('/meta/overview', apiGet)
 
   const { 
     data: financeiroData, 

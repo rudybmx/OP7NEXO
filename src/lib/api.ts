@@ -1,4 +1,11 @@
-const API = 'https://api.qozt.com.br'
+const API = process.env.NEXT_PUBLIC_API_URL || ''
+
+function getBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    return '' // usa URL relativa no browser
+  }
+  return 'http://localhost:3000'
+}
 
 /** Fetcher autenticado para uso direto com SWR.
  *  Lê o access_token do localStorage automaticamente.
@@ -8,7 +15,6 @@ export async function apiGet<T = unknown>(endpoint: string): Promise<T> {
   const token = typeof window !== 'undefined'
     ? localStorage.getItem('access_token')
     : null
-  // Remove barra inicial se houver (evita double-slash na URL base)
   const path = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint
   return apiFetch<T>(path, undefined, token)
 }
@@ -18,7 +24,8 @@ export async function apiFetch<T>(
   params?: Record<string, any>,
   token?: string | null
 ): Promise<T> {
-  const url = new URL(`${API}/${endpoint}`)
+  const base = getBaseUrl()
+  const url = new URL(`${base}/api/${endpoint}`, base || undefined)
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null) {
