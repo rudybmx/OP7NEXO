@@ -1,67 +1,84 @@
-# DEPLOY - Wer'sun Plataforma (Self-Host)
+# DEPLOY - Wer'sun Plataforma (Self-Host Completo)
 
 ## O que foi construido
 
 - **Dockerfile**: Multi-stage build com Next.js standalone
 - **docker-compose.yml**: Integracao com Traefik existente na rede `network_swarm_public`
-- **Schema SQL**: Tabelas para orgs, perfis, Meta Ads, CRM, agenda, demandas
-- **API Routes internas**: `/api/health`, `/api/auth/me`, `/api/meta/*`
-- **Frontend ajustado**: `lib/api.ts` agora aponta para `/api` (local)
+- **Schema SQL**: Tabelas para auth, orgs, perfis, Meta Ads, CRM, agenda, demandas
+- **Auth proprio**: /api/auth/login, /api/auth/register, /api/auth/refresh, /api/auth/me
+- **API interna**: /api/meta/*, /api/admin/*, /api/health
+- **Painel Admin**: Gerenciamento de usuarios e organizacoes (somente nivel 0)
+- **Frontend ajustado**: Consome 100% /api local, sem dependencia de api.qozt.com.br
 
-## Passo a passo para deploy
+## Requisitos
 
-### 1. Aplicar o schema no banco
+- Docker + Docker Compose (ou Swarm)
+- Postgres ja rodando (usamos o mesmo do GoTrue anterior)
+- Traefik ja configurado com `network_swarm_public`
+- Dominio `wersun.qozt.com.br` apontando pra VPS
 
-Acesse o container do Postgres ou rode via psql:
+## Passo a passo
+
+### 1. Clone o repo na VPS
 
 ```bash
-# No host Docker (fora deste container)
+cd /opt
+git clone git@github.com:rudybmx/wer_sun_plataforma.git
+cd wer_sun_plataforma
+```
+
+### 2. Aplique o schema no banco
+
+```bash
 docker exec -i postgres_wersun psql -U supabase_auth_admin -d wersun < schema.sql
 ```
 
-Ou copie o conteudo de `schema.sql` e execute no banco.
-
-### 2. Buildar a imagem Docker
-
-No host Docker (na pasta onde esta o codigo):
+### 3. Crie o primeiro admin
 
 ```bash
-cd /caminho/do/wer_sun_plataforma
+# Edite o setup-admin.sql com seu email/senha
+docker exec -i postgres_wersun psql -U supabase_auth_admin -d wersun < setup-admin.sql
+```
+
+Ou registre via API apos subir:
+```bash
+curl -X POST https://wersun.qozt.com.br/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"seu@email.com","password":"senha123","nome":"Admin","org_nome":"WerSun"}'
+```
+
+Depois ajuste o nivel no banco:
+```sql
+UPDATE public.perfis SET nivel = 0 WHERE email = 'seu@email.com';
+```
+
+### 4. Build e deploy
+
+```bash
+# Build
 docker build -t wersun-plataforma:latest .
-```
 
-Ou via docker-compose:
+# Deploy (compose simples)
+docker-compose -f docker-compose.yml up -d
 
-```bash
-docker-compose -f docker-compose.yml build
-```
-
-### 3. Deploy no Swarm
-
-```bash
+# Ou no Swarm:
 docker stack deploy -c docker-compose.yml wersun
 ```
 
-Ou docker-compose simples:
+### 5. Verifique
 
 ```bash
-docker-compose -f docker-compose.yml up -d
-```
-
-### 4. Verificar se subiu
-
-```bash
+# Logs
 docker logs -f wersun-plataforma
+
+# Health check
 curl -s https://wersun.qozt.com.br/api/health
+
+# Login
+curl -X POST https://wersun.qozt.com.br/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"seu@email.com","password":"senha123"}'
 ```
-
-### 5. Configurar DNS (Cloudflare)
-
-Ajuste no Cloudflare:
-- Tipo: A ou CNAME
-- Nome: wersun
-- Conteudo: IP da VPS ou dominio apontando pro Traefik
-- SSL: Full (strict)
 
 ## Variaveis de ambiente
 
@@ -70,50 +87,59 @@ Ja configuradas no `docker-compose.yml`:
 | Variavel | Valor | Descricao |
 |----------|-------|-----------|
 | DATABASE_URL | postgres://... | Mesmo banco do GoTrue |
-| JWT_SECRET | YjR3N2Y4ZHE5... | Mesmo secret do GoTrue |
-| AUTH_URL | https://auth.qozt.com.br | GoTrue existente |
+| JWT_SECRET | YjR3N2Y4ZHE5... | Secret para assinar JWTs |
+| AUTH_URL | https://auth.qozt.com.br | **Deprecado** (mantido pra compatibilidade) |
 | NEXT_PUBLIC_APP_URL | https://wersun.qozt.com.br | URL publica |
 
-## Proximos passos (apos deploy)
+## Arquitetura de auth
 
-1. **Criar organizacao e perfil** no banco para seu usuario
-2. **Sincronizar dados do Meta Ads** (tokens, contas, campanhas)
-3. **Migrar dados antigos** se houver no PostgREST externo
-4. **Implementar mais API routes** conforme demanda
-
-## Arquivos novos/modificados
-
-Novos:
-- Dockerfile
-- docker-compose.yml
-- schema.sql
-- src/lib/db.ts
-- src/lib/jwt.ts
-- src/lib/api-auth.ts
-- src/app/api/health/route.ts
-- src/app/api/auth/me/route.ts
-- src/app/api/meta/overview/route.ts
-- src/app/api/meta/campanhas/route.ts
-- src/app/api/meta/anuncios/route.ts
-
-Modificados:
-- next.config.ts (standalone, ignoreBuildErrors)
-- src/lib/api.ts (aponta para /api local)
-- src/hooks/use-meta-overview.ts (endpoint novo)
+```
+Usuario -> POST /api/auth/login -> JWT access_token (1h) + refresh_token (7d)
+   |
+   v
+Cookie ws-session + localStorage ws_refresh_token
+   |
+   v
+Middleware verifica cookie -> permite/bloqueia rotas
+   |
+   v
+API routes verificam Bearer token -> buscam perfil no banco
+```
 
 ## Comandos uteis
 
 ```bash
-# Rebuild e redeploy
+# Rebuild completo
 docker-compose -f docker-compose.yml build --no-cache
 docker-compose -f docker-compose.yml up -d
-
-# Ver logs
-docker logs -f wersun-plataforma
 
 # Restart
 docker-compose -f docker-compose.yml restart
 
-# Remover stack
+# Down
 docker-compose -f docker-compose.yml down
+
+# Ver logs
+docker logs -f wersun-plataforma
+
+# Acessar container
+docker exec -it wersun-plataforma sh
+
+# Backup banco
+docker exec postgres_wersun pg_dump -U supabase_auth_admin wersun > backup.sql
 ```
+
+## Proximos passos
+
+1. **Conectar contas Meta Ads** (tokens, sync de campanhas)
+2. **Migrar hooks restantes** (useMetaCampanhas, useMetaAnuncios, etc.)
+3. **Implementar sync automatico** com Meta Graph API
+4. **Configurar Evolution API** (WhatsApp) se ainda nao estiver
+
+## Seguranca
+
+- JWT_SECRET: Troque em producao! Gere um novo: `openssl rand -base64 32`
+- Senhas: bcrypt com salt 12
+- Refresh tokens: armazenados com hash no banco, revogaveis
+- Middleware: protege rotas privadas e admin
+- Postgres: use SSL em producao (ajuste DATABASE_URL)
