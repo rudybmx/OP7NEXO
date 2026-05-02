@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser({
         id: userData.id,
         email: userData.email,
-        level: userData.level ?? userData.organization_level ?? 99,
+        level: userData.nivel ?? userData.level ?? userData.organization_level ?? 99,
         org_id: userData.org_id ?? userData.organization_id ?? '',
       })
       setToken(t)

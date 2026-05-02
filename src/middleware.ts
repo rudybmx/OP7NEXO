@@ -15,28 +15,36 @@ function getUserLevelFromToken(cookieValue: string): number | null {
   }
 }
 
-export function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const sessionCookie = request.cookies.get(COOKIE)
   const isAuthenticated = !!sessionCookie?.value
 
-  if (pathname.startsWith(LOGIN_PATH)) {
-    if (isAuthenticated) {
+  // Rotas publicas (login, assets, api de auth)
+  const isPublic = pathname.startsWith('/login')
+    || pathname.startsWith('/_next')
+    || pathname.startsWith('/api/auth')
+    || pathname === '/favicon.ico'
+
+  if (isPublic) {
+    // Se ja autenticado e tenta acessar /login, manda pro dashboard
+    if (pathname.startsWith(LOGIN_PATH) && isAuthenticated) {
       return NextResponse.redirect(new URL('/', request.url))
     }
     return NextResponse.next()
   }
 
+  // Protege rotas privadas
   if (!isAuthenticated) {
     return NextResponse.redirect(new URL(LOGIN_PATH, request.url))
   }
 
+  // Protege rotas admin
   if (pathname.startsWith('/admin')) {
     const token = sessionCookie?.value
     if (!token) {
       return NextResponse.redirect(new URL('/', request.url))
     }
-
     const level = getUserLevelFromToken(token)
     if (level === null || level !== 0) {
       return NextResponse.redirect(new URL('/', request.url))

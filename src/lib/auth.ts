@@ -1,4 +1,4 @@
-const AUTH_URL = 'https://auth.qozt.com.br'
+const API = '/api'
 const REFRESH_KEY = 'ws_refresh_token'
 
 let inMemoryToken: string | null = null
@@ -16,34 +16,62 @@ export function clearSessionCookie(): void {
 }
 
 export async function signIn(email: string, password: string): Promise<string> {
-  const res = await fetch(`${AUTH_URL}/token?grant_type=password`, {
+  const res = await fetch(`${API}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
   })
-  
-  if (!res.ok) throw new Error('Falha na autenticação')
-  
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Falha na autenticacao')
+  }
+
   const data = await res.json()
   const { access_token, refresh_token } = data
-  
+
   inMemoryToken = access_token
   setSessionCookie(access_token)
-  
+
   if (typeof window !== 'undefined') {
     localStorage.setItem(REFRESH_KEY, refresh_token)
   }
-  
+
+  return access_token
+}
+
+export async function signUp(email: string, password: string, nome?: string, org_nome?: string): Promise<string> {
+  const res = await fetch(`${API}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, nome, org_nome }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Falha no cadastro')
+  }
+
+  const data = await res.json()
+  const { access_token, refresh_token } = data
+
+  inMemoryToken = access_token
+  setSessionCookie(access_token)
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(REFRESH_KEY, refresh_token)
+  }
+
   return access_token
 }
 
 export async function refreshToken(): Promise<string> {
   if (typeof window === 'undefined') throw new Error('No refresh in SSR')
-  
+
   const refresh_token = localStorage.getItem(REFRESH_KEY)
   if (!refresh_token) throw new Error('No refresh token available')
 
-  const res = await fetch(`${AUTH_URL}/token?grant_type=refresh_token`, {
+  const res = await fetch(`${API}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token }),
@@ -57,7 +85,7 @@ export async function refreshToken(): Promise<string> {
   const data = await res.json()
   inMemoryToken = data.access_token
   setSessionCookie(data.access_token)
-  
+
   if (data.refresh_token) {
     localStorage.setItem(REFRESH_KEY, data.refresh_token)
   }
@@ -66,25 +94,17 @@ export async function refreshToken(): Promise<string> {
 }
 
 export async function logout(): Promise<void> {
-  if (inMemoryToken) {
-    try {
-      await fetch(`${AUTH_URL}/logout`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${inMemoryToken}` }
-      })
-    } catch {}
-  }
   clearToken()
 }
 
 export async function getUser() {
   if (!inMemoryToken) throw new Error('Sem token de acesso')
-  
-  const res = await fetch(`${AUTH_URL}/user`, {
+
+  const res = await fetch(`${API}/auth/me`, {
     method: 'GET',
     headers: { 'Authorization': `Bearer ${inMemoryToken}` }
   })
-  if (!res.ok) throw new Error('Falha ao buscar usuário')
+  if (!res.ok) throw new Error('Falha ao buscar usuario')
   return res.json()
 }
 

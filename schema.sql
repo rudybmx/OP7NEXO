@@ -300,3 +300,40 @@ CREATE INDEX IF NOT EXISTS idx_crm_atividades_lead ON public.crm_atividades(lead
 CREATE INDEX IF NOT EXISTS idx_agenda_inicio ON public.agenda_eventos(inicio);
 CREATE INDEX IF NOT EXISTS idx_demandas_org ON public.demandas(org_id);
 CREATE INDEX IF NOT EXISTS idx_demandas_status ON public.demandas(status);
+
+-- =====================================================================
+-- AUTH PROPRIETARIO (novo - substitui GoTrue)
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS public.usuarios (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email         TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  status        TEXT DEFAULT 'ativo', -- ativo, suspenso, aguardando_verificacao
+  email_verificado BOOLEAN DEFAULT false,
+  last_login_at TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.refresh_tokens (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES public.usuarios(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  revoked_at  TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Ajusta perfis para referenciar usuarios em vez de auth.users
+ALTER TABLE public.perfis
+  DROP CONSTRAINT IF EXISTS perfis_id_fkey;
+
+ALTER TABLE public.perfis
+  ADD CONSTRAINT perfis_id_fkey
+  FOREIGN KEY (id) REFERENCES public.usuarios(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON public.refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON public.refresh_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_usuarios_email ON public.usuarios(email);
+
