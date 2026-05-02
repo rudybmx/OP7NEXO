@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { secoesNavegacao, useLayout } from "@/lib/contexto-layout"
 import { useTheme } from "@/components/provedores/provedor-tema"
+import { useAuth } from "@/hooks/use-auth"
 
 // Tokens de Design (Visual Parity with Design System)
 const W04 = "rgba(255,255,255,0.04)"
@@ -312,6 +313,14 @@ export function BarraLateral() {
   const { isCollapsed, toggleCollapse, setChatAberto } = useLayout()
   const pathname = usePathname()
   const { resolvedTheme, setTheme } = useTheme()
+  const { user } = useAuth()
+
+  const isAdmin = user?.level === 0
+
+  const secoesFiltradas = secoesNavegacao.filter((secao) => {
+    if (secao.administrativa && !isAdmin) return false
+    return true
+  })
 
   const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>({})
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null)
@@ -369,7 +378,7 @@ export function BarraLateral() {
         {/* Flyup menu */}
         {flyupAberto && (() => {
           let grupoFlyup: any = null
-          for (const secao of secoesNavegacao) {
+          for (const secao of secoesFiltradas) {
             for (const grupo of secao.grupos) {
               if (`${secao.nome}-${grupo.nome}` === flyupAberto) {
                 grupoFlyup = grupo
@@ -460,7 +469,7 @@ export function BarraLateral() {
           WebkitBackdropFilter: 'blur(20px)',
           gap: 0,
         }}>
-          {secoesNavegacao.map((secao) =>
+          {secoesFiltradas.map((secao) =>
             secao.grupos.map((grupo) => {
               const chaveGrupo = `${secao.nome}-${grupo.nome}`
               const Icone = mapaIcones[grupo.chaveIcone] || Activity
@@ -724,7 +733,7 @@ export function BarraLateral() {
         flexDirection: "column", 
         paddingRight: isCollapsed ? 0 : 4 
       }}>
-        {secoesNavegacao.map((secao) => {
+        {secoesFiltradas.map((secao) => {
           const isMarketing = secao.nome === "Marketing"
           return (
             <div key={secao.nome}>

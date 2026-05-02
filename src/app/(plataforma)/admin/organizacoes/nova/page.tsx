@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/use-auth'
+import { apiFetch } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -30,9 +31,10 @@ export default function CriarOrganizacaoPage() {
   const { user, isLoading: authLoading } = useAuth()
 
   const [name, setName] = useState('')
-  const [level, setLevel] = useState<'1' | '2'>('1')
+  const [nivelPlano, setNivelPlano] = useState<'basico' | 'pro' | 'enterprise'>('basico')
   const [slug, setSlug] = useState('')
   const [slugEdited, setSlugEdited] = useState(false)
+  const [cnpj, setCnpj] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -56,39 +58,28 @@ export default function CriarOrganizacaoPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) {
-      toast.error('Informe o nome da organização')
+      toast.error('Informe o nome da organizacao')
       return
     }
     if (!slug.trim()) {
-      toast.error('Slug não pode ficar vazio')
+      toast.error('Slug nao pode ficar vazio')
       return
     }
 
     setLoading(true)
     try {
       const token = getToken()
-      const res = await fetch('https://api.qozt.com.br/organizations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: name.trim(),
-          level: Number(level),
-          slug: slug.trim(),
-        }),
-      })
+      await apiFetch('/admin/organizacoes', {
+        nome: name.trim(),
+        slug: slug.trim(),
+        cnpj: cnpj.trim() || undefined,
+        nivel_plano: nivelPlano,
+      }, token)
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null)
-        throw new Error(errData?.message || `Erro ${res.status}`)
-      }
-
-      toast.success('Organização criada com sucesso!')
+      toast.success('Organizacao criada com sucesso!')
       router.push('/admin/organizacoes')
     } catch (err: any) {
-      toast.error(err.message || 'Erro ao criar organização')
+      toast.error(err.message || 'Erro ao criar organizacao')
     } finally {
       setLoading(false)
     }
@@ -101,7 +92,7 @@ export default function CriarOrganizacaoPage() {
         height: '60vh', gap: 16,
       }}>
         <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ws-blue, #3E5BFF)' }} />
-        <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>Verificando permissões...</span>
+        <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>Verificando permissoes...</span>
       </div>
     )
   }
@@ -121,10 +112,10 @@ export default function CriarOrganizacaoPage() {
         </button>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', lineHeight: 1.2 }}>
-            Criar Organização
+            Criar Organizacao
           </h1>
           <p style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 2 }}>
-            Cadastre uma nova Reseller ou Cliente na plataforma
+            Cadastre uma nova organizacao na plataforma
           </p>
         </div>
       </div>
@@ -144,7 +135,7 @@ export default function CriarOrganizacaoPage() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)' }}>
-            Nome da organização <span style={{ color: '#FF5C8D' }}>*</span>
+            Nome da organizacao <span style={{ color: '#FF5C8D' }}>*</span>
           </label>
           <Input
             placeholder="Ex: Minha Empresa Ltda"
@@ -156,32 +147,45 @@ export default function CriarOrganizacaoPage() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)' }}>
-            Nível
-          </label>
-          <Select value={level} onValueChange={(v) => setLevel(v as '1' | '2')}>
-            <SelectTrigger className="w-full" style={{ background: 'var(--card)' }}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">Reseller (N1)</SelectItem>
-              <SelectItem value="2">Cliente (N2)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)' }}>
-            Slug
+            Slug <span style={{ color: '#FF5C8D' }}>*</span>
           </label>
           <Input
-            placeholder="gerado-automaticamente-do-nome"
+            placeholder="gerado-automaticamente"
             value={slug}
             onChange={(e) => handleSlugChange(e.target.value)}
             style={{ background: 'var(--card)', fontFamily: 'monospace', fontSize: 13 }}
           />
           <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
-            Gerado automaticamente a partir do nome. Edite se necessário.
+            Gerado automaticamente. Edite se necessario.
           </span>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)' }}>
+            CNPJ
+          </label>
+          <Input
+            placeholder="00.000.000/0000-00"
+            value={cnpj}
+            onChange={(e) => setCnpj(e.target.value)}
+            style={{ background: 'var(--card)' }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)' }}>
+            Plano
+          </label>
+          <Select value={nivelPlano} onValueChange={(v) => setNivelPlano(v as 'basico' | 'pro' | 'enterprise')}>
+            <SelectTrigger className="w-full" style={{ background: 'var(--card)' }}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="basico">Basico</SelectItem>
+              <SelectItem value="pro">Pro</SelectItem>
+              <SelectItem value="enterprise">Enterprise</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
@@ -193,7 +197,7 @@ export default function CriarOrganizacaoPage() {
           >
             Cancelar
           </Button>
-          <Button type="submit" disabled={loading || !name.trim()}>
+          <Button type="submit" disabled={loading || !name.trim() || !slug.trim()}>
             {loading ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
@@ -202,7 +206,7 @@ export default function CriarOrganizacaoPage() {
             ) : (
               <>
                 <Building2 size={14} />
-                Criar organização
+                Criar organizacao
               </>
             )}
           </Button>

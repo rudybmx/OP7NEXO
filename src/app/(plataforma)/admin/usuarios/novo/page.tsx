@@ -3,15 +3,15 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserPlus, User, Mail, Shield, Building2, Key, Loader2, ArrowLeft } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiGet, apiFetch } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { useAuth } from '@/hooks/use-auth'
 import { toast } from 'sonner'
 
 interface OrgRow {
   id: string
-  name: string
-  level: number
+  nome: string
+  slug: string
 }
 
 export default function NovoUsuarioPage() {
@@ -26,7 +26,7 @@ export default function NovoUsuarioPage() {
   const [orgs, setOrgs] = useState<OrgRow[]>([])
 
   const [carregando, setCarregando] = useState(false)
-  const [mensagem, setMensagem] = useState({ tipo: '', texto: '' })
+  const [carregandoOrgs, setCarregandoOrgs] = useState(true)
 
   useEffect(() => {
     if (!authLoading && user && user.level !== 0) {
@@ -37,17 +37,15 @@ export default function NovoUsuarioPage() {
   useEffect(() => {
     async function loadOrgs() {
       try {
-        const token = getToken()
-        const data = await apiFetch<OrgRow[]>('organizations', {
-          select: 'id,name,level',
-          order: 'name.asc',
-        }, token)
+        const data = await apiGet<OrgRow[]>('/admin/organizacoes')
         setOrgs(data)
         if (data.length > 0 && !orgId) {
           setOrgId(data[0].id)
         }
       } catch {
         setOrgs([])
+      } finally {
+        setCarregandoOrgs(false)
       }
     }
     if (user && user.level === 0) {
@@ -62,15 +60,40 @@ export default function NovoUsuarioPage() {
         height: '60vh', gap: 16,
       }}>
         <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ws-blue, #3E5BFF)' }} />
-        <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>Verificando permissões...</span>
+        <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>Verificando permissoes...</span>
       </div>
     )
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setMensagem({ tipo: '', texto: '' })
-    toast.info('Funcionalidade em implementação. A criação de usuários será disponibilizada em breve.')
+    if (!email || !senha) {
+      toast.error('Email e senha sao obrigatorios')
+      return
+    }
+    if (senha.length < 6) {
+      toast.error('Senha deve ter no minimo 6 caracteres')
+      return
+    }
+
+    setCarregando(true)
+    try {
+      const token = getToken()
+      await apiFetch('/admin/usuarios', {
+        email,
+        password: senha,
+        nome,
+        org_id: orgId || undefined,
+        nivel: Number(nivel),
+      }, token)
+
+      toast.success('Usuario criado com sucesso!')
+      router.push('/admin/usuarios')
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao criar usuario')
+    } finally {
+      setCarregando(false)
+    }
   }
 
   return (
@@ -89,8 +112,6 @@ export default function NovoUsuarioPage() {
             backdropFilter: 'blur(10px)',
             color: 'var(--ws-text-1)'
           }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--ws-glass-border-strong)'}
-          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--ws-glass-border)'}
         >
           <ArrowLeft size={18} />
         </button>
@@ -99,7 +120,7 @@ export default function NovoUsuarioPage() {
             Cadastrar Acesso
           </h1>
           <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '4px 0 0 0' }}>
-            Gere uma credencial unificada preenchendo as informações base
+            Crie uma nova conta de usuario na plataforma
           </p>
         </div>
       </div>
@@ -113,19 +134,6 @@ export default function NovoUsuarioPage() {
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)'
       }}>
-        
-        {mensagem.texto && (
-          <div style={{
-            padding: '12px 16px', marginBottom: 24, borderRadius: '8px', fontSize: 13, fontWeight: 500,
-            display: 'flex', alignItems: 'center', gap: 8,
-            backgroundColor: mensagem.tipo === 'sucesso' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-            border: `1px solid ${mensagem.tipo === 'sucesso' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
-            color: mensagem.tipo === 'sucesso' ? '#16a34a' : '#ef4444'
-          }}>
-            {mensagem.texto}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 20 }}>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20 }}>
@@ -135,7 +143,7 @@ export default function NovoUsuarioPage() {
                 <User size={15} style={iconStyle} />
                 <input 
                   type="text" 
-                  value={nome} onChange={e => setNome(e.target.value)} required
+                  value={nome} onChange={e => setNome(e.target.value)}
                   placeholder="Ex: Ana Gabriela Machado" 
                   style={inputStyle} 
                 />
@@ -143,7 +151,7 @@ export default function NovoUsuarioPage() {
             </div>
 
             <div>
-              <label style={labelStyle}>Email corporativo / Pessoal <span style={{color:'#ef4444'}}>*</span></label>
+              <label style={labelStyle}>Email <span style={{color:'#ef4444'}}>*</span></label>
               <div style={inputWrapperStyle}>
                 <Mail size={15} style={iconStyle} />
                 <input 
@@ -164,7 +172,7 @@ export default function NovoUsuarioPage() {
                 <input 
                   type="text" 
                   value={senha} onChange={e => setSenha(e.target.value)} required
-                  placeholder="Gerar uma senha segura..." 
+                  placeholder="Minimo 6 caracteres" 
                   style={inputStyle} 
                 />
               </div>
@@ -175,14 +183,18 @@ export default function NovoUsuarioPage() {
               <div style={inputWrapperStyle}>
                 <Building2 size={15} style={iconStyle} />
                 <select 
-                  value={orgId} onChange={e => setOrgId(e.target.value)} required
+                  value={orgId} onChange={e => setOrgId(e.target.value)}
                   style={selectStyle}
+                  disabled={carregandoOrgs}
                 >
-                  {orgs.length === 0 && (
-                    <option value="">Carregando organizações...</option>
+                  {carregandoOrgs && (
+                    <option value="">Carregando...</option>
+                  )}
+                  {!carregandoOrgs && orgs.length === 0 && (
+                    <option value="">Nenhuma org</option>
                   )}
                   {orgs.map(org => (
-                    <option key={org.id} value={org.id}>{org.name}</option>
+                    <option key={org.id} value={org.id}>{org.nome}</option>
                   ))}
                 </select>
               </div>
@@ -196,14 +208,16 @@ export default function NovoUsuarioPage() {
           }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
               <Shield size={16} color="var(--ws-text-1)" />
-              <label style={{ ...labelStyle, marginBottom: 0 }}>Nível Hierárquico (Role)</label>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>Nivel Hierarquico (Role)</label>
             </div>
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               {[
-                { value: '0', title: 'Super Admin', desc: 'Acesso total, cria organizações' },
-                { value: '1', title: 'Reseller (N1)', desc: 'Edita múltiplos espaços' },
-                { value: '2', title: 'Cliente (N2)', desc: 'Visão de negócio' },
+                { value: '0', title: 'Super Admin', desc: 'Acesso total' },
+                { value: '1', title: 'Admin', desc: 'Administra orgs' },
+                { value: '2', title: 'Gerente', desc: 'Gestao de equipe' },
+                { value: '3', title: 'Estrategista', desc: 'Marketing' },
+                { value: '4', title: 'Basico', desc: 'Visualizacao' },
               ].map(n => (
                 <div 
                   key={n.value}
@@ -215,7 +229,7 @@ export default function NovoUsuarioPage() {
                     position: 'relative', overflow: 'hidden'
                   }}
                 >
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)', marginBottom: 2 }}>{n.value} - {n.title}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)', marginBottom: 2 }}>{n.title}</div>
                   <div style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>{n.desc}</div>
                   {nivel === n.value && (
                     <div style={{
@@ -241,8 +255,6 @@ export default function NovoUsuarioPage() {
                 fontSize: 13, fontWeight: 600, color: 'var(--ws-text-2)',
                 cursor: 'pointer', transition: 'all 0.2s'
               }}
-              onMouseEnter={e => e.currentTarget.style.color = 'var(--ws-text-1)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--ws-text-2)'}
             >
               Cancelar
             </button>
@@ -260,7 +272,7 @@ export default function NovoUsuarioPage() {
               }}
             >
               {carregando ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
-              {carregando ? 'Salvando...' : 'Criar Conta de Acesso'}
+              {carregando ? 'Criando...' : 'Criar Conta'}
             </button>
           </div>
 
