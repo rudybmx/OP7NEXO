@@ -38,7 +38,9 @@ interface Contato {
 interface Mensagem {
   id: string; 
   direcao: 'entrada' | 'saida'
-  conteudo: string; 
+  conteudo: string;
+  messageType?: string | null
+  mediaUrl?: string | null
   remetenteNome: string
   remetenteTipo: RemetenteMsg; 
   hora: string
@@ -78,6 +80,8 @@ type ApiMensagem = {
   id: string
   direcao: 'entrada' | 'saida'
   conteudo: string
+  messageType?: string | null
+  mediaUrl?: string | null
   remetenteNome?: string | null
   remetenteTipo?: RemetenteMsg | 'sistema'
   enviadaEm?: string | null
@@ -98,6 +102,12 @@ type ApiConversa = {
   campanha?: string | null
   canal: CanalConversa
   tags: string[]
+  responsavelId?: string | null
+  equipe?: {
+    id: string
+    nome: string
+    membrosCount: number
+  } | null
   contato: {
     id: string
     nome: string
@@ -161,6 +171,8 @@ function mensagemApiParaMensagem(mensagem: ApiMensagem, nomeContato: string): Me
     id: mensagem.id,
     direcao: mensagem.direcao,
     conteudo: mensagem.conteudo,
+    messageType: mensagem.messageType,
+    mediaUrl: mensagem.mediaUrl,
     remetenteNome: mensagem.remetenteNome || (mensagem.direcao === 'saida' ? 'Você' : nomeContato),
     remetenteTipo,
     hora: formatarHora(quando),
@@ -239,7 +251,21 @@ export function PaginaConversas() {
 
     async function carregarConversas() {
       try {
-        const response = await fetch('/api/whatsapp/conversations?limit=120', { cache: 'no-store' })
+        // Pega token do cookie para autenticação
+        const token = document.cookie
+          .split('; ')
+          .find(row => row.startsWith('ws-session='))
+          ?.split('=')[1]
+
+        const params = new URLSearchParams({ limit: '120' })
+        if (filtroAtivo && filtroAtivo !== 'todas') {
+          params.set('filtro', filtroAtivo === 'novos' ? 'novos' : filtroAtivo)
+        }
+
+        const response = await fetch(`/api/whatsapp/conversations?${params}`, {
+          cache: 'no-store',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
         const data = await response.json().catch(() => null)
 
         if (!response.ok) {
@@ -341,6 +367,44 @@ export function PaginaConversas() {
     setConversas(cs => cs.map(c => 
       c.id === conversaSelecionadaId ? { ...c, iaAtiva: !c.iaAtiva } : c
     ))
+  }
+
+  async function transferirConversa(novoResponsavelId: string, novaEquipeId?: string) {
+    if (!conversaSelecionadaId) return
+
+    const token = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('ws-session='))
+      ?.split('=')[1]
+
+    try {
+      const response = await fetch('/api/whatsapp/transfer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          conversaId: conversaSelecionadaId,
+          novoResponsavelId,
+          ...(novaEquipeId ? { novaEquipeId } : {}),
+        }),
+      })
+
+      const result = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(result?.error || 'Falha ao transferir')
+      }
+
+      // Atualiza estado local
+      setConversas(cs => cs.map(c =>
+        c.id === conversaSelecionadaId
+          ? { ...c, agente: `Transferido para ${novoResponsavelId.slice(0, 8)}...` }
+          : c
+      ))
+    } catch (error) {
+      console.error('Erro ao transferir:', error)
+    }
   }
 
   const conversasFiltradas = useMemo(() => {
@@ -676,14 +740,40 @@ export function PaginaConversas() {
                           background: isEntrada 
                             ? 'rgba(255,255,255,0.85)' 
                             : (isIA ? 'linear-gradient(135deg, #0f2744, #1a3a6b)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)'),
-                          color: isEntrada ? 'var(--ws-text-1)' : 'white',
+                          color: isEntrada ? '#0f2744' : '#ffffff',
                           border: isEntrada ? '1px solid var(--ws-glass-border)' : 'none',
                           boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                          position: 'relative'
+                          position: 'relative',
+                          wordBreak: 'break-word',
+                          whiteSpace: 'pre-wrap',
+                          overflow: 'hidden',
                         }}>
-                          {msg.conteudo}
+                          {/* Imagem/Vídeo inline estilo WhatsApp */}
+                          {msg.mediaUrl && (msg.messageType === 'imageMessage' || msg.messageType === 'stickerMessage') ? (
+                            <div style={{ marginBottom: msg.conteudo && !msg.conteudo.startsWith('📷') && !msg.conteudo.startsWith('🎯') ? '6px' : '0' }}>
+                              <img 
+                                src={msg.mediaUrl}
+                                alt={msg.conteudo}
+                                style={{
+                                  maxWidth: '280px',
+                                  maxHeight: '280px',
+                                  borderRadius: '8px',
+                                  cursor: 'pointer',
+                                  display: 'block',
+                                }}
+                                onClick={() => window.open(msg.mediaUrl!, '_blank')}
+                              />
+                            </div>
+                          ) : msg.messageType === 'audioMessage' || msg.messageType === 'pttMessage' ? (
+                            <div style={{ marginBottom: '4px' }}>
+                              <audio controls style={{ maxWidth: '250px', height: '36px' }}>
+                                <source src={msg.mediaUrl || ''} />
+                              </audio>
+                            </div>
+                          ) : null}
+                          {msg.conteudo || '(sem conteúdo)'}
                           <div style={{ 
-                            fontSize: '9px', color: isEntrada ? 'var(--ws-text-3)' : 'rgba(255,255,255,0.6)', 
+                            fontSize: '9px', color: isEntrada ? '#64748b' : 'rgba(255,255,255,0.7)', 
                             textAlign: 'right', marginTop: '4px'
                           }}>
                             {msg.hora}

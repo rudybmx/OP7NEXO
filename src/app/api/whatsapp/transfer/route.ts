@@ -1,0 +1,157 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { getUserFromRequest, unauthorized } from '@/lib/api-auth'
+import { getSql } from '@/lib/db'
+
+export const dynamic = 'force-dynamic'
+
+export async function POST(req: NextRequest) {
+  try {
+    // 1. Autenticacao
+    const user = await getUserFromRequest(req)
+    if (!user) return unauthorized()
+
+    // 2. Parse e validacao do body
+    const body = await req.json()
+    const conversaId = body?.conversaId
+    const novoResponsavelId = body?.novoResponsavelId
+    const novaEquipeId = body?.novaEquipeId || null
+
+    if (!conversaId || !novoResponsavelId) {
+      return NextResponse.json(
+        { error: 'conversaId e novoResponsavelId sao obrigatorios' },
+        { status: 400 }
+      )
+    }
+
+    const db = getSql()
+
+    // 3. Buscar conversa atual para obter dados anteriores e verificar existencia
+    const conversas = await db`
+      SELECT id, equipe_id, responsavel_id, historico_transferencias
+      FROM public.crm_whatsapp_conversas
+      WHERE id = ${conversaId}::uuid
+    `
+
+    if (conversas.length === 0) {
+      return NextResponse.json(
+        { error: 'Conversa nao encontrada' },
+        { status: 404 }
+      )
+    }
+
+    const conversa = conversas[0]
+    const oldResponsavelId = conversa.responsavel_id
+    const oldEquipeId = conversa.equipe_id
+
+    // Nao transferir para o mesmo responsavel se nada mais mudar
+    if (oldResponsavelId === novoResponsavelId && (!novaEquipeId || oldEquipeId === novaEquipeId)) {
+      return NextResponse.json(
+        { error: 'Transferencia sem alteracoes: mesmo responsavel e mesma equipe' },
+        { status: 400 }
+      )
+    }
+
+    // 4. Verificar permissao: usuario precisa ser admin da equipe da conversa
+    if (oldEquipeId) {
+      const membro = await db`
+        SELECT perfil
+        FROM public.crm_whatsapp_equipe_membros
+        WHERE equipe_id = ${oldEquipeId}::uuid
+          AND user_id = ${user.id}::uuid
+          AND perfil = 'admin'
+        LIMIT 1
+      `
+
+      if (membro.length === 0) {
+        return NextResponse.json(
+          { error: 'Permissao negada: apenas administradores da equipe podem transferir conversas' },
+          { status: 403 }
+        )
+      }
+    } else {
+      // Se a conversa nao tem equipe, verificar se o usuario e admin de pelo menos uma equipe
+      const algumAdmin = await db`
+        SELECT 1
+        FROM public.crm_whatsapp_equipe_membros
+        WHERE user_id = ${user.id}::uuid
+          AND perfil = 'admin'
+        LIMIT 1
+      `
+      if (algumAdmin.length === 0) {
+        return NextResponse.json(
+          { error: 'Permissao negada: apenas administradores de equipe podem transferir conversas' },
+          { status: 403 }
+        )
+      }
+    }
+
+    // 5. Montar entrada do historico
+    const entradaTransferencia = {
+      de: oldResponsavelId,
+      para: novoResponsavelId,
+      de_equipe: oldEquipeId,
+      para_equipe: novaEquipeId,
+      quando: new Date().toISOString(),
+      transferido_por: user.id,
+    }
+
+    // 6. Atualizar conversa (query condicional para novaEquipeId opcional)
+    const jsonTransferencia = JSON.stringify(entradaTransferencia)
+
+    const updated = novaEquipeId
+      ? await db`
+          UPDATE public.crm_whatsapp_conversas
+          SET
+            responsavel_id = ${novoResponsavelId}::uuid,
+            equipe_id = ${novaEquipeId}::uuid,
+            historico_transferencias = historico_transferencias || ${jsonTransferencia}::jsonb,
+            updated_at = NOW()
+          WHERE id = ${conversaId}::uuid
+          RETURNING
+            id::text,
+            equipe_id::text,
+            responsavel_id::text,
+            historico_transferencias,
+            updated_at
+        `
+      : await db`
+          UPDATE public.crm_whatsapp_conversas
+          SET
+            responsavel_id = ${novoResponsavelId}::uuid,
+            historico_transferencias = historico_transferencias || ${jsonTransferencia}::jsonb,
+            updated_at = NOW()
+          WHERE id = ${conversaId}::uuid
+          RETURNING
+            id::text,
+            equipe_id::text,
+            responsavel_id::text,
+            historico_transferencias,
+            updated_at
+        `
+
+    if (updated.length === 0) {
+      return NextResponse.json(
+        { error: 'Falha ao atualizar conversa' },
+        { status: 500 }
+      )
+    }
+
+    const resultado = updated[0]
+
+    return NextResponse.json({
+      ok: true,
+      conversa: {
+        id: resultado.id,
+        equipe_id: resultado.equipe_id,
+        responsavel_id: resultado.responsavel_id,
+        historico_transferencias: resultado.historico_transferencias,
+      },
+      transferencia: entradaTransferencia,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro inesperado'
+    console.error('[API /whatsapp/transfer] erro:', error)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
