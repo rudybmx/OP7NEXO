@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getConversationContext, clearContext } from '@/lib/redis-buffer'
 import { getUserFromRequest, unauthorized } from '@/lib/api-auth'
+import { getSql } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,21 @@ export async function GET(request: NextRequest) {
         { error: 'Parâmetro "conversaId" é obrigatório' },
         { status: 400 },
       )
+    }
+
+    // --- Garante escopo da organização antes de ler Redis ---
+    const db = getSql()
+    const conversas = user.level === 0
+      ? await db<{ id: string }[]>`
+          SELECT id FROM public.crm_whatsapp_conversas WHERE id = ${conversaId}::uuid
+        `
+      : await db<{ id: string }[]>`
+          SELECT id FROM public.crm_whatsapp_conversas
+          WHERE id = ${conversaId}::uuid
+            AND org_id = ${user.org_id || null}::uuid
+        `
+    if (conversas.length === 0) {
+      return NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 })
     }
 
     // --- Busca no Redis ---
@@ -60,6 +76,21 @@ export async function DELETE(request: NextRequest) {
         { error: 'Parâmetro "conversaId" é obrigatório' },
         { status: 400 },
       )
+    }
+
+    // --- Garante escopo da organização antes de limpar Redis ---
+    const db = getSql()
+    const conversas = user.level === 0
+      ? await db<{ id: string }[]>`
+          SELECT id FROM public.crm_whatsapp_conversas WHERE id = ${conversaId}::uuid
+        `
+      : await db<{ id: string }[]>`
+          SELECT id FROM public.crm_whatsapp_conversas
+          WHERE id = ${conversaId}::uuid
+            AND org_id = ${user.org_id || null}::uuid
+        `
+    if (conversas.length === 0) {
+      return NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 })
     }
 
     // --- Limpa no Redis ---

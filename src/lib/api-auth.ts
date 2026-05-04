@@ -11,9 +11,11 @@ export interface AuthUser {
 
 export async function getUserFromRequest(req: NextRequest): Promise<AuthUser | null> {
   const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  const cookieToken = req.cookies.get('ws-session')?.value || null
+  const token = bearerToken || cookieToken
+  if (!token) return null
 
-  const token = authHeader.slice(7)
   try {
     const payload = await verifyToken(token)
     if (!payload.sub) return null

@@ -24,9 +24,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
         u.email,
         up.avatar_url
       FROM public.crm_whatsapp_equipe_membros em
+      JOIN public.crm_whatsapp_equipes e ON e.id = em.equipe_id
       LEFT JOIN public.user_profiles up ON up.id = em.user_id
       LEFT JOIN auth.users u ON u.id = em.user_id
       WHERE em.equipe_id = ${id}::uuid
+        ${user.level === 0 ? db`` : db`AND e.org_id = ${user.org_id || null}::uuid`}
       ORDER BY 
         CASE em.perfil 
           WHEN 'admin' THEN 1 
@@ -61,7 +63,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const db = getSql()
 
     // Verifica se a equipe existe
-    const eq = await db`SELECT id FROM public.crm_whatsapp_equipes WHERE id = ${id}::uuid`
+    const eq = await db`
+      SELECT id FROM public.crm_whatsapp_equipes
+      WHERE id = ${id}::uuid
+        ${user.level === 0 ? db`` : db`AND org_id = ${user.org_id || null}::uuid`}
+    `
     if (eq.length === 0) {
       return NextResponse.json({ error: 'Equipe não encontrada' }, { status: 404 })
     }
@@ -104,8 +110,12 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     const db = getSql()
 
     await db`
-      DELETE FROM public.crm_whatsapp_equipe_membros
-      WHERE equipe_id = ${id}::uuid AND user_id = ${userId}::uuid
+      DELETE FROM public.crm_whatsapp_equipe_membros em
+      USING public.crm_whatsapp_equipes e
+      WHERE em.equipe_id = e.id
+        AND em.equipe_id = ${id}::uuid
+        AND em.user_id = ${userId}::uuid
+        ${user.level === 0 ? db`` : db`AND e.org_id = ${user.org_id || null}::uuid`}
     `
 
     return NextResponse.json({ ok: true })

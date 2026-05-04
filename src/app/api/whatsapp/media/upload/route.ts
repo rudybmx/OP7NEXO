@@ -84,11 +84,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verifica se a conversa existe
+    // Verifica se a conversa existe e pertence à organização do usuário
     const db = getSql()
-    const conversa = await db<
-      { id: string }[]
-    >`SELECT id FROM public.crm_whatsapp_conversas WHERE id = ${conversaId}::uuid`
+    const conversa = user.level === 0
+      ? await db<{ id: string }[]>`
+          SELECT id FROM public.crm_whatsapp_conversas WHERE id = ${conversaId}::uuid
+        `
+      : await db<{ id: string }[]>`
+          SELECT id FROM public.crm_whatsapp_conversas
+          WHERE id = ${conversaId}::uuid
+            AND org_id = ${user.org_id || null}::uuid
+        `
     if (conversa.length === 0) {
       return NextResponse.json(
         { error: 'Conversa não encontrada.' },

@@ -29,11 +29,18 @@ type DbConversation = {
     id: string
     direcao: 'entrada' | 'saida'
     conteudo: string
+    messageType?: string | null
+    mediaUrl?: string | null
     remetenteNome: string | null
     remetenteTipo: 'contato' | 'agente' | 'ia' | 'sistema'
     enviadaEm: string | null
     recebidaEm: string | null
     criadaEm: string | null
+    quotedText?: string | null
+    quotedAuthor?: string | null
+    quotedRemoteJid?: string | null
+    quotedMessageId?: string | null
+    quotedMessageType?: string | null
   }>
 }
 
@@ -111,6 +118,37 @@ export async function GET(request: NextRequest) {
                       AND md.created_at <= m.recebida_em + interval '5 seconds'
                     ORDER BY md.created_at DESC LIMIT 1)
               ELSE NULL
+            END,
+            'quotedText', CASE
+              WHEN m.payload #>> '{data,contextInfo,stanzaId}' IS NOT NULL THEN COALESCE(
+                m.payload #>> '{data,contextInfo,quotedMessage,conversation}',
+                m.payload #>> '{data,contextInfo,quotedMessage,extendedTextMessage,text}',
+                m.payload #>> '{data,contextInfo,quotedMessage,imageMessage,caption}',
+                m.payload #>> '{data,contextInfo,quotedMessage,videoMessage,caption}',
+                m.payload #>> '{data,contextInfo,quotedMessage,documentMessage,caption}',
+                m.payload #>> '{data,contextInfo,quotedMessage,audioMessage,ptt}',
+                CASE
+                  WHEN m.payload #> '{data,contextInfo,quotedMessage,imageMessage}' IS NOT NULL THEN '📷 Imagem'
+                  WHEN m.payload #> '{data,contextInfo,quotedMessage,audioMessage}' IS NOT NULL THEN '🎵 Áudio'
+                  WHEN m.payload #> '{data,contextInfo,quotedMessage,videoMessage}' IS NOT NULL THEN '📹 Vídeo'
+                  WHEN m.payload #> '{data,contextInfo,quotedMessage,documentMessage}' IS NOT NULL THEN '📄 Documento'
+                  WHEN m.payload #> '{data,contextInfo,quotedMessage,stickerMessage}' IS NOT NULL THEN '🎯 Sticker'
+                  ELSE NULL
+                END
+              )
+              ELSE NULL
+            END,
+            'quotedAuthor', NULLIF(COALESCE(m.payload #>> '{data,contextInfo,participant}', m.remetente_nome, ''), ''),
+            'quotedRemoteJid', NULLIF(COALESCE(m.payload #>> '{data,contextInfo,participant}', m.remote_jid, ''), ''),
+            'quotedMessageId', NULLIF(m.payload #>> '{data,contextInfo,stanzaId}', ''),
+            'quotedMessageType', CASE
+              WHEN m.payload #> '{data,contextInfo,quotedMessage,imageMessage}' IS NOT NULL THEN 'imageMessage'
+              WHEN m.payload #> '{data,contextInfo,quotedMessage,audioMessage}' IS NOT NULL THEN 'audioMessage'
+              WHEN m.payload #> '{data,contextInfo,quotedMessage,videoMessage}' IS NOT NULL THEN 'videoMessage'
+              WHEN m.payload #> '{data,contextInfo,quotedMessage,documentMessage}' IS NOT NULL THEN 'documentMessage'
+              WHEN m.payload #> '{data,contextInfo,quotedMessage,stickerMessage}' IS NOT NULL THEN 'stickerMessage'
+              WHEN m.payload #> '{data,contextInfo,quotedMessage,ptvMessage}' IS NOT NULL THEN 'ptvMessage'
+              ELSE 'conversation'
             END
           )
           ORDER BY COALESCE(m.enviada_em, m.recebida_em, m.created_at) ASC
@@ -127,12 +165,24 @@ export async function GET(request: NextRequest) {
     `
 
     // --- RBAC: filtro de visibilidade ---
+    const isOrgAdmin = user.role === 'owner' || user.role === 'admin'
+
     if (user.level === 0) {
       // Superadmin: vê tudo, sem restrições adicionais
     } else {
-      // Busca equipes do usuário
+      if (!user.org_id) return unauthorized()
+      query = db`${query} AND c.org_id = ${user.org_id}::uuid`
+
+      if (isOrgAdmin) {
+        // Admin/owner da organização vê todas as conversas da própria org.
+      } else {
+        // Busca equipes do usuário dentro da mesma organização
       const membros = await db<{ equipe_id: string }[]>`
-        SELECT equipe_id FROM public.crm_whatsapp_equipe_membros WHERE user_id = ${user.id}
+        SELECT em.equipe_id
+        FROM public.crm_whatsapp_equipe_membros em
+        JOIN public.crm_whatsapp_equipes e ON e.id = em.equipe_id
+        WHERE em.user_id = ${user.id}::uuid
+          AND e.org_id = ${user.org_id}::uuid
       `
       const teamIds = membros.map((m) => m.equipe_id)
 
@@ -143,7 +193,7 @@ export async function GET(request: NextRequest) {
       }[]>`
         SELECT pode_ver_outras_equipes, equipes_visiveis
         FROM public.crm_whatsapp_permissoes
-        WHERE user_id = ${user.id}
+        WHERE user_id = ${user.id}::uuid
       `
 
       // Constrói conjunto de equipes visíveis
@@ -161,6 +211,7 @@ export async function GET(request: NextRequest) {
       } else {
         // Sem equipes: vê apenas conversas próprias
         query = db`${query} AND c.responsavel_id = ${user.id}::uuid`
+      }
       }
     }
 

@@ -13,18 +13,30 @@ export async function GET(request: NextRequest) {
   try {
     const db = getSql()
     
-    const equipes = await db`
-      SELECT 
-        e.id::text,
-        e.nome,
-        e.descricao,
-        e.org_id::text,
-        e.created_at,
-        (SELECT COUNT(*) FROM public.crm_whatsapp_equipe_membros em WHERE em.equipe_id = e.id)::int as membros_count
-      FROM public.crm_whatsapp_equipes e
-      WHERE (e.org_id = ${user.org_id || null}::uuid OR e.org_id IS NULL)
-      ORDER BY e.nome ASC
-    `
+    const equipes = user.level === 0
+      ? await db`
+          SELECT 
+            e.id::text,
+            e.nome,
+            e.descricao,
+            e.org_id::text,
+            e.created_at,
+            (SELECT COUNT(*) FROM public.crm_whatsapp_equipe_membros em WHERE em.equipe_id = e.id)::int as membros_count
+          FROM public.crm_whatsapp_equipes e
+          ORDER BY e.nome ASC
+        `
+      : await db`
+          SELECT 
+            e.id::text,
+            e.nome,
+            e.descricao,
+            e.org_id::text,
+            e.created_at,
+            (SELECT COUNT(*) FROM public.crm_whatsapp_equipe_membros em WHERE em.equipe_id = e.id)::int as membros_count
+          FROM public.crm_whatsapp_equipes e
+          WHERE e.org_id = ${user.org_id || null}::uuid
+          ORDER BY e.nome ASC
+        `
 
     return NextResponse.json({ equipes, count: equipes.length })
   } catch (error) {
@@ -47,6 +59,8 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getSql()
+
+    if (user.level !== 0 && !user.org_id) return unauthorized()
 
     // Verifica se já existe equipe com mesmo nome na org
     const existente = await db`

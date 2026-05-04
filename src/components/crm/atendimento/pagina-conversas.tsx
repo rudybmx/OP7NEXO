@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useRef, useEffect } from 'react'
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { 
   Search, 
   MessageCircle, 
@@ -14,8 +14,15 @@ import {
   Sparkles,
   Smartphone,
   MessageCircle as Instagram,
-  MessageSquare as Facebook
+  MessageSquare as Facebook,
+  Phone,
+  Mail,
+  Tag,
+  User,
+  CircleDotDashed,
 } from 'lucide-react'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { apiFetch } from '@/lib/api'
 
 // ─── Tipos Internos ───────────────────────────────────────────────────────────
 
@@ -46,6 +53,13 @@ interface Mensagem {
   hora: string
   data: string // "Hoje", "Ontem" ou "DD/MM" para agrupamento
   timestampAt?: number
+  replyTo?: {
+    id?: string | null
+    text?: string | null
+    author?: string | null
+    remoteJid?: string | null
+    messageType?: string | null
+  } | null
 }
 
 interface Conversa {
@@ -87,6 +101,11 @@ type ApiMensagem = {
   enviadaEm?: string | null
   recebidaEm?: string | null
   criadaEm?: string | null
+  quotedText?: string | null
+  quotedAuthor?: string | null
+  quotedRemoteJid?: string | null
+  quotedMessageId?: string | null
+  quotedMessageType?: string | null
 }
 
 type ApiConversa = {
@@ -125,6 +144,166 @@ function iniciais(nome: string) {
   return `${partes[0][0]}${partes[partes.length - 1][0]}`.toUpperCase()
 }
 
+function formatarTelefone(telefone?: string | null) {
+  if (!telefone) return '--'
+  return telefone
+}
+
+function AvatarContato({
+  nome,
+  avatarUrl,
+  tamanho = 36,
+  mostrarStatus = false,
+  online = false,
+}: {
+  nome: string
+  avatarUrl?: string | null
+  tamanho?: number
+  mostrarStatus?: boolean
+  online?: boolean
+}) {
+  const iniciaisContato = iniciais(nome)
+
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <Avatar size={tamanho >= 48 ? 'lg' : 'default'} style={{ width: tamanho, height: tamanho }}>
+        <AvatarImage src={avatarUrl || undefined} alt={nome} />
+        <AvatarFallback style={{ fontSize: tamanho <= 32 ? 11 : 13, fontWeight: 700, color: 'white', background: 'linear-gradient(135deg, #3E5BFF, #7A5AF8)' }}>
+          {iniciaisContato}
+        </AvatarFallback>
+      </Avatar>
+      {mostrarStatus && (
+        <div style={{
+          position: 'absolute', bottom: -1, right: -1,
+          width: tamanho <= 32 ? 8 : 10, height: tamanho <= 32 ? 8 : 10, borderRadius: '50%',
+          background: online ? '#25D366' : '#8892b0',
+          border: '2px solid var(--ws-glass-bg)',
+        }} />
+      )}
+    </div>
+  )
+}
+
+function LinhaInfoContato({ label, valor, icon }: { label: string; valor?: string | null; icon?: React.ReactNode }) {
+  if (!valor) return null
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <div style={{ width: 24, height: 24, borderRadius: 8, background: 'rgba(62,91,255,0.08)', color: 'var(--ws-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {icon || <CircleDotDashed size={12} />}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 10, color: 'var(--ws-text-3)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+        <div style={{ fontSize: 12, color: 'var(--ws-text-1)', wordBreak: 'break-word' }}>{valor}</div>
+      </div>
+    </div>
+  )
+}
+
+function PainelContato({ conversa }: { conversa: Conversa }) {
+  const { contato, tags, agente, campanha, status, iaAtiva } = conversa
+
+  return (
+    <aside style={{
+      width: 320,
+      flexShrink: 0,
+      borderLeft: '1px solid var(--ws-divider)',
+      background: 'rgba(255,255,255,0.015)',
+      display: 'flex',
+      flexDirection: 'column',
+      minWidth: 0,
+    }}>
+      <div style={{ padding: 16, borderBottom: '1px solid var(--ws-divider)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          <AvatarContato nome={contato.nome} avatarUrl={contato.avatarUrl} tamanho={52} mostrarStatus online={contato.online} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ws-text-1)', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {contato.nome}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 3 }}>
+              {contato.online ? 'online agora' : 'visto por último hoje'}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+          <span style={{
+            fontSize: 10,
+            padding: '2px 8px',
+            borderRadius: 9999,
+            background: 'rgba(37,211,102,0.12)',
+            color: '#25D366',
+            border: '1px solid rgba(37,211,102,0.18)',
+            textTransform: 'uppercase',
+            fontWeight: 700,
+          }}>WhatsApp</span>
+          <span style={{
+            fontSize: 10,
+            padding: '2px 8px',
+            borderRadius: 9999,
+            background: status === 'em_atendimento' ? 'rgba(62,91,255,0.10)' : 'rgba(255,255,255,0.05)',
+            color: status === 'em_atendimento' ? 'var(--ws-blue)' : 'var(--ws-text-3)',
+            border: '1px solid var(--ws-glass-border)',
+            textTransform: 'uppercase',
+            fontWeight: 700,
+          }}>{status.replace('_', ' ')}</span>
+          {iaAtiva && (
+            <span style={{
+              fontSize: 10,
+              padding: '2px 8px',
+              borderRadius: 9999,
+              background: 'rgba(60,52,137,0.12)',
+              color: '#8b7ef8',
+              border: '1px solid rgba(60,52,137,0.18)',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+            }}>IA ativa</span>
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gap: 8 }}>
+          <LinhaInfoContato label="Telefone" valor={formatarTelefone(contato.telefone)} icon={<Phone size={12} />} />
+          <LinhaInfoContato label="Remote JID" valor={contato.remoteJid} icon={<User size={12} />} />
+          <LinhaInfoContato label="Agente" valor={agente} icon={<User size={12} />} />
+          <LinhaInfoContato label="Campanha" valor={campanha || null} icon={<Tag size={12} />} />
+        </div>
+      </div>
+
+      <div style={{ padding: 16, borderBottom: '1px solid var(--ws-divider)' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ws-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Tags</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {tags.length ? tags.map((tag) => (
+            <span key={tag} style={{
+              fontSize: 10,
+              padding: '2px 8px',
+              borderRadius: 9999,
+              background: 'rgba(255,255,255,0.05)',
+              color: 'var(--ws-text-2)',
+              border: '1px solid var(--ws-glass-border)',
+            }}>{tag}</span>
+          )) : (
+            <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>Sem tags</span>
+          )}
+        </div>
+      </div>
+
+      <div style={{ padding: 16 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ws-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Resumo rápido</div>
+        <div style={{
+          background: 'rgba(62,91,255,0.08)',
+          border: '1px solid rgba(62,91,255,0.15)',
+          borderRadius: 12,
+          padding: 12,
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ws-text-1)', marginBottom: 6 }}>Informações do contato</div>
+          <div style={{ fontSize: 11, color: 'var(--ws-text-2)', lineHeight: 1.5 }}>
+            Foto, telefone, remote JID, tags e estado da conversa ficam concentrados aqui, no padrão do chat do design system.
+          </div>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
 function formatarHora(valor?: string, timestamp?: number) {
   const data = timestamp
     ? new Date(timestamp * 1000)
@@ -158,6 +337,25 @@ function dataMensagemApi(mensagem: ApiMensagem) {
   return mensagem.enviadaEm || mensagem.recebidaEm || mensagem.criadaEm || new Date().toISOString()
 }
 
+function rotuloMensagemTipo(tipo?: string | null) {
+  switch (tipo) {
+    case 'imageMessage':
+      return '📷 Imagem'
+    case 'audioMessage':
+      return '🎵 Áudio'
+    case 'videoMessage':
+      return '📹 Vídeo'
+    case 'documentMessage':
+      return '📄 Documento'
+    case 'stickerMessage':
+      return '🎯 Sticker'
+    case 'ptvMessage':
+      return '📹 Vídeo'
+    default:
+      return 'Mensagem'
+  }
+}
+
 function mensagemApiParaMensagem(mensagem: ApiMensagem, nomeContato: string): Mensagem {
   const quando = dataMensagemApi(mensagem)
   const timestampAt = Date.parse(quando)
@@ -166,6 +364,16 @@ function mensagemApiParaMensagem(mensagem: ApiMensagem, nomeContato: string): Me
     : mensagem.direcao === 'saida'
       ? 'agente'
       : 'contato'
+  const replyText = mensagem.quotedText || null
+  const replyTo = (mensagem.quotedMessageId || replyText)
+    ? {
+        id: mensagem.quotedMessageId || null,
+        text: replyText || rotuloMensagemTipo(mensagem.quotedMessageType || null),
+        author: mensagem.quotedAuthor || null,
+        remoteJid: mensagem.quotedRemoteJid || null,
+        messageType: mensagem.quotedMessageType || null,
+      }
+    : null
 
   return {
     id: mensagem.id,
@@ -178,6 +386,7 @@ function mensagemApiParaMensagem(mensagem: ApiMensagem, nomeContato: string): Me
     hora: formatarHora(quando),
     data: formatarData(quando),
     timestampAt: Number.isNaN(timestampAt) ? Date.now() : timestampAt,
+    replyTo,
   }
 }
 
@@ -245,59 +454,81 @@ export function PaginaConversas() {
     agruparMensagensPorData(conversaSelecionada?.mensagens || [])
   , [conversaSelecionada?.mensagens])
 
-  // Carregar conversas reais do Postgres e manter polling estilo WhatsApp Web
+  const carregarConversas = useCallback(async (background = false) => {
+    try {
+      if (!background) setIsCarregando(true)
+
+const params = new URLSearchParams({ limit: '120' })
+      if (filtroAtivo && filtroAtivo !== 'todas') {
+        params.set('filtro', filtroAtivo === 'novos' ? 'novos' : filtroAtivo)
+      }
+
+      const data = await apiFetch<{ conversations: ApiConversa[] }>(
+        'whatsapp/conversations',
+        Object.fromEntries(params.entries()) as Record<string, string>,
+      )
+
+      const normalizadas = ((data?.conversations || []) as ApiConversa[]).map(apiConversaParaConversa)
+      setConversas(normalizadas)
+      setErroIntegracao(null)
+      setConversaSelecionadaId((atual) => {
+        if (atual && normalizadas.some((conversa) => conversa.id === atual)) return atual
+        return normalizadas[0]?.id || null
+      })
+    } catch (error) {
+      setErroIntegracao(error instanceof Error ? error.message : 'Erro inesperado na integração')
+    } finally {
+      if (!background) setIsCarregando(false)
+    }
+  }, [filtroAtivo])
+
+  // Carregar conversas reais do Postgres e assinar stream realtime via SSE
   useEffect(() => {
     let cancelado = false
+    let refreshTimer: number | null = null
+    let eventSource: EventSource | null = null
 
-    async function carregarConversas() {
-      try {
-        // Pega token do cookie para autenticação
-        const token = document.cookie
-          .split('; ')
-          .find(row => row.startsWith('ws-session='))
-          ?.split('=')[1]
-
-        const params = new URLSearchParams({ limit: '120' })
-        if (filtroAtivo && filtroAtivo !== 'todas') {
-          params.set('filtro', filtroAtivo === 'novos' ? 'novos' : filtroAtivo)
-        }
-
-        const response = await fetch(`/api/whatsapp/conversations?${params}`, {
-          cache: 'no-store',
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-        const data = await response.json().catch(() => null)
-
-        if (!response.ok) {
-          throw new Error(data?.error || 'Falha ao carregar conversas')
-        }
-
-        const normalizadas = ((data?.conversations || []) as ApiConversa[]).map(apiConversaParaConversa)
-        if (cancelado) return
-
-        setConversas(normalizadas)
-        setErroIntegracao(null)
-        setConversaSelecionadaId((atual) => {
-          if (atual && normalizadas.some((conversa) => conversa.id === atual)) return atual
-          return normalizadas[0]?.id || null
-        })
-      } catch (error) {
-        if (!cancelado) {
-          setErroIntegracao(error instanceof Error ? error.message : 'Erro inesperado na integração')
-        }
-      } finally {
-        if (!cancelado) setIsCarregando(false)
-      }
+    async function executarCarga(background = false) {
+      if (cancelado) return
+      await carregarConversas(background)
     }
 
-    carregarConversas()
-    const intervalo = window.setInterval(carregarConversas, 3000)
+    function agendarRefresh(delay = 120) {
+      if (refreshTimer) {
+        window.clearTimeout(refreshTimer)
+      }
+
+      refreshTimer = window.setTimeout(() => {
+        void executarCarga(true)
+      }, delay)
+    }
+
+    void executarCarga(false)
+
+    const fallback = window.setInterval(() => {
+      void executarCarga(true)
+    }, 45000)
+
+    try {
+      eventSource = new EventSource('/api/whatsapp/stream')
+      eventSource.addEventListener('whatsapp.refresh', () => agendarRefresh())
+      eventSource.onmessage = () => agendarRefresh()
+      eventSource.onerror = () => {
+        // O EventSource tenta reconectar sozinho; mantemos apenas o fallback.
+      }
+    } catch (error) {
+      console.warn('Realtime indisponível, usando fallback por polling.', error)
+    }
 
     return () => {
       cancelado = true
-      window.clearInterval(intervalo)
+      window.clearInterval(fallback)
+      if (refreshTimer) {
+        window.clearTimeout(refreshTimer)
+      }
+      eventSource?.close()
     }
-  }, [])
+  }, [carregarConversas])
 
   // Auto-scroll
   useEffect(() => {
@@ -316,21 +547,16 @@ export function PaginaConversas() {
     setIsEnviando(true)
 
     try {
-      const response = await fetch('/api/whatsapp/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      await apiFetch(
+        'whatsapp/send',
+        undefined,
+        null,
+        'POST',
+        {
           number: telefoneDestino,
           text: conteudo,
-        }),
-      })
-
-      const result = await response.json().catch(() => null)
-      if (!response.ok) {
-        throw new Error(result?.error || 'Falha ao enviar mensagem')
-      }
+        }
+      )
 
       const nova: Mensagem = {
         id: `msg-${Date.now()}`,
@@ -372,29 +598,18 @@ export function PaginaConversas() {
   async function transferirConversa(novoResponsavelId: string, novaEquipeId?: string) {
     if (!conversaSelecionadaId) return
 
-    const token = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('ws-session='))
-      ?.split('=')[1]
-
-    try {
-      const response = await fetch('/api/whatsapp/transfer', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
+try {
+      await apiFetch(
+        'whatsapp/transfer',
+        undefined,
+        null,
+        'POST',
+        {
           conversaId: conversaSelecionadaId,
           novoResponsavelId,
           ...(novaEquipeId ? { novaEquipeId } : {}),
-        }),
-      })
-
-      const result = await response.json().catch(() => null)
-      if (!response.ok) {
-        throw new Error(result?.error || 'Falha ao transferir')
-      }
+        }
+      )
 
       // Atualiza estado local
       setConversas(cs => cs.map(c =>
@@ -540,22 +755,13 @@ export function PaginaConversas() {
                 onMouseLeave={e => { if(!isAtivo) e.currentTarget.style.background = 'transparent' }}
               >
                 <div style={{ display: 'flex', gap: '12px', marginBottom: '4px' }}>
-                  <div style={{ position: 'relative', flexShrink: 0 }}>
-                    <div style={{ 
-                      width: '36px', height: '36px', borderRadius: '50%', 
-                      background: conversa.contato.cor, color: 'white',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '12px', fontWeight: 600
-                    }}>
-                      {conversa.contato.avatarInitials}
-                    </div>
-                    <div style={{ 
-                      position: 'absolute', bottom: '-1px', right: '-1px', 
-                      width: '8px', height: '8px', borderRadius: '50%',
-                      background: conversa.contato.online ? '#25D366' : '#8892b0',
-                      border: '2px solid var(--ws-glass-bg)'
-                    }} />
-                  </div>
+                  <AvatarContato
+                    nome={conversa.contato.nome}
+                    avatarUrl={conversa.contato.avatarUrl}
+                    tamanho={36}
+                    mostrarStatus
+                    online={conversa.contato.online}
+                  />
                   
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -614,7 +820,8 @@ export function PaginaConversas() {
             <span style={{ color: 'var(--ws-text-3)', fontSize: '14px' }}>Selecione uma conversa para começar</span>
           </div>
         ) : (
-          <>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex' }}>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {/* Header do Chat */}
             <header style={{ 
               padding: '12px 20px', 
@@ -625,22 +832,13 @@ export function PaginaConversas() {
               background: 'rgba(255,255,255,0.02)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ position: 'relative' }}>
-                  <div style={{ 
-                    width: '36px', height: '36px', borderRadius: '50%', 
-                    background: conversaSelecionada.contato.cor, color: 'white',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '12px', fontWeight: 600
-                  }}>
-                    {conversaSelecionada.contato.avatarInitials}
-                  </div>
-                  <div style={{ 
-                    position: 'absolute', bottom: '-1px', right: '-1px', 
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: conversaSelecionada.contato.online ? '#25D366' : '#8892b0',
-                    border: '2px solid var(--ws-glass-bg)'
-                  }} />
-                </div>
+                <AvatarContato
+                  nome={conversaSelecionada.contato.nome}
+                  avatarUrl={conversaSelecionada.contato.avatarUrl}
+                  tamanho={36}
+                  mostrarStatus
+                  online={conversaSelecionada.contato.online}
+                />
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--ws-text-1)' }}>{conversaSelecionada.contato.nome}</span>
@@ -748,6 +946,36 @@ export function PaginaConversas() {
                           whiteSpace: 'pre-wrap',
                           overflow: 'hidden',
                         }}>
+                          {msg.replyTo && (
+                            <div style={{
+                              marginBottom: '8px',
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              background: isEntrada ? 'rgba(15,39,68,0.06)' : 'rgba(255,255,255,0.14)',
+                              borderLeft: `3px solid ${isEntrada ? 'rgba(15,39,68,0.35)' : 'rgba(255,255,255,0.35)'}`,
+                              opacity: 0.95,
+                            }}>
+                              <div style={{
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                color: isEntrada ? '#0f2744' : '#ffffff',
+                                marginBottom: '2px',
+                                opacity: 0.9,
+                              }}>
+                                Respondendo{msg.replyTo.author ? ` a ${msg.replyTo.author}` : ''}
+                              </div>
+                              <div style={{
+                                fontSize: '11px',
+                                lineHeight: 1.35,
+                                color: isEntrada ? '#1e3a5f' : 'rgba(255,255,255,0.92)',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                              }}>
+                                {msg.replyTo.text || 'Mensagem citada'}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Imagem/Vídeo inline estilo WhatsApp */}
                           {msg.mediaUrl && (msg.messageType === 'imageMessage' || msg.messageType === 'stickerMessage') ? (
                             <div style={{ marginBottom: msg.conteudo && !msg.conteudo.startsWith('📷') && !msg.conteudo.startsWith('🎯') ? '6px' : '0' }}>
@@ -887,16 +1115,22 @@ export function PaginaConversas() {
                 </button>
               </div>
             </footer>
-          </>
+            </div>
+          </div>
         )}
       </main>
 
-      {/* PAINEL DIREITO (FUTURO/PLACEHOLDER) */}
-      <aside style={{ 
-        width: '0px', // Oculto por enquanto como solicitado
-        flexShrink: 0,
-        transition: 'width 0.3s ease'
-      }} />
+      {/* PAINEL DIREITO */}
+      {conversaSelecionada ? (
+        <PainelContato conversa={conversaSelecionada} />
+      ) : (
+        <aside style={{ 
+          width: 320,
+          flexShrink: 0,
+          borderLeft: '1px solid var(--ws-divider)',
+          background: 'rgba(255,255,255,0.015)',
+        }} />
+      )}
 
       <style dangerouslySetInnerHTML={{ __html: `
         textarea::-webkit-scrollbar { width: 4px; }

@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
       sub: user.id,
       email: user.email,
       level: nivel,
+      role: membro?.role,
       org_id: membro?.org_id ?? null,
     }, '1h')
 

@@ -7,6 +7,34 @@ function getBaseUrl(): string {
   return 'http://localhost:3000'
 }
 
+async function retryWithRefresh<T>(url: string, init: RequestInit): Promise<T> {
+  if (typeof window === 'undefined') {
+    throw new Error('Sessão expirada.')
+  }
+
+  try {
+    const { refreshToken, clearToken } = await import('./auth')
+    const newToken = await refreshToken()
+    const nextInit: RequestInit = {
+      ...init,
+      headers: {
+        ...(init.headers as Record<string, string> || {}),
+        Authorization: `Bearer ${newToken}`,
+      },
+    }
+    const retryRes = await fetch(url, nextInit)
+    if (retryRes.ok) return retryRes.json()
+    clearToken()
+    window.location.href = '/login'
+    throw new Error('Sessão expirada. Redirecionando para login...')
+  } catch {
+    const { clearToken } = await import('./auth')
+    clearToken()
+    window.location.href = '/login'
+    throw new Error('Sessão expirada. Redirecionando para login...')
+  }
+}
+
 /** Fetcher autenticado para uso direto com SWR.
  *  Lê o access_token do localStorage automaticamente.
  *  Uso: useSWR('/endpoint', apiGet)
@@ -22,7 +50,9 @@ export async function apiGet<T = unknown>(endpoint: string): Promise<T> {
 export async function apiFetch<T>(
   endpoint: string,
   params?: Record<string, any>,
-  token?: string | null
+  token?: string | null,
+  method: string = 'GET',
+  body?: unknown
 ): Promise<T> {
   const base = getBaseUrl()
   const url = new URL(`${base}/api/${endpoint}`, base || undefined)
@@ -49,38 +79,22 @@ export async function apiFetch<T>(
     console.log(`[API] Fetching: ${url.toString()}`)
   }
 
-  const res = await fetch(url.toString(), { headers })
+  const res = await fetch(url.toString(), {
+    method,
+    headers,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  })
   
   if (process.env.NODE_ENV === 'development') {
     console.log(`[API] Response ${res.status}: ${url.pathname}`)
   }
 
   if (res.status === 401) {
-    if (typeof window !== 'undefined') {
-      try {
-        const { refreshToken, clearToken } = await import('./auth')
-        const newToken = await refreshToken()
-        
-        headers['Authorization'] = `Bearer ${newToken}`
-        const retryRes = await fetch(url.toString(), { headers })
-        
-        if (retryRes.ok) {
-          return retryRes.json()
-        }
-        
-        clearToken()
-        window.location.href = '/login'
-        throw new Error('Sessão expirada. Redirecionando para login...')
-
-      } catch {
-        const { clearToken } = await import('./auth')
-        clearToken()
-        window.location.href = '/login'
-        throw new Error('Sessão expirada. Redirecionando para login...')
-      }
-    } else {
-      throw new Error('Sessão expirada.')
-    }
+    return retryWithRefresh<T>(url.toString(), {
+      method,
+      headers,
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    })
   }
 
   if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`)

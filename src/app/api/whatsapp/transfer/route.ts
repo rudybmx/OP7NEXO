@@ -28,9 +28,10 @@ export async function POST(req: NextRequest) {
 
     // 3. Buscar conversa atual para obter dados anteriores e verificar existencia
     const conversas = await db`
-      SELECT id, equipe_id, responsavel_id, historico_transferencias
+      SELECT id, org_id, equipe_id, responsavel_id, historico_transferencias
       FROM public.crm_whatsapp_conversas
       WHERE id = ${conversaId}::uuid
+        ${user.level === 0 ? db`` : db`AND org_id = ${user.org_id || null}::uuid`}
     `
 
     if (conversas.length === 0) {
@@ -43,6 +44,35 @@ export async function POST(req: NextRequest) {
     const conversa = conversas[0]
     const oldResponsavelId = conversa.responsavel_id
     const oldEquipeId = conversa.equipe_id
+    const orgId = conversa.org_id
+
+    if (user.level !== 0 && (!user.org_id || orgId !== user.org_id)) {
+      return NextResponse.json({ error: 'Conversa nao encontrada' }, { status: 404 })
+    }
+
+    const responsavel = await db`
+      SELECT 1
+      FROM public.org_members
+      WHERE user_id = ${novoResponsavelId}::uuid
+        AND org_id = ${orgId}::uuid
+        AND is_active = true
+      LIMIT 1
+    `
+    if (responsavel.length === 0) {
+      return NextResponse.json({ error: 'Novo responsavel nao pertence a organizacao da conversa' }, { status: 400 })
+    }
+
+    if (novaEquipeId) {
+      const equipeDestino = await db`
+        SELECT 1 FROM public.crm_whatsapp_equipes
+        WHERE id = ${novaEquipeId}::uuid
+          AND org_id = ${orgId}::uuid
+        LIMIT 1
+      `
+      if (equipeDestino.length === 0) {
+        return NextResponse.json({ error: 'Equipe destino nao pertence a organizacao da conversa' }, { status: 400 })
+      }
+    }
 
     // Nao transferir para o mesmo responsavel se nada mais mudar
     if (oldResponsavelId === novoResponsavelId && (!novaEquipeId || oldEquipeId === novaEquipeId)) {

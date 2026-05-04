@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { getUserFromRequest, unauthorized } from '@/lib/api-auth'
 
 const WHATSAPP_WEBHOOK_BASE_URL = process.env.WHATSAPP_WEBHOOK_URL || 'https://agentewersun.qozt.com.br'
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const user = await getUserFromRequest(request)
+    if (!user) return unauthorized()
+
     const payload = await request.json()
     const number = payload?.number
     const text = payload?.text

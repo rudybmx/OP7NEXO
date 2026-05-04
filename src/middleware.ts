@@ -26,6 +26,7 @@ export function middleware(request: NextRequest) {
     || pathname.startsWith('/api/auth')
     || pathname.startsWith('/api/health')
     || pathname.startsWith('/api/whatsapp')
+    || pathname.startsWith('/api/equipes')
     || pathname === '/favicon.ico'
 
   if (isPublic) {
