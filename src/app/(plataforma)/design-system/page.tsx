@@ -1,7 +1,7 @@
 import { DSShell } from '@/components/design-system/ds-shell'
 
 export const metadata = {
-  title: "Design System — Wer'Sun Plataforma",
+  title: "Design System — Odontocompany by Op7 Plataforma",
   description: 'Biblioteca de componentes Glassmorphism',
 }
 

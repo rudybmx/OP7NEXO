@@ -82,54 +82,6 @@ export const secoesNavegacao: SecaoNavegacao[] = [
           { nome: "Acomp. de Demandas",    rota: "/marketing/performance/demandas" },
         ],
       },
-      {
-        nome: "Eventos",
-        secao: "Marketing",
-        chaveIcone: "Calendar",
-        abertoPadrao: false,
-        itens: [
-          { nome: "Jornadas",         rota: "/marketing/eventos/jornadas" },
-          { nome: "Cursos",           rota: "/marketing/eventos/cursos" },
-          { nome: "Conteúdos Ev.",    rota: "/marketing/eventos/conteudos" },
-          { nome: "Universidade",     rota: "/marketing/eventos/universidade" },
-          { nome: "Método Wer'Sun",   rota: "/marketing/eventos/metodo-wersun" },
-        ],
-      },
-      {
-        nome: "Central AI",
-        secao: "Marketing",
-        chaveIcone: "Sparkles",
-        abertoPadrao: false,
-        itens: [
-          { nome: "Agentes IA",   rota: "/marketing/central-ai/agentes" },
-          { nome: "Conteúdos IA", rota: "/marketing/central-ai/conteudos" },
-          { nome: "Visões IA",    rota: "/marketing/central-ai/visoes" },
-          { nome: "Criativos IA", rota: "/marketing/central-ai/criativos" },
-        ],
-      },
-      {
-        nome: "Automação e Tech",
-        secao: "Marketing",
-        chaveIcone: "Code2",
-        abertoPadrao: false,
-        itens: [
-          { nome: "Landing Page", rota: "/marketing/automacao/landing-page" },
-          { nome: "Controles",    rota: "/marketing/automacao/controles" },
-          { nome: "Servidores",   rota: "/marketing/automacao/servidores" },
-          { nome: "Acessos",      rota: "/marketing/automacao/acessos" },
-        ],
-      },
-      {
-        nome: "Estrategistas",
-        secao: "Marketing",
-        chaveIcone: "Users",
-        abertoPadrao: false,
-        itens: [
-          { nome: "Atendimento Est.", rota: "/marketing/estrategistas/atendimento" },
-          { nome: "Estratégia Est.",  rota: "/marketing/estrategistas/estrategia" },
-          { nome: "Suporte",          rota: "/marketing/estrategistas/suporte" },
-        ],
-      },
     ],
   },
   {
@@ -218,17 +170,6 @@ export const secoesNavegacao: SecaoNavegacao[] = [
           { nome: "Novo Usuario",   rota: "/admin/usuarios/novo" },
         ],
       },
-      {
-        nome: "Organizacoes",
-        secao: "Administracao",
-        chaveIcone: "Briefcase",
-        administrativo: true,
-        abertoPadrao: false,
-        itens: [
-          { nome: "Lista Organizacoes", rota: "/admin/organizacoes" },
-          { nome: "Nova Organizacao",   rota: "/admin/organizacoes/nova" },
-        ],
-      },
     ],
   },
 ]
@@ -288,13 +229,13 @@ export function ProvedorLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Restaurar estado do localStorage inicialmente
-    const saved = localStorage.getItem("ws-sidebar-collapsed")
+    const saved = localStorage.getItem("oc-sidebar-collapsed")
     if (saved === "true") setIsCollapsed(true)
   }, [])
 
   useEffect(() => {
     // Salvar estado em localStorage
-    localStorage.setItem("ws-sidebar-collapsed", String(isCollapsed))
+    localStorage.setItem("oc-sidebar-collapsed", String(isCollapsed))
   }, [isCollapsed])
 
   useEffect(() => {

@@ -10,8 +10,8 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
-  title: "Wer'Sun Plataforma",
-  description: "Shell da plataforma Wer'Sun",
+  title: "Odontocompany by Op7",
+  description: "Dashboard de gestão Odontocompany by Op7",
 }
 
 export default function RootLayout({

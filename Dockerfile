@@ -1,4 +1,4 @@
-# Dockerfile - Wer'sun Plataforma
+# Dockerfile - Odontocompany by Op7
 # Multi-stage build para Next.js 16 standalone
 
 # ------------------------------

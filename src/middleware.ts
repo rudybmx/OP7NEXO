@@ -16,44 +16,7 @@ function getUserLevelFromToken(cookieValue: string): number | null {
 }
 
 export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
-  const sessionCookie = request.cookies.get(COOKIE)
-  const isAuthenticated = !!sessionCookie?.value
-
-  // Rotas publicas (login, assets, api de auth, health, whatsapp)
-  const isPublic = pathname.startsWith('/login')
-    || pathname.startsWith('/_next')
-    || pathname.startsWith('/api/auth')
-    || pathname.startsWith('/api/health')
-    || pathname.startsWith('/api/whatsapp')
-    || pathname.startsWith('/api/equipes')
-    || pathname === '/favicon.ico'
-
-  if (isPublic) {
-    // Se ja autenticado e tenta acessar /login, manda pro dashboard
-    if (pathname.startsWith(LOGIN_PATH) && isAuthenticated) {
-      return NextResponse.redirect(new URL('/', request.url))
-    }
-    return NextResponse.next()
-  }
-
-  // Protege rotas privadas
-  if (!isAuthenticated) {
-    return NextResponse.redirect(new URL(LOGIN_PATH, request.url))
-  }
-
-  // Protege rotas admin
-  if (pathname.startsWith('/admin')) {
-    const token = sessionCookie?.value
-    if (!token) {
-      return NextResponse.redirect(new URL('/', request.url))
-    }
-    const level = getUserLevelFromToken(token)
-    if (level === null || level !== 0) {
-      return NextResponse.redirect(new URL('/', request.url))
-    }
-  }
-
+  // BYPASS AUTH FOR DEVELOPMENT
   return NextResponse.next()
 }
 

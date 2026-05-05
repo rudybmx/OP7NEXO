@@ -1,4 +1,4 @@
-# DEPLOY - Wer'sun Plataforma (Self-Host Completo)
+# DEPLOY - Odontocompany by Op7 (Self-Host Completo)
 
 ## O que foi construido
 

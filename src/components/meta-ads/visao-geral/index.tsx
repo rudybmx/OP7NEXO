@@ -8,6 +8,7 @@ import { GraficoTemporal } from './grafico-temporal'
 import { GraficoBarrasContas, GraficoDonutInvestimento } from './graficos-distribuicao'
 import { TopCriativos } from './top-criativos'
 import { TabelaContas } from './tabela-contas'
+import { InsightsIA } from '../anuncios/insights-ia'
 
 interface VisaoGeralProps {
   filtros: FiltrosMeta
@@ -43,6 +44,10 @@ export function VisaoGeral({ filtros }: VisaoGeralProps) {
   return (
     <div className="space-y-[16px]">
       <CartoesKpi contas={data.contas} comparativo={filtros.comparativo} />
+
+      {data.insightsIA && data.insightsIA.length > 0 && (
+        <InsightsIA insights={data.insightsIA} onAbrirAnuncio={() => {}} />
+      )}
 
       <GraficoTemporal dados={data.dadosDiarios} />
 

@@ -171,6 +171,50 @@ export interface FiltrosGruposGoogle {
   ordem: 'asc' | 'desc'
 }
 
+export interface KeywordGoogle {
+  id: string
+  adGroupId: string
+  campanhaId: string
+  texto: string
+  matchType: MatchType
+  status: StatusGoogle
+  qualityScore: number
+  investimento: number
+  cliques: number
+  impressoes: number
+  conversoes: number
+  ctr: number
+  cpcMedio: number
+  custoConversao: number
+}
+
+export interface AdGoogle {
+  id: string
+  adGroupId: string
+  campanhaId: string
+  titulo: string
+  desc: string
+  status: StatusGoogle
+  adStrength: AdStrength
+  investimento: number
+  cliques: number
+  impressoes: number
+  conversoes: number
+  ctr: number
+  cpcMedio: number
+  custoConversao: number
+}
+
+export interface PublicoGoogle {
+  id: string
+  nome: string
+  leads: number
+  investimento: number
+  cpl: number
+  ctr: number
+  percentual: number
+}
+
 export interface FiltrosGoogle {
   periodo: '7d' | '30d' | '90d'
   tipoCampanha: string

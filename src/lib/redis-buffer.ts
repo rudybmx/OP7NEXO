@@ -4,7 +4,7 @@ import Redis from 'ioredis'
 // Configuração
 // ---------------------------------------------------------------------------
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://default:t868uuo98kj2g9q0akmvlnf82elr1q6t@redis_wersun:6379'
+const REDIS_URL = process.env.REDIS_URL || 'redis://default:t868uuo98kj2g9q0akmvlnf82elr1q6t@redis_odontocompany:6379'
 const MAX_MESSAGES = 50
 const TTL_SECONDS = 24 * 60 * 60 // 24 horas
 

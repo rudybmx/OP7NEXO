@@ -45,7 +45,7 @@ export default function LoginPage() {
       }}>
         <div style={{ marginBottom: 32, textAlign: 'center' }}>
           <div style={{ fontSize: 22, fontWeight: 700, color: '#ffffff', letterSpacing: '-0.02em' }}>
-            Wer&apos;Sun
+            Odontocompany by Op7
           </div>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.50)', marginTop: 6 }}>
             Acesse sua conta para continuar
@@ -131,7 +131,7 @@ export default function LoginPage() {
         </form>
 
         <div style={{ marginTop: 24, textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
-          © 2026 Wer'Sun · Acesso seguro e criptografado
+          © 2026 Odontocompany by Op7 · Acesso seguro e criptografado
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { Client as MinioClient } from 'minio'
 
 // ---------------------------------------------------------------------------
-// Configuração do cliente MinIO (Wersun)
+// Configuração do cliente MinIO (Odontocompany by Op7)
 // ---------------------------------------------------------------------------
 // As credenciais são injetadas via ambiente em produção, mas mantemos
 // valores padrão para desenvolvimento local com Docker Compose.
@@ -9,7 +9,7 @@ import { Client as MinioClient } from 'minio'
 
 const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT || '10.0.1.35'
 const MINIO_PORT = Number(process.env.MINIO_PORT) || 9000
-const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY || 'wersun_admin'
+const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY || 'odontocompany_admin'
 const MINIO_SECRET_KEY =
   process.env.MINIO_SECRET_KEY || 'J2U9V0Li1JCeMdVkVMQ75qyE76mMfogUExnpYXbG17o='
 const MINIO_USE_SSL = process.env.MINIO_USE_SSL === 'true'

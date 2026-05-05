@@ -1,5 +1,5 @@
-import { PaginaEmConstrucao } from '@/components/layout/pagina-em-construcao'
+import { GeradorCriativos } from '@/components/demandas/design/GeradorCriativos'
 
 export default function Page() {
-  return <PaginaEmConstrucao titulo="Design" />
+  return <GeradorCriativos />
 }

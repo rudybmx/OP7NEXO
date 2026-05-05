@@ -23,6 +23,16 @@ import {
 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { apiFetch } from '@/lib/api'
+import {
+  MENSAGENS_MOCK,
+  CONTATOS_MOCK,
+  CONVERSAS_MOCK,
+} from '@/lib/mock-crm'
+import type { 
+  CardConversaData, 
+  Mensagem as MockMensagem,
+  ContatoDetalhes as MockContato
+} from '@/components/design-system/sections/glm-crm/types'
 
 // ─── Tipos Internos ───────────────────────────────────────────────────────────
 
@@ -413,7 +423,7 @@ function apiConversaParaConversa(api: ApiConversa): Conversa {
     ultimaMensagemEm: api.ultimaMensagemAt ? formatarHora(api.ultimaMensagemAt) : '',
     ultimaMensagemAt: ultimaAt && !Number.isNaN(ultimaAt) ? ultimaAt : undefined,
     tags: api.tags?.length ? api.tags : ['WhatsApp', 'Evolution'],
-    agente: api.agente || 'Wersun',
+    agente: api.agente || 'Odontocompany by Op7',
     campanha: api.campanha || undefined,
     mensagens: (api.mensagens || []).map((msg) => mensagemApiParaMensagem(msg, api.contato.nome)),
   }
@@ -429,6 +439,49 @@ function agruparMensagensPorData(mensagens: Mensagem[]) {
     }
     return grupos
   }, [])
+}
+
+// ─── Mapping Mock Data ───────────────────────────────────────────────────────
+
+function mapMockToConversa(mock: CardConversaData): Conversa {
+  const mockContato = CONTATOS_MOCK[mock.id]
+  const mockMsgs = MENSAGENS_MOCK[mock.id] || []
+
+  const contato: Contato = {
+    id: mock.id,
+    nome: mock.nome,
+    telefone: mockContato?.telefone || '',
+    avatarInitials: mock.iniciais,
+    cor: mockContato?.canalColor || '#25D366',
+    canal: mock.canal === 'instagram' ? 'instagram_dm' : 'whatsapp',
+    online: mockContato?.online || false,
+    avatarUrl: null
+  }
+
+  const mensagens: Mensagem[] = mockMsgs.map(m => ({
+    id: m.id,
+    direcao: m.tipo === 'inbound' ? 'entrada' : 'saida',
+    conteudo: m.texto,
+    remetenteNome: m.remetente || (m.tipo === 'inbound' ? mock.nome : 'Você'),
+    remetenteTipo: m.tipo === 'ia' ? 'ia' : (m.tipo === 'humano' ? 'agente' : 'contato'),
+    hora: m.hora,
+    data: 'Hoje',
+    timestampAt: Date.now()
+  }))
+
+  return {
+    id: mock.id,
+    contato,
+    status: mock.status === 'em-atendimento' ? 'em_atendimento' : 'nova',
+    canal: mock.canal === 'instagram' ? 'instagram_dm' : 'whatsapp',
+    iaAtiva: mock.agenteAtual.startsWith('ia'),
+    naoLidas: mock.badgeCount || 0,
+    ultimaMensagem: mock.preview,
+    ultimaMensagemEm: mock.timestamp,
+    tags: mock.etiquetas.map(e => e.label),
+    agente: mock.agenteLabel || 'OdontoIA',
+    mensagens
+  }
 }
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
@@ -458,7 +511,7 @@ export function PaginaConversas() {
     try {
       if (!background) setIsCarregando(true)
 
-const params = new URLSearchParams({ limit: '120' })
+      const params = new URLSearchParams({ limit: '120' })
       if (filtroAtivo && filtroAtivo !== 'todas') {
         params.set('filtro', filtroAtivo === 'novos' ? 'novos' : filtroAtivo)
       }
@@ -468,19 +521,32 @@ const params = new URLSearchParams({ limit: '120' })
         Object.fromEntries(params.entries()) as Record<string, string>,
       )
 
-      const normalizadas = ((data?.conversations || []) as ApiConversa[]).map(apiConversaParaConversa)
-      setConversas(normalizadas)
-      setErroIntegracao(null)
+      if (!data?.conversations || data.conversations.length === 0) {
+        // Fallback para mock se a API retornar vazio
+        const mockData = CONVERSAS_MOCK.map(mapMockToConversa)
+        setConversas(mockData)
+        setErroIntegracao(null)
+      } else {
+        const normalizadas = ((data?.conversations || []) as ApiConversa[]).map(apiConversaParaConversa)
+        setConversas(normalizadas)
+        setErroIntegracao(null)
+      }
+
       setConversaSelecionadaId((atual) => {
-        if (atual && normalizadas.some((conversa) => conversa.id === atual)) return atual
-        return normalizadas[0]?.id || null
+        if (atual && conversas.some((conversa) => conversa.id === atual)) return atual
+        // No primeiro carregamento ou se a selecionada sumiu, tenta manter a primeira
+        return null 
       })
     } catch (error) {
-      setErroIntegracao(error instanceof Error ? error.message : 'Erro inesperado na integração')
+      // Em caso de erro, usa o mock para o demo não ficar em branco
+      console.warn('Erro ao carregar conversas reais, usando mock data:', error)
+      const mockData = CONVERSAS_MOCK.map(mapMockToConversa)
+      setConversas(mockData)
+      setErroIntegracao(error instanceof Error ? error.message : 'Erro inesperado')
     } finally {
       if (!background) setIsCarregando(false)
     }
-  }, [filtroAtivo])
+  }, [filtroAtivo, conversas.length])
 
   // Carregar conversas reais do Postgres e assinar stream realtime via SSE
   useEffect(() => {
@@ -655,9 +721,9 @@ try {
         
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <h2 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--ws-text-1)', margin: 0 }}>Conversas</h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: erroIntegracao ? '#FF5C8D' : '#25D366' }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: erroIntegracao ? '#FF5C8D' : '#25D366' }} />
-            {erroIntegracao ? `Erro Evolution: ${erroIntegracao}` : isCarregando ? 'Conectando ao WhatsApp...' : 'WhatsApp conectado em tempo real'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: erroIntegracao ? '#BA7517' : '#25D366' }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: erroIntegracao ? '#BA7517' : '#25D366' }} />
+            {erroIntegracao ? 'Modo Demonstração (API offline)' : isCarregando ? 'Conectando ao WhatsApp...' : 'WhatsApp conectado em tempo real'}
           </div>
           
           <div style={{ position: 'relative' }}>

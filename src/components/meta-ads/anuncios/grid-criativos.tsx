@@ -17,7 +17,7 @@ const LABEL_TIPO: Record<TipoAnuncio, string> = {
 }
 
 const COLS_OPTIONS = [3, 4, 5, 6, 8, 10] as const
-const LS_KEY = 'wersun-grid-cols'
+const LS_KEY = 'odontocompany-grid-cols'
 
 function IconeTipo({ tipo }: { tipo: TipoAnuncio }) {
   const style = { color: 'rgba(0,0,0,0.25)' }

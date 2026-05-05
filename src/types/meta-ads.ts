@@ -77,6 +77,7 @@ export interface MetaInsightsVisaoGeral {
   contas: ContaAnuncio[]
   dadosDiarios: DadosDiarios[]
   topCriativos: CriativoTop[]
+  insightsIA?: any[] // Usando any[] temporariamente para evitar circular dependency ou importar tipo específico
   periodo: { inicio: string; fim: string }
 }
 

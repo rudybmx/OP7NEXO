@@ -5,6 +5,7 @@ import { FiltrosCampanhasComp } from './filtros-campanhas'
 import { ResumoCampanhasComp } from './resumo-campanhas'
 import { TabelaHierarquica } from './tabela-hierarquica'
 import { useMetaCampanhas } from '@/hooks/use-meta-campanhas'
+import { InsightsIA } from '../anuncios/insights-ia'
 
 interface Props { dataInicio: string; dataFim: string }
 
@@ -16,11 +17,12 @@ export function AbaCampanhas({ dataInicio, dataFim }: Props) {
     plataformas: ['facebook', 'instagram', 'whatsapp'],
   })
 
-  const { campanhas, resumo } = useMetaCampanhas(filtros, dataInicio, dataFim)
+  const { campanhas, resumo, insightsIA } = useMetaCampanhas(filtros, dataInicio, dataFim)
 
   return (
     <div>
       <FiltrosCampanhasComp filtros={filtros} onChange={setFiltros} />
+      <InsightsIA insights={insightsIA} onAbrirAnuncio={() => {}} />
       <ResumoCampanhasComp resumo={resumo} />
       <TabelaHierarquica campanhas={campanhas} />
     </div>

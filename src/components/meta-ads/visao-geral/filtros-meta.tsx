@@ -10,12 +10,12 @@ import { Calendar } from '@/components/ui/calendar'
 import type { FiltrosMeta, TipoComparativo } from '@/types/meta-ads'
 import type { DateRange } from 'react-day-picker'
 
-const AGRUPAMENTOS = ['Todos os agrupamentos', 'Franquias Sul', 'Franquias Sudeste', 'Rede Odontologia Tuler']
+const AGRUPAMENTOS = ['Todos os agrupamentos', 'Franquias Sul', 'Franquias Sudeste', 'Rede Odontocompany']
 
 const CONTAS_MOCK = [
-  { id: '254345226319291', nome: 'Odontologia Tuler - Conta 2' },
-  { id: '536957957353576', nome: 'Odontologia Tuler - Conta 1' },
-  { id: '769185077421555', nome: 'Odontologia Tuler - Conta 3' },
+  { id: 'oc-sp-centro', nome: 'Odontocompany - São Paulo Centro' },
+  { id: 'oc-santo-andre', nome: 'Odontocompany - Santo André' },
+  { id: 'oc-sbc', nome: 'Odontocompany - São Bernardo' },
 ]
 
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']

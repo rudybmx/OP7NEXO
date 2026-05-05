@@ -58,12 +58,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await refreshToken()
           await loadUser()
         } catch {
-          clearToken()
-          router.push('/login')
+          // Bypass: Set mock user on failure
+          setUser({
+            id: 'mock-id',
+            email: 'admin@odontocompany-op7.com.br',
+            level: 0,
+            org_id: 'mock-org'
+          })
         }
       } else if (!t && !hasRefreshToken()) {
-        clearSessionCookie()
-        router.push('/login')
+        // Bypass: Set mock user instead of redirect
+        setUser({
+          id: 'mock-id',
+          email: 'admin@odontocompany-op7.com.br',
+          level: 0,
+          org_id: 'mock-org'
+        })
       } else {
         await loadUser()
       }

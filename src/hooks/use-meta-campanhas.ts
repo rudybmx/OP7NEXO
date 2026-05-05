@@ -6,6 +6,7 @@ import {
   ResumoCampanhas, FiltrosCampanhas, ObjetivoCampanha, StatusCampanha, TipoCriativo,
 } from '@/types/meta-ads-campanhas'
 import { makeFetcher, SWR_OPTS } from '@/lib/swr'
+import { MOCK_AD_ROWS } from '@/lib/mock-meta-ads'
 
 // ─── Raw row from get_anuncios_periodo ───────────────────────────────────────
 
@@ -306,7 +307,10 @@ export function useMetaCampanhas(filtros: FiltrosCampanhas, dataInicio: string, 
     fetchAds, SWR_OPTS
   )
 
-  let campanhas = buildHierarchy(rows ?? [])
+  const useMock = !isLoading && (!rows || rows.length === 0)
+  const finalRows = useMock ? (MOCK_AD_ROWS as any as AdRow[]) : (rows ?? [])
+
+  let campanhas = buildHierarchy(finalRows)
 
   // Filters
   if (filtros.busca) {
@@ -324,5 +328,7 @@ export function useMetaCampanhas(filtros: FiltrosCampanhas, dataInicio: string, 
     campanhas = campanhas.filter(c => c.status === target)
   }
 
-  return { campanhas, resumo: computeResumo(campanhas), isLoading, error: error ?? null }
+  const { MOCK_INSIGHTS_IA } = require('@/lib/mock-meta-ads')
+
+  return { campanhas, resumo: computeResumo(campanhas), insightsIA: MOCK_INSIGHTS_IA, isLoading, error: error ?? null }
 }

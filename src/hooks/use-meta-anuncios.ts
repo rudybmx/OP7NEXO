@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import { Anuncio, FiltrosAnuncios, TipoAnuncio, StatusAnuncio, PlataformaAnuncio } from '@/types/meta-ads-anuncios'
 import { makeFetcher, SWR_OPTS } from '@/lib/swr'
+import { MOCK_AD_ROWS } from '@/lib/mock-meta-ads'
 
 interface AdsCompletoRow {
   ad_id: string
@@ -64,7 +65,10 @@ export function useMetaAnuncios(filtros: FiltrosAnuncios, dataInicio: string, da
     fetchAds, SWR_OPTS
   )
 
-  let resultado = (rows ?? []).map(mapAnuncio)
+  const useMock = !isLoading && (!rows || rows.length === 0)
+  const finalRows = useMock ? (MOCK_AD_ROWS as any as AdsCompletoRow[]) : (rows ?? [])
+
+  let resultado = finalRows.map(mapAnuncio)
 
   if (filtros.campanha !== 'todas') {
     resultado = resultado.filter(a => a.campanhaNome.includes(filtros.campanha))

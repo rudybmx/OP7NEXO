@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/api-auth'
 
-const WHATSAPP_WEBHOOK_BASE_URL = process.env.WHATSAPP_WEBHOOK_URL || 'https://agentewersun.qozt.com.br'
+const WHATSAPP_WEBHOOK_BASE_URL = process.env.WHATSAPP_WEBHOOK_URL || 'https://agente-odontocompany.qozt.com.br'
 
 export async function POST(request: NextRequest) {
   try {

@@ -183,7 +183,7 @@ export function GridCriativos({
         }}>
           {criativos.map((c, idx) => {
             const selecionado = selecionados.has(c.id)
-            const statusCfg = STATUS_CFG[c.status]
+            const statusCfg = STATUS_CFG[c.status] || STATUS_CFG.novo
             const barraCorSaude = corScore(c.score)
 
             return (

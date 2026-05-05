@@ -1,4 +1,4 @@
-# Wer'Sun — Guia para Agentes de IA
+# Odontocompany by Op7 — Guia para Agentes de IA
 
 ## Stack
 Next.js 16 App Router · TypeScript · Tailwind CSS v4 · shadcn/ui · Recharts · lucide-react

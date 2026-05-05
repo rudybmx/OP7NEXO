@@ -15,7 +15,9 @@ import type { FiltrosGoogle } from '@/types/google-ads'
 import { VisaoGeralGoogle } from './visao-geral'
 import { AbaCampanhasGoogle } from './campanhas'
 import { AbaGruposGoogle } from './grupos'
-import { PaginaEmConstrucao } from '@/components/layout/pagina-em-construcao'
+import { AbaPalavrasChaveGoogle } from './palavras-chave'
+import { AbaAnunciosGoogle } from './anuncios'
+import { AbaPublicosGoogle } from './publicos'
 import { BreadcrumbMobile } from '@/components/ui/breadcrumb-mobile'
 import { siGoogle } from 'simple-icons'
 
@@ -205,9 +207,9 @@ export function PaginaGoogleAds() {
       {abaAtiva === 'Visão geral' && <VisaoGeralGoogle filtros={filtros} />}
       {abaAtiva === 'Campanhas' && <AbaCampanhasGoogle />}
       {abaAtiva === 'Grupos de anúncios' && <AbaGruposGoogle />}
-      {abaAtiva === 'Palavras-chave' && <PaginaEmConstrucao titulo="Palavras-chave — em breve" />}
-      {abaAtiva === 'Anúncios' && <PaginaEmConstrucao titulo="Anúncios — em breve" />}
-      {abaAtiva === 'Públicos' && <PaginaEmConstrucao titulo="Públicos — em breve" />}
+      {abaAtiva === 'Palavras-chave' && <AbaPalavrasChaveGoogle />}
+      {abaAtiva === 'Anúncios' && <AbaAnunciosGoogle />}
+      {abaAtiva === 'Públicos' && <AbaPublicosGoogle />}
     </div>
   )
 }

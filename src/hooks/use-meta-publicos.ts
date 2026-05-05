@@ -12,6 +12,15 @@ import type {
   FiltrosPublicos,
 } from '@/types/meta-ads-publicos'
 import { makeFetcher, SWR_OPTS } from '@/lib/swr'
+import { 
+  MOCK_DEMOGRAPHICS_ROWS, 
+  MOCK_GEO_ROWS, 
+  MOCK_ACCOUNT_SUMMARY_ROWS,
+  MOCK_PLACEMENTS,
+  MOCK_DISPOSITIVOS,
+  MOCK_SO_ROWS,
+  MOCK_HEATMAP
+} from '@/lib/mock-meta-ads'
 
 interface DemographicsRow {
   age: string
@@ -95,7 +104,9 @@ function mapCidades(rows: GeoRow[]): DadosCidade[] {
 function computeKpi(
   demograficos: DadosDemograficos[],
   cidades: DadosCidade[],
-  accountRows: AccountSummaryRow[]
+  accountRows: AccountSummaryRow[],
+  placements: DadosPlacement[],
+  heatmap: DadosHora[]
 ): KpiPublicos {
   const alcanceTotal    = accountRows.reduce((s, r) => s + r.alcance, 0)
   const frequenciaMedia = accountRows.length > 0 ? Number(accountRows[0].frequencia_media) : 0
@@ -109,6 +120,16 @@ function computeKpi(
     ? cidades.reduce((best, c) => c.leads > best.leads ? c : best)
     : null
 
+  const melhorPlac = placements.length > 0
+    ? placements.reduce((best, p) => p.leads > best.leads ? p : best)
+    : null
+
+  const melhorH = heatmap.length > 0
+    ? heatmap.reduce((best, h) => h.leads > best.leads ? h : best)
+    : null
+
+  const diasSemana = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+
   return {
     alcanceTotal,
     frequenciaMedia,
@@ -116,10 +137,10 @@ function computeKpi(
       ? `${melhorDemo.faixa} ${melhorDemo.genero === 'masc' ? '(M)' : '(F)'}`
       : 'N/D',
     melhorFaixaValor:   melhorDemo?.cpl ?? 0,
-    melhorPlacement:    'N/D',
-    melhorPlacementCpl: 0,
-    melhorHorario:      'N/D',
-    melhorDia:          'N/D',
+    melhorPlacement:    melhorPlac?.nome ?? 'N/D',
+    melhorPlacementCpl: melhorPlac?.cpl ?? 0,
+    melhorHorario:      melhorH ? `${melhorH.hora}h` : 'N/D',
+    melhorDia:          melhorH ? diasSemana[melhorH.dia] : 'N/D',
     melhorCidade:       melhorCidade?.nome ?? 'N/D',
     melhorCidadeLeads:  melhorCidade?.leads ?? 0,
   }
@@ -138,18 +159,30 @@ export function useMetaPublicos(_filtros: FiltrosPublicos, dataInicio: string, d
   const isLoading = r1.isLoading || r2.isLoading || r3.isLoading
   const error     = r1.error ?? r2.error ?? r3.error ?? null
 
-  const demograficos = (r1.data ?? []).map(mapDemografico)
-  const cidades      = mapCidades(r2.data ?? [])
-  const kpi          = (r1.data && r2.data && r3.data)
-    ? computeKpi(demograficos, cidades, r3.data)
+  const useMock = !isLoading && (!r1.data || r1.data.length === 0)
+  
+  const finalDemo = useMock ? MOCK_DEMOGRAPHICS_ROWS : (r1.data ?? [])
+  const finalGeo  = useMock ? MOCK_GEO_ROWS : (r2.data ?? [])
+  const finalAcct = useMock ? MOCK_ACCOUNT_SUMMARY_ROWS : (r3.data ?? [])
+
+  const demograficos = finalDemo.map(mapDemografico)
+  const cidades      = mapCidades(finalGeo as any)
+  
+  const placements   = useMock ? MOCK_PLACEMENTS : PLACEMENTS_VAZIO
+  const dispositivos = useMock ? MOCK_DISPOSITIVOS : DISPOSITIVOS_FIXO
+  const so           = useMock ? MOCK_SO_ROWS : SO_FIXO
+  const heatmap      = useMock ? MOCK_HEATMAP : HEATMAP_VAZIO
+
+  const kpi          = (finalDemo.length > 0 && finalGeo.length > 0 && finalAcct.length > 0)
+    ? computeKpi(demograficos, cidades, finalAcct as any, placements as any, heatmap as any)
     : KPI_VAZIO
 
   return {
     demograficos,
-    placements:         PLACEMENTS_VAZIO,
-    dispositivos:       DISPOSITIVOS_FIXO,
-    sistemaOperacional: SO_FIXO,
-    heatmapHoras:       HEATMAP_VAZIO,
+    placements:         useMock ? MOCK_PLACEMENTS : PLACEMENTS_VAZIO,
+    dispositivos:       useMock ? MOCK_DISPOSITIVOS : DISPOSITIVOS_FIXO,
+    sistemaOperacional: useMock ? MOCK_SO_ROWS : SO_FIXO,
+    heatmapHoras:       useMock ? MOCK_HEATMAP : HEATMAP_VAZIO,
     cidades,
     kpi,
     isLoading,

@@ -56,9 +56,9 @@
   --text2: #9b9a97;
   --border: #e9e9e7;
   --border2: #e2e1de;
-  --gold: #c9a84c;
-  --gold-light: #d4b86a;
-  --navy: #0f2744;
+  --gold: #F26522;
+  --gold-light: #ff7b3d;
+  --navy: #004A8C;
   --sidebar-width: 240px;
   --header-height: 40px;
   --transition: 150ms ease;
@@ -149,19 +149,19 @@ button {
 }
 
 /* ============================================
-   WER'SUN DESIGN SYSTEM — TOKENS v2.0
+   ODONTOCOMPANY BY OP7 DESIGN SYSTEM — TOKENS v2.0
    Glassmorphism Light + Dark
    ============================================ */
 
 :root {
   /* BASE */
-  --ws-navy:          #0E142A;
-  --ws-navy-2:        #141C38;
-  --ws-navy-3:        #1A2444;
+  --ws-navy:          #004A8C;
+  --ws-navy-2:        #003c71;
+  --ws-navy-3:        #002e56;
 
   /* PALETA VIBRANTE */
-  --ws-blue:          #3E5BFF;
-  --ws-blue-soft:     rgba(62, 91, 255, 0.12);
+  --ws-blue:          #005691;
+  --ws-blue-soft:     rgba(0, 74, 140, 0.12);
   --ws-cyan:          #00F5FF;
   --ws-cyan-dark:     #00b8c8;
   --ws-purple:        #7A5AF8;
@@ -170,9 +170,9 @@ button {
   --ws-coral-soft:    rgba(255, 92, 141, 0.12);
   --ws-green:         #0fa856;
   --ws-green-soft:    rgba(15, 168, 86, 0.12);
-  --ws-gold:          #c9a84c;
-  --ws-gold-soft:     rgba(201, 168, 76, 0.12);
-  --ws-gold-border:   rgba(201, 168, 76, 0.30);
+  --ws-gold:          #F26522;
+  --ws-gold-soft:     rgba(242, 101, 34, 0.12);
+  --ws-gold-border:   rgba(242, 101, 34, 0.30);
 
   /* GLASS LIGHT */
   --ws-glass-bg:            rgba(255, 255, 255, 0.72);

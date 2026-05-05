@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import { Criativo, FiltrosCriativos, TipoCriativo, StatusCriativo } from '@/types/meta-ads-criativos'
 import { makeFetcher, SWR_OPTS } from '@/lib/swr'
+import { MOCK_CRIATIVOS_ROWS } from '@/lib/mock-meta-ads'
 
 interface CriativosCompletoRow {
   creative_id: string
@@ -60,7 +61,10 @@ export function useMetaCriativos(filtros: FiltrosCriativos, dataInicio: string, 
     fetchCriativos, SWR_OPTS
   )
 
-  let resultado = (rows ?? []).map(mapCriativo)
+  const useMock = !isLoading && (!rows || rows.length === 0)
+  const finalRows = useMock ? (MOCK_CRIATIVOS_ROWS as any as CriativosCompletoRow[]) : (rows ?? [])
+
+  let resultado = finalRows.map(mapCriativo)
 
   if (filtros.tipo !== 'todos') {
     resultado = resultado.filter(c => c.tipo === filtros.tipo)

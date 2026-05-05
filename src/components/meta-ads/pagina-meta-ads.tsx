@@ -28,7 +28,7 @@ export function PaginaMetaAds() {
   const [filtros, setFiltros] = useState<FiltrosMetaTipo>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem('wersun-meta-filtros')
+        const saved = localStorage.getItem('odontocompany-meta-filtros')
         const filtrosSalvos = saved ? JSON.parse(saved) : null
         return {
           agrupamento: null,
@@ -52,7 +52,7 @@ export function PaginaMetaAds() {
     setFiltros(novosFiltros)
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem('wersun-meta-filtros', JSON.stringify({
+        localStorage.setItem('odontocompany-meta-filtros', JSON.stringify({
           dataInicio: novosFiltros.dataInicio,
           dataFim: novosFiltros.dataFim,
           comparativo: novosFiltros.comparativo,

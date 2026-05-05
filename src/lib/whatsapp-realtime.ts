@@ -1,6 +1,6 @@
 import Redis from 'ioredis'
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://default:t868uuo98kj2g9q0akmvlnf82elr1q6t@redis_wersun:6379'
+const REDIS_URL = process.env.REDIS_URL || 'redis://default:t868uuo98kj2g9q0akmvlnf82elr1q6t@redis_odontocompany:6379'
 const WHATSAPP_EVENTS_CHANNEL = process.env.WHATSAPP_EVENTS_CHANNEL || 'whatsapp:events'
 
 type WhatsappRealtimeEvent = {
@@ -25,12 +25,12 @@ type RealtimeState = {
 }
 
 const globalState = globalThis as typeof globalThis & {
-  __wersunWhatsappRealtimeState__?: RealtimeState
+  __odontocompanyWhatsappRealtimeState__?: RealtimeState
 }
 
 function getState(): RealtimeState {
-  if (!globalState.__wersunWhatsappRealtimeState__) {
-    globalState.__wersunWhatsappRealtimeState__ = {
+  if (!globalState.__odontocompanyWhatsappRealtimeState__) {
+    globalState.__odontocompanyWhatsappRealtimeState__ = {
       sub: null,
       listeners: new Set<Listener>(),
       subscribed: false,
@@ -38,7 +38,7 @@ function getState(): RealtimeState {
     }
   }
 
-  return globalState.__wersunWhatsappRealtimeState__
+  return globalState.__odontocompanyWhatsappRealtimeState__
 }
 
 function getSubscriber(): Redis {

@@ -35,17 +35,17 @@ interface Agente {
 
 const AGENTES_MOCK: Agente[] = [
   { 
-    id: 'ag1', nome: 'Ana Lima', email: 'ana@wersun.com',
+    id: 'ag1', nome: 'Ana Lima', email: 'ana@odontocompany-op7.com',
     avatarInitials: 'AL', cor: '#3E5BFF', ativo: true,
     canal: 'whatsapp', conversasAtivas: 3, totalAtendimentos: 142 
   },
   { 
-    id: 'ag2', nome: 'Carlos Melo', email: 'carlos@wersun.com',
+    id: 'ag2', nome: 'Carlos Melo', email: 'carlos@odontocompany-op7.com',
     avatarInitials: 'CM', cor: '#7A5AF8', ativo: true,
     canal: 'todos', conversasAtivas: 1, totalAtendimentos: 89 
   },
   { 
-    id: 'ag3', nome: 'Beatriz Costa', email: 'beatriz@wersun.com',
+    id: 'ag3', nome: 'Beatriz Costa', email: 'beatriz@odontocompany-op7.com',
     avatarInitials: 'BC', cor: '#0fa856', ativo: false,
     canal: 'messenger', conversasAtivas: 0, totalAtendimentos: 67 
   },

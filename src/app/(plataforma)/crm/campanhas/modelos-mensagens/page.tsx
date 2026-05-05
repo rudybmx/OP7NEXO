@@ -1,5 +1,5 @@
-import { PaginaEmConstrucao } from '@/components/layout/pagina-em-construcao'
+import { ModelosMensagens } from '@/components/crm/campanhas/ModelosMensagens'
 
 export default function Page() {
-  return <PaginaEmConstrucao titulo="Modelos de Mensagens" />
+  return <ModelosMensagens />
 }

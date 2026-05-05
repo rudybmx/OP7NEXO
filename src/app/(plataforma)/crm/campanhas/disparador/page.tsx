@@ -1,5 +1,5 @@
-import { PaginaEmConstrucao } from '@/components/layout/pagina-em-construcao'
+import { DisparadorCampanhas } from '@/components/crm/campanhas/DisparadorCampanhas'
 
 export default function Page() {
-  return <PaginaEmConstrucao titulo="Disparador" />
+  return <DisparadorCampanhas />
 }

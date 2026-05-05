@@ -1,5 +1,5 @@
-# Wer'Sun — Schema Follow-up & Recorrência
-Este documento contém o schema SQL completo para as tabelas de Follow-up, Recorrência e Campanhas na plataforma Wer'Sun.
+# Odontocompany by Op7 — Schema Follow-up & Recorrência
+Este documento contém o schema SQL completo para as tabelas de Follow-up, Recorrência e Campanhas na plataforma Odontocompany by Op7.
 
 ---
 
@@ -222,7 +222,7 @@ ALTER TABLE recorrencia_mensagens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recorrencia_leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE campanhas ENABLE ROW LEVEL SECURITY;
 
--- Política padrão Wersun (org_id via JWT claim)
+-- Política padrão Odontocompany by Op7 (org_id via JWT claim)
 -- Repetir para cada tabela acima:
 CREATE POLICY "org_isolation" ON followup_leads
   USING (org_id = (auth.jwt() ->> 'org_id')::uuid);
