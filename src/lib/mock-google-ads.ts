@@ -4,13 +4,16 @@ import type {
   BreakdownTipo, 
   DistribuicaoQS, 
   InsightGoogle,
-  GrupoAnuncios
+  GrupoAnunciosDetalhe,
+  KeywordGoogle,
+  AdGoogle,
+  PublicoGoogle
 } from '@/types/google-ads'
 
 export const MOCK_CAMPANHAS_GOOGLE: CampanhaGoogle[] = [
   {
-    id: 'g-sp-centro-search',
-    nome: '[SEARCH] Op7 Nexo SP Centro - Implantes',
+    id: 'g-rj-barra-search',
+    nome: '[SEARCH] ODC RJ BARRA DA TIJUCA - Implantes',
     tipo: 'SEARCH', status: 'ENABLED',
     orcamentoDiario: 150,
     investimento: 4500.80,
@@ -22,8 +25,8 @@ export const MOCK_CAMPANHAS_GOOGLE: CampanhaGoogle[] = [
     absoluteTopIS: 0.45, qualityScoreMedio: 8.2,
   },
   {
-    id: 'g-santo-andre-pmax',
-    nome: '[PMAX] Op7 Nexo Santo André - Geral',
+    id: 'g-rp-pmax',
+    nome: '[PMAX] ODC RIBEIRÃO PRETO - Aparelhos',
     tipo: 'PERFORMANCE_MAX', status: 'ENABLED',
     orcamentoDiario: 120,
     investimento: 3601.00,
@@ -35,8 +38,8 @@ export const MOCK_CAMPANHAS_GOOGLE: CampanhaGoogle[] = [
     absoluteTopIS: 0.0, qualityScoreMedio: 0,
   },
   {
-    id: 'g-sbc-search',
-    nome: '[SEARCH] Op7 Nexo SBC - Ortodontia',
+    id: 'g-ararangua-search',
+    nome: '[SEARCH] ODC ARARANGUÁ - Ortodontia',
     tipo: 'SEARCH', status: 'ENABLED',
     orcamentoDiario: 100,
     investimento: 3100.50,
@@ -48,8 +51,8 @@ export const MOCK_CAMPANHAS_GOOGLE: CampanhaGoogle[] = [
     absoluteTopIS: 0.35, qualityScoreMedio: 7.5,
   },
   {
-    id: 'g-remarketing-display',
-    nome: '[DISPLAY] Remarketing Geral - São Paulo',
+    id: 'g-jaguare-display',
+    nome: '[DISPLAY] Remarketing Geral - ODC JAGUARÉ',
     tipo: 'DISPLAY', status: 'ENABLED',
     orcamentoDiario: 40,
     investimento: 1200.50,
@@ -64,8 +67,8 @@ export const MOCK_CAMPANHAS_GOOGLE: CampanhaGoogle[] = [
 
 export const MOCK_GRUPOS_DETALHE_GOOGLE: GrupoAnunciosDetalhe[] = [
   {
-    id: 'gr-1', campanhaId: 'g-sp-centro-search',
-    campanhaNome: '[SEARCH] Op7 Nexo SP Centro - Implantes',
+    id: 'gr-1', campanhaId: 'g-rj-barra-search',
+    campanhaNome: '[SEARCH] ODC RJ BARRA DA TIJUCA - Implantes',
     tipoCampanha: 'SEARCH', nome: '[IMPLANTE] Palavras-chave Marca',
     status: 'ENABLED',
     estrategiaLance: 'TARGET_CPA', targetCpaMicros: 15000000, targetRoas: null,
@@ -78,9 +81,9 @@ export const MOCK_GRUPOS_DETALHE_GOOGLE: GrupoAnunciosDetalhe[] = [
     impressionShare: 0.75, isPerdidoBudget: 0.05, isPerdidoRank: 0.20,
   },
   {
-    id: 'gr-2', campanhaId: 'g-sp-centro-search',
-    campanhaNome: '[SEARCH] Op7 Nexo SP Centro - Implantes',
-    tipoCampanha: 'SEARCH', nome: '[IMPLANTE] Genéricas SP',
+    id: 'gr-2', campanhaId: 'g-rj-barra-search',
+    campanhaNome: '[SEARCH] ODC RJ BARRA DA TIJUCA - Implantes',
+    tipoCampanha: 'SEARCH', nome: '[IMPLANTE] Genéricas RJ',
     status: 'ENABLED',
     estrategiaLance: 'TARGET_CPA', targetCpaMicros: 18000000, targetRoas: null,
     cpcMaximoMicros: null, emAprendizado: false, diasAprendizado: 0,
@@ -92,8 +95,8 @@ export const MOCK_GRUPOS_DETALHE_GOOGLE: GrupoAnunciosDetalhe[] = [
     impressionShare: 0.62, isPerdidoBudget: 0.05, isPerdidoRank: 0.33,
   },
   {
-    id: 'gr-3', campanhaId: 'g-santo-andre-pmax',
-    campanhaNome: '[PMAX] Op7 Nexo Santo André - Geral',
+    id: 'gr-3', campanhaId: 'g-rp-pmax',
+    campanhaNome: '[PMAX] ODC RIBEIRÃO PRETO - Aparelhos',
     tipoCampanha: 'PERFORMANCE_MAX', nome: 'Grupo de Recursos — All Products',
     status: 'ENABLED',
     estrategiaLance: 'MAXIMIZE_CONVERSION_VALUE', targetCpaMicros: null, targetRoas: 3500,
@@ -123,23 +126,23 @@ export const MOCK_DADOS_DIARIOS_GOOGLE: DadosDiarios[] = Array.from({ length: 30
 })
 
 export const MOCK_KEYWORDS_GOOGLE: KeywordGoogle[] = [
-  { id: 'k-1', adGroupId: 'gr-1', campanhaId: 'g-sp-centro-search', texto: 'implante dentario op7-nexo', matchType: 'EXACT', status: 'ENABLED', qualityScore: 10, investimento: 450, cliques: 820, impressoes: 4500, conversoes: 42, ctr: 18.2, cpcMedio: 0.55, custoConversao: 10.71 },
-  { id: 'k-2', adGroupId: 'gr-1', campanhaId: 'g-sp-centro-search', texto: 'clinica dentaria centro sp', matchType: 'PHRASE', status: 'ENABLED', qualityScore: 8, investimento: 320, cliques: 540, impressoes: 6200, conversoes: 22, ctr: 8.7, cpcMedio: 0.59, custoConversao: 14.54 },
-  { id: 'k-3', adGroupId: 'gr-2', campanhaId: 'g-sp-centro-search', texto: 'preço implante dentario', matchType: 'BROAD', status: 'ENABLED', qualityScore: 6, investimento: 580, cliques: 1100, impressoes: 12500, conversoes: 35, ctr: 8.8, cpcMedio: 0.53, custoConversao: 16.57 },
+  { id: 'k-1', adGroupId: 'gr-1', campanhaId: 'g-rj-barra-search', texto: 'implante dentario odontocompany', matchType: 'EXACT', status: 'ENABLED', qualityScore: 10, investimento: 450, cliques: 820, impressoes: 4500, conversoes: 42, ctr: 18.2, cpcMedio: 0.55, custoConversao: 10.71 },
+  { id: 'k-2', adGroupId: 'gr-1', campanhaId: 'g-rj-barra-search', texto: 'clinica dentaria barra da tijuca', matchType: 'PHRASE', status: 'ENABLED', qualityScore: 8, investimento: 320, cliques: 540, impressoes: 6200, conversoes: 22, ctr: 8.7, cpcMedio: 0.59, custoConversao: 14.54 },
+  { id: 'k-3', adGroupId: 'gr-2', campanhaId: 'g-rj-barra-search', texto: 'preço implante dentario', matchType: 'BROAD', status: 'ENABLED', qualityScore: 6, investimento: 580, cliques: 1100, impressoes: 12500, conversoes: 35, ctr: 8.8, cpcMedio: 0.53, custoConversao: 16.57 },
 ]
 
 export const MOCK_ADS_GOOGLE: AdGoogle[] = [
   { 
-    id: 'a-1', adGroupId: 'gr-1', campanhaId: 'g-sp-centro-search', 
-    titulo: 'Implantes Dentários Op7 Nexo | SP Centro | Agende Agora', 
-    desc: 'Recupere seu sorriso com quem é especialista. Condições facilitadas e atendimento premium.',
+    id: 'a-1', adGroupId: 'gr-1', campanhaId: 'g-rj-barra-search', 
+    titulo: 'Implantes Dentários OdontoCompany | Barra da Tijuca', 
+    desc: 'Recupere seu sorriso na maior rede de clínicas odontológicas. Condições facilitadas.',
     status: 'ENABLED', adStrength: 'EXCELLENT', 
     investimento: 1200, cliques: 2100, impressoes: 18000, conversoes: 98, ctr: 11.6, cpcMedio: 0.57, custoConversao: 12.24 
   },
   { 
-    id: 'a-2', adGroupId: 'gr-2', campanhaId: 'g-sp-centro-search', 
-    titulo: 'Transforme seu Sorriso | SP Centro | Op7 Nexo', 
-    desc: 'Melhores especialistas em implantes e ortodontia de São Paulo. Agende sua avaliação.',
+    id: 'a-2', adGroupId: 'gr-2', campanhaId: 'g-rj-barra-search', 
+    titulo: 'Transforme seu Sorriso | OdontoCompany', 
+    desc: 'Melhores especialistas em implantes e ortodontia no Rio de Janeiro. Agende sua avaliação.',
     status: 'ENABLED', adStrength: 'GOOD', 
     investimento: 900, cliques: 1540, impressoes: 14500, conversoes: 64, ctr: 10.6, cpcMedio: 0.58, custoConversao: 14.06 
   },
@@ -170,7 +173,7 @@ export const MOCK_INSIGHTS_GOOGLE: InsightGoogle[] = [
     id: 'ig-1',
     severidade: 'oportunidade',
     titulo: 'Otimizar CPC em Implantes',
-    mensagem: 'A campanha de SP Centro está com um CPC 15% acima do benchmark para palavras-chave de marca.',
+    mensagem: 'A campanha da Barra da Tijuca está com um CPC 15% acima do benchmark para palavras-chave de marca.',
     analiseCompleta: 'Sugerimos revisar as correspondências de frase para evitar cliques irrelevantes e reduzir o CPC médio para R$ 0,45.',
     labelAcao: 'Ajustar Lances'
   },
@@ -178,7 +181,7 @@ export const MOCK_INSIGHTS_GOOGLE: InsightGoogle[] = [
     id: 'ig-2',
     severidade: 'alerta',
     titulo: 'Quality Score em Queda',
-    mensagem: '3 grupos de anúncios na campanha de SBC tiveram queda no QS de 8 para 6.',
+    mensagem: '3 grupos de anúncios na campanha de Araranguá tiveram queda no QS de 8 para 6.',
     analiseCompleta: 'A relevância do anúncio para a página de destino diminuiu. Recomendamos ajustar o texto dos anúncios para incluir os termos principais.',
     labelAcao: 'Melhorar Anúncios'
   },
@@ -186,7 +189,7 @@ export const MOCK_INSIGHTS_GOOGLE: InsightGoogle[] = [
     id: 'ig-3',
     severidade: 'info',
     titulo: 'PMax Performando Acima da Média',
-    mensagem: 'A campanha PMax de Santo André atingiu ROAS de 33.5x esta semana.',
+    mensagem: 'A campanha PMax de Ribeirão Preto atingiu ROAS de 33.5x esta semana.',
     analiseCompleta: 'Excelente performance de ativos de vídeo. Considere aumentar a verba diária em 10% para escala.',
     labelAcao: 'Ver Relatório'
   }
