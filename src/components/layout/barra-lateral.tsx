@@ -705,7 +705,7 @@ export function BarraLateral() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          height: 72,
+          height: 120, // Doubled from 72 to accommodate larger logo
           transition: "padding 250ms",
         }}
       >
@@ -713,13 +713,13 @@ export function BarraLateral() {
           <img
             src="https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7/logo.svg"
             alt="Op7 Nexo"
-            style={{ height: 28, width: 'auto', objectFit: 'contain' }}
+            style={{ height: 56, width: 'auto', objectFit: 'contain' }} // Doubled from 28
           />
         ) : (
           <img
             src="https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7/logo.svg"
             alt="Op7 Nexo"
-            style={{ height: 50, width: 'auto', objectFit: 'contain' }}
+            style={{ height: 100, width: 'auto', objectFit: 'contain' }} // Doubled from 50
           />
         )}
       </div>
