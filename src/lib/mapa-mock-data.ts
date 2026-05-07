@@ -61,10 +61,10 @@ function buildMap(
 
 export const mindMaps: MindMap[] = [
   buildMap(
-    'lumie',
-    'Clínica Estética Lumié',
-    'Estratégia Q2 2025',
-    '2025-04-10',
+    'oc-rj-barra',
+    'ODC RJ BARRA DA TIJUCA',
+    'Estratégia Q2 2026',
+    '2026-04-10',
     'Fernanda Reis',
     'Estratégia Q2',
     [
@@ -86,12 +86,12 @@ export const mindMaps: MindMap[] = [
     ]
   ),
   buildMap(
-    'lumie',
-    'Clínica Estética Lumié',
+    'oc-rj-barra',
+    'ODC RJ BARRA DA TIJUCA',
     'Posicionamento de Marca',
-    '2025-03-02',
+    '2026-03-02',
     'Ana Lima',
-    'Clínica Lumié',
+    'OdontoCompany Barra',
     [
       { label: 'Pilares', children: [{ label: 'Confiança' }, { label: 'Resultados' }, { label: 'Experiência' }] },
       {
@@ -102,12 +102,12 @@ export const mindMaps: MindMap[] = [
     ]
   ),
   buildMap(
-    'bravo',
-    'Auto Peças Bravo',
+    'oc-ribeirao',
+    'ODC RIBEIRÃO PRETO',
     'Campanhas de Giro Rápido',
-    '2025-04-05',
+    '2026-04-05',
     'Marcos Dutra',
-    'Giro Rápido 2025',
+    'Giro Rápido 2026',
     [
       { label: 'Meta Ads', children: [{ label: 'Ofertas semanais' }, { label: 'Catálogo dinâmico' }] },
       { label: 'Google Ads', children: [{ label: 'Search peças urgentes' }, { label: 'Performance Max oficinas' }] },
@@ -115,25 +115,12 @@ export const mindMaps: MindMap[] = [
     ]
   ),
   buildMap(
-    'bravo',
-    'Auto Peças Bravo',
-    'Jornada do Comprador',
-    '2025-02-18',
-    'Leo Costa',
-    'Jornada B2B/B2C',
-    [
-      { label: 'Descoberta', children: [{ label: 'Busca emergencial' }, { label: 'Indicação da oficina' }] },
-      { label: 'Consideração', children: [{ label: 'Preço' }, { label: 'Disponibilidade' }, { label: 'Entrega' }] },
-      { label: 'Conversão', children: [{ label: 'Retirada balcão' }, { label: 'Entrega expressa' }] },
-    ]
-  ),
-  buildMap(
-    'viva',
-    'Colégio Viva',
+    'oc-ararangua',
+    'ODC ARARANGUÁ',
     'Calendário de Captação',
-    '2025-04-08',
+    '2026-04-08',
     'Ana Lima',
-    'Captação 2025',
+    'Captação 2026',
     [
       { label: 'Matrículas', children: [{ label: 'Open Day' }, { label: 'Bolsas' }, { label: 'Retargeting visitas' }] },
       { label: 'Conteúdo', children: [{ label: 'Vida escolar' }, { label: 'Resultados pedagógicos' }] },
@@ -141,25 +128,12 @@ export const mindMaps: MindMap[] = [
     ]
   ),
   buildMap(
-    'viva',
-    'Colégio Viva',
-    'Tom de Voz Institucional',
-    '2025-03-11',
-    'Juliana Park',
-    'Colégio Viva',
-    [
-      { label: 'Essência', children: [{ label: 'Acolhimento' }, { label: 'Excelência' }, { label: 'Pertencimento' }] },
-      { label: 'Mensagens-chave', children: [{ label: 'Desenvolvimento integral' }, { label: 'Segurança' }] },
-      { label: 'Objeções', children: [{ label: 'Preço' }, { label: 'Deslocamento' }] },
-    ]
-  ),
-  buildMap(
-    'apex',
-    'Imobiliária Apex',
+    'oc-jaguare',
+    'ODC JAGUARÉ',
     'Lançamentos Premium',
-    '2025-04-10',
+    '2026-04-10',
     'Juliana Park',
-    'Lançamentos Apex',
+    'Lançamentos Jaguare',
     [
       { label: 'Meta Ads', children: [{ label: 'Vídeo tour' }, { label: 'Lead form' }, { label: 'Remarketing' }] },
       { label: 'LinkedIn Ads', children: [{ label: 'Investidores' }, { label: 'Executivos relocation' }] },
@@ -167,10 +141,10 @@ export const mindMaps: MindMap[] = [
     ]
   ),
   buildMap(
-    'apex',
-    'Imobiliária Apex',
+    'oc-rio-negrinho',
+    'ODC RIO NEGRINHO - SC',
     'Análise de Concorrência',
-    '2025-02-26',
+    '2026-02-26',
     'Fernanda Reis',
     'Concorrência Regional',
     [

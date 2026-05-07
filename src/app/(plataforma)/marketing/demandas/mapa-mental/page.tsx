@@ -53,8 +53,8 @@ export default function Page() {
       clientName: mapaClients.find((client) => client.id === selectedClientId)?.name ?? '',
       title,
       description: '',
-      createdAt: '2025-04-10',
-      updatedAt: '2025-04-10',
+      createdAt: '2026-05-07',
+      updatedAt: '2026-05-07',
       createdBy: 'Ana Lima',
       nodes: [root],
       edges: [],
@@ -85,7 +85,7 @@ export default function Page() {
           ? {
               ...map,
               title,
-              updatedAt: '2025-04-10',
+              updatedAt: '2026-05-07',
             }
           : map
       )
@@ -100,7 +100,7 @@ export default function Page() {
               ...map,
               nodes: state.nodes,
               edges: state.edges,
-              updatedAt: '2025-04-10',
+              updatedAt: '2026-05-07',
             }
           : map
       )
