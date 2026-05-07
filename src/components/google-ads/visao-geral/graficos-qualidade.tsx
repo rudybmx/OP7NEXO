@@ -167,7 +167,12 @@ export function GraficosQualidade({ campanhas, distribuicaoQS }: Props) {
           <BarChart layout="vertical" data={dadosRoas} margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
             <XAxis type="number" tick={{ fontSize: 10, fill: tickColor }} axisLine={false} tickLine={false} />
             <YAxis type="category" dataKey="nome" tick={{ fontSize: 10, fill: tickColor }} width={isMobile ? 90 : 130} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={{ background: 'rgba(14,20,42,0.92)', border: 'none', borderRadius: 6, color: '#fff', fontSize: 11 }} formatter={(v) => [`${Number(v).toFixed(1)}×`, 'ROAS']} />
+            <Tooltip 
+              contentStyle={{ background: 'rgba(14,20,42,0.92)', border: 'none', borderRadius: 6, color: '#fff', fontSize: 11 }} 
+              itemStyle={{ color: '#fff' }}
+              labelStyle={{ color: '#fff' }}
+              formatter={(v) => [`${Number(v).toFixed(1)}×`, 'ROAS']} 
+            />
             <ReferenceLine x={1} stroke="#FF5C8D" strokeDasharray="3 3" label={{ value: 'Mín.', fontSize: 9, fill: '#FF5C8D' }} />
             <Bar dataKey="roas" radius={[0, 2, 2, 0]}>
               {dadosRoas.map((entry, i) => (

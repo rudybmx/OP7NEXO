@@ -711,13 +711,13 @@ export function BarraLateral() {
       >
         {isCollapsed ? (
           <img
-            src="https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7/logo.svg"
+            src="https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7_dash_odc/logo_op7nexo.svg"
             alt="Op7 Nexo"
             style={{ height: 56, width: 'auto', objectFit: 'contain' }} // Doubled from 28
           />
         ) : (
           <img
-            src="https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7/logo.svg"
+            src="https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7_dash_odc/logo_op7nexo.svg"
             alt="Op7 Nexo"
             style={{ height: 100, width: 'auto', objectFit: 'contain' }} // Doubled from 50
           />

@@ -17,6 +17,7 @@ interface MatrizTableRowProps {
   isEditing: boolean
   highlighted: boolean
   onCellChange: (canal: CanalRow['canal'], month: number, value: number) => void
+  viewMode?: 'month' | 'day'
 }
 
 function getExecution(monthApproved: number, monthRealized: number): number | null {
@@ -31,6 +32,7 @@ export default function MatrizTableRow({
   isEditing,
   highlighted,
   onCellChange,
+  viewMode = 'month',
 }: MatrizTableRowProps) {
   const [editingMonth, setEditingMonth] = useState<number | null>(null)
   const [inputValue, setInputValue] = useState('')
@@ -44,7 +46,12 @@ export default function MatrizTableRow({
     () => row.months.reduce((sum, month) => sum + month.realizado, 0),
     [row.months]
   )
-  const percentOfTotal = totalApprovedAllChannels > 0 ? (totalAprovado / totalApprovedAllChannels) * 100 : 0
+  const currentMonthData = row.months.find(m => m.month === currentMonth)
+  const rowTotalAprovado = viewMode === 'day' ? (currentMonthData?.aprovado ?? 0) : totalAprovado
+  const rowTotalRealizado = viewMode === 'day' ? (currentMonthData?.realizado ?? 0) : totalRealizado
+  const rowPercentOfTotal = viewMode === 'day' 
+    ? (totalApprovedAllChannels > 0 ? ((currentMonthData?.aprovado ?? 0) / (totalApprovedAllChannels / 12)) * 100 : 0) // Approximation for month total 
+    : (totalApprovedAllChannels > 0 ? (totalAprovado / totalApprovedAllChannels) * 100 : 0)
 
   useEffect(() => {
     if (editingMonth !== null) {
@@ -82,7 +89,7 @@ export default function MatrizTableRow({
         <td
           rowSpan={2}
           className={cn(
-            'sticky left-0 z-10 w-[220px] px-4 py-4 align-top',
+            'sticky left-0 z-10 w-[220px] px-4 py-2 align-top',
             stickyShadow,
             highlighted && 'ring-2 ring-[var(--ws-gold)] ring-inset'
           )}
@@ -105,14 +112,14 @@ export default function MatrizTableRow({
           </div>
         </td>
 
-        {row.months.map((month) => {
+        {viewMode === 'month' ? row.months.map((month) => {
           const isCurrentMonth = month.month === currentMonth
           const isEditingCell = activeEditingMonth === month.month
           return (
             <td
               key={`${row.canal}-approved-${month.month}`}
               className={cn(
-                'h-[56px] w-[90px] px-2 text-center',
+                'h-[44px] w-[90px] px-2 text-center',
                 isCurrentMonth && 'bg-[var(--ws-gold)]/6',
                 isEditing && 'cursor-text bg-[var(--ws-gold)]/4',
                 isEditing && 'ring-1 ring-[var(--ws-gold)]/40'
@@ -153,24 +160,38 @@ export default function MatrizTableRow({
               )}
             </td>
           )
+        }) : Array.from({ length: 31 }, (_, i) => {
+          const currentMonthData = row.months.find(m => m.month === currentMonth)
+          const mockAprovado = currentMonthData ? currentMonthData.aprovado / 31 : 0
+          return (
+            <td
+              key={`${row.canal}-approved-day-${i + 1}`}
+              className="h-[44px] w-[90px] px-2 text-center"
+              style={{ borderBottom: '1px solid var(--ws-glass-border)' }}
+            >
+              <span className={cn('text-[13px] font-medium tabular-nums', mockAprovado === 0 ? 'text-muted-foreground/30' : 'text-foreground')}>
+                {formatBRL(mockAprovado)}
+              </span>
+            </td>
+          )
         })}
 
         <td
           className={cn('sticky right-[72px] z-10 w-[110px] px-3 text-right', rightShadow)}
           style={{ borderBottom: '1px solid var(--ws-glass-border)', background: 'var(--ws-glass-bg)', backdropFilter: 'blur(16px)' }}
         >
-          <div className="text-[13px] font-medium tabular-nums text-foreground">{formatBRL(totalAprovado)}</div>
+          <div className="text-[13px] font-medium tabular-nums text-foreground">{formatBRL(rowTotalAprovado)}</div>
         </td>
         <td
           className="sticky right-0 z-10 w-[72px] px-3 text-right shadow-[-2px_0_8px_rgba(0,0,0,0.10)]"
           style={{ borderBottom: '1px solid var(--ws-glass-border)', background: 'var(--ws-glass-bg)', backdropFilter: 'blur(16px)' }}
         >
-          <div className="text-[12px] tabular-nums text-muted-foreground">{Math.round(percentOfTotal)}%</div>
+          <div className="text-[12px] tabular-nums text-muted-foreground">{Math.round(rowPercentOfTotal)}%</div>
         </td>
       </tr>
 
       <tr className={highlighted ? 'ring-2 ring-[var(--ws-gold)] ring-inset' : undefined}>
-        {row.months.map((month) => {
+        {viewMode === 'month' ? row.months.map((month) => {
           const execucao = getExecution(month.aprovado, month.realizado)
           const isCurrentMonth = month.month === currentMonth
           const isFuture = month.realizado === 0
@@ -178,7 +199,7 @@ export default function MatrizTableRow({
             <td
               key={`${row.canal}-realizado-${month.month}`}
               className={cn(
-                'h-[60px] w-[90px] px-2 text-center',
+                'h-[48px] w-[90px] px-2 text-center',
                 isCurrentMonth && 'bg-[var(--ws-gold)]/6',
                 isFuture && 'bg-muted/20'
               )}
@@ -200,13 +221,40 @@ export default function MatrizTableRow({
               )}
             </td>
           )
+        }) : Array.from({ length: 31 }, (_, i) => {
+          const currentMonthData = row.months.find(m => m.month === currentMonth)
+          const mockRealizado = currentMonthData ? currentMonthData.realizado / 31 : 0
+          const mockAprovado = currentMonthData ? currentMonthData.aprovado / 31 : 0
+          const execucao = getExecution(mockAprovado, mockRealizado)
+          return (
+            <td
+              key={`${row.canal}-realizado-day-${i + 1}`}
+              className="h-[48px] w-[90px] px-2 text-center"
+              style={{ borderBottom: '1px solid var(--ws-glass-border)' }}
+            >
+              <div className="text-[13px] tabular-nums text-muted-foreground">{formatBRL(mockRealizado)}</div>
+              {execucao ? (
+                <div
+                  className="mt-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                  style={{
+                    color: getExecucaoColor(execucao),
+                    backgroundColor: `${getExecucaoColor(execucao)}1A`,
+                  }}
+                >
+                  {`${Math.round(execucao)}% ${getExecucaoArrow(execucao)}`}
+                </div>
+              ) : (
+                <div className="mt-1 text-[10px] text-muted-foreground">—</div>
+              )}
+            </td>
+          )
         })}
 
         <td
           className={cn('sticky right-[72px] z-10 w-[110px] px-3 text-right', rightShadow)}
           style={{ borderBottom: '1px solid var(--ws-glass-border)', background: 'var(--ws-glass-bg)', backdropFilter: 'blur(16px)' }}
         >
-          <div className="text-[12px] tabular-nums text-muted-foreground">{formatBRL(totalRealizado)}</div>
+          <div className="text-[12px] tabular-nums text-muted-foreground">{formatBRL(rowTotalRealizado)}</div>
         </td>
         <td
           className="sticky right-0 z-10 w-[72px] px-3 text-right shadow-[-2px_0_8px_rgba(0,0,0,0.10)]"

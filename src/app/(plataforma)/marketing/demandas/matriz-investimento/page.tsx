@@ -6,11 +6,12 @@ import MatrizEditToolbar from '@/components/demandas/matriz/MatrizEditToolbar'
 import MatrizHeader from '@/components/demandas/matriz/MatrizHeader'
 import MatrizInsights from '@/components/demandas/matriz/MatrizInsights'
 import MatrizKpiBar from '@/components/demandas/matriz/MatrizKpiBar'
-import MatrizSidePanel from '@/components/demandas/matriz/MatrizSidePanel'
+import MatrizAdditionalCharts from '@/components/demandas/matriz/MatrizAdditionalCharts'
 import MatrizTable from '@/components/demandas/matriz/MatrizTable'
 import { Toaster } from '@/components/ui/sonner'
 import { matrizClients, matrizPlans, matrizYears } from '@/lib/matriz-mock-data'
 import { deepCloneRows } from '@/lib/matriz-utils'
+import MatrizDistributionHorizontal from '@/components/demandas/matriz/MatrizDistributionHorizontal'
 import type { Canal, CanalRow, MatrizDraft, MatrizPlan } from '@/types/matriz'
 
 function buildInitialPlans(): MatrizPlan[] {
@@ -46,12 +47,14 @@ function sleep(milliseconds: number) {
 export default function Page() {
   const [plans, setPlans] = useState<MatrizPlan[]>(() => buildInitialPlans())
   const [selectedClientId, setSelectedClientId] = useState<string>(matrizClients[0]?.id ?? '')
-  const [selectedYear, setSelectedYear] = useState<number>(2025)
+  const [selectedYear, setSelectedYear] = useState<number>(2026)
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState<MatrizDraft | null>(null)
   const [highlightedCanal, setHighlightedCanal] = useState<Canal | null>(null)
   const [changesCount, setChangesCount] = useState(0)
   const [isSaving, setIsSaving] = useState(false)
+  const [viewMode, setViewMode] = useState<'month' | 'day'>('month')
 
   const selectedPlan = useMemo(
     () =>
@@ -148,6 +151,10 @@ export default function Page() {
     setChangesCount(0)
   }
 
+  function handleMonthChange(month: number) {
+    setSelectedMonth(month)
+  }
+
   if (!selectedPlan) {
     return null
   }
@@ -163,6 +170,8 @@ export default function Page() {
         years={matrizYears}
         selectedYear={selectedYear}
         onYearChange={handleYearChange}
+        selectedMonth={selectedMonth}
+        onMonthChange={handleMonthChange}
         isEditing={isEditing}
         onEditToggle={handleEditToggle}
         updatedAt={selectedPlan.updatedAt}
@@ -173,18 +182,48 @@ export default function Page() {
 
       <MatrizInsights plan={draft ? { ...selectedPlan, rows: draft.rows } : selectedPlan} onCanalHighlight={setHighlightedCanal} />
 
-      <div className="flex items-start gap-4">
-        <div className="min-w-0 flex-1 overflow-hidden">
+      <div className="flex flex-col gap-4">
+        <MatrizAdditionalCharts plan={draft ? { ...selectedPlan, rows: draft.rows } : selectedPlan} />
+
+        <div className="min-w-0 w-full overflow-hidden">
+          <MatrizDistributionHorizontal plan={draft ? { ...selectedPlan, rows: draft.rows } : selectedPlan} />
+          
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">Distribuição Orçamentária</h3>
+            <div className="flex items-center gap-1 rounded-md border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] p-1 backdrop-blur-md">
+              <button
+                onClick={() => setViewMode('month')}
+                className={`rounded px-3 py-1 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+                  viewMode === 'month'
+                    ? 'bg-[var(--ws-gold)]/10 text-[var(--ws-gold)]'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                Por Mês
+              </button>
+              <button
+                onClick={() => setViewMode('day')}
+                className={`rounded px-3 py-1 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+                  viewMode === 'day'
+                    ? 'bg-[var(--ws-gold)]/10 text-[var(--ws-gold)]'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                Por Dia
+              </button>
+            </div>
+          </div>
+
           <MatrizTable
             plan={selectedPlan}
             draft={draft}
             isEditing={isEditing}
             highlightedCanal={highlightedCanal}
-            currentMonth={new Date().getMonth() + 1}
+            currentMonth={selectedMonth}
             onCellChange={handleCellChange}
+            viewMode={viewMode}
           />
         </div>
-        <MatrizSidePanel plan={draft ? { ...selectedPlan, rows: draft.rows } : selectedPlan} />
       </div>
 
       {isEditing && (

@@ -19,6 +19,8 @@ interface MatrizHeaderProps {
   years: number[]
   selectedYear: number
   onYearChange: (year: number) => void
+  selectedMonth: number
+  onMonthChange: (month: number) => void
   isEditing: boolean
   onEditToggle: () => void
   updatedAt: string
@@ -32,6 +34,8 @@ export default function MatrizHeader({
   years,
   selectedYear,
   onYearChange,
+  selectedMonth,
+  onMonthChange,
   isEditing,
   onEditToggle,
   updatedAt,
@@ -72,6 +76,19 @@ export default function MatrizHeader({
             {clients.map((client) => (
               <SelectItem key={client.id} value={client.id}>
                 {client.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={String(selectedMonth)} onValueChange={(value) => onMonthChange(Number(value))}>
+          <SelectTrigger className="h-10 min-w-32 text-foreground" style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}>
+            <SelectValue placeholder="Mês" />
+          </SelectTrigger>
+          <SelectContent style={{ background: 'var(--ws-glass-bg)', borderColor: 'var(--ws-glass-border)', backdropFilter: 'blur(16px)' }}>
+            {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((m, i) => (
+              <SelectItem key={i + 1} value={String(i + 1)}>
+                {m}
               </SelectItem>
             ))}
           </SelectContent>

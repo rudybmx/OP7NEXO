@@ -111,6 +111,7 @@ export function GraficoPlataformas({ data }: { data: PlatData[] }) {
                 boxShadow: '0 10px 15px -3px rgba(0,0,0,0.5)'
               }}
               itemStyle={{ color: '#fff', padding: '2px 0' }}
+              labelStyle={{ color: '#fff', fontWeight: '600', marginBottom: '4px' }}
             />
             <Bar dataKey="leads" name="Leads" fill="var(--ws-blue)" opacity={0.4} radius={[0, 4, 4, 0]} barSize={10} />
             <Bar dataKey="ganhos" name="Ganhos" fill="var(--ws-green)" radius={[0, 4, 4, 0]} barSize={10} />

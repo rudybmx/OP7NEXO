@@ -82,6 +82,8 @@ export function DSGraficos() {
     borderRadius: 8, color: '#ffffff', fontSize: 12,
     boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
   }
+  const tooltipItemStyle = { color: '#ffffff' }
+  const tooltipLabelStyle = { color: '#ffffff', fontWeight: '600' }
 
   const roasColor = (v: number) => v >= 35 ? WS_CHART_COLORS.green : v >= 20 ? WS_CHART_COLORS.amber : WS_CHART_COLORS.coral
 
@@ -109,7 +111,7 @@ export function DSGraficos() {
               <CartesianGrid stroke={gridColor} strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="mes" tick={{ fill: tickColor, fontSize: 10 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: tickColor, fontSize: 10 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={tooltipStyle} cursor={{ stroke: 'rgba(62,91,255,0.15)', strokeWidth: 1 }} />
+              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={{ stroke: 'rgba(62,91,255,0.15)', strokeWidth: 1 }} />
               <Area type="monotone" dataKey="leads" fill="url(#gradLeads)" stroke="none" />
               <Line type="monotone" dataKey="leads" stroke={WS_CHART_COLORS.primary} strokeWidth={2} dot={false} name="Leads" />
               <Line type="monotone" dataKey="custo" stroke={WS_CHART_COLORS.coral} strokeWidth={1.5} strokeDasharray="4 2" dot={false} name="Custo" />
@@ -124,7 +126,7 @@ export function DSGraficos() {
               <CartesianGrid stroke={gridColor} strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="faixa" tick={{ fill: tickColor, fontSize: 10 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: tickColor, fontSize: 10 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(62,91,255,0.04)' }} />
+              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={{ fill: 'rgba(62,91,255,0.04)' }} />
               <Bar dataKey="masculino" fill={WS_CHART_COLORS.primary} radius={[3, 3, 0, 0]} maxBarSize={20} name="Masculino" />
               <Bar dataKey="feminino"  fill={WS_CHART_COLORS.coral}   radius={[3, 3, 0, 0]} maxBarSize={20} name="Feminino" />
             </BarChart>
@@ -139,7 +141,7 @@ export function DSGraficos() {
             <CartesianGrid stroke={gridColor} strokeDasharray="3 3" horizontal={false} />
             <XAxis type="number" tick={{ fill: tickColor, fontSize: 10 }} axisLine={false} tickLine={false} />
             <YAxis type="category" dataKey="nome" tick={{ fill: tickColor, fontSize: 10 }} axisLine={false} tickLine={false} width={120} />
-            <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(62,91,255,0.04)' }} />
+            <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={{ fill: 'rgba(62,91,255,0.04)' }} />
             <Bar dataKey="roas" radius={[0, 4, 4, 0]} maxBarSize={16} name="ROAS">
               {ROAS_DATA.map((entry, i) => (
                 <Cell key={i} fill={roasColor(entry.roas)} />

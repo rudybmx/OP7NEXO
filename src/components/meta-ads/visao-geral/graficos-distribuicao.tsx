@@ -205,6 +205,8 @@ export function GraficoDonutInvestimento({ contas }: GraficoProps) {
                 fontSize: '12px',
                 backdropFilter: 'blur(10px)'
               }} 
+              itemStyle={{ color: '#fff' }}
+              labelStyle={{ color: '#fff', fontWeight: '600' }} 
               formatter={(value) => formatarMoeda(Number(value))} 
             />
           </PieChart>

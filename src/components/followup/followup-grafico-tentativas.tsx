@@ -120,7 +120,7 @@ export function FollowupGraficoTentativas({ leads }: FollowupGraficoTentativasPr
                 color: '#fff'
               }}
               itemStyle={{ color: '#fff' }}
-              labelStyle={{ display: 'none' }}
+              labelStyle={{ color: '#fff', fontWeight: '600' }}
               formatter={(value, _name, props) => {
                 const v = value === undefined || value === null ? 0 : value
                 return [`${v} leads na tentativa ${props.payload.tentativa}`, '']

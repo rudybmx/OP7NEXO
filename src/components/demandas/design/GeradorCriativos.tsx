@@ -18,7 +18,7 @@ const STYLES = [
 const FORMATS = [
   { id: '45', title: '4:5', sub: 'Feed' },
   { id: '11', title: '1:1', sub: 'Quadrado' },
-  { id: '169', title: '16:9', sub: 'Stories/Reel' },
+  { id: '916', title: '9:16', sub: 'Stories/Reel' },
 ]
 
 export function GeradorCriativos() {
@@ -44,6 +44,15 @@ export function GeradorCriativos() {
       setIsGenerating(false)
       setResultImage('https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7_dash_odc/exemplodesigodc.jpeg')
     }, 2000)
+  }
+
+  const getFormatStyles = () => {
+    switch (selectedFormat) {
+      case '11': return { aspectRatio: '1/1', maxHeight: '100%', maxWidth: '100%', height: 'auto', width: '100%' }
+      case '45': return { aspectRatio: '4/5', maxHeight: '100%', maxWidth: '100%', height: '100%', width: 'auto' }
+      case '916': return { aspectRatio: '9/16', maxHeight: '100%', maxWidth: '100%', height: '100%', width: 'auto' }
+      default: return { aspectRatio: '4/5', maxHeight: '100%', maxWidth: '100%', height: '100%', width: 'auto' }
+    }
   }
 
   return (
@@ -206,16 +215,19 @@ export function GeradorCriativos() {
             {isGenerating && <div className="w-2 h-2 rounded-full bg-[var(--ws-blue)] animate-pulse" />}
           </div>
           
-          <div className="flex-1 flex flex-col items-center justify-center p-4 text-center">
+          <div className="flex-1 flex flex-col items-center justify-center p-4 text-center overflow-hidden">
             {resultImage ? (
-              <div className="w-full h-full relative rounded-[var(--ws-radius-lg)] overflow-hidden shadow-inner animate-in zoom-in duration-500">
+              <div 
+                className="relative rounded-[var(--ws-radius-lg)] overflow-hidden shadow-inner animate-in zoom-in duration-500 bg-[rgba(15,39,68,0.05)] mx-auto flex flex-col justify-center items-center"
+                style={getFormatStyles()}
+              >
                 <img 
                   src={resultImage} 
                   alt="Criativo Gerado" 
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4">
-                  <button className="w-full py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white text-[10px] font-bold uppercase rounded-md transition-all">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end p-4">
+                  <button className="w-full py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white text-[10px] font-bold uppercase rounded-md transition-all border border-white/20 shadow-sm">
                     Baixar Criativo
                   </button>
                 </div>

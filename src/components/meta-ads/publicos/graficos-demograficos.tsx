@@ -68,6 +68,8 @@ export function GraficosDemograficos({ demograficos }: Props) {
             <YAxis tick={{ fontSize: 10, fill: '#8892b0' }} axisLine={false} tickLine={false} />
             <Tooltip
               contentStyle={{ background: 'rgba(14,20,42,0.92)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: '#fff', fontSize: 11 }}
+              itemStyle={{ color: '#fff' }}
+              labelStyle={{ color: '#fff' }}
               cursor={{ fill: 'rgba(62,91,255,0.04)' }}
             />
             <Bar dataKey="masc" name="Masculino" fill={WS_CHART_COLORS.primary} radius={[3,3,0,0]} maxBarSize={20} />
@@ -117,6 +119,8 @@ export function GraficosDemograficos({ demograficos }: Props) {
             <YAxis tick={{ fontSize: 10, fill: '#8892b0' }} axisLine={false} tickLine={false} />
             <Tooltip
               contentStyle={{ background: 'rgba(14,20,42,0.92)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: '#fff', fontSize: 11 }}
+              itemStyle={{ color: '#fff' }}
+              labelStyle={{ color: '#fff' }}
               cursor={{ stroke: 'rgba(62,91,255,0.15)', strokeWidth: 1 }}
             />
             <Line type="monotone" dataKey="f1834" name="18–34" stroke={WS_CHART_COLORS.green} strokeWidth={2} dot={false} />

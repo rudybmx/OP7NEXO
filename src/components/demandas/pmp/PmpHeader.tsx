@@ -21,6 +21,11 @@ interface PmpHeaderProps {
   updatedAt: string
   planStatus: TaskStatus
   onClientChange: (id: string) => void
+  years: number[]
+  selectedYear: number
+  onYearChange: (year: number) => void
+  selectedMonth: number
+  onMonthChange: (month: number) => void
   onNewVersion: () => void
   onExport: () => void
 }
@@ -32,6 +37,11 @@ export default function PmpHeader({
   updatedAt,
   planStatus,
   onClientChange,
+  years,
+  selectedYear,
+  onYearChange,
+  selectedMonth,
+  onMonthChange,
   onNewVersion,
   onExport,
 }: PmpHeaderProps) {
@@ -84,6 +94,32 @@ export default function PmpHeader({
           </SelectContent>
         </Select>
 
+        <Select value={String(selectedMonth)} onValueChange={(value) => onMonthChange(Number(value))}>
+          <SelectTrigger className="h-10 min-w-32 text-foreground" style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}>
+            <SelectValue placeholder="Mês" />
+          </SelectTrigger>
+          <SelectContent style={{ background: 'var(--ws-glass-bg)', borderColor: 'var(--ws-glass-border)', backdropFilter: 'blur(16px)' }}>
+            {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((m, i) => (
+              <SelectItem key={i + 1} value={String(i + 1)}>
+                {m}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={String(selectedYear)} onValueChange={(value) => onYearChange(Number(value))}>
+          <SelectTrigger className="h-10 min-w-28 text-foreground" style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}>
+            <SelectValue placeholder="Ano" />
+          </SelectTrigger>
+          <SelectContent style={{ background: 'var(--ws-glass-bg)', borderColor: 'var(--ws-glass-border)', backdropFilter: 'blur(16px)' }}>
+            {years.map((year) => (
+              <SelectItem key={year} value={String(year)}>
+                {year}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <Button
           type="button"
           variant="outline"
@@ -92,7 +128,7 @@ export default function PmpHeader({
           style={{ border: '1px solid var(--ws-glass-border-strong)' }}
         >
           <GitBranch className="h-4 w-4" />
-          Nova Versão
+          Linha do Tempo
         </Button>
 
         <Button

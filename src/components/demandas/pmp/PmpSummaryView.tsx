@@ -194,6 +194,8 @@ export default function PmpSummaryView({ plan }: PmpSummaryViewProps) {
                   background: '#0f2744',
                   color: '#ffffff',
                 }}
+                itemStyle={{ color: '#fff' }}
+                labelStyle={{ color: '#fff', fontWeight: '600' }}
               />
               <Bar dataKey="concluido" stackId="a" fill="#3b6d11" />
               <Bar dataKey="em_andamento" stackId="a" fill="var(--ws-gold)" />

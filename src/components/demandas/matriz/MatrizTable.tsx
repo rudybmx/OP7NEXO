@@ -12,6 +12,7 @@ interface MatrizTableProps {
   highlightedCanal: Canal | null
   currentMonth: number
   onCellChange: (canal: Canal, month: number, value: number) => void
+  viewMode?: 'month' | 'day'
 }
 
 export default function MatrizTable({
@@ -21,6 +22,7 @@ export default function MatrizTable({
   highlightedCanal,
   currentMonth,
   onCellChange,
+  viewMode = 'month',
 }: MatrizTableProps) {
   const rows = draft?.rows ?? plan.rows
   const totalApprovedAllChannels = rows.reduce(
@@ -50,7 +52,7 @@ export default function MatrizTable({
               >
                 Canal / Mês
               </th>
-              {MONTH_LABELS.map((label, index) => (
+              {viewMode === 'month' ? MONTH_LABELS.map((label, index) => (
                 <th
                   key={label}
                   className={cn(
@@ -60,6 +62,14 @@ export default function MatrizTable({
                   style={{ borderBottom: '1px solid var(--ws-glass-border)' }}
                 >
                   {label}
+                </th>
+              )) : Array.from({ length: 31 }, (_, i) => (
+                <th
+                  key={`day-${i + 1}`}
+                  className="w-[90px] px-2 py-3 text-center text-[10px] uppercase tracking-[0.05em] text-muted-foreground/70"
+                  style={{ borderBottom: '1px solid var(--ws-glass-border)' }}
+                >
+                  Dia {i + 1}
                 </th>
               ))}
               <th
@@ -87,6 +97,7 @@ export default function MatrizTable({
                 isEditing={isEditing}
                 highlighted={highlightedCanal === row.canal}
                 onCellChange={onCellChange}
+                viewMode={viewMode}
               />
             ))}
 
@@ -97,7 +108,7 @@ export default function MatrizTable({
               >
                 Total mensal
               </td>
-              {monthMetrics.map((month) => (
+              {viewMode === 'month' ? monthMetrics.map((month) => (
                 <td
                   key={`total-${month.month}`}
                   className={cn(
@@ -122,7 +133,17 @@ export default function MatrizTable({
                     <div className="mt-1 text-[10px] text-muted-foreground">—</div>
                   )}
                 </td>
-              ))}
+              )) : Array.from({ length: 31 }, (_, i) => {
+                const mockDayAprovado = monthMetrics[currentMonth - 1]?.totalAprovado / 31 || 0
+                const mockDayRealizado = monthMetrics[currentMonth - 1]?.totalRealizado / 31 || 0
+                return (
+                  <td key={`total-day-${i + 1}`} className="px-2 py-3 text-center" style={{ borderTop: '1px solid var(--ws-glass-border)' }}>
+                    <div className="text-[13px] font-semibold tabular-nums text-foreground">{formatBRL(mockDayAprovado)}</div>
+                    <div className="mt-1 text-[12px] tabular-nums text-muted-foreground">{formatBRL(mockDayRealizado)}</div>
+                    <div className="mt-1 text-[10px] text-muted-foreground">—</div>
+                  </td>
+                )
+              })}
               <td
                 className="sticky right-[72px] z-10 px-3 py-3 text-right shadow-[-2px_0_8px_rgba(0,0,0,0.10)]"
                 style={{ borderTop: '1px solid var(--ws-glass-border)', background: 'var(--ws-glass-bg)', backdropFilter: 'blur(16px)' }}

@@ -17,7 +17,7 @@ import { InfoTooltip } from '@/components/ui/info-tooltip'
 import { calcCanalMetrics, calcMonthMetrics, formatBRL, MONTH_LABELS } from '@/lib/matriz-utils'
 import type { MatrizPlan } from '@/types/matriz'
 
-interface MatrizSidePanelProps {
+interface MatrizAdditionalChartsProps {
   plan: MatrizPlan
 }
 
@@ -33,7 +33,7 @@ function formatCompactCurrency(value: number): string {
   return `R$${value}`
 }
 
-export default function MatrizSidePanel({ plan }: MatrizSidePanelProps) {
+export default function MatrizAdditionalCharts({ plan }: MatrizAdditionalChartsProps) {
   const canalMetrics = calcCanalMetrics(plan.rows)
   const monthMetrics = calcMonthMetrics(plan.rows)
   const areaData = monthMetrics.map((monthMetric) => ({
@@ -45,8 +45,8 @@ export default function MatrizSidePanel({ plan }: MatrizSidePanelProps) {
   }))
 
   return (
-    <aside
-      className="w-[340px] shrink-0 p-4"
+    <div
+      className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2 p-4"
       style={{
         background: 'var(--ws-glass-bg)',
         border: '1px solid var(--ws-glass-border)',
@@ -55,56 +55,7 @@ export default function MatrizSidePanel({ plan }: MatrizSidePanelProps) {
         boxShadow: 'var(--ws-glass-shadow)',
       }}
     >
-      <div className="flex flex-col gap-6">
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-[10px] uppercase tracking-[0.05em] text-muted-foreground/70">Distribuição aprovada</div>
-            <InfoTooltip
-              title="Distribuição aprovada"
-              description="Participação de cada canal no total de verba aprovada para o ano."
-            />
-          </div>
-          <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={canalMetrics}
-                  dataKey="totalAprovado"
-                  nameKey="canal"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={2}
-                  isAnimationActive={false}
-                >
-                  {canalMetrics.map((entry) => (
-                    <Cell key={entry.canal} fill={plan.rows.find((row) => row.canal === entry.canal)?.color} />
-                  ))}
-                </Pie>
-                <RechartsTooltip
-                  formatter={tooltipCurrencyFormatter}
-                  contentStyle={{ borderRadius: 8, border: '1px solid rgba(15,39,68,0.10)', background: '#0f2744', color: '#fff' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-3 space-y-2">
-            {canalMetrics.map((metric) => {
-              const row = plan.rows.find((entry) => entry.canal === metric.canal)
-              return (
-                <div key={metric.canal} className="flex items-center justify-between gap-3 text-[12px]">
-                  <div className="flex items-center gap-2 text-foreground/70">
-                    <span className="inline-flex h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row?.color }} />
-                    {row?.label}
-                  </div>
-                  <div className="text-right">
-                    <div className="tabular-nums text-foreground">{formatBRL(metric.totalAprovado)}</div>
-                    <div className="tabular-nums text-muted-foreground">{metric.percentualDoTotal.toFixed(0)}%</div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
+
 
         <section>
           <div className="mb-3 flex items-center justify-between">
@@ -121,6 +72,8 @@ export default function MatrizSidePanel({ plan }: MatrizSidePanelProps) {
                 <YAxis tickFormatter={formatCompactCurrency} tick={{ fontSize: 11, fill: 'rgba(15,39,68,0.55)' }} axisLine={false} tickLine={false} />
                 <RechartsTooltip
                   contentStyle={{ borderRadius: 8, border: '1px solid rgba(15,39,68,0.10)', background: '#0f2744', color: '#fff' }}
+                  itemStyle={{ color: '#fff' }}
+                  labelStyle={{ color: '#fff', fontWeight: '600' }}
                 />
                 {plan.rows.map((row) => (
                   <Area
@@ -163,6 +116,8 @@ export default function MatrizSidePanel({ plan }: MatrizSidePanelProps) {
                 <RechartsTooltip
                   formatter={tooltipCurrencyFormatter}
                   contentStyle={{ borderRadius: 8, border: '1px solid rgba(15,39,68,0.10)', background: '#0f2744', color: '#fff' }}
+                  itemStyle={{ color: '#fff' }}
+                  labelStyle={{ color: '#fff', fontWeight: '600' }}
                 />
                 <Bar dataKey="totalAprovado" fill="rgba(15,39,68,0.18)" isAnimationActive={false} radius={[0, 4, 4, 0]} />
                 <Bar dataKey="totalRealizado" isAnimationActive={false} radius={[0, 4, 4, 0]}>
@@ -174,7 +129,6 @@ export default function MatrizSidePanel({ plan }: MatrizSidePanelProps) {
             </ResponsiveContainer>
           </div>
         </section>
-      </div>
-    </aside>
+    </div>
   )
 }

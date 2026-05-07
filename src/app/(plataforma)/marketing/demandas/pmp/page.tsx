@@ -25,6 +25,10 @@ export default function Page() {
   const [ganttZoom, setGanttZoom] = useState<'mes' | 'semana'>('mes')
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'todos'>('todos')
   const [focusTarget, setFocusTarget] = useState<{ taskId?: string; phaseId?: string } | null>(null)
+  
+  const [selectedYear, setSelectedYear] = useState<number>(2026)
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
+  const pmpYears = [2024, 2025, 2026]
 
   const selectedPlan = useMemo(
     () => pmpPlans.find((plan) => plan.clientId === selectedClientId) ?? pmpPlans[0],
@@ -98,6 +102,11 @@ export default function Page() {
         updatedAt={selectedPlan.updatedAt}
         planStatus={selectedPlan.status}
         onClientChange={handleClientChange}
+        years={pmpYears}
+        selectedYear={selectedYear}
+        onYearChange={setSelectedYear}
+        selectedMonth={selectedMonth}
+        onMonthChange={setSelectedMonth}
         onNewVersion={handleNewVersion}
         onExport={() => window.print()}
       />
