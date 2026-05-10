@@ -38,7 +38,7 @@ export default function CriarOrganizacaoPage() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!authLoading && user && user.level !== 0) {
+    if (!authLoading && user && user.role !== 'platform_admin') {
       router.push('/')
     }
   }, [authLoading, user, router])
@@ -85,7 +85,7 @@ export default function CriarOrganizacaoPage() {
     }
   }
 
-  if (authLoading || !user || user.level !== 0) {
+  if (authLoading || !user || user.role !== 'platform_admin') {
     return (
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',

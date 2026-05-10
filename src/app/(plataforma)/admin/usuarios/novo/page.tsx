@@ -29,7 +29,7 @@ export default function NovoUsuarioPage() {
   const [carregandoOrgs, setCarregandoOrgs] = useState(true)
 
   useEffect(() => {
-    if (!authLoading && user && user.level !== 0) {
+    if (!authLoading && user && user.role !== 'platform_admin') {
       router.push('/')
     }
   }, [authLoading, user, router])
@@ -48,12 +48,12 @@ export default function NovoUsuarioPage() {
         setCarregandoOrgs(false)
       }
     }
-    if (user && user.level === 0) {
+    if (user && user.role === 'platform_admin') {
       loadOrgs()
     }
   }, [user])
 
-  if (authLoading || (!user || user.level !== 0)) {
+  if (authLoading || (!user || user.role !== 'platform_admin')) {
     return (
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',

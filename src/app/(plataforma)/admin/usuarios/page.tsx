@@ -48,13 +48,13 @@ export default function UsuariosAdminPage() {
   const [carregando, setCarregando] = useState(true)
 
   useEffect(() => {
-    if (!authLoading && user && user.level !== 0) {
+    if (!authLoading && user && user.role !== 'platform_admin') {
       router.push('/')
     }
   }, [authLoading, user, router])
 
   useEffect(() => {
-    if (user?.level === 0) {
+    if (user?.role === 'platform_admin') {
       loadUsuarios()
     }
   }, [user])
@@ -80,7 +80,7 @@ export default function UsuariosAdminPage() {
     )
   })
 
-  if (authLoading || (!user || user.level !== 0)) {
+  if (authLoading || (!user || user.role !== 'platform_admin')) {
     return (
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',

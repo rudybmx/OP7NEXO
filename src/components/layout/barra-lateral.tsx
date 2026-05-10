@@ -315,12 +315,31 @@ export function BarraLateral() {
   const { resolvedTheme, setTheme } = useTheme()
   const { user } = useAuth()
 
-  const isAdmin = user?.level === 0
+  const role = user?.role ?? ''
 
-  const secoesFiltradas = secoesNavegacao.filter((secao) => {
-    if (secao.administrativa && !isAdmin) return false
-    return true
-  })
+  const SECOES_POR_ROLE: Record<string, string[]> = {
+    platform_admin: ['*'],
+    network_admin:  ['Marketing', 'CRM'],
+    network_viewer: ['Marketing', 'CRM'],
+    company_admin:  ['Marketing', 'CRM'],
+    company_agent:  ['CRM'],
+  }
+
+  const secoesFiltradas = secoesNavegacao
+    .map((secao) => {
+      if (role === 'company_admin' && secao.nome === 'Marketing') {
+        return { ...secao, grupos: secao.grupos.filter((g) => g.nome === 'Performance') }
+      }
+      return secao
+    })
+    .filter((secao) => {
+      if (secao.administrativa) return role === 'platform_admin'
+      const permitidas = SECOES_POR_ROLE[role]
+      if (!permitidas) return false
+      if (permitidas[0] === '*') return true
+      return permitidas.includes(secao.nome)
+    })
+    .filter((secao) => secao.grupos.length > 0)
 
   const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>({})
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null)
