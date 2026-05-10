@@ -9,10 +9,12 @@ from app.api.ads_accounts import router as ads_accounts_router
 from app.api.auth import router as auth_router
 from app.api.canais import router as canais_router
 from app.api.companies import router as companies_router
+from app.api.meta import router as meta_router
 from app.api.networks import router as networks_router
 from app.api.users import router as users_router
 from app.api.workspaces import router as workspaces_router
 from app.core.config import settings
+from app.services.scheduler import iniciar_scheduler, parar_scheduler
 
 
 def _rodar_migracoes() -> None:
@@ -29,7 +31,9 @@ def _rodar_migracoes() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _rodar_migracoes()
+    iniciar_scheduler()
     yield
+    parar_scheduler()
 
 
 app = FastAPI(
@@ -56,6 +60,7 @@ app.include_router(companies_router)
 app.include_router(users_router)
 app.include_router(workspaces_router)
 app.include_router(ads_accounts_router)
+app.include_router(meta_router)
 app.include_router(canais_router)
 
 
