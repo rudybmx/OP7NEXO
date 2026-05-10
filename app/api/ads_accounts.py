@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import exigir_platform_admin, get_usuario_atual
+from app.core.deps import exigir_platform_admin, get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
 from app.models.ads_account import AdsAccount
 from app.models.user import User
 from app.models.workspace import Workspace
@@ -26,26 +26,32 @@ class AdsAccountIn(BaseModel):
 class AdsAccountOut(BaseModel):
     id: str
     workspace_id: str
+    workspace_nome: str | None = None
     plataforma: str
     account_id: str
     account_name: str | None
+    nome: str | None = None
     bm_id: str | None
     status: str
     config: dict
+    sincronizado_em: str | None = None
 
     model_config = {"from_attributes": True}
 
 
-def _ads_account_out(a: AdsAccount) -> AdsAccountOut:
+def _ads_account_out(a: AdsAccount, workspace_nome: str | None = None) -> AdsAccountOut:
     return AdsAccountOut(
         id=str(a.id),
         workspace_id=str(a.workspace_id),
+        workspace_nome=workspace_nome,
         plataforma=a.plataforma,
         account_id=a.account_id,
         account_name=a.account_name,
+        nome=a.account_name,
         bm_id=a.bm_id,
         status=a.status,
         config=a.config or {},
+        sincronizado_em=a.sincronizado_em.isoformat() if a.sincronizado_em else None,
     )
 
 
@@ -63,6 +69,17 @@ def _get_workspace_or_404(workspace_id: uuid.UUID, db: Session) -> Workspace:
     return w
 
 
+@router.get("/ads-accounts", response_model=list[AdsAccountOut])
+def listar_todas_ads_accounts(
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    contas = db.query(AdsAccount).all()
+    workspace_ids = {a.workspace_id for a in contas}
+    workspaces = {w.id: w.nome for w in db.query(Workspace).filter(Workspace.id.in_(workspace_ids)).all()}
+    return [_ads_account_out(a, workspaces.get(a.workspace_id)) for a in contas]
+
+
 @router.get("/workspaces/{workspace_id}/ads-accounts", response_model=list[AdsAccountOut])
 def listar_ads_accounts(
     workspace_id: uuid.UUID,
@@ -70,6 +87,7 @@ def listar_ads_accounts(
     usuario: User = Depends(get_usuario_atual),
 ):
     _get_workspace_or_404(workspace_id, db)
+    verificar_acesso_workspace(usuario, workspace_id, db)
     contas = db.query(AdsAccount).filter(AdsAccount.workspace_id == workspace_id).all()
     return [_ads_account_out(a) for a in contas]
 
@@ -83,9 +101,10 @@ def criar_ads_account(
     workspace_id: uuid.UUID,
     payload: AdsAccountIn,
     db: Session = Depends(get_db),
-    usuario: User = Depends(exigir_platform_admin),
+    usuario: User = Depends(get_usuario_atual),
 ):
     _get_workspace_or_404(workspace_id, db)
+    verificar_acesso_workspace(usuario, workspace_id, db)
 
     duplicado = db.query(AdsAccount).filter(
         AdsAccount.plataforma == payload.plataforma,
