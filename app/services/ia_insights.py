@@ -44,7 +44,7 @@ def gerar_insights_meta(kpis: dict, contas: list[dict]) -> list[dict]:
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=800,
+            max_tokens=4000,
         )
         content = resp.choices[0].message.content or "[]"
         if "```" in content:
