@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.ads_accounts import router as ads_accounts_router
 from app.api.auth import router as auth_router
+from app.api.canais import router as canais_router
 from app.api.companies import router as companies_router
 from app.api.networks import router as networks_router
 from app.api.users import router as users_router
@@ -55,6 +56,7 @@ app.include_router(companies_router)
 app.include_router(users_router)
 app.include_router(workspaces_router)
 app.include_router(ads_accounts_router)
+app.include_router(canais_router)
 
 
 @app.get("/health")
