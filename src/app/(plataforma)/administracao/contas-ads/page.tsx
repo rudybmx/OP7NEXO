@@ -23,6 +23,7 @@ interface AdsAccount {
   bm_id?: string | null
   token?: string | null
   status: 'ativo' | 'expirado' | 'erro'
+  sincronizado_em?: string | null
 }
 
 interface MetaContaAPI {
@@ -123,6 +124,7 @@ export default function ContasAdsPage() {
   const [metaPeriodo, setMetaPeriodo] = useState('mes_atual')
   const [metaErro, setMetaErro] = useState('')
   const [buscandoMeta, setBuscandoMeta] = useState(false)
+  const [metaFiltro, setMetaFiltro] = useState('')
 
   useEffect(() => {
     if (!authLoading && user && user.role !== 'platform_admin') router.push('/')
@@ -179,6 +181,7 @@ export default function ContasAdsPage() {
   }
 
   async function importarContas() {
+    console.log('importar:', { workspace_id: form.workspace_id, contas: metaSelecionadas.length, periodo: metaPeriodo })
     if (!form.workspace_id) { toast.error('Selecione um cliente'); return }
     if (metaSelecionadas.length === 0) { toast.error('Selecione ao menos uma conta'); return }
     setSalvando(true)
@@ -196,9 +199,10 @@ export default function ContasAdsPage() {
         periodo_sync: metaPeriodo,
         contas: contasPayload,
       })
-      await loadContas()
       fecharDrawer()
-      toast.success(`${result.criadas} criada(s), ${result.atualizadas} atualizada(s)`)
+      await loadContas()
+      const total = result.criadas + result.atualizadas
+      toast.success(`${total} conta${total !== 1 ? 's' : ''} importada${total !== 1 ? 's' : ''} com sucesso`)
     } catch (err: any) {
       toast.error(err.message || 'Erro ao importar contas')
     } finally {
@@ -239,6 +243,7 @@ export default function ContasAdsPage() {
     setMetaSelecionadas([])
     setMetaPeriodo('mes_atual')
     setMetaErro('')
+    setMetaFiltro('')
   }
 
   const filtradas = contas.filter(c => {
@@ -371,7 +376,9 @@ export default function ContasAdsPage() {
             <tbody>
               {filtradas.map(c => {
                 const plat = PLATFORM_BADGE[c.plataforma]
-                const stat = STATUS_BADGE[c.status] || STATUS_BADGE.erro
+                const stat = !c.sincronizado_em
+                  ? { label: 'Sincronizando...', bg: 'rgba(201,168,76,0.15)', color: '#c9a84c' }
+                  : STATUS_BADGE[c.status] || STATUS_BADGE.erro
                 return (
                   <tr
                     key={c.id}
@@ -612,8 +619,18 @@ export default function ContasAdsPage() {
                           </button>
                         </div>
                       </div>
+                      <input
+                        type="text"
+                        placeholder="Filtrar contas..."
+                        value={metaFiltro}
+                        onChange={e => setMetaFiltro(e.target.value)}
+                        style={{ ...inputStyle, marginBottom: 8 }}
+                      />
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 400, overflowY: 'auto' }}>
-                        {metaContas.map(conta => {
+                        {[...metaContas]
+                          .sort((a, b) => (a.account_name || '').localeCompare(b.account_name || ''))
+                          .filter(c => !metaFiltro.trim() || (c.account_name || c.account_id).toLowerCase().includes(metaFiltro.toLowerCase()))
+                          .map(conta => {
                           const selected = metaSelecionadas.includes(conta.account_id)
                           const statusInfo = META_ACCOUNT_STATUS[conta.account_status] || { label: `Status ${conta.account_status}`, color: 'var(--ws-text-3)' }
                           return (

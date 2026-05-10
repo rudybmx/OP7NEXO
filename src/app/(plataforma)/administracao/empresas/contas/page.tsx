@@ -126,7 +126,7 @@ export default function ClientesPage() {
     if (digits.length !== 14) return
     setBuscandoCNPJ(true)
     try {
-      const res = await fetch(`https://receitaws.com.br/v1/cnpj/${digits}`)
+      const res = await fetch(`/api/cnpj/${digits}`)
       const data: ReceitaWS = await res.json()
       if (data.status === 'ERROR') throw new Error('CNPJ inválido ou não encontrado')
       setForm(prev => ({
@@ -408,12 +408,13 @@ export default function ClientesPage() {
               <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: 0 }}>Próximos passos:</p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {[
-                  { icon: <CreditCard size={18} style={{ color: 'var(--ws-blue)' }} />, titulo: 'Adicionar Conta Ads', sub: 'Meta, Google, LinkedIn, TikTok' },
-                  { icon: <Users size={18} style={{ color: 'var(--ws-purple)' }} />, titulo: 'Adicionar Usuário', sub: 'Vincular usuário ao workspace' },
-                ].map(item => (
+                {([
+                  { icon: <CreditCard size={18} style={{ color: 'var(--ws-blue)' }} />, titulo: 'Adicionar Conta Ads', sub: 'Meta, Google, LinkedIn, TikTok', href: '/administracao/contas-ads' },
+                  { icon: <Users size={18} style={{ color: 'var(--ws-purple)' }} />, titulo: 'Adicionar Usuário', sub: 'Vincular usuário ao workspace', href: null },
+                ] as const).map(item => (
                   <button
                     key={item.titulo}
+                    onClick={() => { if (item.href) { fecharDrawer(); router.push(item.href) } }}
                     style={{
                       padding: '14px 16px', borderRadius: 12,
                       background: 'rgba(255,255,255,0.04)',
