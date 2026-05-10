@@ -17,7 +17,7 @@ def _conta_ids_da_query(workspace_id: str, conta_ids: list[str], db: Session) ->
         rows = db.execute(
             text(
                 "SELECT id FROM ads_accounts "
-                "WHERE workspace_id = :ws::uuid AND account_id = ANY(:ids) AND plataforma = 'meta'"
+                "WHERE workspace_id = CAST(:ws AS uuid) AND account_id = ANY(:ids) AND plataforma = 'meta'"
             ),
             {"ws": workspace_id, "ids": conta_ids},
         ).fetchall()
@@ -25,7 +25,7 @@ def _conta_ids_da_query(workspace_id: str, conta_ids: list[str], db: Session) ->
         rows = db.execute(
             text(
                 "SELECT id FROM ads_accounts "
-                "WHERE workspace_id = :ws::uuid AND plataforma = 'meta'"
+                "WHERE workspace_id = CAST(:ws AS uuid) AND plataforma = 'meta'"
             ),
             {"ws": workspace_id},
         ).fetchall()
