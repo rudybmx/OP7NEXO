@@ -35,6 +35,7 @@ class AdsAccountOut(BaseModel):
     status: str
     config: dict
     sincronizado_em: str | None = None
+    periodo_sync_inicio: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -52,6 +53,7 @@ def _ads_account_out(a: AdsAccount, workspace_nome: str | None = None) -> AdsAcc
         status=a.status,
         config=a.config or {},
         sincronizado_em=a.sincronizado_em.isoformat() if a.sincronizado_em else None,
+        periodo_sync_inicio=a.periodo_sync_inicio.isoformat() if a.periodo_sync_inicio else None,
     )
 
 
