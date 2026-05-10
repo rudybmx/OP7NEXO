@@ -10,6 +10,7 @@ from app.api.auth import router as auth_router
 from app.api.canais import router as canais_router
 from app.api.companies import router as companies_router
 from app.api.meta import router as meta_router
+from app.api.meta_insights import router as meta_insights_router
 from app.api.networks import router as networks_router
 from app.api.users import router as users_router
 from app.api.workspaces import router as workspaces_router
@@ -61,6 +62,7 @@ app.include_router(users_router)
 app.include_router(workspaces_router)
 app.include_router(ads_accounts_router)
 app.include_router(meta_router)
+app.include_router(meta_insights_router)
 app.include_router(canais_router)
 
 
