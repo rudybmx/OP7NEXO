@@ -12,20 +12,20 @@ from app.models.user import User
 router = APIRouter(prefix="/meta/insights", tags=["meta_insights"])
 
 
-def _conta_ids_da_query(workspace_id: str, conta_ids: list[str], db: Session) -> list[str]:
+def _conta_ids_da_query(workspace_id: str, conta_ids: list[str], db: Session) -> list[uuid.UUID]:
     if conta_ids:
         rows = db.execute(
             text(
-                "SELECT id::text FROM ads_accounts "
-                "WHERE workspace_id = :ws AND account_id = ANY(:ids) AND plataforma = 'meta'"
+                "SELECT id FROM ads_accounts "
+                "WHERE workspace_id = :ws::uuid AND account_id = ANY(:ids) AND plataforma = 'meta'"
             ),
             {"ws": workspace_id, "ids": conta_ids},
         ).fetchall()
     else:
         rows = db.execute(
             text(
-                "SELECT id::text FROM ads_accounts "
-                "WHERE workspace_id = :ws AND plataforma = 'meta'"
+                "SELECT id FROM ads_accounts "
+                "WHERE workspace_id = :ws::uuid AND plataforma = 'meta'"
             ),
             {"ws": workspace_id},
         ).fetchall()
