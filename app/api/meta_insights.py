@@ -149,10 +149,37 @@ def visao_geral(
         for r in diario_rows
     ]
 
+    canal_rows = db.execute(
+        text(
+            "SELECT breakdown_value, "
+            "  COALESCE(SUM(leads),0) AS leads, "
+            "  COALESCE(SUM(spend),0) AS spend "
+            "FROM meta_publicos_insights "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim "
+            "  AND breakdown_type = 'placement' "
+            "GROUP BY breakdown_value "
+            "ORDER BY leads DESC"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    total_leads_canal = sum(int(r[1]) for r in canal_rows) or 1
+    leads_por_canal = [
+        {
+            "canal": r[0],
+            "leads": int(r[1]),
+            "spend": float(r[2]),
+            "percentual": round(int(r[1]) / total_leads_canal * 100, 1),
+        }
+        for r in canal_rows
+    ]
+
     return {
         "kpis": kpis,
         "contas": contas,
         "dados_diarios": dados_diarios,
+        "leads_por_canal": leads_por_canal,
         "periodo": {"inicio": str(data_inicio), "fim": str(data_fim)},
     }
 
@@ -212,3 +239,68 @@ def campanhas(
             "clicks": cl,
         })
     return result
+
+
+@router.get("/ia")
+def insights_ia(
+    workspace_id: str = Query(...),
+    data_inicio: date = Query(...),
+    data_fim: date = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_usuario_atual),
+):
+    from app.services.ia_insights import gerar_insights_meta
+
+    account_uuids = _conta_ids_da_query(workspace_id, [], db)
+    if not account_uuids:
+        return []
+
+    kpi_row = db.execute(
+        text(
+            "SELECT "
+            "  COALESCE(SUM(spend),0), COALESCE(SUM(leads),0), "
+            "  COALESCE(SUM(impressions),0), COALESCE(SUM(reach),0), "
+            "  COALESCE(SUM(clicks),0) "
+            "FROM meta_insights_diarios "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchone()
+
+    sp = float(kpi_row[0]); ld = int(kpi_row[1])
+    imp = int(kpi_row[2]); rch = int(kpi_row[3]); cl = int(kpi_row[4])
+    kpis = {
+        "spend": sp, "leads": ld, "impressions": imp, "reach": rch, "clicks": cl,
+        "ctr": _safe_div(cl, imp) * 100,
+        "cpc": _safe_div(sp, cl),
+        "cpm": _safe_div(sp, imp) * 1000,
+        "cpl": _safe_div(sp, ld),
+        "frequencia": _safe_div(imp, rch),
+    }
+
+    conta_rows = db.execute(
+        text(
+            "SELECT a.account_id, a.account_name, "
+            "  COALESCE(SUM(d.spend),0), COALESCE(SUM(d.leads),0), "
+            "  COALESCE(SUM(d.impressions),0), COALESCE(SUM(d.clicks),0) "
+            "FROM ads_accounts a "
+            "JOIN meta_insights_diarios d ON d.ads_account_id = a.id "
+            "WHERE a.id = ANY(:ids) "
+            "  AND d.data BETWEEN :ini AND :fim "
+            "GROUP BY a.account_id, a.account_name"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    contas = [
+        {
+            "account_id": r[0], "account_name": r[1],
+            "spend": float(r[2]), "leads": int(r[3]),
+            "cpl": _safe_div(float(r[2]), int(r[3])),
+            "ctr": _safe_div(int(r[5]), int(r[4])) * 100,
+        }
+        for r in conta_rows
+    ]
+
+    return gerar_insights_meta(kpis, contas)

@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,7 +25,12 @@ class AdsAccount(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     bm_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    bm_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="ativo", nullable=False)
+    account_status: Mapped[int | None] = mapped_column(Integer, default=1, nullable=True)
+    sincronizado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    periodo_sync_inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
+    agrupamento: Mapped[str | None] = mapped_column(String(100), nullable=True)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="ads_accounts")

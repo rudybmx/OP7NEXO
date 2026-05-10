@@ -21,6 +21,7 @@ class AdsAccountIn(BaseModel):
     bm_id: str | None = None
     status: str = "ativo"
     config: dict = {}
+    agrupamento: str | None = None
 
 
 class AdsAccountOut(BaseModel):
@@ -36,6 +37,7 @@ class AdsAccountOut(BaseModel):
     config: dict
     sincronizado_em: str | None = None
     periodo_sync_inicio: str | None = None
+    agrupamento: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -54,6 +56,7 @@ def _ads_account_out(a: AdsAccount, workspace_nome: str | None = None) -> AdsAcc
         config=a.config or {},
         sincronizado_em=a.sincronizado_em.isoformat() if a.sincronizado_em else None,
         periodo_sync_inicio=a.periodo_sync_inicio.isoformat() if a.periodo_sync_inicio else None,
+        agrupamento=a.agrupamento,
     )
 
 
@@ -147,6 +150,7 @@ def atualizar_ads_account(
     a.bm_id = payload.bm_id
     a.status = payload.status
     a.config = payload.config
+    a.agrupamento = payload.agrupamento
     db.commit()
     db.refresh(a)
     return _ads_account_out(a)
