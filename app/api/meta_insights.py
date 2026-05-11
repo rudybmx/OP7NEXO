@@ -773,7 +773,6 @@ def publicos(
             "  COALESCE(SUM(leads),0) AS leads, "
             "  COALESCE(SUM(spend),0) AS spend, "
             "  COALESCE(SUM(impressions),0) AS impressions, "
-            "  COALESCE(SUM(reach),0) AS reach, "
             "  COALESCE(SUM(clicks),0) AS clicks "
             "FROM meta_publicos_insights "
             "WHERE ads_account_id = ANY(:ids) "
@@ -793,7 +792,7 @@ def publicos(
         if faixa.lower() == "unknown" or genero.lower() == "unknown":
             continue
         leads = int(r[1]); spend = float(r[2]); impressions = int(r[3])
-        reach = int(r[4]); clicks = int(r[5])
+        clicks = int(r[4])
         demograficos.append({
             "faixa": faixa,
             "genero": genero,
@@ -801,7 +800,7 @@ def publicos(
             "spend": spend,
             "cpl": _safe_div(spend, leads),
             "ctr": _safe_div(clicks, impressions) * 100,
-            "alcance": reach,
+            "alcance": 0,
             "impressoes": impressions,
         })
 
@@ -810,8 +809,7 @@ def publicos(
             "SELECT breakdown_value, "
             "  COALESCE(SUM(leads),0) AS leads, "
             "  COALESCE(SUM(spend),0) AS spend, "
-            "  COALESCE(SUM(impressions),0) AS impressions, "
-            "  COALESCE(SUM(reach),0) AS reach "
+            "  COALESCE(SUM(impressions),0) AS impressions "
             "FROM meta_publicos_insights "
             "WHERE ads_account_id = ANY(:ids) "
             "  AND data BETWEEN :ini AND :fim "
