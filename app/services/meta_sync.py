@@ -265,6 +265,7 @@ def sincronizar_conta(ads_account_id: str, db: Session) -> dict:
         _sync_publicos_demograficos(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_publicos_placement(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_publicos_device(client, db, meta_account_id, token, time_range, conta.id, totais)
+        _sync_publicos_hourly(client, db, meta_account_id, token, time_range, conta.id, totais)
 
     conta.sincronizado_em = datetime.now(tz=timezone.utc)
     db.commit()
@@ -749,6 +750,71 @@ def _sync_publicos_device(
             "impressions": _safe_int(r.get("impressions")),
             "clicks": _safe_int(r.get("clicks")),
             "ctr": _safe_float(r.get("ctr")),
+            "cpl": cpl,
+        })
+        totais["publicos"] += 1
+    db.commit()
+
+
+def _sync_publicos_hourly(
+    client: httpx.Client,
+    db: Session,
+    account_id: str,
+    token: str,
+    time_range: str,
+    ads_account_uuid: Any,
+    totais: dict,
+) -> None:
+    from datetime import date as _date
+    rows = _paginar(
+        client,
+        f"{META_BASE}/{account_id}/insights",
+        {
+            "access_token": token,
+            "fields": "spend,impressions,clicks,actions",
+            "breakdowns": "hourly_stats_aggregated_by_advertiser_time_zone",
+            "time_range": time_range,
+            "time_increment": 1,
+            "limit": 500,
+        },
+    )
+    for r in rows:
+        actions = r.get("actions") or []
+        leads = _extrair_leads(actions)
+        spend = _safe_float(r.get("spend"))
+        cpl = spend / leads if leads > 0 else 0.0
+        date_str = r.get("date_start")
+        try:
+            dia_semana = _date.fromisoformat(date_str).weekday()  # 0=seg, 6=dom
+        except Exception:
+            dia_semana = 0
+        hora_raw = r.get("hourly_stats_aggregated_by_advertiser_time_zone", "00:00:00")
+        try:
+            hora = int(str(hora_raw)[:2])  # "HH:00:00 - HH:59:59" → int(HH)
+        except (ValueError, IndexError):
+            hora = 0
+        breakdown_value = f"{dia_semana}|{hora}"
+        db.execute(text("""
+            INSERT INTO meta_publicos_insights
+                (ads_account_id, data, breakdown_type, breakdown_value,
+                 leads, spend, impressions, clicks, ctr, cpl)
+            VALUES
+                (:ads_account_id, :data, 'hourly', :breakdown_value,
+                 :leads, :spend, :impressions, :clicks, 0, :cpl)
+            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value) DO UPDATE SET
+                leads       = EXCLUDED.leads,
+                spend       = EXCLUDED.spend,
+                impressions = EXCLUDED.impressions,
+                clicks      = EXCLUDED.clicks,
+                cpl         = EXCLUDED.cpl
+        """), {
+            "ads_account_id": str(ads_account_uuid),
+            "data": date_str,
+            "breakdown_value": breakdown_value,
+            "leads": leads,
+            "spend": spend,
+            "impressions": _safe_int(r.get("impressions")),
+            "clicks": _safe_int(r.get("clicks")),
             "cpl": cpl,
         })
         totais["publicos"] += 1

@@ -938,11 +938,49 @@ def publicos(
         for v in sorted(so_agg.values(), key=lambda x: x["leads"], reverse=True)
     ]
 
+    hourly_rows = db.execute(
+        text(
+            "SELECT breakdown_value, COALESCE(SUM(leads),0) AS leads "
+            "FROM meta_publicos_insights "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim "
+            "  AND breakdown_type = 'hourly' "
+            "GROUP BY breakdown_value "
+            "ORDER BY leads DESC"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    # Agrega leads por (dia, hora) somando todos os dias do período
+    heatmap_agg: dict[tuple[int, int], int] = {}
+    for r in hourly_rows:
+        parts = (r[0] or "").split("|")
+        if len(parts) != 2:
+            continue
+        try:
+            dia = int(parts[0]); hora = int(parts[1])
+        except ValueError:
+            continue
+        heatmap_agg[(dia, hora)] = heatmap_agg.get((dia, hora), 0) + int(r[1])
+
+    max_leads_h = max(heatmap_agg.values(), default=1) or 1
+    heatmap = [
+        {
+            "dia": dia,
+            "hora": hora,
+            "leads": leads_h,
+            "intensidade": round(leads_h / max_leads_h, 4),
+        }
+        for (dia, hora), leads_h in sorted(heatmap_agg.items())
+        if leads_h > 0
+    ]
+
     return {
         "demograficos": demograficos,
         "placements": placements,
         "dispositivos": dispositivos,
         "sistema_operacional": sistema_operacional,
+        "heatmap": heatmap,
         "alcance_total": alcance_total,
         "frequencia_media": round(_safe_div(impressions_total, alcance_total), 2),
     }
