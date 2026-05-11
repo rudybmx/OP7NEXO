@@ -69,7 +69,9 @@ def visao_geral(
             "  COALESCE(SUM(leads_whatsapp),0) AS leads_whatsapp, "
             "  COALESCE(SUM(leads_instagram),0) AS leads_instagram, "
             "  COALESCE(SUM(leads_messenger),0) AS leads_messenger, "
-            "  COALESCE(SUM(leads_formulario),0) AS leads_formulario "
+            "  COALESCE(SUM(leads_formulario),0) AS leads_formulario, "
+            "  COALESCE(SUM(link_click),0) AS link_click, "
+            "  COALESCE(SUM(leads_mensagem),0) AS leads_conversa_7d "
             "FROM meta_insights_diarios "
             "WHERE ads_account_id = ANY(:ids) "
             "  AND data BETWEEN :ini AND :fim"
@@ -98,6 +100,8 @@ def visao_geral(
         "leads_instagram": int(kpi_row[6]),
         "leads_messenger": int(kpi_row[7]),
         "leads_formulario": int(kpi_row[8]),
+        "link_click": int(kpi_row[9]),
+        "leads_conversa_7d": int(kpi_row[10]),
     }
 
     conta_rows = db.execute(
@@ -113,7 +117,9 @@ def visao_geral(
             "  COALESCE(SUM(d.leads_whatsapp),0) AS leads_whatsapp, "
             "  COALESCE(SUM(d.leads_instagram),0) AS leads_instagram, "
             "  COALESCE(SUM(d.leads_messenger),0) AS leads_messenger, "
-            "  COALESCE(SUM(d.leads_formulario),0) AS leads_formulario "
+            "  COALESCE(SUM(d.leads_formulario),0) AS leads_formulario, "
+            "  COALESCE(SUM(d.link_click),0) AS link_click, "
+            "  COALESCE(SUM(d.leads_mensagem),0) AS leads_conversa_7d "
             "FROM ads_accounts a "
             "JOIN meta_insights_diarios d ON d.ads_account_id = a.id "
             "WHERE a.id = ANY(:ids) "
@@ -145,6 +151,8 @@ def visao_geral(
             "leads_instagram": int(r[10]),
             "leads_messenger": int(r[11]),
             "leads_formulario": int(r[12]),
+            "link_click": int(r[13]),
+            "leads_conversa_7d": int(r[14]),
         })
 
     diario_rows = db.execute(
@@ -267,7 +275,8 @@ def campanhas_hierarquia(
             "  MAX(objetivo) AS objetivo, "
             "  COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(leads),0) AS leads, "
             "  COALESCE(SUM(impressions),0) AS impressions, "
-            "  COALESCE(SUM(reach),0) AS reach, COALESCE(SUM(clicks),0) AS clicks "
+            "  COALESCE(SUM(reach),0) AS reach, COALESCE(SUM(clicks),0) AS clicks, "
+            "  MAX(orcamento_diario) AS orcamento_diario "
             "FROM meta_campanhas_insights "
             "WHERE ads_account_id = ANY(:ids) AND data BETWEEN :ini AND :fim "
             "GROUP BY campaign_id ORDER BY spend DESC"
@@ -305,6 +314,7 @@ def campanhas_hierarquia(
             "cpc": _safe_div(sp, cl),
             "cpm": _safe_div(sp, imp) * 1000,
             "cpl": _safe_div(sp, ld),
+            "orcamento_diario": float(r[9]) if r[9] else None,
             "conjuntos": {},
         }
 
@@ -425,6 +435,107 @@ def campanhas(
             "impressions": imp,
             "reach": rch,
             "clicks": cl,
+        })
+    return result
+
+
+@router.get("/anuncios")
+def anuncios(
+    workspace_id: str = Query(...),
+    data_inicio: date = Query(...),
+    data_fim: date = Query(...),
+    conta_ids: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_usuario_atual),
+):
+    ids_filtro = [c.strip() for c in conta_ids.split(",")] if conta_ids else []
+    account_uuids = _conta_ids_da_query(workspace_id, ids_filtro, db)
+    if not account_uuids:
+        return []
+
+    rows = db.execute(
+        text(
+            "SELECT "
+            "  ad_id, "
+            "  MAX(adset_id) AS adset_id, "
+            "  MAX(adset_name) AS adset_name, "
+            "  MAX(campaign_id) AS campaign_id, "
+            "  MAX(nome) AS nome, "
+            "  MAX(status) AS status, "
+            "  MAX(tipo_criativo) AS tipo_criativo, "
+            "  MAX(thumbnail_url) AS thumbnail_url, "
+            "  MAX(image_url_hq) AS image_url_hq, "
+            "  MAX(link_anuncio) AS link_anuncio, "
+            "  COALESCE(SUM(spend),0) AS spend, "
+            "  COALESCE(SUM(leads),0) AS leads, "
+            "  COALESCE(SUM(impressions),0) AS impressions, "
+            "  COALESCE(SUM(reach),0) AS reach, "
+            "  COALESCE(SUM(clicks),0) AS clicks, "
+            "  COUNT(DISTINCT data) AS dias_ativo "
+            "FROM meta_anuncios_insights "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim "
+            "GROUP BY ad_id "
+            "ORDER BY spend DESC"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    if not rows:
+        return []
+
+    # Score calculation helpers
+    all_spends = [float(r[10]) for r in rows]
+    all_leads = [int(r[11]) for r in rows]
+    all_cpls = [_safe_div(float(r[10]), int(r[11])) for r in rows]
+    valid_cpls = [c for c in all_cpls if c > 0]
+    media_cpl = sum(valid_cpls) / len(valid_cpls) if valid_cpls else 0
+    max_leads = max(all_leads) if all_leads else 1
+
+    result = []
+    for r in rows:
+        sp = float(r[10]); ld = int(r[11]); imp = int(r[12])
+        rch = int(r[13]); cl = int(r[14]); dias = int(r[15])
+
+        ctr = _safe_div(cl, imp) * 100
+        cpc = _safe_div(sp, cl)
+        cpm = _safe_div(sp, imp) * 1000
+        cpl = _safe_div(sp, ld)
+        freq = _safe_div(imp, rch) if rch else 0
+
+        # Score
+        if media_cpl > 0 and cpl > 0:
+            cpl_score = 40 if cpl <= media_cpl * 0.7 else (25 if cpl <= media_cpl else 10)
+        else:
+            cpl_score = 10
+        ctr_score = 25 if ctr >= 3 else (15 if ctr >= 1.5 else 5)
+        leads_score = round((ld / max_leads) * 20) if max_leads > 0 else 0
+        freq_score = 15 if freq <= 2 else (10 if freq <= 3 else 0)
+        score = cpl_score + ctr_score + leads_score + freq_score
+
+        result.append({
+            "ad_id": r[0],
+            "adset_id": r[1],
+            "adset_name": r[2],
+            "campaign_id": r[3],
+            "nome": r[4],
+            "status": r[5],
+            "tipo_criativo": r[6] or "IMAGE",
+            "thumbnail_url": r[7],
+            "image_url_hq": r[8],
+            "link_anuncio": r[9],
+            "spend": sp,
+            "leads": ld,
+            "impressions": imp,
+            "reach": rch,
+            "clicks": cl,
+            "ctr": round(ctr, 4),
+            "cpc": round(cpc, 4),
+            "cpm": round(cpm, 4),
+            "cpl": round(cpl, 4),
+            "frequencia": round(freq, 4),
+            "score": score,
+            "dias_ativo": dias,
         })
     return result
 
