@@ -540,6 +540,105 @@ def anuncios(
     return result
 
 
+@router.get("/criativos")
+def criativos(
+    workspace_id: str = Query(...),
+    data_inicio: date = Query(...),
+    data_fim: date = Query(...),
+    conta_ids: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_usuario_atual),
+):
+    ids_filtro = [c.strip() for c in conta_ids.split(",")] if conta_ids else []
+    account_uuids = _conta_ids_da_query(workspace_id, ids_filtro, db)
+    if not account_uuids:
+        return []
+
+    rows = db.execute(
+        text(
+            "SELECT "
+            "  MAX(creative_id) AS creative_id, "
+            "  MAX(tipo_criativo) AS tipo_criativo, "
+            "  MAX(thumbnail_url) AS thumbnail_url, "
+            "  MAX(image_url_hq) AS image_url_hq, "
+            "  MAX(link_anuncio) AS link_anuncio, "
+            "  MAX(status) AS status, "
+            "  COUNT(DISTINCT ad_id) AS total_anuncios, "
+            "  COUNT(DISTINCT campaign_id) AS total_campanhas, "
+            "  COUNT(DISTINCT data) AS dias_ativo, "
+            "  COALESCE(SUM(spend),0) AS spend, "
+            "  COALESCE(SUM(leads),0) AS leads, "
+            "  COALESCE(SUM(impressions),0) AS impressions, "
+            "  COALESCE(SUM(reach),0) AS reach, "
+            "  COALESCE(SUM(clicks),0) AS clicks "
+            "FROM meta_anuncios_insights "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim "
+            "  AND creative_id IS NOT NULL "
+            "GROUP BY creative_id "
+            "ORDER BY SUM(leads) DESC, SUM(spend) DESC"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    if not rows:
+        return []
+
+    all_leads = [int(r[10]) for r in rows]
+    all_spends = [float(r[9]) for r in rows]
+    all_cpls = [_safe_div(float(r[9]), int(r[10])) for r in rows]
+    valid_cpls = [c for c in all_cpls if c > 0]
+    media_cpl = sum(valid_cpls) / len(valid_cpls) if valid_cpls else 0
+    max_leads = max(all_leads) if all_leads else 1
+
+    result = []
+    for r in rows:
+        cid = r[0]
+        if not cid:
+            continue
+        sp = float(r[9]); ld = int(r[10]); imp = int(r[11])
+        rch = int(r[12]); cl = int(r[13])
+
+        ctr = _safe_div(cl, imp) * 100
+        cpc = _safe_div(sp, cl)
+        cpm = _safe_div(sp, imp) * 1000
+        cpl = _safe_div(sp, ld)
+        freq = _safe_div(imp, rch) if rch else 0
+
+        if media_cpl > 0 and cpl > 0:
+            cpl_score = 40 if cpl <= media_cpl * 0.7 else (25 if cpl <= media_cpl else 10)
+        else:
+            cpl_score = 10
+        ctr_score = 25 if ctr >= 3 else (15 if ctr >= 1.5 else 5)
+        leads_score = round((ld / max_leads) * 20) if max_leads > 0 else 0
+        freq_score = 15 if freq <= 2 else (10 if freq <= 3 else 0)
+        score = cpl_score + ctr_score + leads_score + freq_score
+
+        result.append({
+            "creative_id": cid,
+            "tipo_criativo": r[1] or "IMAGE",
+            "thumbnail_url": r[2],
+            "image_url_hq": r[3],
+            "link_anuncio": r[4],
+            "status": r[5],
+            "total_anuncios": int(r[6]),
+            "total_campanhas": int(r[7]),
+            "dias_ativo": int(r[8]),
+            "spend": sp,
+            "leads": ld,
+            "impressions": imp,
+            "reach": rch,
+            "clicks": cl,
+            "ctr": round(ctr, 4),
+            "cpc": round(cpc, 4),
+            "cpm": round(cpm, 4),
+            "cpl": round(cpl, 4),
+            "frequencia": round(freq, 4),
+            "score": score,
+        })
+    return result
+
+
 @router.get("/ia")
 def insights_ia(
     workspace_id: str = Query(...),
