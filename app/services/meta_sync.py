@@ -207,6 +207,64 @@ def _safe_int(val: Any, default: int = 0) -> int:
         return default
 
 
+def _sync_publicos_region(
+    client: httpx.Client,
+    db: Session,
+    account_id: str,
+    token: str,
+    time_range: str,
+    ads_account_uuid: Any,
+    totais: dict,
+) -> None:
+    rows = _paginar(
+        client,
+        f"{META_BASE}/{account_id}/insights",
+        {
+            "access_token": token,
+            "fields": "spend,impressions,clicks,actions,ctr",
+            "breakdowns": "region",
+            "time_range": time_range,
+            "time_increment": 1,
+            "limit": 500,
+        },
+    )
+    for r in rows:
+        actions = r.get("actions") or []
+        leads = _extrair_leads(actions)
+        spend = _safe_float(r.get("spend"))
+        cpl = spend / leads if leads > 0 else 0.0
+        breakdown_value = r.get("region", "unknown")
+        if not breakdown_value or breakdown_value.lower() == "unknown":
+            continue
+        db.execute(text("""
+            INSERT INTO meta_publicos_insights
+                (ads_account_id, data, breakdown_type, breakdown_value,
+                 leads, spend, impressions, clicks, ctr, cpl)
+            VALUES
+                (:ads_account_id, :data, 'region', :breakdown_value,
+                 :leads, :spend, :impressions, :clicks, :ctr, :cpl)
+            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value) DO UPDATE SET
+                leads       = EXCLUDED.leads,
+                spend       = EXCLUDED.spend,
+                impressions = EXCLUDED.impressions,
+                clicks      = EXCLUDED.clicks,
+                ctr         = EXCLUDED.ctr,
+                cpl         = EXCLUDED.cpl
+        """), {
+            "ads_account_id": str(ads_account_uuid),
+            "data": r.get("date_start"),
+            "breakdown_value": breakdown_value,
+            "leads": leads,
+            "spend": spend,
+            "impressions": _safe_int(r.get("impressions")),
+            "clicks": _safe_int(r.get("clicks")),
+            "ctr": _safe_float(r.get("ctr")),
+            "cpl": cpl,
+        })
+        totais["publicos"] += 1
+    db.commit()
+
+
 # ── sync principal ─────────────────────────────────────────────────────────────
 
 def sincronizar_conta(ads_account_id: str, db: Session) -> dict:
@@ -266,6 +324,7 @@ def sincronizar_conta(ads_account_id: str, db: Session) -> dict:
         _sync_publicos_placement(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_publicos_device(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_publicos_hourly(client, db, meta_account_id, token, time_range, conta.id, totais)
+        _sync_publicos_region(client, db, meta_account_id, token, time_range, conta.id, totais)
 
     conta.sincronizado_em = datetime.now(tz=timezone.utc)
     db.commit()

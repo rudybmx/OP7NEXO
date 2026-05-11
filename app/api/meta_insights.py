@@ -975,12 +975,43 @@ def publicos(
         if leads_h > 0
     ]
 
+    cidade_rows = db.execute(
+        text(
+            "SELECT breakdown_value, "
+            "  COALESCE(SUM(leads),0) AS leads, "
+            "  COALESCE(SUM(spend),0) AS spend "
+            "FROM meta_publicos_insights "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim "
+            "  AND breakdown_type = 'region' "
+            "  AND breakdown_value IS NOT NULL "
+            "GROUP BY breakdown_value "
+            "HAVING SUM(leads) > 0 "
+            "ORDER BY leads DESC "
+            "LIMIT 10"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    total_leads_cidade = sum(int(r[1]) for r in cidade_rows) or 1
+    cidades = [
+        {
+            "nome": r[0].replace(" (state)", "").replace(" (district)", "").strip(),
+            "leads": int(r[1]),
+            "spend": float(r[2]),
+            "cpl": _safe_div(float(r[2]), int(r[1])),
+            "percentual": round(int(r[1]) / total_leads_cidade * 100, 1),
+        }
+        for r in cidade_rows
+    ]
+
     return {
         "demograficos": demograficos,
         "placements": placements,
         "dispositivos": dispositivos,
         "sistema_operacional": sistema_operacional,
         "heatmap": heatmap,
+        "cidades": cidades,
         "alcance_total": alcance_total,
         "frequencia_media": round(_safe_div(impressions_total, alcance_total), 2),
     }
