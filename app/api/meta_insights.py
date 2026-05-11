@@ -861,9 +861,88 @@ def publicos(
     alcance_total = int(geral_row[0])
     impressions_total = int(geral_row[1])
 
+    device_rows = db.execute(
+        text(
+            "SELECT breakdown_value, "
+            "  COALESCE(SUM(leads),0) AS leads, "
+            "  COALESCE(SUM(spend),0) AS spend, "
+            "  COALESCE(SUM(impressions),0) AS impressions, "
+            "  COALESCE(SUM(clicks),0) AS clicks "
+            "FROM meta_publicos_insights "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim "
+            "  AND breakdown_type = 'device' "
+            "  AND breakdown_value != 'unknown' "
+            "GROUP BY breakdown_value "
+            "ORDER BY leads DESC"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    DEVICE_MAP: dict[str, tuple[str, str]] = {
+        "mobile_app": ("mobile",  "Mobile"),
+        "mobile_web": ("mobile",  "Mobile"),
+        "desktop":    ("desktop", "Desktop"),
+        "tablet":     ("tablet",  "Tablet"),
+    }
+
+    device_agg: dict[str, dict] = {}
+    for r in device_rows:
+        bv = r[0] or ""
+        ld = int(r[1]); sp = float(r[2])
+        tipo, nome = DEVICE_MAP.get(bv, ("mobile", bv.replace("_", " ").title()))
+        if tipo not in device_agg:
+            device_agg[tipo] = {"tipo": tipo, "nome": nome, "leads": 0, "spend": 0.0}
+        device_agg[tipo]["leads"] += ld
+        device_agg[tipo]["spend"] += sp
+
+    total_leads_device = sum(v["leads"] for v in device_agg.values()) or 1
+    dispositivos = [
+        {
+            "tipo": v["tipo"],
+            "nome": v["nome"],
+            "leads": v["leads"],
+            "spend": round(v["spend"], 2),
+            "cpl": _safe_div(v["spend"], v["leads"]),
+            "percentual": round(v["leads"] / total_leads_device * 100, 1),
+        }
+        for v in sorted(device_agg.values(), key=lambda x: x["leads"], reverse=True)
+    ]
+
+    so_agg: dict[str, dict] = {}
+    for r in device_rows:
+        bv = (r[0] or "").lower()
+        ld = int(r[1]); sp = float(r[2])
+        if any(x in bv for x in ("iphone", "ipad", "ios", "safari")):
+            so = "iOS"
+        elif "android" in bv:
+            so = "Android"
+        elif any(x in bv for x in ("desktop", "windows")):
+            so = "Windows"
+        else:
+            so = bv.replace("_", " ").title() if bv else "Outro"
+        if so not in so_agg:
+            so_agg[so] = {"nome": so, "leads": 0, "spend": 0.0}
+        so_agg[so]["leads"] += ld
+        so_agg[so]["spend"] += sp
+
+    total_leads_so = sum(v["leads"] for v in so_agg.values()) or 1
+    sistema_operacional = [
+        {
+            "nome": v["nome"],
+            "leads": v["leads"],
+            "spend": round(v["spend"], 2),
+            "cpl": _safe_div(v["spend"], v["leads"]),
+            "percentual": round(v["leads"] / total_leads_so * 100, 1),
+        }
+        for v in sorted(so_agg.values(), key=lambda x: x["leads"], reverse=True)
+    ]
+
     return {
         "demograficos": demograficos,
         "placements": placements,
+        "dispositivos": dispositivos,
+        "sistema_operacional": sistema_operacional,
         "alcance_total": alcance_total,
         "frequencia_media": round(_safe_div(impressions_total, alcance_total), 2),
     }

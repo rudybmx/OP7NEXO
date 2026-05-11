@@ -23,48 +23,54 @@ META_API_VERSION = "v21.0"
 META_BASE = f"https://graph.facebook.com/{META_API_VERSION}"
 
 LEAD_ACTION_TYPES = {
-    "lead",
-    "onsite_conversion.lead_grouped",
-    "offsite_conversion.fb_pixel_lead",
+    # Conversa iniciada (janela 7d) usada como lead principal em campanhas de mensagem
+    "onsite_conversion.messaging_conversation_started_7d",
 }
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 def _extrair_leads(actions: list[dict]) -> int:
+    conversa_7d = _valor_action(actions, "onsite_conversion.messaging_conversation_started_7d")
+    formulario_unico = _extrair_lead_formulario_unico(actions)
+    return conversa_7d + formulario_unico
+
+
+def _extrair_link_click(actions: list[dict]) -> int:
     return sum(
         int(float(a.get("value", 0)))
         for a in actions
-        if a.get("action_type") in LEAD_ACTION_TYPES
+        if a.get("action_type") == "link_click"
+    )
+
+
+def _valor_action(actions: list[dict], action_type: str) -> int:
+    for a in actions:
+        if a.get("action_type") == action_type:
+            return int(float(a.get("value", 0)))
+    return 0
+
+
+def _extrair_lead_formulario_unico(actions: list[dict]) -> int:
+    # Meta costuma retornar mais de um action_type para o mesmo lead de formulário.
+    # Para não duplicar contagem, usamos o maior valor entre os tipos equivalentes.
+    return max(
+        _valor_action(actions, "lead"),
+        _valor_action(actions, "onsite_conversion.lead_grouped"),
+        _valor_action(actions, "offsite_conversion.fb_pixel_lead"),
     )
 
 
 def _extrair_leads_por_tipo(actions: list[dict]) -> tuple[int, int]:
     """Retorna (leads_mensagem, leads_cadastro)."""
-    msgs = sum(
-        int(float(a.get("value", 0)))
-        for a in actions
-        if a.get("action_type") == "onsite_conversion.messaging_first_reply"
-    )
-    cadastros = sum(
-        int(float(a.get("value", 0)))
-        for a in actions
-        if a.get("action_type") == "offsite_conversion.fb_pixel_lead"
-    )
+    msgs = _valor_action(actions, "onsite_conversion.messaging_conversation_started_7d")
+    cadastros = _extrair_lead_formulario_unico(actions)
     return msgs, cadastros
 
 
 _WHATSAPP_ACTION_TYPES = {
     "onsite_conversion.messaging_conversation_started_7d",
-    "onsite_conversion.messaging_first_reply",
 }
-
-_FORMULARIO_ACTION_TYPES = {
-    "lead",
-    "onsite_conversion.lead_grouped",
-    "offsite_conversion.fb_pixel_lead",
-}
-
 
 def _extrair_leads_por_canal(actions: list[dict]) -> tuple[int, int, int, int]:
     """Retorna (leads_whatsapp, leads_instagram, leads_messenger, leads_formulario).
@@ -74,14 +80,12 @@ def _extrair_leads_por_canal(actions: list[dict]) -> tuple[int, int, int, int]:
     Instagram e Messenger não são distinguíveis sem breakdown adicional.
     """
     whatsapp = 0
-    formulario = 0
+    formulario = _extrair_lead_formulario_unico(actions)
     for a in actions:
         at = a.get("action_type", "")
         val = int(float(a.get("value", 0)))
         if at in _WHATSAPP_ACTION_TYPES:
             whatsapp += val
-        elif at in _FORMULARIO_ACTION_TYPES:
-            formulario += val
     return whatsapp, 0, 0, formulario
 
 
@@ -260,6 +264,7 @@ def sincronizar_conta(ads_account_id: str, db: Session) -> dict:
         _sync_anuncios(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_publicos_demograficos(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_publicos_placement(client, db, meta_account_id, token, time_range, conta.id, totais)
+        _sync_publicos_device(client, db, meta_account_id, token, time_range, conta.id, totais)
 
     conta.sincronizado_em = datetime.now(tz=timezone.utc)
     db.commit()
@@ -292,6 +297,7 @@ def _sync_diarios(
     for r in rows:
         actions = r.get("actions") or []
         leads = _extrair_leads(actions)
+        link_click = _extrair_link_click(actions)
         leads_msg, leads_cad = _extrair_leads_por_tipo(actions)
         leads_whatsapp, leads_instagram, leads_messenger, leads_formulario = _extrair_leads_por_canal(actions)
         d = r.get("date_start")
@@ -299,12 +305,12 @@ def _sync_diarios(
             INSERT INTO meta_insights_diarios
                 (ads_account_id, data, spend, impressions, reach, clicks, leads,
                  cpl, cpc, cpm, ctr, frequencia, leads_mensagem, leads_cadastro,
-                 leads_whatsapp, leads_instagram, leads_messenger, leads_formulario)
+                 leads_whatsapp, leads_instagram, leads_messenger, leads_formulario, link_click)
             SELECT
                 aa.id, :data, :spend, :impressions, :reach, :clicks, :leads,
                 CASE WHEN :leads > 0 THEN :spend / :leads ELSE 0 END,
                 :cpc, :cpm, :ctr, :frequencia, :leads_mensagem, :leads_cadastro,
-                :leads_whatsapp, :leads_instagram, :leads_messenger, :leads_formulario
+                :leads_whatsapp, :leads_instagram, :leads_messenger, :leads_formulario, :link_click
             FROM ads_accounts aa
             WHERE aa.account_id = :account_id AND aa.plataforma = 'meta'
             ON CONFLICT (ads_account_id, data) DO UPDATE SET
@@ -323,7 +329,8 @@ def _sync_diarios(
                 leads_whatsapp   = EXCLUDED.leads_whatsapp,
                 leads_instagram  = EXCLUDED.leads_instagram,
                 leads_messenger  = EXCLUDED.leads_messenger,
-                leads_formulario = EXCLUDED.leads_formulario
+                leads_formulario = EXCLUDED.leads_formulario,
+                link_click       = EXCLUDED.link_click
         """), {
             "account_id": account_id,
             "data": d,
@@ -342,6 +349,7 @@ def _sync_diarios(
             "leads_instagram": leads_instagram,
             "leads_messenger": leads_messenger,
             "leads_formulario": leads_formulario,
+            "link_click": link_click,
         })
         totais["diarios"] += 1
     db.commit()
@@ -373,33 +381,83 @@ def _sync_campanhas(
             "limit": 500,
         },
     )
+
+    camp_orcamentos: dict[str, float] = {}
+    try:
+        camp_budget_rows = _paginar(
+            client,
+            f"{META_BASE}/{account_id}/campaigns",
+            {
+                "access_token": token,
+                "fields": "id,daily_budget,lifetime_budget,status",
+                "limit": 500,
+            },
+        )
+        for cb in camp_budget_rows:
+            raw = cb.get("daily_budget") or cb.get("lifetime_budget") or 0
+            camp_orcamentos[cb["id"]] = int(raw) / 100
+    except Exception:
+        pass
+
+    adset_por_campanha: dict[str, list[float]] = {}
+    try:
+        adset_rows = _paginar(
+            client,
+            f"{META_BASE}/{account_id}/adsets",
+            {
+                "access_token": token,
+                "fields": "id,campaign_id,daily_budget,status",
+                "limit": 500,
+            },
+        )
+        for ab in adset_rows:
+            cid = ab.get("campaign_id")
+            raw = ab.get("daily_budget") or 0
+            if cid and raw:
+                adset_por_campanha.setdefault(cid, []).append(int(raw) / 100)
+    except Exception:
+        pass
+
+    def calcular_orcamento(campaign_id: str) -> float | None:
+        if campaign_id in camp_orcamentos and camp_orcamentos[campaign_id] > 0:
+            return camp_orcamentos[campaign_id]
+        budgets = adset_por_campanha.get(campaign_id)
+        if budgets:
+            return sum(budgets)
+        return None
+
     for r in rows:
         actions = r.get("actions") or []
         leads = _extrair_leads(actions)
         spend = _safe_float(r.get("spend"))
+        camp_id = r.get("campaign_id")
+        orcamento = calcular_orcamento(camp_id) if camp_id else None
         db.execute(text("""
             INSERT INTO meta_campanhas_insights
                 (ads_account_id, campaign_id, nome, objetivo, status, data,
-                 spend, leads, impressions, reach, clicks, ctr, cpc, cpm, frequencia)
+                 spend, leads, impressions, reach, clicks, ctr, cpc, cpm, frequencia,
+                 orcamento_diario)
             VALUES
                 (:ads_account_id, :campaign_id, :nome, :objetivo, :status, :data,
-                 :spend, :leads, :impressions, :reach, :clicks, :ctr, :cpc, :cpm, :frequencia)
+                 :spend, :leads, :impressions, :reach, :clicks, :ctr, :cpc, :cpm, :frequencia,
+                 :orcamento_diario)
             ON CONFLICT (ads_account_id, campaign_id, data) DO UPDATE SET
-                nome        = EXCLUDED.nome,
-                objetivo    = EXCLUDED.objetivo,
-                status      = EXCLUDED.status,
-                spend       = EXCLUDED.spend,
-                leads       = EXCLUDED.leads,
-                impressions = EXCLUDED.impressions,
-                reach       = EXCLUDED.reach,
-                clicks      = EXCLUDED.clicks,
-                ctr         = EXCLUDED.ctr,
-                cpc         = EXCLUDED.cpc,
-                cpm         = EXCLUDED.cpm,
-                frequencia  = EXCLUDED.frequencia
+                nome             = EXCLUDED.nome,
+                objetivo         = EXCLUDED.objetivo,
+                status           = EXCLUDED.status,
+                spend            = EXCLUDED.spend,
+                leads            = EXCLUDED.leads,
+                impressions      = EXCLUDED.impressions,
+                reach            = EXCLUDED.reach,
+                clicks           = EXCLUDED.clicks,
+                ctr              = EXCLUDED.ctr,
+                cpc              = EXCLUDED.cpc,
+                cpm              = EXCLUDED.cpm,
+                frequencia       = EXCLUDED.frequencia,
+                orcamento_diario = COALESCE(EXCLUDED.orcamento_diario, meta_campanhas_insights.orcamento_diario)
         """), {
             "ads_account_id": str(ads_account_uuid),
-            "campaign_id": r.get("campaign_id"),
+            "campaign_id": camp_id,
             "nome": r.get("campaign_name"),
             "objetivo": r.get("objective"),
             "status": "ACTIVE",
@@ -413,6 +471,7 @@ def _sync_campanhas(
             "cpc": _safe_float(r.get("cpc")),
             "cpm": _safe_float(r.get("cpm")),
             "frequencia": _safe_float(r.get("frequency")),
+            "orcamento_diario": orcamento,
         })
         totais["campanhas"] += 1
     db.commit()
@@ -617,6 +676,62 @@ def _sync_publicos_placement(
                  leads, spend, impressions, clicks, ctr, cpl)
             VALUES
                 (:ads_account_id, :data, 'placement', :breakdown_value,
+                 :leads, :spend, :impressions, :clicks, :ctr, :cpl)
+            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value) DO UPDATE SET
+                leads       = EXCLUDED.leads,
+                spend       = EXCLUDED.spend,
+                impressions = EXCLUDED.impressions,
+                clicks      = EXCLUDED.clicks,
+                ctr         = EXCLUDED.ctr,
+                cpl         = EXCLUDED.cpl
+        """), {
+            "ads_account_id": str(ads_account_uuid),
+            "data": r.get("date_start"),
+            "breakdown_value": breakdown_value,
+            "leads": leads,
+            "spend": spend,
+            "impressions": _safe_int(r.get("impressions")),
+            "clicks": _safe_int(r.get("clicks")),
+            "ctr": _safe_float(r.get("ctr")),
+            "cpl": cpl,
+        })
+        totais["publicos"] += 1
+    db.commit()
+
+
+def _sync_publicos_device(
+    client: httpx.Client,
+    db: Session,
+    account_id: str,
+    token: str,
+    time_range: str,
+    ads_account_uuid: Any,
+    totais: dict,
+) -> None:
+    rows = _paginar(
+        client,
+        f"{META_BASE}/{account_id}/insights",
+        {
+            "access_token": token,
+            "fields": "spend,impressions,clicks,actions,ctr",
+            "breakdowns": "device_platform",
+            "time_range": time_range,
+            "time_increment": 1,
+            "limit": 500,
+        },
+    )
+    for r in rows:
+        actions = r.get("actions") or []
+        leads = _extrair_leads(actions)
+        spend = _safe_float(r.get("spend"))
+        cpl = spend / leads if leads > 0 else 0.0
+        breakdown_value = r.get("device_platform", "unknown")
+        db.execute(text("""
+            INSERT INTO meta_publicos_insights
+                (ads_account_id, data, breakdown_type, breakdown_value,
+                 leads, spend, impressions, clicks, ctr, cpl)
+            VALUES
+                (:ads_account_id, :data, 'device', :breakdown_value,
                  :leads, :spend, :impressions, :clicks, :ctr, :cpl)
             ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value) DO UPDATE SET
                 leads       = EXCLUDED.leads,
