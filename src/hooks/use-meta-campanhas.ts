@@ -171,7 +171,7 @@ function computeResumo(campanhas: Campanha[]): ResumoCampanhas {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useMetaCampanhas(filtros: FiltrosCampanhas, dataInicio: string, dataFim: string) {
+export function useMetaCampanhas(filtros: FiltrosCampanhas, dataInicio: string, dataFim: string, contaIds: string[] = []) {
   const { data: workspaces } = useSWR<Workspace[]>(
     '/workspaces',
     () => api.get<Workspace[]>('/workspaces'),
@@ -179,8 +179,8 @@ export function useMetaCampanhas(filtros: FiltrosCampanhas, dataInicio: string, 
   )
   const wsId = workspaces?.[0]?.id
 
-  const contaIdsParam = filtros.contaIds?.length
-    ? `&conta_ids=${filtros.contaIds.join(',')}`
+  const contaIdsParam = contaIds.length
+    ? `&conta_ids=${contaIds.join(',')}`
     : ''
 
   const hierarquiaKey = wsId

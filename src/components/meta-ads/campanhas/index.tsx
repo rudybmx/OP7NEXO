@@ -7,9 +7,9 @@ import { TabelaHierarquica } from './tabela-hierarquica'
 import { useMetaCampanhas } from '@/hooks/use-meta-campanhas'
 import { InsightsIA } from '../anuncios/insights-ia'
 
-interface Props { dataInicio: string; dataFim: string }
+interface Props { dataInicio: string; dataFim: string; contaIds?: string[] }
 
-export function AbaCampanhas({ dataInicio, dataFim }: Props) {
+export function AbaCampanhas({ dataInicio, dataFim, contaIds = [] }: Props) {
   const [filtros, setFiltros] = useState<FiltrosCampanhas>({
     busca: '',
     objetivo: 'todos',
@@ -17,7 +17,7 @@ export function AbaCampanhas({ dataInicio, dataFim }: Props) {
     plataformas: ['facebook', 'instagram', 'whatsapp'],
   })
 
-  const { campanhas, resumo, insightsIA } = useMetaCampanhas(filtros, dataInicio, dataFim)
+  const { campanhas, resumo, insightsIA } = useMetaCampanhas(filtros, dataInicio, dataFim, contaIds)
 
   return (
     <div>
