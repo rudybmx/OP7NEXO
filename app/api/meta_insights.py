@@ -752,6 +752,124 @@ def insights_ia(
     return buscar_todos_insights_vigentes(workspace_id, db)
 
 
+@router.get("/publicos")
+def publicos(
+    workspace_id: str = Query(...),
+    data_inicio: date = Query(...),
+    data_fim: date = Query(...),
+    conta_ids: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_usuario_atual),
+):
+    ids_filtro = [c.strip() for c in conta_ids.split(",")] if conta_ids else []
+    account_uuids = _conta_ids_da_query(workspace_id, ids_filtro, db)
+
+    if not account_uuids:
+        return {"demograficos": [], "placements": [], "alcance_total": 0, "frequencia_media": 0.0}
+
+    demo_rows = db.execute(
+        text(
+            "SELECT breakdown_value, "
+            "  COALESCE(SUM(leads),0) AS leads, "
+            "  COALESCE(SUM(spend),0) AS spend, "
+            "  COALESCE(SUM(impressions),0) AS impressions, "
+            "  COALESCE(SUM(reach),0) AS reach, "
+            "  COALESCE(SUM(clicks),0) AS clicks "
+            "FROM meta_publicos_insights "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim "
+            "  AND breakdown_type = 'demographic' "
+            "GROUP BY breakdown_value "
+            "ORDER BY leads DESC"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    demograficos = []
+    for r in demo_rows:
+        parts = (r[0] or "").split("|")
+        faixa = parts[0] if parts else ""
+        genero = parts[1] if len(parts) >= 2 else ""
+        if faixa.lower() == "unknown" or genero.lower() == "unknown":
+            continue
+        leads = int(r[1]); spend = float(r[2]); impressions = int(r[3])
+        reach = int(r[4]); clicks = int(r[5])
+        demograficos.append({
+            "faixa": faixa,
+            "genero": genero,
+            "leads": leads,
+            "spend": spend,
+            "cpl": _safe_div(spend, leads),
+            "ctr": _safe_div(clicks, impressions) * 100,
+            "alcance": reach,
+            "impressoes": impressions,
+        })
+
+    plac_rows = db.execute(
+        text(
+            "SELECT breakdown_value, "
+            "  COALESCE(SUM(leads),0) AS leads, "
+            "  COALESCE(SUM(spend),0) AS spend, "
+            "  COALESCE(SUM(impressions),0) AS impressions, "
+            "  COALESCE(SUM(reach),0) AS reach "
+            "FROM meta_publicos_insights "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim "
+            "  AND breakdown_type = 'placement' "
+            "  AND LOWER(breakdown_value) NOT LIKE 'unknown%' "
+            "GROUP BY breakdown_value "
+            "ORDER BY leads DESC"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    PLACEMENT_MAP = {
+        "instagram|instagram_reels":   "Instagram Reels",
+        "instagram|instagram_stories": "Instagram Stories",
+        "instagram|feed":              "Instagram Feed",
+        "facebook|feed":               "Facebook Feed",
+        "facebook|facebook_reels":     "Facebook Reels",
+        "facebook|facebook_stories":   "Facebook Stories",
+        "facebook|marketplace":        "Facebook Marketplace",
+        "messenger|messenger_inbox":   "Messenger Inbox",
+    }
+
+    total_leads_plac = sum(int(r[1]) for r in plac_rows) or 1
+    placements = []
+    for r in plac_rows:
+        bv = r[0] or ""
+        leads = int(r[1]); spend = float(r[2])
+        plataforma = bv.split("|")[0] if "|" in bv else bv
+        placements.append({
+            "nome": PLACEMENT_MAP.get(bv, bv),
+            "plataforma": plataforma,
+            "leads": leads,
+            "spend": spend,
+            "cpl": _safe_div(spend, leads),
+            "percentual": round(leads / total_leads_plac * 100, 1),
+        })
+
+    geral_row = db.execute(
+        text(
+            "SELECT COALESCE(SUM(reach),0), COALESCE(SUM(impressions),0) "
+            "FROM meta_insights_diarios "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchone()
+
+    alcance_total = int(geral_row[0])
+    impressions_total = int(geral_row[1])
+
+    return {
+        "demograficos": demograficos,
+        "placements": placements,
+        "alcance_total": alcance_total,
+        "frequencia_media": round(_safe_div(impressions_total, alcance_total), 2),
+    }
+
+
 @router.patch("/{insight_id}/resolver")
 def resolver_insight(
     insight_id: str,
