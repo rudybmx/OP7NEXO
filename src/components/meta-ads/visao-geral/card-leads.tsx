@@ -12,9 +12,9 @@ interface CardLeadsProps {
 
 export function CardLeads({ contas, leadsAnterior }: CardLeadsProps) {
   const totalLeads = contas.reduce((s, c) => s + c.leads, 0)
-  const totalMsgs = contas.reduce((s, c) => s + c.leadsMensagem, 0)
-  const totalCadastros = contas.reduce((s, c) => s + c.leadsCadastro, 0)
-  const totalCompras = contas.reduce((s, c) => s + c.leadsCompra, 0)
+  const totalWhatsapp = contas.reduce((s, c) => s + c.leadsWhatsapp, 0)
+  const totalInstagram = contas.reduce((s, c) => s + c.leadsInstagram, 0)
+  const totalFormulario = contas.reduce((s, c) => s + c.leadsFormulario, 0)
 
   const plataformasAgregadas = contas.reduce((acc, c) => {
     for (const p of c.leadsPorPlataforma) {
@@ -99,9 +99,9 @@ export function CardLeads({ contas, leadsAnterior }: CardLeadsProps) {
       
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', borderTop: '1px solid var(--ws-divider, rgba(14,20,42,0.06))', paddingTop: '8px', marginTop: '10px' }}>
         {[
-          { label: 'Msgs', value: totalMsgs },
-          { label: 'Cadastros', value: totalCadastros },
-          { label: 'Compras', value: totalCompras },
+          { label: 'WhatsApp', value: totalWhatsapp },
+          { label: 'Instagram', value: totalInstagram },
+          { label: 'Formulário', value: totalFormulario },
         ].map((item) => (
           <div key={item.label} style={{
             textAlign: 'center',

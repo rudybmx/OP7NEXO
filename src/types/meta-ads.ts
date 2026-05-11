@@ -34,9 +34,10 @@ export interface ContaAnuncio {
   status: 'ACTIVE' | 'DISABLED' | 'UNSETTLED'
   investimento: number
   leads: number
-  leadsMensagem: number
-  leadsCadastro: number
-  leadsCompra: number
+  leadsWhatsapp: number
+  leadsInstagram: number
+  leadsMessenger: number
+  leadsFormulario: number
   leadsPorPlataforma: LeadsByPlatform[]
   cpl: number
   ctr: number

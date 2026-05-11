@@ -39,7 +39,11 @@ function fmtData(iso: string): string {
 function fmtNum(n: number): string {
   if (n >= 1000000) return (n / 1000000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'M'
   if (n >= 1000) return (n / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'K'
-  return n.toLocaleString('pt-BR')
+  return Math.round(n).toLocaleString('pt-BR')
+}
+
+function fmtPct(n: number): string {
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'
 }
 
 function cplColor(cpl: number): string {
@@ -240,7 +244,7 @@ function BarraDesempenho({ score }: { score: number }) {
         <div style={{ width: `${score}%`, height: '100%', background: color, borderRadius: 3 }} />
       </div>
       <span style={{ fontSize: 10, color: color, fontWeight: 500, minWidth: 28, textAlign: 'right' }}>
-        {score}%
+        {Math.round(score)}%
       </span>
     </div>
   )
@@ -597,7 +601,7 @@ function CampanhaRows({
         {vis('investimento') && <Td>R$ {fmtBRL(campanha.investimento)}</Td>}
         {vis('leads')        && <Td blue>{fmtNum(campanha.leads)}</Td>}
         {vis('cpl')          && <Td cpl={campanha.cpl}>R$ {fmtBRL(campanha.cpl)}</Td>}
-        {vis('ctr')          && <Td ctr={campanha.ctr}>{campanha.ctr.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%</Td>}
+        {vis('ctr')          && <Td ctr={campanha.ctr}>{campanha.ctr.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</Td>}
         {vis('cpc')          && <Td>R$ {fmtBRL(campanha.cpc)}</Td>}
         {vis('cpm')          && <Td muted>R$ {fmtBRL(campanha.cpm)}</Td>}
         {vis('desempenho')   && <td style={{ padding: '10px 14px' }}><BarraDesempenho score={campanha.indiceDesempenho} /></td>}
@@ -673,7 +677,7 @@ function ConjuntoRows({
         {vis('investimento') && <Td>R$ {fmtBRL(cj.investimento)}</Td>}
         {vis('leads')        && <Td blue>{fmtNum(cj.leads)}</Td>}
         {vis('cpl')          && <Td cpl={cj.cpl}>R$ {fmtBRL(cj.cpl)}</Td>}
-        {vis('ctr')          && <Td ctr={cj.ctr}>{cj.ctr.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%</Td>}
+        {vis('ctr')          && <Td ctr={cj.ctr}>{cj.ctr.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</Td>}
         {vis('cpc')          && <Td>R$ {fmtBRL(cj.cpc)}</Td>}
         {vis('cpm')          && <Td muted>R$ {fmtBRL(cj.cpm)}</Td>}
         {vis('desempenho')   && <td style={{ padding: '10px 14px' }}><BarraDesempenho score={cj.indiceDesempenho} /></td>}
@@ -695,7 +699,7 @@ function ConjuntoRows({
               />
               <div style={{
                 fontSize: 12, fontWeight: 400, color: '#4a5580',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280,
               }} title={anuncio.nome}>
                 {anuncio.nome}
               </div>
@@ -763,7 +767,7 @@ function ConjuntoRows({
           {vis('investimento') && <Td>R$ {fmtBRL(anuncio.investimento)}</Td>}
           {vis('leads')        && <Td blue>{fmtNum(anuncio.leads)}</Td>}
           {vis('cpl')          && <Td cpl={anuncio.cpl}>R$ {fmtBRL(anuncio.cpl)}</Td>}
-          {vis('ctr')          && <Td ctr={anuncio.ctr}>{anuncio.ctr.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%</Td>}
+          {vis('ctr')          && <Td ctr={anuncio.ctr}>{anuncio.ctr.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</Td>}
           {vis('cpc')          && <Td>R$ {fmtBRL(anuncio.cpc)}</Td>}
           {vis('cpm')          && <Td muted>R$ {fmtBRL(anuncio.cpm)}</Td>}
           {vis('desempenho')   && <td style={{ padding: '8px 14px' }}><BarraDesempenho score={anuncio.indiceDesempenho} /></td>}
