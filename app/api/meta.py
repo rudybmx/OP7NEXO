@@ -6,7 +6,9 @@ import urllib.request
 import uuid
 from datetime import date, datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -81,6 +83,43 @@ class ImportarContasInput(BaseModel):
     token_expira_em: datetime | None
     periodo_sync: str
     contas: list[ContaImport]
+
+
+_ALLOWED_IMAGE_HOSTS = {"fbcdn.net", "facebook.com"}
+
+
+def _host_allowed(url: str) -> bool:
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+        return any(host == h or host.endswith("." + h) for h in _ALLOWED_IMAGE_HOSTS)
+    except Exception:
+        return False
+
+
+@router.get("/imagem")
+def proxy_imagem(url: str = Query(...)):
+    if not _host_allowed(url):
+        raise HTTPException(status_code=400, detail="URL não permitida")
+    try:
+        resp = httpx.get(
+            url,
+            follow_redirects=True,
+            timeout=10,
+            headers={
+                "Referer": "https://www.facebook.com/",
+                "User-Agent": "Mozilla/5.0",
+            },
+        )
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    except (httpx.HTTPError, httpx.RequestError):
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    content_type = resp.headers.get("content-type", "image/jpeg")
+    return StreamingResponse(
+        iter([resp.content]),
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @router.get("/contas", response_model=list[MetaContaOut])
