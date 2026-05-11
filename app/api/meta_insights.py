@@ -816,6 +816,7 @@ def publicos(
             "  AND breakdown_type = 'placement' "
             "  AND LOWER(breakdown_value) NOT LIKE 'unknown%' "
             "GROUP BY breakdown_value "
+            "HAVING SUM(leads) > 0 "
             "ORDER BY leads DESC"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
