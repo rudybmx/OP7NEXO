@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import date
 
@@ -64,7 +65,11 @@ def visao_geral(
             "  COALESCE(SUM(leads),0) AS leads, "
             "  COALESCE(SUM(impressions),0) AS impressions, "
             "  COALESCE(SUM(reach),0) AS reach, "
-            "  COALESCE(SUM(clicks),0) AS clicks "
+            "  COALESCE(SUM(clicks),0) AS clicks, "
+            "  COALESCE(SUM(leads_whatsapp),0) AS leads_whatsapp, "
+            "  COALESCE(SUM(leads_instagram),0) AS leads_instagram, "
+            "  COALESCE(SUM(leads_messenger),0) AS leads_messenger, "
+            "  COALESCE(SUM(leads_formulario),0) AS leads_formulario "
             "FROM meta_insights_diarios "
             "WHERE ads_account_id = ANY(:ids) "
             "  AND data BETWEEN :ini AND :fim"
@@ -89,33 +94,44 @@ def visao_geral(
         "cpm": _safe_div(spend, impressions) * 1000,
         "cpl": _safe_div(spend, leads),
         "frequencia": _safe_div(impressions, reach),
+        "leads_whatsapp": int(kpi_row[5]),
+        "leads_instagram": int(kpi_row[6]),
+        "leads_messenger": int(kpi_row[7]),
+        "leads_formulario": int(kpi_row[8]),
     }
 
     conta_rows = db.execute(
         text(
             "SELECT "
             "  a.id::text, a.account_id, a.account_name, "
+            "  COALESCE(a.balance, 0) AS balance, "
             "  COALESCE(SUM(d.spend),0) AS spend, "
             "  COALESCE(SUM(d.leads),0) AS leads, "
             "  COALESCE(SUM(d.impressions),0) AS impressions, "
             "  COALESCE(SUM(d.reach),0) AS reach, "
-            "  COALESCE(SUM(d.clicks),0) AS clicks "
+            "  COALESCE(SUM(d.clicks),0) AS clicks, "
+            "  COALESCE(SUM(d.leads_whatsapp),0) AS leads_whatsapp, "
+            "  COALESCE(SUM(d.leads_instagram),0) AS leads_instagram, "
+            "  COALESCE(SUM(d.leads_messenger),0) AS leads_messenger, "
+            "  COALESCE(SUM(d.leads_formulario),0) AS leads_formulario "
             "FROM ads_accounts a "
             "JOIN meta_insights_diarios d ON d.ads_account_id = a.id "
             "WHERE a.id = ANY(:ids) "
             "  AND d.data BETWEEN :ini AND :fim "
-            "GROUP BY a.id, a.account_id, a.account_name"
+            "GROUP BY a.id, a.account_id, a.account_name, a.balance"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
     ).fetchall()
 
     contas = []
     for r in conta_rows:
-        sp = float(r[3]); ld = int(r[4]); imp = int(r[5]); rch = int(r[6]); cl = int(r[7])
+        bal = float(r[3])
+        sp = float(r[4]); ld = int(r[5]); imp = int(r[6]); rch = int(r[7]); cl = int(r[8])
         contas.append({
             "id": r[0],
             "account_id": r[1],
             "account_name": r[2],
+            "saldo": bal,
             "spend": sp,
             "leads": ld,
             "cpl": _safe_div(sp, ld),
@@ -125,7 +141,10 @@ def visao_geral(
             "impressions": imp,
             "reach": rch,
             "frequencia": _safe_div(imp, rch),
-            "saldo": None,
+            "leads_whatsapp": int(r[9]),
+            "leads_instagram": int(r[10]),
+            "leads_messenger": int(r[11]),
+            "leads_formulario": int(r[12]),
         })
 
     diario_rows = db.execute(
@@ -175,13 +194,182 @@ def visao_geral(
         for r in canal_rows
     ]
 
+    criativo_rows = db.execute(
+        text(
+            "SELECT "
+            "  ad_id, "
+            "  MAX(nome) AS nome, "
+            "  MAX(thumbnail_url) AS thumbnail_url, "
+            "  MAX(tipo_criativo) AS tipo_criativo, "
+            "  MAX(image_url_hq) AS image_url_hq, "
+            "  MAX(link_anuncio) AS link_anuncio, "
+            "  MAX(carousel_items::text) AS carousel_items, "
+            "  COALESCE(SUM(leads),0) AS leads, "
+            "  COALESCE(SUM(spend),0) AS spend, "
+            "  COALESCE(SUM(impressions),0) AS impressions, "
+            "  COALESCE(SUM(clicks),0) AS clicks "
+            "FROM meta_anuncios_insights "
+            "WHERE ads_account_id = ANY(:ids) "
+            "  AND data BETWEEN :ini AND :fim "
+            "  AND (thumbnail_url IS NOT NULL OR image_url_hq IS NOT NULL) "
+            "GROUP BY ad_id "
+            "ORDER BY leads DESC "
+            "LIMIT 5"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    top_criativos = []
+    for r in criativo_rows:
+        ld = int(r[7]); sp = float(r[8]); imp = int(r[9]); cl = int(r[10])
+        carousel_raw = r[6]
+        top_criativos.append({
+            "id": r[0],
+            "nome": r[1],
+            "thumbnail_url": r[4] or r[2],
+            "tipo": r[3] or "IMAGE",
+            "image_url_hq": r[4],
+            "link_anuncio": r[5],
+            "carousel_items": json.loads(carousel_raw) if carousel_raw else [],
+            "leads": ld,
+            "spend": sp,
+            "cpl": _safe_div(sp, ld),
+            "ctr": _safe_div(cl, imp) * 100,
+        })
+
     return {
         "kpis": kpis,
         "contas": contas,
         "dados_diarios": dados_diarios,
         "leads_por_canal": leads_por_canal,
+        "top_criativos": top_criativos,
         "periodo": {"inicio": str(data_inicio), "fim": str(data_fim)},
     }
+
+
+@router.get("/campanhas-hierarquia")
+def campanhas_hierarquia(
+    workspace_id: str = Query(...),
+    data_inicio: date = Query(...),
+    data_fim: date = Query(...),
+    conta_ids: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_usuario_atual),
+):
+    ids_filtro = [c.strip() for c in conta_ids.split(",")] if conta_ids else []
+    account_uuids = _conta_ids_da_query(workspace_id, ids_filtro, db)
+    if not account_uuids:
+        return []
+
+    camp_rows = db.execute(
+        text(
+            "SELECT campaign_id, MAX(nome) AS nome, MAX(status) AS status, "
+            "  MAX(objetivo) AS objetivo, "
+            "  COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(leads),0) AS leads, "
+            "  COALESCE(SUM(impressions),0) AS impressions, "
+            "  COALESCE(SUM(reach),0) AS reach, COALESCE(SUM(clicks),0) AS clicks "
+            "FROM meta_campanhas_insights "
+            "WHERE ads_account_id = ANY(:ids) AND data BETWEEN :ini AND :fim "
+            "GROUP BY campaign_id ORDER BY spend DESC"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    ad_rows = db.execute(
+        text(
+            "SELECT ad_id, MAX(adset_id) AS adset_id, MAX(adset_name) AS adset_name, "
+            "  MAX(campaign_id) AS campaign_id, MAX(nome) AS nome, "
+            "  MAX(status) AS status, MAX(tipo_criativo) AS tipo_criativo, "
+            "  MAX(thumbnail_url) AS thumbnail_url, MAX(image_url_hq) AS image_url_hq, "
+            "  MAX(link_anuncio) AS link_anuncio, MAX(creative_id) AS creative_id, "
+            "  COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(leads),0) AS leads, "
+            "  COALESCE(SUM(impressions),0) AS impressions, "
+            "  COALESCE(SUM(reach),0) AS reach, COALESCE(SUM(clicks),0) AS clicks "
+            "FROM meta_anuncios_insights "
+            "WHERE ads_account_id = ANY(:ids) AND data BETWEEN :ini AND :fim "
+            "GROUP BY ad_id ORDER BY spend DESC"
+        ),
+        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
+    ).fetchall()
+
+    camps: dict = {}
+    for r in camp_rows:
+        sp = float(r[4]); ld = int(r[5]); imp = int(r[6]); rch = int(r[7]); cl = int(r[8])
+        camps[r[0]] = {
+            "campaign_id": r[0],
+            "nome": r[1],
+            "status": (r[2] or "ACTIVE").upper(),
+            "objetivo": r[3] or "",
+            "spend": sp, "leads": ld, "impressions": imp, "reach": rch, "clicks": cl,
+            "ctr": _safe_div(cl, imp) * 100,
+            "cpc": _safe_div(sp, cl),
+            "cpm": _safe_div(sp, imp) * 1000,
+            "cpl": _safe_div(sp, ld),
+            "conjuntos": {},
+        }
+
+    for r in ad_rows:
+        ad_id = r[0]; adset_id = r[1] or ""; adset_name = r[2] or adset_id
+        camp_id = r[3]
+        if camp_id not in camps:
+            continue
+        camp = camps[camp_id]
+
+        if adset_id not in camp["conjuntos"]:
+            camp["conjuntos"][adset_id] = {
+                "adset_id": adset_id,
+                "adset_name": adset_name,
+                "status": "ACTIVE",
+                "spend": 0.0, "leads": 0, "impressions": 0, "reach": 0, "clicks": 0,
+                "anuncios": [],
+            }
+        adset = camp["conjuntos"][adset_id]
+
+        sp = float(r[11]); ld = int(r[12]); imp = int(r[13]); rch = int(r[14]); cl = int(r[15])
+        adset["spend"] += sp
+        adset["leads"] += ld
+        adset["impressions"] += imp
+        adset["reach"] += rch
+        adset["clicks"] += cl
+
+        adset["anuncios"].append({
+            "ad_id": ad_id,
+            "nome": r[4],
+            "status": (r[5] or "ACTIVE").upper(),
+            "tipo_criativo": r[6] or "IMAGE",
+            "thumbnail_url": r[8] or r[7],
+            "image_url_hq": r[8],
+            "link_anuncio": r[9],
+            "creative_id": r[10],
+            "spend": sp, "leads": ld, "impressions": imp, "reach": rch, "clicks": cl,
+            "ctr": _safe_div(cl, imp) * 100,
+            "cpc": _safe_div(sp, cl),
+            "cpm": _safe_div(sp, imp) * 1000,
+            "cpl": _safe_div(sp, ld),
+        })
+
+    result = []
+    for camp in camps.values():
+        conjuntos = []
+        for adset in camp["conjuntos"].values():
+            sp = adset["spend"]; ld = adset["leads"]
+            imp = adset["impressions"]; rch = adset["reach"]; cl = adset["clicks"]
+            conjuntos.append({
+                "adset_id": adset["adset_id"],
+                "adset_name": adset["adset_name"],
+                "status": adset["status"],
+                "spend": sp, "leads": ld, "impressions": imp, "reach": rch, "clicks": cl,
+                "ctr": _safe_div(cl, imp) * 100,
+                "cpc": _safe_div(sp, cl),
+                "cpm": _safe_div(sp, imp) * 1000,
+                "cpl": _safe_div(sp, ld),
+                "anuncios": adset["anuncios"],
+            })
+        c = {k: v for k, v in camp.items() if k != "conjuntos"}
+        c["conjuntos"] = conjuntos
+        result.append(c)
+
+    return result
 
 
 @router.get("/campanhas")
@@ -249,12 +437,16 @@ def insights_ia(
     db: Session = Depends(get_db),
     _: User = Depends(get_usuario_atual),
 ):
-    from app.services.ia_insights import gerar_insights_meta
+    from app.services.ia_insights import (
+        gerar_e_salvar_insights,
+        buscar_todos_insights_vigentes,
+    )
 
     account_uuids = _conta_ids_da_query(workspace_id, [], db)
     if not account_uuids:
         return []
 
+    # Aggregate KPIs
     kpi_row = db.execute(
         text(
             "SELECT "
@@ -270,7 +462,7 @@ def insights_ia(
 
     sp = float(kpi_row[0]); ld = int(kpi_row[1])
     imp = int(kpi_row[2]); rch = int(kpi_row[3]); cl = int(kpi_row[4])
-    kpis = {
+    kpis_global = {
         "spend": sp, "leads": ld, "impressions": imp, "reach": rch, "clicks": cl,
         "ctr": _safe_div(cl, imp) * 100,
         "cpc": _safe_div(sp, cl),
@@ -279,28 +471,86 @@ def insights_ia(
         "frequencia": _safe_div(imp, rch),
     }
 
+    # Per-account KPIs
     conta_rows = db.execute(
         text(
-            "SELECT a.account_id, a.account_name, "
+            "SELECT a.id::text, a.account_id, a.account_name, "
             "  COALESCE(SUM(d.spend),0), COALESCE(SUM(d.leads),0), "
-            "  COALESCE(SUM(d.impressions),0), COALESCE(SUM(d.clicks),0) "
+            "  COALESCE(SUM(d.impressions),0), COALESCE(SUM(d.reach),0), "
+            "  COALESCE(SUM(d.clicks),0) "
             "FROM ads_accounts a "
             "JOIN meta_insights_diarios d ON d.ads_account_id = a.id "
             "WHERE a.id = ANY(:ids) "
             "  AND d.data BETWEEN :ini AND :fim "
-            "GROUP BY a.account_id, a.account_name"
+            "GROUP BY a.id, a.account_id, a.account_name"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
     ).fetchall()
 
-    contas = [
-        {
-            "account_id": r[0], "account_name": r[1],
-            "spend": float(r[2]), "leads": int(r[3]),
-            "cpl": _safe_div(float(r[2]), int(r[3])),
-            "ctr": _safe_div(int(r[5]), int(r[4])) * 100,
-        }
-        for r in conta_rows
-    ]
+    contas_resumo = []
+    for r in conta_rows:
+        acc_sp = float(r[3]); acc_ld = int(r[4])
+        acc_imp = int(r[5]); acc_rch = int(r[6]); acc_cl = int(r[7])
+        contas_resumo.append({
+            "ads_account_id": r[0],
+            "account_id": r[1],
+            "account_name": r[2],
+            "spend": acc_sp,
+            "leads": acc_ld,
+            "impressions": acc_imp,
+            "reach": acc_rch,
+            "clicks": acc_cl,
+            "cpl": _safe_div(acc_sp, acc_ld),
+            "ctr": _safe_div(acc_cl, acc_imp) * 100,
+            "cpm": _safe_div(acc_sp, acc_imp) * 1000,
+            "frequencia": _safe_div(acc_imp, acc_rch),
+        })
 
-    return gerar_insights_meta(kpis, contas)
+    data_ini_str = str(data_inicio)
+    data_fim_str = str(data_fim)
+
+    # Generate per-account insights
+    for conta in contas_resumo:
+        kpis_conta = {
+            "spend": conta["spend"], "leads": conta["leads"],
+            "impressions": conta["impressions"], "reach": conta["reach"],
+            "clicks": conta["clicks"], "cpl": conta["cpl"],
+            "ctr": conta["ctr"], "cpm": conta["cpm"],
+            "frequencia": conta["frequencia"],
+        }
+        gerar_e_salvar_insights(
+            workspace_id=workspace_id,
+            ads_account_id=conta["ads_account_id"],
+            kpis=kpis_conta,
+            contas=contas_resumo,
+            data_inicio=data_ini_str,
+            data_fim=data_fim_str,
+            db=db,
+        )
+
+    # Generate workspace-level insight
+    gerar_e_salvar_insights(
+        workspace_id=workspace_id,
+        ads_account_id=None,
+        kpis=kpis_global,
+        contas=contas_resumo,
+        data_inicio=data_ini_str,
+        data_fim=data_fim_str,
+        db=db,
+    )
+
+    return buscar_todos_insights_vigentes(workspace_id, db)
+
+
+@router.patch("/{insight_id}/resolver")
+def resolver_insight(
+    insight_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_usuario_atual),
+):
+    db.execute(
+        text("UPDATE ai_insights SET resolvido = true WHERE id = CAST(:id AS uuid)"),
+        {"id": insight_id},
+    )
+    db.commit()
+    return {"ok": True}
