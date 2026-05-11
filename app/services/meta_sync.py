@@ -54,6 +54,37 @@ def _extrair_leads_por_tipo(actions: list[dict]) -> tuple[int, int]:
     return msgs, cadastros
 
 
+_WHATSAPP_ACTION_TYPES = {
+    "onsite_conversion.messaging_conversation_started_7d",
+    "onsite_conversion.messaging_first_reply",
+}
+
+_FORMULARIO_ACTION_TYPES = {
+    "lead",
+    "onsite_conversion.lead_grouped",
+    "offsite_conversion.fb_pixel_lead",
+}
+
+
+def _extrair_leads_por_canal(actions: list[dict]) -> tuple[int, int, int, int]:
+    """Retorna (leads_whatsapp, leads_instagram, leads_messenger, leads_formulario).
+
+    Usa action_type como critério principal (publisher_platform não é confiável
+    para leads de mensagem). WhatsApp recebe os action_types de mensageria;
+    Instagram e Messenger não são distinguíveis sem breakdown adicional.
+    """
+    whatsapp = 0
+    formulario = 0
+    for a in actions:
+        at = a.get("action_type", "")
+        val = int(float(a.get("value", 0)))
+        if at in _WHATSAPP_ACTION_TYPES:
+            whatsapp += val
+        elif at in _FORMULARIO_ACTION_TYPES:
+            formulario += val
+    return whatsapp, 0, 0, formulario
+
+
 def _paginar(client: httpx.Client, url: str, params: dict) -> list[dict]:
     """Busca todas as páginas de um endpoint Meta."""
     resultados: list[dict] = []
@@ -69,7 +100,7 @@ def _paginar(client: httpx.Client, url: str, params: dict) -> list[dict]:
         if resp.status_code != 200:
             body = resp.json()
             err = body.get("error", {})
-            log.error("Meta API erro %s: %s", resp.status_code, err.get("message", resp.text))
+            log.error("Meta API erro %s em %s: %s", resp.status_code, url, err.get("message", resp.text))
             break
 
         data = resp.json()
@@ -78,7 +109,84 @@ def _paginar(client: httpx.Client, url: str, params: dict) -> list[dict]:
         current_url = next_url
         current_params = None  # próximas páginas já têm tudo na URL
 
+    log.info("_paginar %s → %d registros", url, len(resultados))
     return resultados
+
+
+def _construir_link_facebook(story_id: str | None) -> str | None:
+    if story_id:
+        return f"https://www.facebook.com/{story_id}"
+    return None
+
+
+def _fetch_criativos_batch(client: httpx.Client, ad_ids: list[str], token: str) -> dict[str, dict]:
+    """Busca criativo HQ, tipo e link para ad_ids em batches de 50."""
+    criativos: dict[str, dict] = {}
+    fields = (
+        "creative{id,name,object_type,image_url,thumbnail_url,video_id,"
+        "instagram_permalink_url,effective_object_story_id,"
+        "object_story_spec{link_data{child_attachments{picture,image_url,video_id,link}}}}"
+    )
+    for i in range(0, len(ad_ids), 50):
+        batch = ad_ids[i:i + 50]
+        resp = client.get(
+            f"{META_BASE}/",
+            params={
+                "access_token": token,
+                "ids": ",".join(batch),
+                "fields": fields,
+                "thumbnail_width": 1200,
+                "thumbnail_height": 628,
+            },
+        )
+        if resp.status_code != 200:
+            err = resp.json().get("error", {})
+            log.warning("Erro criativos batch: %s", err.get("message", resp.text[:200]))
+            continue
+
+        for ad_id, ad_data in resp.json().items():
+            creative = ad_data.get("creative") or {}
+            story_spec = creative.get("object_story_spec") or {}
+            link_data = story_spec.get("link_data") or {}
+            child_attachments = link_data.get("child_attachments") or []
+
+            if len(child_attachments) > 1:
+                tipo = "CAROUSEL"
+                carousel_items = [
+                    {
+                        "picture": c.get("picture") or c.get("image_url"),
+                        "video_id": c.get("video_id"),
+                        "link": c.get("link"),
+                    }
+                    for c in child_attachments
+                ]
+            elif creative.get("video_id"):
+                tipo = "VIDEO"
+                carousel_items = []
+            else:
+                tipo = "IMAGE"
+                carousel_items = []
+
+            image_url_hq = (
+                creative.get("image_url")
+                or creative.get("thumbnail_url")
+                or (child_attachments[0].get("picture") if child_attachments else None)
+            )
+
+            link_anuncio = (
+                creative.get("instagram_permalink_url")
+                or _construir_link_facebook(creative.get("effective_object_story_id"))
+            )
+
+            criativos[ad_id] = {
+                "id": creative.get("id"),
+                "thumbnail_url": creative.get("thumbnail_url"),
+                "tipo": tipo,
+                "image_url_hq": image_url_hq,
+                "link_anuncio": link_anuncio,
+                "carousel_items": carousel_items,
+            }
+    return criativos
 
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
@@ -125,6 +233,28 @@ def sincronizar_conta(ads_account_id: str, db: Session) -> dict:
     }
 
     with httpx.Client(timeout=60.0) as client:
+        resp_saldo = client.get(
+            f"{META_BASE}/{meta_account_id}",
+            params={"access_token": token, "fields": "balance,amount_spent,spend_cap,currency"},
+        )
+        if resp_saldo.status_code == 200:
+            saldo_data = resp_saldo.json()
+            db.execute(text("""
+                UPDATE ads_accounts SET
+                    balance      = :balance,
+                    amount_spent = :amount_spent,
+                    spend_cap    = :spend_cap
+                WHERE id = :id
+            """), {
+                "id": str(conta.id),
+                "balance":      float(saldo_data.get("balance", 0)) / 100,
+                "amount_spent": float(saldo_data.get("amount_spent", 0)) / 100,
+                "spend_cap":    float(saldo_data.get("spend_cap", 0)) / 100,
+            })
+            db.commit()
+        else:
+            log.warning("Erro ao buscar saldo %s: %s", meta_account_id, resp_saldo.text[:200])
+
         _sync_diarios(client, db, meta_account_id, token, time_range, totais)
         _sync_campanhas(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_anuncios(client, db, meta_account_id, token, time_range, conta.id, totais)
@@ -158,36 +288,45 @@ def _sync_diarios(
             "limit": 500,
         },
     )
+
     for r in rows:
         actions = r.get("actions") or []
         leads = _extrair_leads(actions)
         leads_msg, leads_cad = _extrair_leads_por_tipo(actions)
+        leads_whatsapp, leads_instagram, leads_messenger, leads_formulario = _extrair_leads_por_canal(actions)
+        d = r.get("date_start")
         db.execute(text("""
             INSERT INTO meta_insights_diarios
                 (ads_account_id, data, spend, impressions, reach, clicks, leads,
-                 cpl, cpc, cpm, ctr, frequencia, leads_mensagem, leads_cadastro)
+                 cpl, cpc, cpm, ctr, frequencia, leads_mensagem, leads_cadastro,
+                 leads_whatsapp, leads_instagram, leads_messenger, leads_formulario)
             SELECT
                 aa.id, :data, :spend, :impressions, :reach, :clicks, :leads,
                 CASE WHEN :leads > 0 THEN :spend / :leads ELSE 0 END,
-                :cpc, :cpm, :ctr, :frequencia, :leads_mensagem, :leads_cadastro
+                :cpc, :cpm, :ctr, :frequencia, :leads_mensagem, :leads_cadastro,
+                :leads_whatsapp, :leads_instagram, :leads_messenger, :leads_formulario
             FROM ads_accounts aa
             WHERE aa.account_id = :account_id AND aa.plataforma = 'meta'
             ON CONFLICT (ads_account_id, data) DO UPDATE SET
-                spend        = EXCLUDED.spend,
-                impressions  = EXCLUDED.impressions,
-                reach        = EXCLUDED.reach,
-                clicks       = EXCLUDED.clicks,
-                leads        = EXCLUDED.leads,
-                cpl          = EXCLUDED.cpl,
-                cpc          = EXCLUDED.cpc,
-                cpm          = EXCLUDED.cpm,
-                ctr          = EXCLUDED.ctr,
-                frequencia   = EXCLUDED.frequencia,
-                leads_mensagem  = EXCLUDED.leads_mensagem,
-                leads_cadastro  = EXCLUDED.leads_cadastro
+                spend            = EXCLUDED.spend,
+                impressions      = EXCLUDED.impressions,
+                reach            = EXCLUDED.reach,
+                clicks           = EXCLUDED.clicks,
+                leads            = EXCLUDED.leads,
+                cpl              = EXCLUDED.cpl,
+                cpc              = EXCLUDED.cpc,
+                cpm              = EXCLUDED.cpm,
+                ctr              = EXCLUDED.ctr,
+                frequencia       = EXCLUDED.frequencia,
+                leads_mensagem   = EXCLUDED.leads_mensagem,
+                leads_cadastro   = EXCLUDED.leads_cadastro,
+                leads_whatsapp   = EXCLUDED.leads_whatsapp,
+                leads_instagram  = EXCLUDED.leads_instagram,
+                leads_messenger  = EXCLUDED.leads_messenger,
+                leads_formulario = EXCLUDED.leads_formulario
         """), {
             "account_id": account_id,
-            "data": r.get("date_start"),
+            "data": d,
             "spend": _safe_float(r.get("spend")),
             "impressions": _safe_int(r.get("impressions")),
             "reach": _safe_int(r.get("reach")),
@@ -199,6 +338,10 @@ def _sync_diarios(
             "frequencia": _safe_float(r.get("frequency")),
             "leads_mensagem": leads_msg,
             "leads_cadastro": leads_cad,
+            "leads_whatsapp": leads_whatsapp,
+            "leads_instagram": leads_instagram,
+            "leads_messenger": leads_messenger,
+            "leads_formulario": leads_formulario,
         })
         totais["diarios"] += 1
     db.commit()
@@ -236,14 +379,15 @@ def _sync_campanhas(
         spend = _safe_float(r.get("spend"))
         db.execute(text("""
             INSERT INTO meta_campanhas_insights
-                (ads_account_id, campaign_id, nome, objetivo, data,
+                (ads_account_id, campaign_id, nome, objetivo, status, data,
                  spend, leads, impressions, reach, clicks, ctr, cpc, cpm, frequencia)
             VALUES
-                (:ads_account_id, :campaign_id, :nome, :objetivo, :data,
+                (:ads_account_id, :campaign_id, :nome, :objetivo, :status, :data,
                  :spend, :leads, :impressions, :reach, :clicks, :ctr, :cpc, :cpm, :frequencia)
             ON CONFLICT (ads_account_id, campaign_id, data) DO UPDATE SET
                 nome        = EXCLUDED.nome,
                 objetivo    = EXCLUDED.objetivo,
+                status      = EXCLUDED.status,
                 spend       = EXCLUDED.spend,
                 leads       = EXCLUDED.leads,
                 impressions = EXCLUDED.impressions,
@@ -258,6 +402,7 @@ def _sync_campanhas(
             "campaign_id": r.get("campaign_id"),
             "nome": r.get("campaign_name"),
             "objetivo": r.get("objective"),
+            "status": "ACTIVE",
             "data": r.get("date_start"),
             "spend": spend,
             "leads": leads,
@@ -291,8 +436,7 @@ def _sync_anuncios(
             "access_token": token,
             "fields": (
                 "spend,impressions,reach,clicks,actions,cpm,cpc,ctr,frequency,"
-                "ad_id,ad_name,adset_id,campaign_id,"
-                "creative{id,thumbnail_url,body}"
+                "ad_id,ad_name,adset_id,adset_name,campaign_id"
             ),
             "level": "ad",
             "time_range": time_range,
@@ -300,28 +444,48 @@ def _sync_anuncios(
             "limit": 500,
         },
     )
+
+    ad_ids = list({r["ad_id"] for r in rows if r.get("ad_id")})
+    criativos = _fetch_criativos_batch(client, ad_ids, token) if ad_ids else {}
+    log.info("Criativos buscados: %d de %d ads únicos", len(criativos), len(ad_ids))
+
     for r in rows:
         actions = r.get("actions") or []
         leads = _extrair_leads(actions)
-        creative = r.get("creative") or {}
+        ad_id = r.get("ad_id")
+        creative = criativos.get(ad_id) or {}
         creative_id = creative.get("id")
         thumbnail_url = creative.get("thumbnail_url")
+        tipo_criativo = creative.get("tipo", "IMAGE")
+        image_url_hq = creative.get("image_url_hq")
+        link_anuncio = creative.get("link_anuncio")
+        carousel_raw = creative.get("carousel_items") or []
+        carousel_json = json.dumps(carousel_raw) if carousel_raw else None
+        ad_status = "ACTIVE"
         spend = _safe_float(r.get("spend"))
         db.execute(text("""
             INSERT INTO meta_anuncios_insights
-                (ads_account_id, ad_id, adset_id, campaign_id, nome,
-                 creative_id, thumbnail_url, data,
+                (ads_account_id, ad_id, adset_id, adset_name, campaign_id, nome,
+                 status, creative_id, thumbnail_url, tipo_criativo, image_url_hq,
+                 link_anuncio, carousel_items, data,
                  spend, leads, impressions, reach, clicks, ctr, cpc, cpm, frequencia)
             VALUES
-                (:ads_account_id, :ad_id, :adset_id, :campaign_id, :nome,
-                 :creative_id, :thumbnail_url, :data,
+                (:ads_account_id, :ad_id, :adset_id, :adset_name, :campaign_id, :nome,
+                 :status, :creative_id, :thumbnail_url, :tipo_criativo, :image_url_hq,
+                 :link_anuncio, CAST(:carousel_items AS JSONB), :data,
                  :spend, :leads, :impressions, :reach, :clicks, :ctr, :cpc, :cpm, :frequencia)
             ON CONFLICT (ads_account_id, ad_id, data) DO UPDATE SET
                 adset_id      = EXCLUDED.adset_id,
+                adset_name    = EXCLUDED.adset_name,
                 campaign_id   = EXCLUDED.campaign_id,
                 nome          = EXCLUDED.nome,
+                status        = EXCLUDED.status,
                 creative_id   = EXCLUDED.creative_id,
                 thumbnail_url = EXCLUDED.thumbnail_url,
+                tipo_criativo = EXCLUDED.tipo_criativo,
+                image_url_hq  = EXCLUDED.image_url_hq,
+                link_anuncio  = EXCLUDED.link_anuncio,
+                carousel_items = EXCLUDED.carousel_items,
                 spend         = EXCLUDED.spend,
                 leads         = EXCLUDED.leads,
                 impressions   = EXCLUDED.impressions,
@@ -333,12 +497,18 @@ def _sync_anuncios(
                 frequencia    = EXCLUDED.frequencia
         """), {
             "ads_account_id": str(ads_account_uuid),
-            "ad_id": r.get("ad_id"),
+            "ad_id": ad_id,
             "adset_id": r.get("adset_id"),
+            "adset_name": r.get("adset_name"),
             "campaign_id": r.get("campaign_id"),
             "nome": r.get("ad_name"),
+            "status": ad_status,
             "creative_id": creative_id,
             "thumbnail_url": thumbnail_url,
+            "tipo_criativo": tipo_criativo,
+            "image_url_hq": image_url_hq,
+            "link_anuncio": link_anuncio,
+            "carousel_items": carousel_json,
             "data": r.get("date_start"),
             "spend": spend,
             "leads": leads,
