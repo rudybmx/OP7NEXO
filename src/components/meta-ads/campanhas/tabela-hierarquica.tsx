@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { ChevronRight, ChevronUp, ChevronDown, Image, Video, LayoutGrid, Columns3, Check, BookOpen } from 'lucide-react'
 import { Campanha, ConjuntoAnuncios, Anuncio, StatusCampanha, Plataforma, TipoCriativo, Criativo } from '@/types/meta-ads-campanhas'
 import { ModalCriativo } from './modal-criativo'
+import { proxyImagem } from '@/lib/imagem-proxy'
 
 // ─── Column config ────────────────────────────────────────────────────────────
 
@@ -226,7 +227,7 @@ function CriativoThumb({ criativo, onClick }: { criativo: Criativo; onClick: () 
       }}
     >
       {criativo.thumbnailUrl ? (
-        <img src={criativo.thumbnailUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <img src={proxyImagem(criativo.thumbnailUrl)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : (
         tipoIcon[criativo.tipo]
       )}
@@ -262,9 +263,10 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 }
 
 function Th({
-  label, sortKey: key, currentKey, currentDir, onClick, align = 'right', style
+  label, content, sortKey: key, currentKey, currentDir, onClick, align = 'right', style
 }: {
   label: string
+  content?: React.ReactNode
   sortKey?: string
   currentKey: string
   currentDir: SortDir
@@ -288,7 +290,7 @@ function Th({
       }}
     >
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-        {label}
+        {content ?? label}
         {key && <SortIcon active={active} dir={active ? currentDir : 'desc'} />}
       </span>
     </th>
@@ -506,7 +508,39 @@ export function TabelaHierarquica({ campanhas }: Props) {
               {vis('ctr')          && <Th label="CTR"          sortKey="ctr"          {...thProps} />}
               {vis('cpc')          && <Th label="CPC"          sortKey="cpc"          {...thProps} />}
               {vis('cpm')          && <Th label="CPM"          sortKey="cpm"          {...thProps} />}
-              {vis('desempenho')   && <Th label="Desempenho"   sortKey="indiceDesempenho" {...thProps} style={{ minWidth: 130 }} />}
+              {vis('desempenho')   && (
+                <Th
+                  label="Desempenho"
+                  content={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      Desempenho
+                      <span
+                        title="Score calculado com base em: CPL (40pts) — quanto menor o custo por lead, melhor. CTR (25pts) — taxa de cliques sobre impressões. Volume de leads (20pts) — quantidade total gerada. Frequência (15pts) — penaliza repetição excessiva acima de 3x. Escala de 0 a 100%."
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 14,
+                          height: 14,
+                          borderRadius: '50%',
+                          background: 'rgba(0,0,0,0.12)',
+                          color: 'var(--ws-text-3)',
+                          fontSize: 9,
+                          fontWeight: 700,
+                          cursor: 'help',
+                          flexShrink: 0,
+                          lineHeight: 1,
+                        }}
+                      >
+                        i
+                      </span>
+                    </div>
+                  }
+                  sortKey="indiceDesempenho"
+                  {...thProps}
+                  style={{ minWidth: 130 }}
+                />
+              )}
               {vis('orcamento')    && <Th label="Orçamento/dia" {...thProps} />}
             </tr>
           </thead>
