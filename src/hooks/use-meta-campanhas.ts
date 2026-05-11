@@ -139,6 +139,7 @@ function mapCampanha(c: any): Campanha {
     frequencia: rch > 0 ? imp / rch : 0,
     indiceDesempenho,
     conjuntos,
+    orcamentoDiario: c.orcamento_diario ?? null,
   }
 }
 
@@ -178,8 +179,12 @@ export function useMetaCampanhas(filtros: FiltrosCampanhas, dataInicio: string, 
   )
   const wsId = workspaces?.[0]?.id
 
+  const contaIdsParam = filtros.contaIds?.length
+    ? `&conta_ids=${filtros.contaIds.join(',')}`
+    : ''
+
   const hierarquiaKey = wsId
-    ? `/meta/insights/campanhas-hierarquia?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}`
+    ? `/meta/insights/campanhas-hierarquia?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}`
     : null
 
   const { data: rawHierarquia, isLoading, error } = useSWR(
