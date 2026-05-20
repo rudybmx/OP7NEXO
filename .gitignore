@@ -50,5 +50,9 @@ node_modules/
 .antigravity/
 .gemini/
 
+# Graphify knowledge graph (generated)
+graphify-out/
+public/graph.html
+
 # Logs
 *.log

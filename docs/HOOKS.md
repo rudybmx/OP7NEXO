@@ -195,23 +195,23 @@ interface FiltrosAnuncios {
   campanha: string        // 'todas' | nome da campanha
   status: string          // 'todos' | 'ACTIVE' | 'PAUSED'
   tipo: string            // 'todos' | 'IMAGE' | 'VIDEO' | 'CAROUSEL'
-  ordenarPor: string      // 'score' | 'leads' | 'cpl' | 'ctr' | 'frequencia'
+  ordenarPor: string      // 'campanha' | 'conjunto' | 'anuncio' | 'score' | 'leads' | 'cpl' | 'ctr' | 'frequencia'
   contaIds?: string[]
 }
 ```
 
 **O que faz:**
-1. SWR `rpc/get_anuncios_periodo` (mesma fonte que `useMetaCampanhas`)
+1. SWR `GET /meta/insights/anuncios-performance`
 2. Fallback para mock se vazio
-3. Mapeia linhas planas → `Anuncio[]`
-4. Aplica filtros e ordena
+3. Mapeia a resposta paginada → `Anuncio[]`
+4. Aplica filtros e ordena, incluindo a cascata `Campanha -> Conjunto -> Anúncio`
 
 **Retorno:**
 ```typescript
 { anuncios: Anuncio[], total: number, isLoading: boolean, error: any }
 ```
 
-**Endpoint chamado:** `rpc/get_anuncios_periodo` (legado).
+**Endpoint chamado:** `GET /meta/insights/anuncios-performance`.
 
 ---
 
