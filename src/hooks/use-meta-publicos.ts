@@ -2,6 +2,7 @@
 
 import useSWR from 'swr'
 import api from '@/lib/api-client'
+import { useWorkspace } from '@/lib/workspace-context'
 import type {
   DadosDemograficos,
   DadosPlacement,
@@ -12,8 +13,6 @@ import type {
   KpiPublicos,
   FiltrosPublicos,
 } from '@/types/meta-ads-publicos'
-
-interface Workspace { id: string }
 
 interface AccountSummaryRow {
   alcance: number
@@ -103,17 +102,22 @@ function computeKpi(
   }
 }
 
-export function useMetaPublicos(_filtros: FiltrosPublicos, dataInicio: string, dataFim: string, contaIds: string[] = []) {
-  const { data: workspaces } = useSWR<Workspace[]>(
-    '/workspaces',
-    () => api.get<Workspace[]>('/workspaces'),
-    { revalidateOnFocus: false }
-  )
-  const wsId = workspaces?.[0]?.id
+export function useMetaPublicos(
+  _filtros: FiltrosPublicos,
+  dataInicio: string,
+  dataFim: string,
+  contaIds: string[] = [],
+  workspaceId: string | null = null
+) {
+  const { workspaceAtivo } = useWorkspace()
+  const wsId = (workspaceId ?? workspaceAtivo) ?? undefined
 
   const contaIdsParam = contaIds.length ? `&conta_ids=${contaIds.join(',')}` : ''
+  const campParam = _filtros.campaign_id && _filtros.campaign_id !== 'todas'
+    ? `&campaign_id=${_filtros.campaign_id}`
+    : ''
   const key = wsId
-    ? `/meta/insights/publicos?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}`
+    ? `/meta/insights/publicos?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}${campParam}`
     : null
 
   const { data, isLoading, error } = useSWR(

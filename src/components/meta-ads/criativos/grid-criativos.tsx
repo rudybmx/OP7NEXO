@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Image, Video, LayoutGrid, Eye, Check } from 'lucide-react'
 import { Criativo, TipoCriativo, StatusCriativo } from '@/types/meta-ads-criativos'
+import { proxyImagem } from '@/lib/imagem-proxy'
 
 interface Props {
   criativos: Criativo[]
@@ -217,7 +218,7 @@ export function GridCriativos({
                   overflow: 'hidden',
                 }} className="cc-thumb">
                   {c.thumbnailUrl
-                    ? <img src={c.thumbnailUrl} alt={c.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ? <img src={proxyImagem(c.thumbnailUrl)} alt={c.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" loading="lazy" />
                     : <IconeTipo tipo={c.tipo} />
                   }
 

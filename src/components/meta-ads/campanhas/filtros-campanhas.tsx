@@ -1,6 +1,9 @@
 'use client'
 import { useCallback, useRef } from 'react'
-import { FiltrosCampanhas, Plataforma } from '@/types/meta-ads-campanhas'
+import { FiltrosCampanhas } from '@/types/meta-ads-campanhas'
+import { OPCOES_VEICULACAO } from '@/lib/veiculacao'
+import { OBJETIVOS_FILTRO } from '@/lib/objetivos-meta'
+import { OPCOES_PLATAFORMAS_FILTRO, PlataformaCampanha, configPlataformaCampanha } from '@/lib/plataformas-meta'
 import { Search } from 'lucide-react'
 
 function IconFacebook({ size = 13 }: { size?: number }) {
@@ -38,23 +41,10 @@ function IconWhatsApp({ size = 13 }: { size?: number }) {
   )
 }
 
-const plataformaIconComp: Record<Plataforma, (s: number) => React.ReactNode> = {
-  facebook: s => <IconFacebook size={s} />,
-  instagram: s => <IconInstagram size={s} />,
-  whatsapp: s => <IconWhatsApp size={s} />,
-  audience_network: () => null,
-}
-
 interface Props {
   filtros: FiltrosCampanhas
   onChange: (f: FiltrosCampanhas) => void
 }
-
-const PLATAFORMAS: { value: Plataforma; label: string }[] = [
-  { value: 'facebook', label: 'Facebook' },
-  { value: 'instagram', label: 'Instagram' },
-  { value: 'whatsapp', label: 'WhatsApp' },
-]
 
 export function FiltrosCampanhasComp({ filtros, onChange }: Props) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -66,7 +56,7 @@ export function FiltrosCampanhasComp({ filtros, onChange }: Props) {
     }, 300)
   }, [filtros, onChange])
 
-  const togglePlataforma = (p: Plataforma) => {
+  const togglePlataforma = (p: PlataformaCampanha) => {
     const atual = filtros.plataformas
     const nova = atual.includes(p) ? atual.filter(x => x !== p) : [...atual, p]
     onChange({ ...filtros, plataformas: nova })
@@ -123,16 +113,21 @@ export function FiltrosCampanhasComp({ filtros, onChange }: Props) {
         }}
       >
         <option value="todos">Todos os objetivos</option>
-        <option value="LEAD_GENERATION">Leads</option>
-        <option value="BRAND_AWARENESS">Reconhecimento</option>
-        <option value="CONVERSIONS">Conversões</option>
-        <option value="TRAFFIC">Tráfego</option>
+        {OBJETIVOS_FILTRO.map(grupo => (
+          <optgroup key={grupo.grupo} label={grupo.grupo}>
+            {grupo.opcoes.map(opcao => (
+              <option key={opcao.codigo} value={opcao.codigo}>
+                {opcao.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
       </select>
 
-      {/* Status */}
+      {/* Resultado */}
       <select
-        value={filtros.status}
-        onChange={e => onChange({ ...filtros, status: e.target.value })}
+        value={filtros.resultado}
+        onChange={e => onChange({ ...filtros, resultado: e.target.value as 'performance' | 'todos' })}
         className="hover:bg-[rgba(255,255,255,0.90)] hover:border-[rgba(62,91,255,0.25)] dark:hover:bg-[rgba(255,255,255,0.12)]"
         style={{
           ...glassStyle,
@@ -140,66 +135,66 @@ export function FiltrosCampanhasComp({ filtros, onChange }: Props) {
           cursor: 'pointer',
         }}
       >
-        <option value="todos">Todos os status</option>
-        <option value="ativa">Ativa</option>
-        <option value="pausada">Pausada</option>
-        <option value="encerrada">Encerrada</option>
-        <option value="aprendendo">Aprendendo</option>
+        <option value="performance">Com resultado</option>
+        <option value="todos">Todos os itens</option>
+      </select>
+
+      {/* Veiculação */}
+      <select
+        value={filtros.veiculacao}
+        onChange={e => onChange({ ...filtros, veiculacao: e.target.value })}
+        className="hover:bg-[rgba(255,255,255,0.90)] hover:border-[rgba(62,91,255,0.25)] dark:hover:bg-[rgba(255,255,255,0.12)]"
+        style={{
+          ...glassStyle,
+          padding: '0 8px',
+          cursor: 'pointer',
+        }}
+      >
+        <option value="todos">Toda veiculação</option>
+        {OPCOES_VEICULACAO.map(grupo => (
+          <optgroup key={grupo.grupo} label={grupo.grupo}>
+            {grupo.opcoes.map(opcao => (
+              <option key={opcao.codigo} value={opcao.codigo}>
+                {opcao.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
       </select>
 
       {/* Platform toggles */}
       <div className="flex items-center gap-2">
-        {PLATAFORMAS.map(p => {
-          const ativo = filtros.plataformas.includes(p.value)
-          
-          let activeStyles = {}
-          if (ativo) {
-            if (p.value === 'facebook') {
-              activeStyles = {
-                background: 'rgba(24,119,242,0.12)',
-                borderColor: 'rgba(24,119,242,0.30)',
-                color: '#1877f2',
-                boxShadow: '0 2px 8px rgba(24,119,242,0.15)',
-              }
-            } else if (p.value === 'instagram') {
-              activeStyles = {
-                background: 'rgba(225,48,108,0.10)',
-                borderColor: 'rgba(225,48,108,0.25)',
-                color: '#e1306c',
-              }
-            } else if (p.value === 'whatsapp') {
-              activeStyles = {
-                background: 'rgba(37,211,102,0.10)',
-                borderColor: 'rgba(37,211,102,0.25)',
-                color: '#128c7e',
-              }
-            }
-          }
+        {OPCOES_PLATAFORMAS_FILTRO.map(p => {
+          const ativo = filtros.plataformas.includes(p.codigo)
+          const cfg = configPlataformaCampanha(p.codigo)
 
           return (
             <button
-              key={p.value}
-              onClick={() => togglePlataforma(p.value)}
+              key={p.codigo}
+              onClick={() => togglePlataforma(p.codigo)}
+              title={p.descricao}
               style={{
                 height: '30px',
                 padding: '0 12px',
-                borderRadius: '8px',
+                borderRadius: '9999px',
                 fontSize: '12px',
                 fontWeight: 500,
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
                 transition: 'all 150ms ease',
-                border: ativo ? '1px solid' : '1px solid rgba(14,20,42,0.10)',
-                background: ativo ? 'transparent' : 'rgba(255,255,255,0.72)',
-                color: ativo ? 'inherit' : '#4a5580',
-                boxShadow: ativo ? 'none' : '0 2px 8px rgba(14,20,42,0.06)',
+                border: `1px solid ${cfg.border}`,
+                background: cfg.bg,
+                color: cfg.cor,
+                boxShadow: ativo ? 'var(--ws-glass-shadow-sm)' : 'none',
+                opacity: ativo ? 1 : 0.78,
                 cursor: 'pointer',
-                ...activeStyles,
               }}
             >
-              {plataformaIconComp[p.value]?.(16)}
-              {p.label}
+              {p.codigo === 'facebook' && <IconFacebook size={16} />}
+              {p.codigo === 'instagram' && <IconInstagram size={16} />}
+              {p.codigo === 'whatsapp' && <IconWhatsApp size={16} />}
+              <span>{cfg.label}</span>
             </button>
           )
         })}
@@ -207,4 +202,3 @@ export function FiltrosCampanhasComp({ filtros, onChange }: Props) {
     </div>
   )
 }
-

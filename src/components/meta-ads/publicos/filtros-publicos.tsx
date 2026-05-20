@@ -1,120 +1,80 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronDown, Check } from 'lucide-react'
+import {
+  Select, SelectContent, SelectItem,
+  SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import type { FiltrosPublicos, MetricaPublicos } from '@/types/meta-ads-publicos'
 
 interface Props {
   filtros: FiltrosPublicos
   onChange: (f: FiltrosPublicos) => void
+  campanhaOptions?: { label: string; value: string }[]
 }
 
 const METRICAS: { valor: MetricaPublicos; label: string }[] = [
-  { valor: 'leads', label: 'Leads' },
-  { valor: 'cpl', label: 'CPL' },
+  { valor: 'leads',        label: 'Leads' },
+  { valor: 'cpl',          label: 'CPL' },
   { valor: 'investimento', label: 'Investimento' },
-  { valor: 'ctr', label: 'CTR' },
+  { valor: 'ctr',          label: 'CTR' },
 ]
 
-function GlassSelect({ label, value, onChange, options }: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  options: { label: string; value: string }[]
-}) {
-  const [open, setOpen] = useState(false)
-  const selected = options.find(o => o.value === value)
-  return (
-    <div style={{ position: 'relative', minWidth: 160 }}>
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        style={{
-          width: '100%', height: 32, padding: '0 10px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
-          background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)',
-          backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
-          borderRadius: 'var(--ws-radius-md)', boxShadow: 'var(--ws-glass-shadow-sm)',
-          fontSize: 12, color: 'var(--ws-text-1)', cursor: 'pointer',
-          transition: 'var(--ws-transition)', whiteSpace: 'nowrap',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'var(--ws-glass-bg-hover)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'var(--ws-glass-bg)' }}
-      >
-        <span>{selected?.label ?? label}</span>
-        <ChevronDown size={12} style={{ color: 'var(--ws-text-3)', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
-      </button>
-      {open && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 100,
-          background: 'var(--ws-glass-bg-hover)', border: '1px solid var(--ws-glass-border)',
-          backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-          borderRadius: 'var(--ws-radius-md)', boxShadow: 'var(--ws-glass-shadow-lg)',
-          overflow: 'hidden',
-        }}>
-          {options.map(o => (
-            <button
-              key={o.value}
-              type="button"
-              onClick={() => { onChange(o.value); setOpen(false) }}
-              style={{
-                width: '100%', textAlign: 'left', padding: '8px 12px',
-                fontSize: 12, color: o.value === value ? 'var(--ws-blue)' : 'var(--ws-text-1)',
-                fontWeight: o.value === value ? 500 : 400,
-                background: 'none', border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 8,
-                transition: 'var(--ws-transition)',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(62,91,255,0.06)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-            >
-              {o.value === value
-                ? <Check size={11} style={{ color: 'var(--ws-blue)', flexShrink: 0 }} />
-                : <div style={{ width: 11 }} />}
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-export function FiltrosPublicos({ filtros, onChange }: Props) {
+export function FiltrosPublicos({ filtros, onChange, campanhaOptions }: Props) {
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <GlassSelect
-        label="Todas as campanhas"
-        value={filtros.campanha}
-        onChange={v => onChange({ ...filtros, campanha: v })}
-        options={[
-          { label: 'Todas as campanhas', value: 'todas' },
-          { label: 'Campanha Londrina', value: 'campanha-1' },
-          { label: 'Campanha Cornélio', value: 'campanha-2' },
-        ]}
-      />
-      <GlassSelect
-        label="Todos os conjuntos"
-        value={filtros.conjunto}
-        onChange={v => onChange({ ...filtros, conjunto: v })}
-        options={[
-          { label: 'Todos os conjuntos', value: 'todos' },
-          { label: 'Conjunto 25–34', value: 'conjunto-1' },
-          { label: 'Conjunto Retargeting', value: 'conjunto-2' },
-        ]}
-      />
-      <GlassSelect
-        label="Período"
-        value={filtros.periodo}
-        onChange={v => onChange({ ...filtros, periodo: v as FiltrosPublicos['periodo'] })}
-        options={[
-          { label: '7 dias', value: '7d' },
-          { label: '30 dias', value: '30d' },
-          { label: '90 dias', value: '90d' },
-        ]}
-      />
 
-      {/* Toggle group de métricas */}
+      {/* Campanhas */}
+      <Select
+        value={filtros.campanha}
+        onValueChange={v => onChange({
+          ...filtros,
+          campanha: v,
+          campaign_id: v === 'todas' ? undefined : v,
+        })}
+      >
+        <SelectTrigger
+          className="h-8 text-xs border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)]
+                     backdrop-blur-md hover:bg-[var(--ws-glass-bg-hover)] min-w-[160px]
+                     max-w-[220px] truncate"
+        >
+          <SelectValue placeholder="Todas as campanhas" />
+        </SelectTrigger>
+        <SelectContent
+          position="popper"
+          className="min-w-[280px] max-h-[320px] z-[200]
+                     bg-[var(--ws-glass-bg-hover)] border-[var(--ws-glass-border)]
+                     backdrop-blur-xl"
+        >
+          {(campanhaOptions ?? [{ label: 'Todas as campanhas', value: 'todas' }]).map(o => (
+            <SelectItem key={o.value} value={o.value} className="text-xs">
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Conjuntos */}
+      <Select
+        value={filtros.conjunto}
+        onValueChange={v => onChange({ ...filtros, conjunto: v })}
+      >
+        <SelectTrigger
+          className="h-8 text-xs border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)]
+                     backdrop-blur-md hover:bg-[var(--ws-glass-bg-hover)] min-w-[160px]"
+        >
+          <SelectValue placeholder="Todos os conjuntos" />
+        </SelectTrigger>
+        <SelectContent
+          position="popper"
+          className="min-w-[200px] z-[200]
+                     bg-[var(--ws-glass-bg-hover)] border-[var(--ws-glass-border)]
+                     backdrop-blur-xl"
+        >
+          <SelectItem value="todos" className="text-xs">Todos os conjuntos</SelectItem>
+        </SelectContent>
+      </Select>
+
+      {/* Toggle de métrica */}
       <div style={{ marginLeft: 'auto' }}>
         <div style={{
           display: 'inline-flex',
@@ -144,7 +104,7 @@ export function FiltrosPublicos({ filtros, onChange }: Props) {
           ))}
         </div>
       </div>
+
     </div>
   )
 }
-

@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { WS_CHART_COLORS } from '@/components/design-system/sections/ds-graficos'
 import type { DadosDemograficos } from '@/types/meta-ads-publicos'
+import { ChartSurface } from '@/components/meta-ads/chart-surface'
 
 interface Props {
   demograficos: DadosDemograficos[]
@@ -61,21 +62,23 @@ export function GraficosDemograficos({ demograficos }: Props) {
             <span style={{ color: 'var(--ws-text-2)' }}>Feminino</span>
           </span>
         </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={dadosPorFaixa} barCategoryGap="20%">
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(14,20,42,0.06)" vertical={false} />
-            <XAxis dataKey="faixa" tick={{ fontSize: 11, fill: '#8892b0' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#8892b0' }} axisLine={false} tickLine={false} />
-            <Tooltip
-              contentStyle={{ background: 'rgba(14,20,42,0.92)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: '#fff', fontSize: 11 }}
-              itemStyle={{ color: '#fff' }}
-              labelStyle={{ color: '#fff' }}
-              cursor={{ fill: 'rgba(62,91,255,0.04)' }}
-            />
-            <Bar dataKey="masc" name="Masculino" fill={WS_CHART_COLORS.primary} radius={[3,3,0,0]} maxBarSize={20} />
-            <Bar dataKey="fem" name="Feminino" fill={WS_CHART_COLORS.amber} radius={[3,3,0,0]} maxBarSize={20} />
-          </BarChart>
-        </ResponsiveContainer>
+        <ChartSurface height={200}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <BarChart data={dadosPorFaixa} barCategoryGap="20%">
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(14,20,42,0.06)" vertical={false} />
+              <XAxis dataKey="faixa" tick={{ fontSize: 11, fill: '#8892b0' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: '#8892b0' }} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{ background: 'rgba(14,20,42,0.92)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: '#fff', fontSize: 11 }}
+                itemStyle={{ color: '#fff' }}
+                labelStyle={{ color: '#fff' }}
+                cursor={{ fill: 'rgba(62,91,255,0.04)' }}
+              />
+              <Bar dataKey="masc" name="Masculino" fill={WS_CHART_COLORS.primary} radius={[3,3,0,0]} maxBarSize={20} />
+              <Bar dataKey="fem" name="Feminino" fill={WS_CHART_COLORS.amber} radius={[3,3,0,0]} maxBarSize={20} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartSurface>
       </div>
 
       {/* CARD 2 — Linhas */}
@@ -112,22 +115,24 @@ export function GraficosDemograficos({ demograficos }: Props) {
             <span style={{ color: 'var(--ws-text-2)' }}>55+</span>
           </span>
         </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={dadosTempo}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(14,20,42,0.06)" vertical={false} />
-            <XAxis dataKey="data" tick={{ fontSize: 10, fill: '#8892b0' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#8892b0' }} axisLine={false} tickLine={false} />
-            <Tooltip
-              contentStyle={{ background: 'rgba(14,20,42,0.92)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: '#fff', fontSize: 11 }}
-              itemStyle={{ color: '#fff' }}
-              labelStyle={{ color: '#fff' }}
-              cursor={{ stroke: 'rgba(62,91,255,0.15)', strokeWidth: 1 }}
-            />
-            <Line type="monotone" dataKey="f1834" name="18–34" stroke={WS_CHART_COLORS.green} strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="f3554" name="35–54" stroke={WS_CHART_COLORS.amber} strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="f55" name="55+" stroke={WS_CHART_COLORS.coral} strokeWidth={2} dot={false} strokeDasharray="4 4" />
-          </LineChart>
-        </ResponsiveContainer>
+        <ChartSurface height={200}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <LineChart data={dadosTempo}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(14,20,42,0.06)" vertical={false} />
+              <XAxis dataKey="data" tick={{ fontSize: 10, fill: '#8892b0' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: '#8892b0' }} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{ background: 'rgba(14,20,42,0.92)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: '#fff', fontSize: 11 }}
+                itemStyle={{ color: '#fff' }}
+                labelStyle={{ color: '#fff' }}
+                cursor={{ stroke: 'rgba(62,91,255,0.15)', strokeWidth: 1 }}
+              />
+              <Line type="monotone" dataKey="f1834" name="18–34" stroke={WS_CHART_COLORS.green} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="f3554" name="35–54" stroke={WS_CHART_COLORS.amber} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="f55" name="55+" stroke={WS_CHART_COLORS.coral} strokeWidth={2} dot={false} strokeDasharray="4 4" />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartSurface>
       </div>
 
     </div>

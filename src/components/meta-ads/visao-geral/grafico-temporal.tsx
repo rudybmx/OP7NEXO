@@ -2,8 +2,6 @@
 
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   Tooltip,
@@ -14,6 +12,7 @@ import {
 import type { DadosDiarios } from '@/types/meta-ads'
 import { formatarMoeda, formatarNumero } from '@/lib/formatar'
 import { InfoTooltip } from '@/components/ui/info-tooltip'
+import { ChartSurface } from '@/components/meta-ads/chart-surface'
 
 interface GraficoTemporalProps {
   dados: DadosDiarios[]
@@ -39,7 +38,15 @@ function isDark() {
 
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; dataKey: string }>; label?: string }) {
   if (!active || !payload || payload.length === 0) return null
-  
+
+  const investimento = payload.find((p) => p.dataKey === 'investimento')?.value ?? 0
+  const leads = payload.find((p) => p.dataKey === 'leads')?.value ?? 0
+  const cpl = leads > 0 ? investimento / leads : 0
+
+  const dataFormatada = label
+    ? new Date(label).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : ''
+
   return (
     <div
       style={{
@@ -53,7 +60,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
         boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
       }}
     >
-      <div style={{ fontWeight: 500, marginBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '4px' }}>{label}</div>
+      <div style={{ fontWeight: 500, marginBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '4px' }}>{dataFormatada}</div>
       {payload.map((entry) => (
         <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
           <span
@@ -75,6 +82,21 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
           </span>
         </div>
       ))}
+      {leads > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: '#FFD700',
+              display: 'inline-block',
+            }}
+          />
+          <span style={{ color: 'rgba(255,255,255,0.7)' }}>CPL:</span>
+          <span style={{ fontWeight: 600 }}>{formatarMoeda(cpl)}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -134,66 +156,70 @@ export function GraficoTemporal({ dados }: GraficoTemporalProps) {
         </div>
       </div>
 
-      <ResponsiveContainer width="100%" height={220}>
-        <AreaChart data={dados} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-          <defs>
-            <linearGradient id="colorInvest" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#3E5BFF" stopOpacity={0.15}/>
-              <stop offset="95%" stopColor="#3E5BFF" stopOpacity={0}/>
-            </linearGradient>
-            <linearGradient id="colorLeads" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#0fa856" stopOpacity={0.15}/>
-              <stop offset="95%" stopColor="#0fa856" stopOpacity={0}/>
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke={strokeGrid} vertical={false} />
-          <XAxis
-            dataKey="data"
-            tick={{ fontSize: 11, fill: '#8892b0' }}
-            axisLine={false}
-            tickLine={false}
-            dy={10}
-          />
-          <YAxis
-            yAxisId="investimento"
-            orientation="left"
-            tick={{ fontSize: 11, fill: '#8892b0' }}
-            axisLine={false}
-            tickLine={false}
-            tickFormatter={(v: number) => `R$${v}`}
-          />
-          <YAxis
-            yAxisId="leads"
-            orientation="right"
-            tick={{ fontSize: 11, fill: '#8892b0' }}
-            axisLine={false}
-            tickLine={false}
-            tickFormatter={(v: number) => formatarNumero(v)}
-          />
-          <Tooltip content={<CustomTooltip />} />
-          <Area
-            type="monotone"
-            dataKey="investimento"
-            yAxisId="investimento"
-            stroke="#3E5BFF"
-            fill="url(#colorInvest)"
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4, strokeWidth: 0, fill: '#3E5BFF' }}
-          />
-          <Area
-            type="monotone"
-            dataKey="leads"
-            yAxisId="leads"
-            stroke="#0fa856"
-            fill="url(#colorLeads)"
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4, strokeWidth: 0, fill: '#0fa856' }}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
+      <ChartSurface
+        height={220}
+        fallback={<div style={{ width: '100%', height: '100%', borderRadius: 12, background: 'rgba(255,255,255,0.03)' }} />}
+      >
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+          <AreaChart data={dados} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+            <defs>
+              <linearGradient id="colorInvest" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#3E5BFF" stopOpacity={0.15}/>
+                <stop offset="95%" stopColor="#3E5BFF" stopOpacity={0}/>
+              </linearGradient>
+              <linearGradient id="colorLeads" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#0fa856" stopOpacity={0.15}/>
+                <stop offset="95%" stopColor="#0fa856" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={strokeGrid} vertical={false} />
+            <XAxis
+              dataKey="data"
+              tick={{ fontSize: 11, fill: '#8892b0' }}
+              axisLine={false}
+              tickLine={false}
+              dy={10}
+            />
+            <YAxis
+              yAxisId="investimento"
+              orientation="left"
+              tick={{ fontSize: 11, fill: '#8892b0' }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={(v: number) => `R$${v}`}
+            />
+            <YAxis
+              yAxisId="leads"
+              orientation="right"
+              tick={{ fontSize: 11, fill: '#8892b0' }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={(v: number) => formatarNumero(v)}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Area
+              type="monotone"
+              dataKey="investimento"
+              yAxisId="investimento"
+              stroke="#3E5BFF"
+              fill="url(#colorInvest)"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 0, fill: '#3E5BFF' }}
+            />
+            <Area
+              type="monotone"
+              dataKey="leads"
+              yAxisId="leads"
+              stroke="#0fa856"
+              fill="url(#colorLeads)"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 0, fill: '#0fa856' }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </ChartSurface>
     </div>
   )
 }
-

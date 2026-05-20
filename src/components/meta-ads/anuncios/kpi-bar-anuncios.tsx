@@ -1,28 +1,26 @@
 'use client'
 
-import type { Anuncio } from '@/types/meta-ads-anuncios'
+import type { ResumoAnunciosPerformance } from '@/types/meta-ads-anuncios'
 import { formatarMoeda } from '@/lib/formatar'
 
 interface Props {
-  anuncios: Anuncio[]
+  resumo: ResumoAnunciosPerformance
+  totalAnuncios: number
 }
 
-export function KpiBarAnuncios({ anuncios }: Props) {
-  if (anuncios.length === 0) return null
-
-  const totalLeads     = anuncios.reduce((s, a) => s + a.leads, 0)
-  const totalInvest    = anuncios.reduce((s, a) => s + (a.investimento ?? a.cpl * a.leads), 0)
-  const cplMedio       = totalLeads > 0 ? totalInvest / totalLeads : 0
-  const ctrMedio       = anuncios.reduce((s, a) => s + a.ctr, 0) / anuncios.length
-  const freqMedia      = anuncios.reduce((s, a) => s + a.frequencia, 0) / anuncios.length
-  const ativos         = anuncios.filter(a => a.status === 'ACTIVE').length
-  const comFadiga      = anuncios.filter(a => a.frequencia >= 3.5).length
+export function KpiBarAnuncios({ resumo, totalAnuncios }: Props) {
+  const totalLeads = resumo.leads_total
+  const totalInvest = resumo.investimento_total
+  const cplMedio = totalLeads > 0 ? totalInvest / totalLeads : 0
+  const ctrMedio = resumo.ctr_medio
+  const freqMedia = resumo.frequencia_media
+  const totalLabel = totalAnuncios === 1 ? '1 anúncio filtrado' : `${totalAnuncios.toLocaleString('pt-BR')} anúncios filtrados`
 
   const items = [
     {
       label: 'Investimento total',
       valor: formatarMoeda(totalInvest),
-      sub: `${ativos} anúncios ativos`,
+      sub: totalLabel,
       cor: 'var(--ws-blue)',
       bg: 'var(--ws-blue-soft)',
     },
@@ -30,22 +28,22 @@ export function KpiBarAnuncios({ anuncios }: Props) {
       label: 'Leads gerados',
       valor: totalLeads.toLocaleString('pt-BR'),
       sub: `CPL médio ${formatarMoeda(cplMedio)}`,
-      cor: '#0fa856',
-      bg: 'rgba(15,168,86,0.08)',
+      cor: 'var(--ws-green)',
+      bg: 'var(--ws-green-soft)',
     },
     {
       label: 'CTR médio',
       valor: `${ctrMedio.toFixed(1).replace('.', ',')}%`,
       sub: ctrMedio >= 3 ? 'Acima da média' : ctrMedio >= 1.5 ? 'Na média' : 'Abaixo da média',
-      cor: ctrMedio >= 3 ? '#0fa856' : ctrMedio >= 1.5 ? '#EF9F27' : '#FF5C8D',
-      bg: ctrMedio >= 3 ? 'rgba(15,168,86,0.08)' : ctrMedio >= 1.5 ? 'rgba(239,159,39,0.08)' : 'rgba(255,92,141,0.08)',
+      cor: ctrMedio >= 3 ? 'var(--ws-green)' : ctrMedio >= 1.5 ? 'var(--ws-gold)' : 'var(--ws-coral)',
+      bg: ctrMedio >= 3 ? 'var(--ws-green-soft)' : ctrMedio >= 1.5 ? 'var(--ws-gold-soft)' : 'var(--ws-coral-soft)',
     },
     {
       label: 'Frequência média',
       valor: freqMedia.toFixed(1).replace('.', ','),
-      sub: comFadiga > 0 ? `${comFadiga} anúncio${comFadiga > 1 ? 's' : ''} com fadiga` : 'Sem fadiga detectada',
-      cor: freqMedia >= 3.5 ? '#FF5C8D' : freqMedia >= 2.5 ? '#EF9F27' : '#0fa856',
-      bg: freqMedia >= 3.5 ? 'rgba(255,92,141,0.08)' : freqMedia >= 2.5 ? 'rgba(239,159,39,0.08)' : 'rgba(15,168,86,0.08)',
+      sub: freqMedia >= 3.5 ? 'Sinal de fadiga elevado' : freqMedia >= 2.5 ? 'Fadiga moderada' : 'Sem fadiga relevante',
+      cor: freqMedia >= 3.5 ? 'var(--ws-coral)' : freqMedia >= 2.5 ? 'var(--ws-gold)' : 'var(--ws-green)',
+      bg: freqMedia >= 3.5 ? 'var(--ws-coral-soft)' : freqMedia >= 2.5 ? 'var(--ws-gold-soft)' : 'var(--ws-green-soft)',
     },
   ]
 

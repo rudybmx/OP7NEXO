@@ -27,18 +27,15 @@ interface ContaReal {
   agrupamento: string | null
 }
 
-interface WorkspaceBasico {
-  id: string
-}
-
 interface FiltrosMetaProps {
+  workspaceId: string | null
   filtros: FiltrosMeta
   onChange: (filtros: FiltrosMeta) => void
 }
 
 // Removido CalendarioMes antigo em favor do shadcn Calendar
 
-export function FiltrosMeta({ filtros, onChange }: FiltrosMetaProps) {
+export function FiltrosMeta({ workspaceId, filtros, onChange }: FiltrosMetaProps) {
   const [agrupamentoAberto, setAgrupamentoAberto] = useState(false)
   const [contaAberta, setContaAberta] = useState(false)
   const [dataAberta, setDataAberta] = useState(false)
@@ -50,17 +47,15 @@ export function FiltrosMeta({ filtros, onChange }: FiltrosMetaProps) {
   useEffect(() => {
     async function loadContas() {
       try {
-        const workspaces = await api.get<WorkspaceBasico[]>('/workspaces')
-        const wsId = workspaces?.[0]?.id
-        if (!wsId) return
-        const contas = await api.get<ContaReal[]>(`/workspaces/${wsId}/ads-accounts`)
+        if (!workspaceId) return
+        const contas = await api.get<ContaReal[]>(`/workspaces/${workspaceId}/ads-accounts`)
         setContasReais(contas.filter(c => (c as any).plataforma === 'meta' || !('plataforma' in c)))
       } catch {
         // silencioso — continua com lista vazia
       }
     }
     loadContas()
-  }, [])
+  }, [workspaceId])
 
   const agrupamentosUnicos = Array.from(
     new Set(contasReais.map(c => c.agrupamento).filter(Boolean) as string[])
@@ -195,7 +190,19 @@ export function FiltrosMeta({ filtros, onChange }: FiltrosMetaProps) {
                       <CommandItem
                         key={ag}
                         onSelect={() => {
-                          onChange({ ...filtros, agrupamento: ag === 'Todos os agrupamentos' ? null : ag })
+                          if (ag === 'Todos os agrupamentos') {
+                            onChange({ ...filtros, agrupamento: null, contaIds: [] })
+                            setAgrupamentoAberto(false)
+                            return
+                          }
+                          const contaIdsAgrupamento = contasReais
+                            .filter(c => c.agrupamento === ag)
+                            .map(c => c.account_id)
+                          onChange({
+                            ...filtros,
+                            agrupamento: ag,
+                            contaIds: contaIdsAgrupamento,
+                          })
                           setAgrupamentoAberto(false)
                         }}
                         className={`text-[12px] rounded-[6px] px-[10px] py-[6px] cursor-pointer transition-colors ${isSelected ? 'bg-[rgba(62,91,255,0.06)] text-[#3E5BFF] font-medium' : 'text-[#0E142A] dark:text-[rgba(255,255,255,0.80)] hover:bg-[rgba(62,91,255,0.06)] dark:hover:bg-[rgba(62,91,255,0.15)] hover:text-[#3E5BFF]'}`}

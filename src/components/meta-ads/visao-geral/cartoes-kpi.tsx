@@ -1,16 +1,20 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { AlertTriangle, CreditCard } from 'lucide-react'
-import { SiVisa, SiMastercard, SiPix } from 'react-icons/si'
-import type { ContaAnuncio, TipoComparativo } from '@/types/meta-ads'
+import type { ContaAnuncio, LeadsByPlatform, TipoComparativo } from '@/types/meta-ads'
+import type { FinanceiroMetaAds } from '@/types/meta-ads-financeiro'
 import { CardLeads } from './card-leads'
+import { SaldoFinanceiroCard } from '../financeiro/saldo-card'
 import { formatarMoeda, formatarNumeroCompacto, formatarPorcentagem } from '@/lib/formatar'
 import { MiniGauge } from '@/components/ui/mini-gauge'
 
 interface CartoesKpiProps {
   contas: ContaAnuncio[]
+  leadsPorCanal?: LeadsByPlatform[]
   comparativo: TipoComparativo
+  financeiro: FinanceiroMetaAds | null
+  onAbrirFinanceiro: () => void
+  onSelecionarConta: (contaId: string) => void
 }
 
 function calcularMediaPonderada(contas: ContaAnuncio[], numerador: keyof ContaAnuncio, denominador: keyof ContaAnuncio): number {
@@ -30,22 +34,14 @@ function calcDelta(atual: number, anterior: number, invertido: boolean): { valor
   }
 }
 
-const LABEL_COMPARATIVO: Record<TipoComparativo, string> = {
-  periodo_anterior: 'período ant.',
-  mes_anterior: 'mês ant.',
-  ano_anterior: 'ano ant.',
-  nenhum: '',
-}
-
-function detectarBandeira(tipo?: string | null): 'visa' | 'mastercard' | 'outro' {
-  if (!tipo || typeof tipo !== 'string') return 'outro'
-  const t = tipo.toUpperCase()
-  if (t.includes('VISA')) return 'visa'
-  if (t.includes('MASTER')) return 'mastercard'
-  return 'outro'
-}
-
-export function CartoesKpi({ contas, comparativo }: CartoesKpiProps) {
+export function CartoesKpi({
+  contas,
+  leadsPorCanal = [],
+  comparativo,
+  financeiro,
+  onAbrirFinanceiro,
+  onSelecionarConta,
+}: CartoesKpiProps) {
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -88,8 +84,6 @@ export function CartoesKpi({ contas, comparativo }: CartoesKpiProps) {
     anterior.frequencia = antAlcance > 0 ? anterior.impressoes / antAlcance : 0
   }
 
-  const labelComp = LABEL_COMPARATIVO[comparativo]
-
   const kpis = [
     { label: 'Investimento', valor: formatarMoeda(totalInvestimento), chaveDelta: 'investimento' as const, invertido: false },
     { label: 'LEADS', valor: null, isLeads: true },
@@ -102,131 +96,28 @@ export function CartoesKpi({ contas, comparativo }: CartoesKpiProps) {
     { label: 'Impressões', valor: formatarNumeroCompacto(totalImpressoes), chaveDelta: 'impressoes' as const, invertido: false },
   ]
 
-  // === Card de Saldo ===
-  const contaUnica = contas.length === 1 ? contas[0] : null
-  const totalSaldo = contas.reduce((s, c) => s + c.saldo, 0)
-
-  const isPrepayUnica = contaUnica?.isPrepay
-  const limiteUnico = contaUnica?.limiteCartao ?? 0
-  const ultimaRecarga = contaUnica?.ultimoValorRecarga
-  const fundingType = contaUnica?.fundingSourceType
-  const bandeira = detectarBandeira(fundingType)
-
-  let mostrarAlerta = false
-  if (contaUnica) {
-    if (!isPrepayUnica && limiteUnico > 0) {
-      mostrarAlerta = contaUnica.saldo / limiteUnico <= 0.10
-    } else if (isPrepayUnica && ultimaRecarga && ultimaRecarga > 0) {
-      mostrarAlerta = contaUnica.saldo / ultimaRecarga <= 0.10
-    }
-  }
-
-  const pctBarra: number | null = (() => {
-    if (!contaUnica) return null
-    if (!isPrepayUnica && limiteUnico > 0)
-      return Math.min(100, Math.max(0, (contaUnica.saldo / limiteUnico) * 100))
-    if (isPrepayUnica && ultimaRecarga && ultimaRecarga > 0)
-      return Math.min(100, Math.max(0, (contaUnica.saldo / ultimaRecarga) * 100))
-    return null
-  })()
-
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2.5 mb-4 items-stretch">
-
-      {/* Card de Saldo Disponível */}
-      <div
-        style={{
-          background: mostrarAlerta
-            ? 'rgba(255,92,141,0.07)'
-            : 'var(--ws-glass-bg, rgba(255,255,255,0.72))',
-          border: mostrarAlerta
-            ? '1px solid rgba(255,92,141,0.35)'
-            : '1px solid var(--ws-glass-border, rgba(255,255,255,0.35))',
-          borderRadius: '14px',
-          padding: '16px 18px',
-          backdropFilter: 'blur(16px)',
-          boxShadow: 'var(--ws-glass-shadow, 0 8px 32px rgba(14,20,42,0.12))',
-          position: 'relative',
-          overflow: 'hidden',
-          transition: 'all 0.2s ease',
-        }}
-      >
-        {/* Shine */}
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '1px', background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.85), transparent)', pointerEvents: 'none' }} />
-
-        {/* Ícone de pagamento */}
-        {contaUnica && (
-          <div style={{ position: 'absolute', top: '14px', right: '14px', opacity: 0.7 }}>
-            {isPrepayUnica ? (
-              <SiPix size={20} color="#32BCAD" />
-            ) : bandeira === 'visa' ? (
-              <SiVisa size={26} color="#1A1F71" />
-            ) : bandeira === 'mastercard' ? (
-              <SiMastercard size={26} />
-            ) : (
-              <CreditCard size={18} style={{ color: 'var(--ws-text-3)' }} />
-            )}
-          </div>
-        )}
-
-        {/* Label */}
-        <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.07em', color: mostrarAlerta ? 'var(--ws-coral, #FF5C8D)' : 'var(--ws-text-3, #8892b0)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          Saldo disponível
-          {mostrarAlerta && <AlertTriangle className="h-3 w-3" style={{ color: 'var(--ws-coral, #FF5C8D)' }} />}
-        </div>
-
-        {/* Valor */}
-        <div style={{ fontSize: isMobile ? '1.1rem' : '26px', fontWeight: 700, color: mostrarAlerta ? 'var(--ws-coral, #FF5C8D)' : 'var(--ws-text-1, #0E142A)', letterSpacing: '-0.02em', lineHeight: 1, wordBreak: 'break-word' }}>
-          {formatarMoeda(totalSaldo)}
-        </div>
-
-        {/* Limite ou recarga */}
-        {contaUnica && (
-          <div style={{ fontSize: '10px', color: 'var(--ws-text-3, #8892b0)', marginTop: '5px' }}>
-            {!isPrepayUnica && limiteUnico > 0
-              ? `Limite: ${formatarMoeda(limiteUnico)}`
-              : isPrepayUnica && ultimaRecarga && ultimaRecarga > 0
-                ? `Última recarga: ${formatarMoeda(ultimaRecarga)}`
-                : !isPrepayUnica ? 'Cartão de crédito' : 'PIX'
-            }
-          </div>
-        )}
-
-        {/* Barra de progresso */}
-        {pctBarra !== null && (
-          <div style={{ marginTop: '10px', height: '4px', borderRadius: '2px', background: 'rgba(14,20,42,0.08)' }}>
-            <div style={{
-              height: '100%',
-              borderRadius: '2px',
-              width: `${pctBarra}%`,
-              background: mostrarAlerta
-                ? 'linear-gradient(90deg, #FF5C8D, #ff8fab)'
-                : 'linear-gradient(90deg, #3E5BFF, #7A5AF8)',
-              transition: 'width 0.4s ease',
-            }} />
-          </div>
-        )}
-
-        {/* Aviso crítico */}
-        {mostrarAlerta && (
-          <div style={{ marginTop: '8px', fontSize: '10px', fontWeight: 600, color: 'var(--ws-coral, #FF5C8D)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <AlertTriangle size={10} />
-            Saldo crítico — abaixo de 10%
-          </div>
-        )}
-      </div>
+      <SaldoFinanceiroCard
+        financeiro={financeiro}
+        compact
+        ctaLabel="Abrir financeiro"
+        onCtaClick={onAbrirFinanceiro}
+        onSelecionarConta={onSelecionarConta}
+      />
 
       {kpis.map((kpi) => {
         if ('isLeads' in kpi && kpi.isLeads) {
           return (
             <div key="leads">
-              <CardLeads contas={contas} leadsAnterior={anterior?.leads} />
+              <CardLeads
+                contas={contas}
+                leadsPorCanal={leadsPorCanal}
+                leadsAnterior={anterior?.leads}
+              />
             </div>
           )
         }
-
-        const isAlerta = 'alerta' in kpi ? kpi.alerta : false
-        const cardMinHeight = '90px'
 
         let deltaComp: { valor: string; positivo: boolean; neutro: boolean } | null = null
         if (temComparativo && anterior && 'chaveDelta' in kpi && kpi.chaveDelta && anterior[kpi.chaveDelta] !== undefined) {

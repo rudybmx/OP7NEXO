@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Image, Video, LayoutGrid } from 'lucide-react'
 import { Anuncio, TipoAnuncio } from '@/types/meta-ads-anuncios'
 import { formatarMoeda } from '@/lib/formatar'
+import { proxyImagem } from '@/lib/imagem-proxy'
 
 interface Props {
   anuncios: Anuncio[]
@@ -170,9 +171,17 @@ export function GridCriativos({ anuncios, onAbrirAnuncio }: Props) {
               }}
             >
               {/* Thumbnail 9:16 */}
-              <div style={{ position: 'relative', aspectRatio: '9/16', width: '100%', overflow: 'hidden', background: a.corFundo, display: 'flex', alignItems: 'center', justifyContent: 'center' }} className="dark:filter-[brightness(0.35)_saturate(0.6)]">
+              <div style={{ position: 'relative', aspectRatio: '9/16', width: '100%', overflow: 'hidden', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }} className="dark:filter-[brightness(0.35)_saturate(0.6)]">
                 {a.thumbnailUrl
-                  ? <img src={a.thumbnailUrl} alt={a.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ? (
+                      <img
+                        src={proxyImagem(a.thumbnailUrl)}
+                        alt={a.nome}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        referrerPolicy="no-referrer"
+                        loading="lazy"
+                      />
+                    )
                   : <IconeTipo tipo={a.tipo} />
                 }
 

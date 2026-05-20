@@ -2,6 +2,7 @@
 
 import { Skeleton } from '@/components/ui/skeleton'
 import type { FiltrosMeta } from '@/types/meta-ads'
+import type { FinanceiroMetaAds } from '@/types/meta-ads-financeiro'
 import { useMetaInsights } from '@/hooks/use-meta-insights'
 import { CartoesKpi } from './cartoes-kpi'
 import { GraficoTemporal } from './grafico-temporal'
@@ -12,10 +13,20 @@ import { InsightsIA } from '../anuncios/insights-ia'
 
 interface VisaoGeralProps {
   filtros: FiltrosMeta
+  workspaceId: string | null
+  financeiro: FinanceiroMetaAds | null
+  onAbrirFinanceiro: () => void
+  onSelecionarConta: (contaId: string) => void
 }
 
-export function VisaoGeral({ filtros }: VisaoGeralProps) {
-  const { data, isLoading, error } = useMetaInsights(filtros)
+export function VisaoGeral({
+  filtros,
+  workspaceId,
+  financeiro,
+  onAbrirFinanceiro,
+  onSelecionarConta,
+}: VisaoGeralProps) {
+  const { data, isLoading, error } = useMetaInsights(filtros, workspaceId)
 
   if (isLoading) {
     return (
@@ -43,7 +54,14 @@ export function VisaoGeral({ filtros }: VisaoGeralProps) {
 
   return (
     <div className="space-y-[16px]">
-      <CartoesKpi contas={data.contas} comparativo={filtros.comparativo} />
+      <CartoesKpi
+        contas={data.contas}
+        leadsPorCanal={data.leadsPorCanal}
+        comparativo={filtros.comparativo}
+        financeiro={financeiro}
+        onAbrirFinanceiro={onAbrirFinanceiro}
+        onSelecionarConta={onSelecionarConta}
+      />
 
       {data.insightsIA && data.insightsIA.length > 0 && (
         <InsightsIA insights={data.insightsIA} onAbrirAnuncio={() => {}} />
@@ -56,10 +74,9 @@ export function VisaoGeral({ filtros }: VisaoGeralProps) {
         <GraficoDonutInvestimento contas={data.contas} />
       </div>
 
-      <TopCriativos criativos={data.topCriativos} />
+      <TopCriativos criativos={data.topCriativos} filtros={filtros} workspaceId={workspaceId} />
 
       <TabelaContas contas={data.contas} />
     </div>
   )
 }
-

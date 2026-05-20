@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { X, Image, Video, LayoutGrid } from 'lucide-react'
 import { Criativo, TipoCriativo } from '@/types/meta-ads-criativos'
+import { proxyImagem } from '@/lib/imagem-proxy'
 
 interface Props {
   criativo: Criativo | null
@@ -113,7 +114,7 @@ export function ModalPreview({ criativo, aberto, onFechar, onAbrirDetalhe }: Pro
             overflow: 'hidden',
           }} className="cc-thumb">
             {criativo.thumbnailUrl
-              ? <img src={criativo.thumbnailUrl} alt={criativo.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ? <img src={proxyImagem(criativo.thumbnailUrl)} alt={criativo.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" loading="lazy" />
               : <IconeTipo tipo={criativo.tipo} />
             }
           </div>

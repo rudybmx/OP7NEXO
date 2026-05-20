@@ -1,21 +1,51 @@
 'use client'
 
 import { useState } from 'react'
-import { FiltrosCriativos as FiltrosCriativosType } from '@/types/meta-ads-criativos'
+import { FiltrosCriativos as FiltrosCriativosType, Criativo } from '@/types/meta-ads-criativos'
+import type { CriativoTop } from '@/types/meta-ads'
 import { useMetaCriativos } from '@/hooks/use-meta-criativos'
 import { useInsightsCriativos } from '@/hooks/use-insights-criativos'
-import { ImageIcon } from 'lucide-react'
 import { FiltrosCriativos } from './filtros-criativos'
 import { InsightsCriativos } from './insights-criativos'
 import { FunilAtencao } from './funil-atencao'
 import { GridCriativos } from './grid-criativos'
 import { ModalPreview } from './modal-preview'
-import { ModalDetalhe } from './modal-detalhe'
+import { ModalAnaliseCriativoOverview } from '@/components/meta-ads/visao-geral/modal-analise-criativo-overview'
 import { Comparador } from './comparador'
 
-interface Props { dataInicio: string; dataFim: string; contaIds?: string[] }
+function criativoParaTop(c: Criativo): CriativoTop {
+  return {
+    id: c.id,
+    nome: c.nome,
+    tipo: c.tipo,
+    thumbnailUrl: c.thumbnailUrl,
+    imageUrlHq: c.thumbnailUrl,
+    linkAnuncio: c.linkAnuncio ?? undefined,
+    headline: c.headline ?? undefined,
+    destinationUrl: c.destinationUrl ?? undefined,
+    urlTags: c.urlTags ?? undefined,
+    utmSource: c.utmSource ?? undefined,
+    utmCampaign: c.utmCampaign ?? undefined,
+    utmMedium: c.utmMedium ?? undefined,
+    utmContent: c.utmContent ?? undefined,
+    utmTerm: c.utmTerm ?? undefined,
+    carouselItems: c.carouselCards?.map(card => ({
+      picture: card.picture ?? undefined,
+      image_url_hq: card.image_url_hq ?? undefined,
+    })),
+    leads: c.leads,
+    ctr: c.ctr,
+    cpl: c.cpl,
+    linkClicks: c.linkClicks,
+    cpm: c.cpm,
+    frequencia: c.frequencia,
+    videoMetrics: c.videoMetrics,
+  }
+}
 
-export function AbaCriativos({ dataInicio, dataFim, contaIds = [] }: Props) {
+interface Props { workspaceId: string | null; dataInicio: string; dataFim: string; contaIds?: string[] }
+
+export function AbaCriativos({ workspaceId, dataInicio, dataFim, contaIds = [] }: Props) {
   const [filtros, setFiltros] = useState<FiltrosCriativosType>({
     tipo: 'todos',
     status: 'todos',
@@ -24,15 +54,13 @@ export function AbaCriativos({ dataInicio, dataFim, contaIds = [] }: Props) {
   })
   const [comparadorAtivo, setComparadorAtivo] = useState(false)
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
-  const [criativoDetalheId, setCriativoDetalheId] = useState<string | null>(null)
+  const [criativoSelecionado, setCriativoSelecionado] = useState<CriativoTop | null>(null)
   const [criativoPreviewId, setCriativoPreviewId] = useState<string | null>(null)
 
-  const { criativos } = useMetaCriativos(filtros, dataInicio, dataFim, contaIds)
+  const { criativos } = useMetaCriativos(filtros, dataInicio, dataFim, contaIds, workspaceId)
   const insights = useInsightsCriativos(criativos)
 
-  const criativoDetalhe = criativos.find(c => c.id === criativoDetalheId) ?? null
   const criativoPreview = criativos.find(c => c.id === criativoPreviewId) ?? null
-  const insightDoDetalhe = insights.find(i => i.criativoId === criativoDetalheId) ?? null
 
   function handleCardClick(id: string) {
     if (comparadorAtivo) {
@@ -43,7 +71,8 @@ export function AbaCriativos({ dataInicio, dataFim, contaIds = [] }: Props) {
         return next
       })
     } else {
-      setCriativoDetalheId(id)
+      const c = criativos.find(cr => cr.id === id)
+      if (c) setCriativoSelecionado(criativoParaTop(c))
     }
   }
 
@@ -57,12 +86,19 @@ export function AbaCriativos({ dataInicio, dataFim, contaIds = [] }: Props) {
           setComparadorAtivo(v => !v)
           setSelecionados(new Set())
         }}
+        workspaceId={workspaceId}
+        dataInicio={dataInicio}
+        dataFim={dataFim}
+        contaIds={contaIds}
       />
 
       {/* Insights — só aparece se tiver dados */}
       <InsightsCriativos
         insights={insights}
-        onAbrirDetalhe={setCriativoDetalheId}
+        onAbrirDetalhe={(id) => {
+          const c = criativos.find(cr => cr.id === id)
+          if (c) setCriativoSelecionado(criativoParaTop(c))
+        }}
       />
 
       {/* Funil — só aparece se tiver vídeos */}
@@ -114,19 +150,17 @@ export function AbaCriativos({ dataInicio, dataFim, contaIds = [] }: Props) {
         onFechar={() => setCriativoPreviewId(null)}
         onAbrirDetalhe={(id) => {
           setCriativoPreviewId(null)
-          setCriativoDetalheId(id)
+          const c = criativos.find(cr => cr.id === id)
+          if (c) setCriativoSelecionado(criativoParaTop(c))
         }}
       />
 
-      <ModalDetalhe
-        criativo={criativoDetalhe}
-        insight={insightDoDetalhe}
-        aberto={!!criativoDetalheId}
-        onFechar={() => setCriativoDetalheId(null)}
-        onAbrirPreview={(id) => {
-          setCriativoDetalheId(null)
-          setCriativoPreviewId(id)
-        }}
+      <ModalAnaliseCriativoOverview
+        criativo={criativoSelecionado}
+        aberto={!!criativoSelecionado}
+        onFechar={() => setCriativoSelecionado(null)}
+        filtros={{ dataInicio, dataFim, contaIds }}
+        workspaceId={workspaceId}
       />
     </div>
   )

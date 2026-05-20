@@ -1,32 +1,34 @@
 'use client'
 
 import { Info } from 'lucide-react'
-import type { ContaAnuncio } from '@/types/meta-ads'
+import type { ContaAnuncio, LeadsByPlatform } from '@/types/meta-ads'
 import { formatarNumero } from '@/lib/formatar'
 import { MiniGauge } from '@/components/ui/mini-gauge'
 
 interface CardLeadsProps {
   contas: ContaAnuncio[]
+  leadsPorCanal?: LeadsByPlatform[]
   leadsAnterior?: number
 }
 
-export function CardLeads({ contas, leadsAnterior }: CardLeadsProps) {
+export function CardLeads({ contas, leadsPorCanal = [], leadsAnterior }: CardLeadsProps) {
   const totalLeads = contas.reduce((s, c) => s + c.leads, 0)
   const totalWhatsapp = contas.reduce((s, c) => s + c.leadsWhatsapp, 0)
   const totalInstagram = contas.reduce((s, c) => s + c.leadsInstagram, 0)
   const totalFormulario = contas.reduce((s, c) => s + c.leadsFormulario, 0)
+  const totalConversa7d = contas.reduce((s, c) => s + (c.leadsConversa7d ?? 0), 0)
+  const totalLinkClick = contas.reduce((s, c) => s + (c.linkClick ?? 0), 0)
 
-  const plataformasAgregadas = contas.reduce((acc, c) => {
-    for (const p of c.leadsPorPlataforma) {
+  const plataformasAgregadas = (leadsPorCanal.length > 0 ? leadsPorCanal : contas.flatMap((c) => c.leadsPorPlataforma))
+    .reduce((acc, p) => {
       const existente = acc.find((a) => a.platform === p.platform)
       if (existente) {
         existente.count += p.count
       } else {
         acc.push({ ...p })
       }
-    }
-    return acc
-  }, [] as { platform: string; label: string; count: number; color: string }[])
+      return acc
+    }, [] as { platform: string; label: string; count: number; color: string }[])
 
   plataformasAgregadas.sort((a, b) => b.count - a.count)
 
@@ -99,9 +101,9 @@ export function CardLeads({ contas, leadsAnterior }: CardLeadsProps) {
       
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', borderTop: '1px solid var(--ws-divider, rgba(14,20,42,0.06))', paddingTop: '8px', marginTop: '10px' }}>
         {[
-          { label: 'Conv. WhatsApp', value: totalWhatsapp,  title: 'Conversas iniciadas via anúncio (7 dias)' },
-          { label: 'DM Instagram',   value: totalInstagram, title: 'Mensagens diretas via anúncio' },
-          { label: 'Formulário',     value: totalFormulario, title: 'Leads via formulário nativo Meta' },
+          { label: 'Conv. 7d', value: totalConversa7d || totalWhatsapp,  title: 'Início de conversa atribuído em até 7 dias' },
+          { label: 'Link Click', value: totalLinkClick, title: 'Cliques no link (action_type: link_click)' },
+          { label: 'Formulário', value: totalFormulario || totalInstagram, title: 'Leads via formulário/pixel' },
         ].map((item) => (
           <div key={item.label} title={item.title} style={{
             textAlign: 'center',

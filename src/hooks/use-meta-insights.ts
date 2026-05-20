@@ -2,10 +2,9 @@
 
 import useSWR from 'swr'
 import api from '@/lib/api-client'
-import type { FiltrosMeta, MetaInsightsVisaoGeral, ContaAnuncio, DadosDiarios, CriativoTop } from '@/types/meta-ads'
+import { useWorkspace } from '@/lib/workspace-context'
+import type { FiltrosMeta, MetaInsightsVisaoGeral, ContaAnuncio, DadosDiarios, CriativoTop, LeadsByPlatform } from '@/types/meta-ads'
 import { calcularScore } from '@/components/meta-ads/anuncios/score-anuncio'
-
-interface Workspace { id: string; nome: string }
 
 function buildParams(wsId: string, filtros: FiltrosMeta): string {
   const p = new URLSearchParams({
@@ -19,14 +18,9 @@ function buildParams(wsId: string, filtros: FiltrosMeta): string {
   return p.toString()
 }
 
-export function useMetaInsights(filtros: FiltrosMeta) {
-  const { data: workspaces } = useSWR<Workspace[]>(
-    '/workspaces',
-    () => api.get<Workspace[]>('/workspaces'),
-    { revalidateOnFocus: false }
-  )
-  const wsId = workspaces?.[0]?.id
-
+export function useMetaInsights(filtros: FiltrosMeta, workspaceId: string | null) {
+  const { workspaceAtivo } = useWorkspace()
+  const wsId = (workspaceId ?? workspaceAtivo) ?? undefined
   const params = wsId ? buildParams(wsId, filtros) : null
 
   const { data: raw, isLoading, error } = useSWR(
@@ -62,6 +56,14 @@ export function useMetaInsights(filtros: FiltrosMeta) {
 
   const data: MetaInsightsVisaoGeral | null = raw
     ? {
+        leadsPorCanal: (raw.leads_por_canal ?? []).slice(0, 5).map(
+          (lpc: any): LeadsByPlatform => ({
+            platform: lpc.canal as any,
+            label: lpc.canal,
+            count: lpc.leads ?? 0,
+            color: '#3E5BFF',
+          })
+        ),
         contas: (raw.contas ?? []).map(
           (c: any): ContaAnuncio => ({
             id: c.id,
@@ -73,6 +75,8 @@ export function useMetaInsights(filtros: FiltrosMeta) {
             leadsInstagram: c.leads_instagram ?? 0,
             leadsMessenger: c.leads_messenger ?? 0,
             leadsFormulario: c.leads_formulario ?? 0,
+            leadsConversa7d: c.leads_conversa_7d ?? c.leads_mensagem ?? 0,
+            linkClick: c.link_click ?? 0,
             cpl: c.cpl,
             ctr: c.ctr,
             cpc: c.cpc,
@@ -83,12 +87,7 @@ export function useMetaInsights(filtros: FiltrosMeta) {
             saldo: c.saldo ?? 0,
             saldoInicial: 0,
             metaAccountId: c.account_id,
-            leadsPorPlataforma: (raw.leads_por_canal ?? []).slice(0, 5).map((lpc: any) => ({
-              platform: lpc.canal as any,
-              label: lpc.canal,
-              count: lpc.leads,
-              color: '#3E5BFF',
-            })),
+            leadsPorPlataforma: [],
           })
         ),
         dadosDiarios: (raw.dados_diarios ?? []).map(
@@ -105,10 +104,30 @@ export function useMetaInsights(filtros: FiltrosMeta) {
           thumbnailUrl: c.image_url_hq ?? c.thumbnail_url ?? undefined,
           imageUrlHq: c.image_url_hq ?? undefined,
           linkAnuncio: c.link_anuncio ?? undefined,
+          headline: c.headline ?? undefined,
+          destinationUrl: c.destination_url ?? undefined,
+          urlTags: c.url_tags ?? undefined,
+          utmSource: c.utm_source ?? undefined,
+          utmCampaign: c.utm_campaign ?? undefined,
+          utmMedium: c.utm_medium ?? undefined,
+          utmContent: c.utm_content ?? undefined,
+          utmTerm: c.utm_term ?? undefined,
           carouselItems: c.carousel_items ?? [],
           leads: c.leads ?? 0,
           ctr: c.ctr ?? 0,
           cpl: c.cpl ?? 0,
+          linkClicks: c.link_click ?? 0,
+          cpm: c.cpm ?? 0,
+          frequencia: c.frequencia ?? 0,
+          videoMetrics: c.video_metrics ? {
+            videoViews: c.video_metrics.video_views,
+            thruplay: c.video_metrics.thruplay,
+            p25: c.video_metrics.p25,
+            p50: c.video_metrics.p50,
+            p75: c.video_metrics.p75,
+            p100: c.video_metrics.p100,
+            video3Sec: c.video_metrics.video_3_sec,
+          } : undefined,
         })),
         insightsIA: iaData ?? [],
         periodo: raw.periodo ?? { inicio: filtros.dataInicio, fim: filtros.dataFim },

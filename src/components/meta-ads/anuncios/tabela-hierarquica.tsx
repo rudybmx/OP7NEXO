@@ -103,8 +103,15 @@ export function TabelaHierarquica({ anuncios, agrupar, onAbrirAnuncio }: Props) 
         </td>
         <td style={{ padding: isFlat ? '9px 10px' : '9px 10px 9px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 400, color: 'var(--ws-text-1)' }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>
-              {a.nome.length > 55 ? a.nome.slice(0, 55) + '...' : a.nome}
+            <span style={{
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              lineHeight: '1.35',
+              maxWidth: 340,
+            }}>
+              {a.nome}
             </span>
             {a.permalinkUrl && (
               <a
@@ -120,7 +127,7 @@ export function TabelaHierarquica({ anuncios, agrupar, onAbrirAnuncio }: Props) 
             )}
           </div>
           {isFlat && (
-            <div style={{ fontSize: 10, color: 'var(--ws-text-3)', marginTop: 2 }}>
+            <div style={{ fontSize: 10, color: 'var(--ws-text-3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 320 }}>
               {a.campanhaNome}
             </div>
           )}
@@ -245,7 +252,7 @@ export function TabelaHierarquica({ anuncios, agrupar, onAbrirAnuncio }: Props) 
                         {anunciosDoConjunto.length} anúncio{anunciosDoConjunto.length !== 1 ? 's' : ''}
                       </div>
                     </td>
-                    <td style={{ padding: '10px', color: 'var(--ws-text-3)', fontSize: 11 }}>Grupo</td>
+                    <td style={{ padding: '10px', color: 'var(--ws-text-3)', fontSize: 11 }} />
                     <td style={{ padding: '10px' }}>
                       <span style={{ fontSize: 10, color: 'var(--ws-text-3)' }}>
                         {anunciosDoConjunto.filter(a => a.status === 'ACTIVE').length} ativos

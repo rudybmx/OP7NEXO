@@ -2,8 +2,7 @@
 
 import useSWR from 'swr'
 import api from '@/lib/api-client'
-
-interface Workspace { id: string }
+import { useWorkspace } from '@/lib/workspace-context'
 
 interface MetaGraficoData {
   data: string
@@ -28,12 +27,8 @@ function mesAtual(): { inicio: string; fim: string } {
 }
 
 export function useMetaGrafico(): UseMetaGraficoReturn {
-  const { data: workspaces } = useSWR<Workspace[]>(
-    '/workspaces',
-    () => api.get<Workspace[]>('/workspaces'),
-    { revalidateOnFocus: false }
-  )
-  const wsId = workspaces?.[0]?.id
+  const { workspaceAtivo } = useWorkspace()
+  const wsId = workspaceAtivo ?? undefined
   const { inicio, fim } = mesAtual()
 
   const { data: raw, isLoading, error } = useSWR(

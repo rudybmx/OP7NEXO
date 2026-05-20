@@ -1,9 +1,13 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { ChevronRight, ChevronUp, ChevronDown, Image, Video, LayoutGrid, Columns3, Check, BookOpen } from 'lucide-react'
-import { Campanha, ConjuntoAnuncios, Anuncio, StatusCampanha, Plataforma, TipoCriativo, Criativo } from '@/types/meta-ads-campanhas'
-import { ModalCriativo } from './modal-criativo'
+import type { Campanha, ConjuntoAnuncios, Anuncio, Plataforma, TipoCriativo, Criativo, ObjetivoCampanha } from '@/types/meta-ads-campanhas'
+import { ModalCriativoDs } from './modal-criativo-ds'
 import { proxyImagem } from '@/lib/imagem-proxy'
+import { configVeiculacao } from '@/lib/veiculacao'
+import { configPlataformaCampanha, ordenarPlataformasResumo, resumoPlataformasTooltip, tituloPlataformaResumo } from '@/lib/plataformas-meta'
+import type { PlataformaResumo } from '@/lib/plataformas-meta'
+import { configObjetivoCampanha, resumoObjetivosTooltip } from '@/lib/objetivos-meta'
 
 // ─── Column config ────────────────────────────────────────────────────────────
 
@@ -24,6 +28,12 @@ const DEFAULT_COLS = new Set<ColId>(COLUNAS_CONFIG.filter(c => c.defaultOn).map(
 
 interface Props {
   campanhas: Campanha[]
+  campanhaAtivaId?: string | null
+  onSelecionarCampanha?: (id: string) => void
+  workspaceId: string | null
+  dataInicio: string
+  dataFim: string
+  contaIds: string[]
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -43,10 +53,6 @@ function fmtNum(n: number): string {
   return Math.round(n).toLocaleString('pt-BR')
 }
 
-function fmtPct(n: number): string {
-  return n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'
-}
-
 function cplColor(cpl: number): string {
   if (cpl <= 1.00) return '#0fa856'
   if (cpl >= 5.00) return '#FF5C8D'
@@ -60,19 +66,19 @@ function barColor(score: number): string {
   return '#FF5C8D'
 }
 
-// ─── Status badge ────────────────────────────────────────────────────────────
-
-const statusConfig: Record<StatusCampanha, { label: string; bg: string; color: string; dot: string }> = {
-  ACTIVE: { label: 'Ativa', bg: '#eaf3de', color: '#3b6d11', dot: '#3b6d11' },
-  PAUSED: { label: 'Pausada', bg: '#faeeda', color: '#854f0b', dot: '#854f0b' },
-  ARCHIVED: { label: 'Encerrada', bg: '#f1efe8', color: '#5f5e5a', dot: '#5f5e5a' },
-  LEARNING: { label: 'Aprendendo', bg: '#e6f1fb', color: '#185fa5', dot: '#185fa5' },
-  DELETED: { label: 'Excluída', bg: '#fcebeb', color: '#a32d2d', dot: '#a32d2d' },
-}
-
-function StatusBadge({ status, dataAtualizacao }: { status: StatusCampanha; dataAtualizacao?: string }) {
-  const isPausada = status === 'PAUSED'
-  const isAtiva = status === 'ACTIVE'
+function StatusBadge({
+  status,
+  label,
+  motivo,
+  dataAtualizacao,
+}: {
+  status: string
+  label?: string
+  motivo?: string | null
+  dataAtualizacao?: string
+}) {
+  const cfg = configVeiculacao(status)
+  const isPausada = status === 'DESATIVADO'
   
   const baseStyle = {
     display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -81,34 +87,110 @@ function StatusBadge({ status, dataAtualizacao }: { status: StatusCampanha; data
     border: '1px solid',
   }
 
-  let specificStyle = {
-    background: 'rgba(136,146,176,0.10)',
-    color: '#8892b0',
-    borderColor: 'rgba(136,146,176,0.25)',
-  }
-
-  if (isAtiva) {
-    specificStyle = {
-      background: 'rgba(15,168,86,0.10)',
-      color: '#007a40',
-      borderColor: 'rgba(15,168,86,0.25)',
-    }
-  } else if (isPausada) {
-    specificStyle = {
-      background: 'rgba(255,92,141,0.10)',
-      color: '#c2004f',
-      borderColor: 'rgba(255,92,141,0.25)',
-    }
+  const specificStyle = {
+    background: cfg.corBg,
+    color: cfg.cor,
+    borderColor: cfg.corBorder,
   }
 
   return (
-    <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+    <div
+      style={{ display: 'inline-flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}
+      title={motivo ? `${cfg.label} · ${motivo}` : cfg.label}
+    >
       <span style={{ ...baseStyle, ...specificStyle }}>
-        {isAtiva ? 'Ativa' : isPausada ? 'Pausada' : status}
+        {label || cfg.label}
       </span>
       {isPausada && dataAtualizacao && (
-        <span style={{ fontSize: 9, color: '#8892b0', paddingLeft: 2, whiteSpace: 'nowrap', marginTop: 2 }}>
+        <span style={{ fontSize: 9, color: '#8892b0', whiteSpace: 'nowrap', marginTop: 2 }}>
           pausada em {fmtData(dataAtualizacao)}
+        </span>
+      )}
+      {motivo && (
+        <span style={{ fontSize: 9, color: '#8892b0', whiteSpace: 'nowrap', marginTop: 2, textAlign: 'center' }}>
+          {motivo}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function ObjetivoBadge({
+  objetivo,
+  objetivoOriginal,
+  label,
+  descricao,
+  compact = false,
+}: {
+  objetivo: ObjetivoCampanha
+  objetivoOriginal?: string | null
+  label?: string
+  descricao?: string
+  compact?: boolean
+}) {
+  const cfg = configObjetivoCampanha(objetivo)
+  const badgeLabel = label || cfg.label
+  const badgeDescricao = descricao || cfg.descricao
+  const title = objetivoOriginal
+    ? `${badgeLabel} · ${badgeDescricao} · Original: ${objetivoOriginal}`
+    : `${badgeLabel} · ${badgeDescricao}`
+
+  return (
+    <span
+      title={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: compact ? '2px 8px' : '2px 9px',
+        borderRadius: 9999,
+        fontSize: compact ? 9 : 10,
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+        border: '1px solid var(--ws-divider)',
+        background: cfg.bg,
+        color: cfg.cor,
+      }}
+      >
+      {badgeLabel}
+    </span>
+  )
+}
+
+function mostrarDetalheOrcamento(label?: string | null): boolean {
+  if (!label) return false
+  const normalizado = label.toLowerCase()
+  return !normalizado.includes('orçamento diário')
+}
+
+function BudgetCell({
+  valor,
+  label,
+}: {
+  valor?: number | null
+  label?: string | null
+}) {
+  const temValor = typeof valor === 'number' && Number.isFinite(valor)
+  const valorFormatado = temValor ? valor : 0
+  const detalhe = mostrarDetalheOrcamento(label) ? label : null
+
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        flexDirection: 'column',
+        alignItems: 'flex-end',
+        gap: 2,
+        lineHeight: 1.05,
+      }}
+      title={label || undefined}
+    >
+      <span style={{ color: temValor ? 'var(--ws-green)' : 'var(--ws-text-3)', fontWeight: temValor ? 500 : 400 }}>
+        {temValor ? `R$ ${fmtBRL(valorFormatado)}` : '—'}
+      </span>
+      {detalhe && (
+        <span style={{ fontSize: 9, color: '#8892b0', whiteSpace: 'nowrap' }}>
+          {detalhe}
         </span>
       )}
     </div>
@@ -152,43 +234,92 @@ function IconWhatsApp({ size = 12 }: { size?: number }) {
   )
 }
 
-function IconAudienceNetwork({ size = 12 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="#5f5e5a">
-      <circle cx="12" cy="12" r="10" stroke="#5f5e5a" strokeWidth="1.5" fill="none"/>
-      <circle cx="12" cy="12" r="3" fill="#5f5e5a"/>
-    </svg>
-  )
+function PlataformaIcone({ codigo, size = 12 }: { codigo: string; size?: number }) {
+  if (codigo === 'whatsapp') return <IconWhatsApp size={size} />
+  if (codigo === 'instagram') return <IconInstagram size={size} />
+  return <IconFacebook size={size} />
 }
 
-const plataformaIconMap: Record<string, { bg: string; icon: (s: number) => React.ReactNode; title: string }> = {
-  facebook:         { bg: '#e8f0fb', icon: s => <IconFacebook size={s} />,         title: 'Facebook' },
-  instagram:        { bg: '#fef0f5', icon: s => <IconInstagram size={s} />,        title: 'Instagram' },
-  whatsapp:         { bg: '#e8f8ed', icon: s => <IconWhatsApp size={s} />,         title: 'WhatsApp' },
-  audience_network: { bg: '#f1efe8', icon: s => <IconAudienceNetwork size={s} />, title: 'Audience Network' },
-}
+function PlataformaChips({
+  plataformas,
+  resumo,
+}: {
+  plataformas: Plataforma[]
+  resumo?: PlataformaResumo[]
+}) {
+  const base = (resumo && resumo.length > 0)
+    ? resumo
+    : plataformas.map(codigo => {
+        const cfg = configPlataformaCampanha(codigo)
+        return { codigo: codigo as PlataformaResumo['codigo'], label: cfg.label, detalhes: [] as string[] }
+      })
 
-function PlataformaIcons({ plataformas }: { plataformas: Plataforma[] }) {
+  const itens = ordenarPlataformasResumo(base)
+  const visiveis = itens.slice(0, 2)
+  const ocultos = itens.slice(2)
+
   return (
-    <div style={{ display: 'flex', gap: 4 }}>
-      {plataformas.map(p => {
-        const cfg = plataformaIconMap[p]
-        if (!cfg) return null
+    <div
+      style={{
+        display: 'inline-flex',
+        gap: 4,
+        flexWrap: 'nowrap',
+        alignItems: 'center',
+        justifyContent: 'center',
+        whiteSpace: 'nowrap',
+        width: '100%',
+      }}
+    >
+      {visiveis.length === 0 && (
+        <span style={{ fontSize: 11, color: '#8892b0' }}>—</span>
+      )}
+      {visiveis.map(item => {
+        const cfg = configPlataformaCampanha(item.codigo)
+        const title = tituloPlataformaResumo(item)
         return (
           <span
-            key={p}
-            title={cfg.title}
+            key={item.codigo}
+            title={title}
             style={{
-              width: 18, height: 18, borderRadius: '50%',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '2px 8px',
+              borderRadius: 9999,
+              border: `1px solid ${cfg.border}`,
               background: cfg.bg,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              color: cfg.cor,
+              fontSize: 10,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
             }}
           >
-            {cfg.icon(12)}
+            <PlataformaIcone codigo={item.codigo} size={11} />
+            {cfg.label}
           </span>
         )
       })}
+      {ocultos.length > 0 && (
+        <span
+          title={ocultos.map(item => tituloPlataformaResumo(item)).join('\n')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minWidth: 28,
+            padding: '2px 6px',
+            borderRadius: 9999,
+            border: '1px solid rgba(136,146,176,0.22)',
+            background: 'rgba(136,146,176,0.10)',
+            color: '#8892b0',
+            fontSize: 10,
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          +{ocultos.length}
+        </span>
+      )}
     </div>
   )
 }
@@ -208,7 +339,7 @@ function CriativoThumb({ criativo, onClick }: { criativo: Criativo; onClick: () 
       title="Ver criativo"
       style={{
         width: 32, height: 32, borderRadius: 4, flexShrink: 0,
-        background: criativo.corFundo,
+        background: '#f5f5f5',
         border: '0.5px solid var(--border)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         cursor: 'pointer', overflow: 'hidden',
@@ -271,7 +402,7 @@ function Th({
   currentKey: string
   currentDir: SortDir
   onClick?: (k: string) => void
-  align?: 'left' | 'right'
+  align?: 'left' | 'right' | 'center'
   style?: React.CSSProperties
 }) {
   const active = key === currentKey
@@ -329,6 +460,14 @@ function Td({ children, muted, blue, cpl, ctr, style }: {
     }}>
       {children}
     </td>
+  )
+}
+
+function TagCell({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', width: '100%', justifyContent: 'center', alignItems: 'center' }}>
+      {children}
+    </div>
   )
 }
 
@@ -442,7 +581,15 @@ function ColunasDropdown({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function TabelaHierarquica({ campanhas }: Props) {
+export function TabelaHierarquica({
+  campanhas,
+  campanhaAtivaId,
+  onSelecionarCampanha,
+  workspaceId,
+  dataInicio,
+  dataFim,
+  contaIds,
+}: Props) {
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set(['c1']))
   const [expandidosCj, setExpandidosCj] = useState<Set<string>>(new Set())
   const [sortKey, setSortKey] = useState<string>('investimento')
@@ -450,6 +597,9 @@ export function TabelaHierarquica({ campanhas }: Props) {
   const [modalData, setModalData] = useState<{ criativo: Criativo; anuncio: Anuncio } | null>(null)
   const [colsVisiveis, setColsVisiveis] = useState<Set<ColId>>(DEFAULT_COLS)
   const vis = (id: ColId) => colsVisiveis.has(id)
+  const objetivoHelp = resumoObjetivosTooltip()
+  const plataformasHelp = resumoPlataformasTooltip()
+  const orcamentoHelp = 'Mostra o orçamento definido na campanha ou no conjunto. Quando o valor é herdado do nível acima, a célula indica isso explicitamente.'
 
   const toggleCampanha = (id: string) => {
     setExpandidos(prev => {
@@ -496,12 +646,73 @@ export function TabelaHierarquica({ campanhas }: Props) {
         backdropFilter: 'blur(16px)',
         boxShadow: '0 8px 32px rgba(14,20,42,0.10), 0 2px 8px rgba(14,20,42,0.06)'
       }}>
-        <table style={{ minWidth: vis('cpc') && vis('cpm') ? 920 : 740, width: '100%', borderCollapse: 'collapse' }}>
+        <table style={{ minWidth: vis('cpc') && vis('cpm') ? 1100 : 920, width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'rgba(14,20,42,0.03)', borderBottom: '1px solid rgba(14,20,42,0.07)' }}>
               <Th label="Campanha / Conjunto / Anúncio" align="left" {...thProps} style={{ minWidth: 320, paddingLeft: 14 }} />
-              <Th label="Status" align="left" {...thProps} style={{ minWidth: 90 }} />
-              <Th label="Plataforma" align="left" {...thProps} style={{ minWidth: 80 }} />
+              <Th
+                label="Objetivo"
+                {...thProps}
+                content={
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    Objetivo
+                    <span
+                      title={objetivoHelp}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 14,
+                        height: 14,
+                        borderRadius: '50%',
+                        background: 'var(--ws-divider)',
+                        color: 'var(--ws-text-3)',
+                        fontSize: 9,
+                        fontWeight: 600,
+                        cursor: 'help',
+                        flexShrink: 0,
+                        lineHeight: 1,
+                      }}
+                    >
+                      i
+                    </span>
+                  </div>
+                }
+                align="center"
+                style={{ width: '1%', whiteSpace: 'nowrap' }}
+              />
+              <Th label="Veiculação" align="center" {...thProps} style={{ width: '1%', whiteSpace: 'nowrap' }} />
+              <Th
+                label="Plataforma"
+                {...thProps}
+                content={
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    Plataforma
+                    <span
+                      title={plataformasHelp}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 14,
+                        height: 14,
+                        borderRadius: '50%',
+                        background: 'var(--ws-divider)',
+                        color: 'var(--ws-text-3)',
+                        fontSize: 9,
+                        fontWeight: 600,
+                        cursor: 'help',
+                        flexShrink: 0,
+                        lineHeight: 1,
+                      }}
+                    >
+                      i
+                    </span>
+                  </div>
+                }
+                align="center"
+                style={{ width: '1%', whiteSpace: 'nowrap' }}
+              />
               {vis('investimento') && <Th label="Investimento" sortKey="investimento" {...thProps} />}
               {vis('leads')        && <Th label="Leads"        sortKey="leads"        {...thProps} />}
               {vis('cpl')          && <Th label="CPL"          sortKey="cpl"          {...thProps} />}
@@ -541,31 +752,67 @@ export function TabelaHierarquica({ campanhas }: Props) {
                   style={{ minWidth: 130 }}
                 />
               )}
-              {vis('orcamento')    && <Th label="Orçamento/dia" {...thProps} />}
+              {vis('orcamento')    && (
+                <Th
+                  label="Orçamento/dia"
+                  content={
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      Orçamento/dia
+                      <span
+                        title={orcamentoHelp}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 14,
+                          height: 14,
+                          borderRadius: '50%',
+                          background: 'var(--ws-divider)',
+                          color: 'var(--ws-text-3)',
+                          fontSize: 9,
+                          fontWeight: 600,
+                          cursor: 'help',
+                          flexShrink: 0,
+                          lineHeight: 1,
+                        }}
+                      >
+                        i
+                      </span>
+                    </div>
+                  }
+                  {...thProps}
+                />
+              )}
             </tr>
           </thead>
           <tbody>
             {sorted.map(campanha => (
-              <CampanhaRows
-                key={campanha.id}
-                campanha={campanha}
-                expandido={expandidos.has(campanha.id)}
-                expandidosCj={expandidosCj}
-                onToggle={toggleCampanha}
-                onToggleCj={toggleCj}
-                onOpenModal={setModalData}
-                vis={vis}
-              />
-            ))}
+            <CampanhaRows
+              key={campanha.id}
+              campanha={campanha}
+              expandido={expandidos.has(campanha.id)}
+              ativa={campanha.id === campanhaAtivaId}
+              expandidosCj={expandidosCj}
+              onToggle={toggleCampanha}
+              onToggleCj={toggleCj}
+              onOpenModal={setModalData}
+              onSelecionarCampanha={onSelecionarCampanha}
+              vis={vis}
+            />
+          ))}
           </tbody>
         </table>
       </div>
 
-      <ModalCriativo
+      <ModalCriativoDs
         criativo={modalData?.criativo ?? null}
         anuncio={modalData?.anuncio ?? null}
         aberto={modalData !== null}
         onFechar={() => setModalData(null)}
+        workspaceId={workspaceId}
+        dataInicio={dataInicio}
+        dataFim={dataFim}
+        contaIds={contaIds}
       />
     </>
   )
@@ -574,37 +821,51 @@ export function TabelaHierarquica({ campanhas }: Props) {
 // ─── Row components ───────────────────────────────────────────────────────────
 
 function CampanhaRows({
-  campanha, expandido, expandidosCj, onToggle, onToggleCj, onOpenModal, vis,
+  campanha,
+  expandido,
+  ativa,
+  expandidosCj,
+  onToggle,
+  onToggleCj,
+  onOpenModal,
+  onSelecionarCampanha,
+  vis,
 }: {
   campanha: Campanha
   expandido: boolean
+  ativa: boolean
   expandidosCj: Set<string>
   onToggle: (id: string) => void
   onToggleCj: (id: string) => void
   onOpenModal: (d: { criativo: Criativo; anuncio: Anuncio }) => void
+  onSelecionarCampanha?: (id: string) => void
   vis: (id: ColId) => boolean
 }) {
-  const objetivoLabel: Record<string, string> = {
-    LEAD_GENERATION: 'Leads',
-    BRAND_AWARENESS: 'Reconhecimento',
-    CONVERSIONS: 'Conversões',
-    TRAFFIC: 'Tráfego',
-    REACH: 'Alcance',
-    VIDEO_VIEWS: 'Visualizações',
-  }
-
   return (
     <>
       {/* Campaign row (L0) */}
       <tr
         className="hover:bg-[rgba(62,91,255,0.02)]"
-        style={{ borderBottom: '1px solid rgba(14,20,42,0.05)', cursor: 'pointer', transition: 'background 150ms' }}
-        onClick={() => onToggle(campanha.id)}
+        style={{
+          borderBottom: '1px solid rgba(14,20,42,0.05)',
+          cursor: 'pointer',
+          transition: 'background 150ms',
+          background: ativa ? 'rgba(201,168,76,0.08)' : 'transparent',
+          boxShadow: ativa ? 'inset 3px 0 0 var(--ws-gold)' : 'none',
+        }}
+        onClick={() => {
+          onSelecionarCampanha?.(campanha.id)
+          onToggle(campanha.id)
+        }}
       >
         <td style={{ padding: '10px 14px', minWidth: 320 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
             <button
-              onClick={e => { e.stopPropagation(); onToggle(campanha.id) }}
+              onClick={e => {
+                e.stopPropagation()
+                onSelecionarCampanha?.(campanha.id)
+                onToggle(campanha.id)
+              }}
               style={{
                 background: 'none', border: 'none', cursor: 'pointer', padding: 0, paddingTop: 3, flexShrink: 0,
                 color: '#8892b0',
@@ -625,13 +886,31 @@ function CampanhaRows({
                 {campanha.nome}
               </div>
               <div style={{ fontSize: 10, color: '#8892b0', marginTop: 1 }}>
-                {campanha.conjuntos.length} conjuntos · {objetivoLabel[campanha.objetivo] ?? campanha.objetivo}
+                {campanha.conjuntos.length} conjuntos
               </div>
             </div>
           </div>
         </td>
-        <td style={{ padding: '10px 14px' }}><StatusBadge status={campanha.status} dataAtualizacao={campanha.dataAtualizacao} /></td>
-        <td style={{ padding: '10px 14px' }}><PlataformaIcons plataformas={campanha.plataformas} /></td>
+        <td style={{ padding: '10px 14px', width: '1%', whiteSpace: 'nowrap' }}>
+          <TagCell>
+            <ObjetivoBadge
+              objetivo={campanha.objetivo}
+              objetivoOriginal={campanha.objetivoOriginal}
+              label={campanha.objetivoLabel}
+              descricao={campanha.objetivoDescricao}
+            />
+          </TagCell>
+        </td>
+        <td style={{ padding: '10px 14px', width: '1%', whiteSpace: 'nowrap' }}>
+          <TagCell>
+            <StatusBadge status={campanha.veiculacao || campanha.status} label={campanha.veiculacaoLabel} motivo={campanha.veiculacaoMotivo} dataAtualizacao={campanha.dataAtualizacao} />
+          </TagCell>
+        </td>
+        <td style={{ padding: '10px 14px', width: '1%', whiteSpace: 'nowrap' }}>
+          <TagCell>
+            <PlataformaChips plataformas={campanha.plataformas} resumo={campanha.plataformasResumo} />
+          </TagCell>
+        </td>
         {vis('investimento') && <Td>R$ {fmtBRL(campanha.investimento)}</Td>}
         {vis('leads')        && <Td blue>{fmtNum(campanha.leads)}</Td>}
         {vis('cpl')          && <Td cpl={campanha.cpl}>R$ {fmtBRL(campanha.cpl)}</Td>}
@@ -639,7 +918,7 @@ function CampanhaRows({
         {vis('cpc')          && <Td>R$ {fmtBRL(campanha.cpc)}</Td>}
         {vis('cpm')          && <Td muted>R$ {fmtBRL(campanha.cpm)}</Td>}
         {vis('desempenho')   && <td style={{ padding: '10px 14px' }}><BarraDesempenho score={campanha.indiceDesempenho} /></td>}
-        {vis('orcamento')    && <Td muted>{campanha.orcamentoDiario ? `R$ ${fmtBRL(campanha.orcamentoDiario)}` : '—'}</Td>}
+        {vis('orcamento')    && <Td style={{ paddingRight: 14 }}><BudgetCell valor={campanha.orcamentoDiario} label={campanha.orcamentoLabel} /></Td>}
       </tr>
 
       {/* Ad Set rows (L1) */}
@@ -647,6 +926,10 @@ function CampanhaRows({
         <ConjuntoRows
           key={cj.id}
           cj={cj}
+          objetivo={campanha.objetivo}
+          objetivoOriginal={campanha.objetivoOriginal}
+          objetivoLabel={campanha.objetivoLabel}
+          objetivoDescricao={campanha.objetivoDescricao}
           expandido={expandidosCj.has(cj.id)}
           onToggle={onToggleCj}
           onOpenModal={onOpenModal}
@@ -658,9 +941,13 @@ function CampanhaRows({
 }
 
 function ConjuntoRows({
-  cj, expandido, onToggle, onOpenModal, vis,
+  cj, objetivo, objetivoOriginal, objetivoLabel, objetivoDescricao, expandido, onToggle, onOpenModal, vis,
 }: {
   cj: ConjuntoAnuncios
+  objetivo: ObjetivoCampanha
+  objetivoOriginal?: string | null
+  objetivoLabel?: string
+  objetivoDescricao?: string
   expandido: boolean
   onToggle: (id: string) => void
   onOpenModal: (d: { criativo: Criativo; anuncio: Anuncio }) => void
@@ -706,8 +993,27 @@ function ConjuntoRows({
             </div>
           </div>
         </td>
-        <td style={{ padding: '10px 14px' }}><StatusBadge status={cj.status} dataAtualizacao={cj.dataAtualizacao} /></td>
-        <td style={{ padding: '10px 14px' }}><PlataformaIcons plataformas={cj.plataformas} /></td>
+        <td style={{ padding: '10px 14px', width: '1%', whiteSpace: 'nowrap' }}>
+          <TagCell>
+            <ObjetivoBadge
+              objetivo={objetivo}
+              objetivoOriginal={objetivoOriginal}
+              label={objetivoLabel}
+              descricao={objetivoDescricao}
+              compact
+            />
+          </TagCell>
+        </td>
+        <td style={{ padding: '10px 14px', width: '1%', whiteSpace: 'nowrap' }}>
+          <TagCell>
+            <StatusBadge status={cj.veiculacao || cj.status} label={cj.veiculacaoLabel} motivo={cj.veiculacaoMotivo} dataAtualizacao={cj.dataAtualizacao} />
+          </TagCell>
+        </td>
+        <td style={{ padding: '10px 14px', width: '1%', whiteSpace: 'nowrap' }}>
+          <TagCell>
+            <PlataformaChips plataformas={cj.plataformas} resumo={cj.plataformasResumo} />
+          </TagCell>
+        </td>
         {vis('investimento') && <Td>R$ {fmtBRL(cj.investimento)}</Td>}
         {vis('leads')        && <Td blue>{fmtNum(cj.leads)}</Td>}
         {vis('cpl')          && <Td cpl={cj.cpl}>R$ {fmtBRL(cj.cpl)}</Td>}
@@ -715,7 +1021,7 @@ function ConjuntoRows({
         {vis('cpc')          && <Td>R$ {fmtBRL(cj.cpc)}</Td>}
         {vis('cpm')          && <Td muted>R$ {fmtBRL(cj.cpm)}</Td>}
         {vis('desempenho')   && <td style={{ padding: '10px 14px' }}><BarraDesempenho score={cj.indiceDesempenho} /></td>}
-        {vis('orcamento')    && <Td muted>{cj.orcamentoDiario ? `R$ ${fmtBRL(cj.orcamentoDiario)}` : '—'}</Td>}
+        {vis('orcamento')    && <Td style={{ paddingRight: 14 }}><BudgetCell valor={cj.orcamentoDiario} label={cj.orcamentoLabel} /></Td>}
       </tr>
 
       {/* Ad rows (L2) */}
@@ -796,8 +1102,21 @@ function ConjuntoRows({
               )}
             </div>
           </td>
-          <td style={{ padding: '8px 14px' }}><StatusBadge status={anuncio.status} dataAtualizacao={anuncio.dataAtualizacao} /></td>
-          <td style={{ padding: '8px 14px' }}><PlataformaIcons plataformas={anuncio.plataformas} /></td>
+          <td style={{ padding: '8px 14px' }}>
+            <ObjetivoBadge
+              objetivo={objetivo}
+              objetivoOriginal={objetivoOriginal}
+              label={objetivoLabel}
+              descricao={objetivoDescricao}
+              compact
+            />
+          </td>
+          <td style={{ padding: '8px 14px' }}><StatusBadge status={anuncio.veiculacao || anuncio.status} label={anuncio.veiculacaoLabel} motivo={anuncio.veiculacaoMotivo} dataAtualizacao={anuncio.dataAtualizacao} /></td>
+          <td style={{ padding: '8px 14px', width: '1%', whiteSpace: 'nowrap' }}>
+            <TagCell>
+              <PlataformaChips plataformas={anuncio.plataformas} resumo={anuncio.plataformasResumo} />
+            </TagCell>
+          </td>
           {vis('investimento') && <Td>R$ {fmtBRL(anuncio.investimento)}</Td>}
           {vis('leads')        && <Td blue>{fmtNum(anuncio.leads)}</Td>}
           {vis('cpl')          && <Td cpl={anuncio.cpl}>R$ {fmtBRL(anuncio.cpl)}</Td>}
@@ -805,7 +1124,7 @@ function ConjuntoRows({
           {vis('cpc')          && <Td>R$ {fmtBRL(anuncio.cpc)}</Td>}
           {vis('cpm')          && <Td muted>R$ {fmtBRL(anuncio.cpm)}</Td>}
           {vis('desempenho')   && <td style={{ padding: '8px 14px' }}><BarraDesempenho score={anuncio.indiceDesempenho} /></td>}
-          {vis('orcamento')    && <Td muted>—</Td>}
+          {vis('orcamento')    && <Td style={{ paddingRight: 14 }}><BudgetCell valor={null} /></Td>}
         </tr>
       ))}
     </>

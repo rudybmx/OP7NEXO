@@ -1,15 +1,25 @@
 'use client'
 
 import { useEffect } from 'react'
+import useSWR from 'swr'
+import api from '@/lib/api-client'
 import type { FiltrosCriativos } from '@/types/meta-ads-criativos'
+import { useWorkspace } from '@/lib/workspace-context'
 
 const LS_KEY = 'op7-nexo-criativos-cols'
+
+interface CampanhaRow { campaign_id: string; nome: string }
+interface AdsetRow { adset_id: string; nome: string }
 
 interface Props {
   filtros: FiltrosCriativos
   onChange: (f: FiltrosCriativos) => void
   comparadorAtivo: boolean
   onToggleComparador: () => void
+  workspaceId: string | null
+  dataInicio: string
+  dataFim: string
+  contaIds?: string[]
 }
 
 const selectStyle: React.CSSProperties = {
@@ -23,7 +33,19 @@ const selectStyle: React.CSSProperties = {
   outline: 'none',
 }
 
-export function FiltrosCriativos({ filtros, onChange, comparadorAtivo, onToggleComparador }: Props) {
+export function FiltrosCriativos({
+  filtros,
+  onChange,
+  comparadorAtivo,
+  onToggleComparador,
+  workspaceId,
+  dataInicio,
+  dataFim,
+  contaIds = [],
+}: Props) {
+  const { workspaceAtivo } = useWorkspace()
+  const wsId = (workspaceId ?? workspaceAtivo) ?? undefined
+
   useEffect(() => {
     const saved = localStorage.getItem(LS_KEY)
     if (saved) {
@@ -44,8 +66,64 @@ export function FiltrosCriativos({ filtros, onChange, comparadorAtivo, onToggleC
     onChange({ ...filtros, colunas: n })
   }
 
+  const contaIdsParam = contaIds.length ? `&conta_ids=${contaIds.join(',')}` : ''
+  const campanhasKey = wsId
+    ? `/meta/insights/campanhas?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}&limit=5000${contaIdsParam}`
+    : null
+
+  const { data: campanhasData } = useSWR<CampanhaRow[]>(
+    campanhasKey,
+    () => api.get<CampanhaRow[]>(campanhasKey!),
+    { revalidateOnFocus: false }
+  )
+
+  const adsetsKey = wsId && filtros.campaign_id && filtros.campaign_id !== 'todas'
+    ? `/meta/catalogo/conjuntos?workspace_id=${wsId}&campaign_id=${filtros.campaign_id}&limit=5000${contaIdsParam}`
+    : null
+
+  const { data: adsetsData } = useSWR<AdsetRow[]>(
+    adsetsKey,
+    () => api.get<AdsetRow[]>(adsetsKey!),
+    { revalidateOnFocus: false }
+  )
+
+  const adsets: AdsetRow[] = adsetsData ?? []
+
   return (
     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', alignItems: 'center' }}>
+      {/* Campanha */}
+      <select
+        style={selectStyle}
+        value={filtros.campaign_id ?? 'todas'}
+        onChange={e => onChange({
+          ...filtros,
+          campaign_id: e.target.value === 'todas' ? undefined : e.target.value,
+          adset_id: undefined,
+        })}
+      >
+        <option value="todas">Todas as campanhas</option>
+        {(campanhasData ?? []).map(c => (
+          <option key={c.campaign_id} value={c.campaign_id}>{c.nome}</option>
+        ))}
+      </select>
+
+      {/* Conjunto — só aparece se campanha selecionada */}
+      {filtros.campaign_id && adsets.length > 0 && (
+        <select
+          style={selectStyle}
+          value={filtros.adset_id ?? 'todos'}
+          onChange={e => onChange({
+            ...filtros,
+            adset_id: e.target.value === 'todos' ? undefined : e.target.value,
+          })}
+        >
+          <option value="todos">Todos os conjuntos</option>
+          {adsets.map(a => (
+            <option key={a.adset_id} value={a.adset_id}>{a.nome}</option>
+          ))}
+        </select>
+      )}
+
       <select
         style={selectStyle}
         value={filtros.tipo}

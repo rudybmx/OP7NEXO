@@ -77,6 +77,6 @@ export interface InsightPublico {
 export interface FiltrosPublicos {
   campanha: string
   conjunto: string
-  periodo: '7d' | '30d' | '90d'
   metrica: MetricaPublicos
+  campaign_id?: string
 }

@@ -2,41 +2,187 @@
 
 import useSWR from 'swr'
 import api from '@/lib/api-client'
+import { useWorkspace } from '@/lib/workspace-context'
+import { configVeiculacao } from '@/lib/veiculacao'
+import { configPlataformaCampanha, normalizarPlataformaCampanha, ordenarPlataformasResumo } from '@/lib/plataformas-meta'
+import { configObjetivoCampanha, mapObjetivoCampanha } from '@/lib/objetivos-meta'
 import {
   Campanha, ConjuntoAnuncios, Anuncio, Criativo,
-  ResumoCampanhas, FiltrosCampanhas, ObjetivoCampanha, StatusCampanha, TipoCriativo,
+  ResumoCampanhas, FiltrosCampanhas, StatusCampanha, TipoCriativo, PlataformaResumo,
 } from '@/types/meta-ads-campanhas'
 import { calcularScore } from '@/components/meta-ads/anuncios/score-anuncio'
 
-interface Workspace { id: string }
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const OBJETIVO_MAP: Record<string, ObjetivoCampanha> = {
-  OUTCOME_LEADS:      'LEAD_GENERATION',
-  LEAD_GENERATION:    'LEAD_GENERATION',
-  OUTCOME_SALES:      'CONVERSIONS',
-  CONVERSIONS:        'CONVERSIONS',
-  OUTCOME_AWARENESS:  'BRAND_AWARENESS',
-  BRAND_AWARENESS:    'BRAND_AWARENESS',
-  OUTCOME_TRAFFIC:    'TRAFFIC',
-  TRAFFIC:            'TRAFFIC',
-  OUTCOME_ENGAGEMENT: 'BRAND_AWARENESS',
-  REACH:              'REACH',
-  VIDEO_VIEWS:        'VIDEO_VIEWS',
+interface RawInsightIA {
+  id?: string
+  anuncio_id?: string
+  anuncioId?: string
+  severidade?: string
+  tipo?: string
+  titulo?: string
+  mensagem?: string
+  analise_completa?: string
+  analiseCompleta?: string
+  labelAcao?: string
+  label_acao?: string
+  acao?: string
 }
 
-function mapObjetivo(raw?: string): ObjetivoCampanha {
-  if (!raw) return 'LEAD_GENERATION'
-  return OBJETIVO_MAP[raw.toUpperCase()] ?? 'LEAD_GENERATION'
+interface RawAnuncio {
+  ad_id: string
+  nome?: string
+  status?: string
+  veiculacao?: string
+  veiculacao_label?: string
+  veiculacao_motivo?: string | null
+  plataformas?: string[]
+  plataformas_resumo?: RawPlataformaResumo[]
+  creative_id?: string
+  tipo_criativo?: string
+  thumbnail_url?: string | null
+  image_url_hq?: string | null
+  link_anuncio?: string | null
+  spend?: number | null
+  leads?: number | null
+  ctr?: number | null
+  cpc?: number | null
+  cpm?: number | null
+  impressions?: number | null
+  reach?: number | null
+  clicks?: number | null
 }
 
-function mapStatus(raw?: string): StatusCampanha {
-  const s = (raw || 'ACTIVE').toUpperCase()
-  if (s === 'PAUSED') return 'PAUSED'
-  if (s === 'ARCHIVED') return 'ARCHIVED'
-  if (s === 'DELETED') return 'ARCHIVED'
-  return 'ACTIVE'
+interface RawConjunto {
+  adset_id: string
+  adset_name?: string
+  status?: string
+  veiculacao?: string
+  veiculacao_label?: string
+  veiculacao_motivo?: string | null
+  plataformas?: string[]
+  plataformas_resumo?: RawPlataformaResumo[]
+  orcamento_diario?: number | null
+  orcamento_label?: string | null
+  spend?: number | null
+  leads?: number | null
+  ctr?: number | null
+  cpc?: number | null
+  cpm?: number | null
+  impressions?: number | null
+  reach?: number | null
+  clicks?: number | null
+  anuncios?: RawAnuncio[]
+}
+
+interface RawCampanha {
+  campaign_id: string
+  nome?: string
+  objetivo?: string
+  objetivo_original?: string | null
+  objetivo_mapeado?: string | null
+  objetivo_label?: string | null
+  objetivo_descricao?: string | null
+  optimization_goal?: string | null
+  billing_event?: string | null
+  status?: string
+  veiculacao?: string
+  veiculacao_label?: string
+  veiculacao_motivo?: string | null
+  plataformas?: string[]
+  plataformas_resumo?: RawPlataformaResumo[]
+  orcamento_diario?: number | null
+  orcamento_label?: string | null
+  spend?: number | null
+  leads?: number | null
+  ctr?: number | null
+  cpc?: number | null
+  cpm?: number | null
+  impressions?: number | null
+  reach?: number | null
+  clicks?: number | null
+  veiculacao_resumo?: 'ATIVA' | 'COM_RESULTADO' | 'INATIVA'
+  qtd_anuncios_ativos?: number | null
+  qtd_anuncios_inativos?: number | null
+  conjuntos?: RawConjunto[]
+}
+
+interface RawPlataformaResumo {
+  codigo?: string
+  label?: string
+  detalhes?: string[]
+}
+
+function mapVeiculacao(raw?: string): string {
+  const s = (raw || '').toUpperCase()
+  if (
+    s === 'ATIVO' ||
+    s === 'DESATIVADO' ||
+    s === 'CONCLUIDO' ||
+    s === 'PROGRAMADO' ||
+    s === 'APRENDIZADO' ||
+    s === 'APRENDIZADO_LIMITADO' ||
+    s === 'EM_ANALISE' ||
+    s === 'REJEITADO' ||
+    s === 'PROCESSANDO' ||
+    s === 'ERRO_CONTA' ||
+    s === 'ITENS_AUSENTES'
+  ) {
+    return s
+  }
+
+  if (s === 'ACTIVE') return 'ATIVO'
+  if (s === 'LEARNING') return 'APRENDIZADO'
+  if (s === 'LEARNING_LIMITED') return 'APRENDIZADO_LIMITADO'
+  if (s === 'PAUSED' || s === 'CAMPAIGN_PAUSED' || s === 'ADSET_PAUSED' || s === 'ARCHIVED' || s === 'DELETED') {
+    return 'DESATIVADO'
+  }
+  if (s === 'PENDING_REVIEW') return 'EM_ANALISE'
+  if (s === 'DISAPPROVED' || s === 'WITH_ISSUES') return 'REJEITADO'
+  if (s === 'PROCESSING' || s === 'IN_PROCESS') return 'PROCESSANDO'
+  if (s === 'ERROR') return 'ERRO_CONTA'
+
+  return 'DESATIVADO'
+}
+
+function mapStatusParaScore(raw?: string): StatusCampanha {
+  const veiculacao = mapVeiculacao(raw)
+  if (veiculacao === 'ATIVO') return 'ACTIVE'
+  if (veiculacao === 'APRENDIZADO' || veiculacao === 'APRENDIZADO_LIMITADO') return 'LEARNING'
+  if (veiculacao === 'CONCLUIDO' || veiculacao === 'DESATIVADO') return 'PAUSED'
+  return 'OUTRO'
+}
+
+function mapPlataformasResumo(raw?: RawPlataformaResumo[], plataformas: string[] = []): PlataformaResumo[] {
+  const resumo = (raw ?? [])
+    .map(item => {
+      if (!item.codigo) return null
+      const codigo = normalizarPlataformaCampanha(item.codigo)
+      if (!codigo) return null
+      const cfg = configPlataformaCampanha(codigo)
+      return {
+        codigo,
+        label: item.label || cfg.label,
+        detalhes: item.detalhes ?? [],
+      }
+    })
+    .filter((item): item is PlataformaResumo => item !== null)
+
+  if (resumo.length > 0) {
+    return ordenarPlataformasResumo(resumo)
+  }
+
+  return plataformas
+    .map(codigo => normalizarPlataformaCampanha(codigo))
+    .filter((codigo): codigo is PlataformaResumo['codigo'] => codigo !== null)
+    .map(codigo => {
+      const cfg = configPlataformaCampanha(codigo)
+      return {
+        codigo,
+        label: cfg.label,
+        detalhes: [],
+      }
+    })
 }
 
 function scoreAnuncio(a: { cpl: number; ctr: number; leads: number; frequencia: number; status: StatusCampanha }): number {
@@ -50,7 +196,7 @@ function scoreAnuncio(a: { cpl: number; ctr: number; leads: number; frequencia: 
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
 
-function mapAnuncio(a: any): Anuncio {
+function mapAnuncio(a: RawAnuncio): Anuncio {
   const sp = a.spend ?? 0; const ld = a.leads ?? 0
   const imp = a.impressions ?? 0; const rch = a.reach ?? 0; const cl = a.clicks ?? 0
   const cpl = ld > 0 ? sp / ld : 0
@@ -58,7 +204,8 @@ function mapAnuncio(a: any): Anuncio {
   const cpc = cl > 0 ? sp / cl : a.cpc ?? 0
   const cpm = imp > 0 ? (sp / imp) * 1000 : a.cpm ?? 0
   const frequencia = rch > 0 ? imp / rch : 0
-  const status = mapStatus(a.status)
+  const veiculacao = mapVeiculacao(a.veiculacao || a.status)
+  const status = mapStatusParaScore(a.veiculacao || a.status)
 
   const criativo: Criativo = {
     id: a.creative_id || a.ad_id,
@@ -71,7 +218,8 @@ function mapAnuncio(a: any): Anuncio {
     id: a.ad_id,
     nome: a.nome || a.ad_id,
     status,
-    plataformas: ['facebook', 'instagram'],
+    plataformas: (a.plataformas ?? []) as Anuncio['plataformas'],
+    plataformasResumo: mapPlataformasResumo(a.plataformas_resumo, a.plataformas ?? []),
     criativo,
     permalinkUrl: a.link_anuncio || `https://www.facebook.com/ads/library/?id=${a.ad_id}`,
     investimento: sp,
@@ -81,22 +229,27 @@ function mapAnuncio(a: any): Anuncio {
     alcance: rch,
     cpl, ctr, cpc, cpm, frequencia,
     indiceDesempenho: scoreAnuncio({ cpl, ctr, leads: ld, frequencia, status }),
+    veiculacao,
+    veiculacaoLabel: a.veiculacao_label || configVeiculacao(veiculacao).label,
+    veiculacaoMotivo: a.veiculacao_motivo ?? null,
   }
 }
 
-function mapConjunto(adset: any): ConjuntoAnuncios {
+function mapConjunto(adset: RawConjunto): ConjuntoAnuncios {
   const sp = adset.spend ?? 0; const ld = adset.leads ?? 0
   const imp = adset.impressions ?? 0; const rch = adset.reach ?? 0; const cl = adset.clicks ?? 0
   const anuncios: Anuncio[] = (adset.anuncios ?? []).map(mapAnuncio)
   const indiceDesempenho = anuncios.length > 0
     ? anuncios.reduce((s, a) => s + a.indiceDesempenho, 0) / anuncios.length
     : 0
+  const veiculacao = mapVeiculacao(adset.veiculacao || adset.status)
 
   return {
     id: adset.adset_id,
     nome: adset.adset_name || adset.adset_id,
-    status: mapStatus(adset.status),
-    plataformas: ['facebook', 'instagram'],
+    status: mapStatusParaScore(adset.veiculacao || adset.status),
+    plataformas: (adset.plataformas ?? []) as ConjuntoAnuncios['plataformas'],
+    plataformasResumo: mapPlataformasResumo(adset.plataformas_resumo, adset.plataformas ?? []),
     investimento: sp,
     leads: ld,
     cpl: ld > 0 ? sp / ld : 0,
@@ -107,11 +260,16 @@ function mapConjunto(adset: any): ConjuntoAnuncios {
     impressoes: imp,
     frequencia: rch > 0 ? imp / rch : 0,
     indiceDesempenho,
+    veiculacao,
+    veiculacaoLabel: adset.veiculacao_label || configVeiculacao(veiculacao).label,
+    veiculacaoMotivo: adset.veiculacao_motivo ?? null,
+    orcamentoDiario: adset.orcamento_diario ?? undefined,
+    orcamentoLabel: adset.orcamento_label ?? null,
     anuncios,
   }
 }
 
-function mapCampanha(c: any): Campanha {
+function mapCampanha(c: RawCampanha): Campanha {
   const sp = c.spend ?? 0; const ld = c.leads ?? 0
   const imp = c.impressions ?? 0; const rch = c.reach ?? 0; const cl = c.clicks ?? 0
   const conjuntos: ConjuntoAnuncios[] = (c.conjuntos ?? []).map(mapConjunto)
@@ -120,14 +278,25 @@ function mapCampanha(c: any): Campanha {
     : 0
   const nome: string = c.nome || c.campaign_id
   const nomeAbreviado = nome.length > 35 ? nome.slice(0, 35) + '…' : nome
+  const veiculacao = mapVeiculacao(c.veiculacao || c.status)
+  const objetivo = mapObjetivoCampanha(
+    c.objetivo_mapeado ?? c.objetivo,
+    c.optimization_goal,
+    c.billing_event,
+  )
+  const objetivoCfg = configObjetivoCampanha(objetivo)
 
   return {
     id: c.campaign_id,
     nome,
     nomeAbreviado,
-    objetivo: mapObjetivo(c.objetivo),
-    status: mapStatus(c.status),
-    plataformas: ['facebook', 'instagram'],
+    objetivo,
+    objetivoOriginal: c.objetivo_original ?? c.objetivo ?? null,
+    objetivoLabel: c.objetivo_label || objetivoCfg.label,
+    objetivoDescricao: c.objetivo_descricao || objetivoCfg.descricao,
+    status: mapStatusParaScore(c.veiculacao || c.status),
+    plataformas: (c.plataformas ?? []) as Campanha['plataformas'],
+    plataformasResumo: mapPlataformasResumo(c.plataformas_resumo, c.plataformas ?? []),
     investimento: sp,
     leads: ld,
     cpl: ld > 0 ? sp / ld : 0,
@@ -138,8 +307,15 @@ function mapCampanha(c: any): Campanha {
     impressoes: imp,
     frequencia: rch > 0 ? imp / rch : 0,
     indiceDesempenho,
+    veiculacaoResumo: c.veiculacao_resumo,
+    veiculacao,
+    veiculacaoLabel: c.veiculacao_label || configVeiculacao(veiculacao).label,
+    veiculacaoMotivo: c.veiculacao_motivo ?? null,
+    orcamentoDiario: c.orcamento_diario ?? undefined,
+    orcamentoLabel: c.orcamento_label ?? null,
+    qtdAnunciosAtivos: c.qtd_anuncios_ativos ?? 0,
+    qtdAnunciosInativos: c.qtd_anuncios_inativos ?? 0,
     conjuntos,
-    orcamentoDiario: c.orcamento_diario ?? null,
   }
 }
 
@@ -159,7 +335,7 @@ function computeResumo(campanhas: Campanha[]): ResumoCampanhas {
 
   return {
     totalCampanhas:    campanhas.length,
-    campanhasAtivas:   campanhas.filter(c => c.status === 'ACTIVE').length,
+    campanhasAtivas:   campanhas.filter(c => c.veiculacaoResumo === 'ATIVA').length,
     investimentoTotal,
     leadsTotal,
     cplMedio:          leadsTotal > 0 ? investimentoTotal / leadsTotal : 0,
@@ -171,35 +347,41 @@ function computeResumo(campanhas: Campanha[]): ResumoCampanhas {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useMetaCampanhas(filtros: FiltrosCampanhas, dataInicio: string, dataFim: string, contaIds: string[] = []) {
-  const { data: workspaces } = useSWR<Workspace[]>(
-    '/workspaces',
-    () => api.get<Workspace[]>('/workspaces'),
-    { revalidateOnFocus: false }
-  )
-  const wsId = workspaces?.[0]?.id
+export function useMetaCampanhas(
+  filtros: FiltrosCampanhas,
+  dataInicio: string,
+  dataFim: string,
+  contaIds: string[] = [],
+  workspaceId: string | null = null
+) {
+  const { workspaceAtivo } = useWorkspace()
+  const wsId = (workspaceId ?? workspaceAtivo) ?? undefined
 
   const contaIdsParam = contaIds.length
     ? `&conta_ids=${contaIds.join(',')}`
     : ''
+  const veiculacaoParam = filtros.veiculacao && filtros.veiculacao !== 'todos'
+    ? `&veiculacao=${filtros.veiculacao}`
+    : ''
+  const resultadoParam = `&resultado=${filtros.resultado ?? 'performance'}`
 
   const hierarquiaKey = wsId
-    ? `/meta/insights/campanhas-hierarquia?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}`
+    ? `/meta/catalogo/gerenciador?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}${veiculacaoParam}${resultadoParam}`
     : null
 
   const { data: rawHierarquia, isLoading, error } = useSWR(
     hierarquiaKey,
-    () => api.get<any[]>(hierarquiaKey!),
+    () => api.get<RawCampanha[]>(hierarquiaKey!),
     { revalidateOnFocus: false }
   )
 
   const { data: iaRaw } = useSWR(
     wsId ? `/meta/insights/ia?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}` : null,
-    () => api.get<any[]>(`/meta/insights/ia?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}`),
+    () => api.get<RawInsightIA[]>(`/meta/insights/ia?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}`),
     { revalidateOnFocus: false }
   )
 
-  const insightsIA = (iaRaw ?? []).map((item: any, i: number) => {
+  const insightsIA = (iaRaw ?? []).map((item, i: number) => {
     const tipoRaw: string = item.severidade ?? item.tipo ?? 'info'
     const severidade = tipoRaw.toLowerCase() as 'alerta' | 'oportunidade' | 'info'
     return {
@@ -223,12 +405,13 @@ export function useMetaCampanhas(filtros: FiltrosCampanhas, dataInicio: string, 
   if (filtros.objetivo && filtros.objetivo !== 'todos') {
     campanhas = campanhas.filter(c => c.objetivo === filtros.objetivo)
   }
-  if (filtros.status && filtros.status !== 'todos') {
-    const statusMap: Record<string, StatusCampanha> = {
-      ativa: 'ACTIVE', pausada: 'PAUSED', encerrada: 'ARCHIVED', aprendendo: 'LEARNING',
-    }
-    const target = statusMap[filtros.status] ?? filtros.status
-    campanhas = campanhas.filter(c => c.status === target)
+  const plataformasAtivas = filtros.plataformas.filter(Boolean)
+  if (plataformasAtivas.length > 0 && plataformasAtivas.length < 3) {
+    const selecionadas = new Set(plataformasAtivas)
+    campanhas = campanhas.filter(c => {
+      if (!c.plataformas || c.plataformas.length === 0) return true
+      return c.plataformas.some(p => selecionadas.has(p))
+    })
   }
 
   return {

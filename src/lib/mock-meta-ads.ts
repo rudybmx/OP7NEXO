@@ -321,7 +321,17 @@ export const MOCK_HEATMAP: any[] = Array.from({ length: 7 * 24 }).map((_, i) => 
 })
 
 export const getMockMetaOverview = (dataInicio: string, dataFim: string): MetaInsightsVisaoGeral => {
+  const leadsPorCanal = MOCK_CONTAS_META
+    .flatMap((c) => c.leadsPorPlataforma)
+    .reduce((acc, p) => {
+      const item = acc.find((i) => i.platform === p.platform)
+      if (item) item.count += p.count
+      else acc.push({ ...p })
+      return acc
+    }, [] as MetaInsightsVisaoGeral['leadsPorCanal'])
+
   return {
+    leadsPorCanal,
     contas: MOCK_CONTAS_META,
     dadosDiarios: MOCK_DADOS_DIARIOS,
     topCriativos: MOCK_TOP_CRIATIVOS,

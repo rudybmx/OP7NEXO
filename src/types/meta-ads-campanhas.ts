@@ -1,7 +1,12 @@
-export type StatusCampanha = 'ACTIVE' | 'PAUSED' | 'DELETED' | 'ARCHIVED' | 'LEARNING'
-export type ObjetivoCampanha = 'LEAD_GENERATION' | 'CONVERSIONS' | 'BRAND_AWARENESS' | 'TRAFFIC' | 'REACH' | 'VIDEO_VIEWS'
+import type { ObjetivoCampanha } from '@/lib/objetivos-meta'
+import type { PlataformaResumo } from '@/lib/plataformas-meta'
+
+export type { ObjetivoCampanha } from '@/lib/objetivos-meta'
+
+export type StatusCampanha = 'ACTIVE' | 'PAUSED' | 'DELETED' | 'ARCHIVED' | 'LEARNING' | 'CONCLUIDO' | 'OUTRO'
 export type TipoCriativo = 'IMAGE' | 'VIDEO' | 'CAROUSEL'
-export type Plataforma = 'facebook' | 'instagram' | 'whatsapp' | 'audience_network'
+export type Plataforma = 'facebook' | 'instagram' | 'whatsapp'
+export type ResultadoFiltro = 'performance' | 'todos'
 
 export interface Criativo {
   id: string
@@ -30,6 +35,10 @@ export interface Anuncio {
   frequencia: number
   indiceDesempenho: number
   dataAtualizacao?: string
+  veiculacao?: string
+  veiculacaoLabel?: string
+  veiculacaoMotivo?: string | null
+  plataformasResumo?: PlataformaResumo[]
 }
 
 export interface ConjuntoAnuncios {
@@ -37,7 +46,8 @@ export interface ConjuntoAnuncios {
   nome: string
   status: StatusCampanha
   plataformas: Plataforma[]
-  orcamentoDiario?: number
+  orcamentoDiario?: number | null
+  orcamentoLabel?: string | null
   investimento: number
   leads: number
   cpl: number
@@ -49,6 +59,10 @@ export interface ConjuntoAnuncios {
   frequencia: number
   indiceDesempenho: number
   dataAtualizacao?: string  // ISO date — from Meta API field: updated_time
+  veiculacao?: string
+  veiculacaoLabel?: string
+  veiculacaoMotivo?: string | null
+  plataformasResumo?: PlataformaResumo[]
   anuncios: Anuncio[]
 }
 
@@ -57,9 +71,13 @@ export interface Campanha {
   nome: string
   nomeAbreviado: string
   objetivo: ObjetivoCampanha
+  objetivoOriginal?: string | null
+  objetivoLabel: string
+  objetivoDescricao: string
   status: StatusCampanha
   plataformas: Plataforma[]
-  orcamentoDiario?: number
+  orcamentoDiario?: number | null
+  orcamentoLabel?: string | null
   investimento: number
   leads: number
   cpl: number
@@ -71,6 +89,13 @@ export interface Campanha {
   frequencia: number
   indiceDesempenho: number
   dataAtualizacao?: string  // ISO date — from Meta API field: updated_time
+  veiculacaoResumo?: 'ATIVA' | 'COM_RESULTADO' | 'INATIVA'
+  veiculacao?: string
+  veiculacaoLabel?: string
+  veiculacaoMotivo?: string | null
+  plataformasResumo?: PlataformaResumo[]
+  qtdAnunciosAtivos?: number
+  qtdAnunciosInativos?: number
   conjuntos: ConjuntoAnuncios[]
 }
 
@@ -88,6 +113,7 @@ export interface ResumoCampanhas {
 export interface FiltrosCampanhas {
   busca: string
   objetivo: string
-  status: string
+  veiculacao: string
+  resultado: ResultadoFiltro
   plataformas: Plataforma[]
 }

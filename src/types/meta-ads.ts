@@ -38,6 +38,8 @@ export interface ContaAnuncio {
   leadsInstagram: number
   leadsMessenger: number
   leadsFormulario: number
+  leadsConversa7d?: number
+  linkClick?: number
   leadsPorPlataforma: LeadsByPlatform[]
   cpl: number
   ctr: number
@@ -58,6 +60,16 @@ export interface ContaAnuncio {
 
 export type TipoComparativo = 'periodo_anterior' | 'mes_anterior' | 'ano_anterior' | 'nenhum'
 
+export interface VideoMetrics {
+  videoViews: number
+  thruplay: number
+  p25: number
+  p50: number
+  p75: number
+  p100: number
+  video3Sec: number
+}
+
 export interface CriativoTop {
   id: string
   nome: string
@@ -65,10 +77,22 @@ export interface CriativoTop {
   thumbnailUrl?: string
   imageUrlHq?: string
   linkAnuncio?: string
-  carouselItems?: Array<{ picture?: string; video_id?: string; link?: string }>
+  headline?: string | null
+  destinationUrl?: string | null
+  urlTags?: string | null
+  utmSource?: string | null
+  utmCampaign?: string | null
+  utmMedium?: string | null
+  utmContent?: string | null
+  utmTerm?: string | null
+  carouselItems?: Array<{ picture?: string; image_url_hq?: string; video_id?: string; link?: string }>
   leads: number
   ctr: number
   cpl: number
+  linkClicks?: number
+  cpm?: number
+  frequencia?: number
+  videoMetrics?: VideoMetrics
 }
 
 export interface DadosDiarios {
@@ -79,10 +103,23 @@ export interface DadosDiarios {
 
 export interface MetaInsightsVisaoGeral {
   contas: ContaAnuncio[]
+  leadsPorCanal: LeadsByPlatform[]
   dadosDiarios: DadosDiarios[]
   topCriativos: CriativoTop[]
   insightsIA?: any[] // Usando any[] temporariamente para evitar circular dependency ou importar tipo específico
   periodo: { inicio: string; fim: string }
+}
+
+export interface CampanhaPorCriativo {
+  id: string
+  nome: string
+  leads: number
+  spend: number
+  cpl: number
+  ctr: number
+  linkClick: number
+  cpm: number
+  frequencia: number
 }
 
 export interface FiltrosMeta {

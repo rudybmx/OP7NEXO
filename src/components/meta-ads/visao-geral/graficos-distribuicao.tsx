@@ -14,6 +14,7 @@ import {
 } from 'recharts'
 import type { ContaAnuncio } from '@/types/meta-ads'
 import { formatarMoeda, formatarNumero } from '@/lib/formatar'
+import { ChartSurface } from '@/components/meta-ads/chart-surface'
 
 interface GraficoProps {
   contas: ContaAnuncio[]
@@ -133,26 +134,28 @@ export function GraficoBarrasContas({ contas }: GraficoProps) {
         </div>
       </div>
 
-      <ResponsiveContainer width="100%" height={200}>
-        <BarChart data={dadosBarras} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={strokeGrid} vertical={false} />
-          <XAxis 
-            dataKey="nome" 
-            tick={{ fontSize: 11, fill: '#8892b0' }} 
-            axisLine={false} 
-            tickLine={false}
-            dy={10}
-          />
-          <YAxis 
-            tick={{ fontSize: 11, fill: '#8892b0' }} 
-            axisLine={false} 
-            tickLine={false} 
-          />
-          <Tooltip content={<CustomTooltipBarra />} />
-          <Bar dataKey="investimento" fill={CORES_GRAFICOS.investimento} radius={[4, 4, 0, 0]} barSize={24} />
-          <Bar dataKey="leads" fill={CORES_GRAFICOS.leads} radius={[4, 4, 0, 0]} barSize={24} />
-        </BarChart>
-      </ResponsiveContainer>
+      <ChartSurface height={200}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+          <BarChart data={dadosBarras} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={strokeGrid} vertical={false} />
+            <XAxis 
+              dataKey="nome" 
+              tick={{ fontSize: 11, fill: '#8892b0' }} 
+              axisLine={false} 
+              tickLine={false}
+              dy={10}
+            />
+            <YAxis 
+              tick={{ fontSize: 11, fill: '#8892b0' }} 
+              axisLine={false} 
+              tickLine={false} 
+            />
+            <Tooltip content={<CustomTooltipBarra />} />
+            <Bar dataKey="investimento" fill={CORES_GRAFICOS.investimento} radius={[4, 4, 0, 0]} barSize={24} />
+            <Bar dataKey="leads" fill={CORES_GRAFICOS.leads} radius={[4, 4, 0, 0]} barSize={24} />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartSurface>
     </GlassCard>
   )
 }
@@ -178,8 +181,11 @@ export function GraficoDonutInvestimento({ contas }: GraficoProps) {
         </div>
       </div>
 
-      <div style={{ height: 180, position: 'relative', marginBottom: '16px' }}>
-        <ResponsiveContainer width="100%" height="100%">
+      <ChartSurface
+        height={180}
+        style={{ position: 'relative', marginBottom: '16px' }}
+      >
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <PieChart>
             <Pie
               data={dadosPizza}
@@ -224,7 +230,7 @@ export function GraficoDonutInvestimento({ contas }: GraficoProps) {
           <div style={{ fontSize: '10px', color: 'var(--ws-text-3, #8892b0)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total</div>
           <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--ws-text-1, #0E142A)' }}>{formatarMoeda(investimentoTotal)}</div>
         </div>
-      </div>
+      </ChartSurface>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
         {dadosPizza.map((d) => {

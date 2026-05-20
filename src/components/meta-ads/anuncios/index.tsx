@@ -1,103 +1,273 @@
 'use client'
 
-import { useState } from 'react'
-import { Layers } from 'lucide-react'
-import type { FiltrosAnuncios } from '@/types/meta-ads-anuncios'
+import { useEffect, useMemo, useState } from 'react'
+import { LayoutGrid, LayoutList } from 'lucide-react'
+import type { FiltrosAnuncios, VisualizacaoAnuncios } from '@/types/meta-ads-anuncios'
 import { FiltrosAnunciosComp } from './filtros-anuncios'
-import { InsightsIA } from './insights-ia'
 import { KpiBarAnuncios } from './kpi-bar-anuncios'
-import { TabelaHierarquica } from './tabela-hierarquica'
-import { ModalAnuncio } from './modal-anuncio'
+import { ListaAnuncios, sortAnuncios } from './lista-anuncios'
+import { GridAnuncios } from './grid-anuncios'
+import { ModalAnuncioDs } from './modal-anuncio-ds'
 import { useMetaAnuncios } from '@/hooks/use-meta-anuncios'
-import { useInsightsIA } from '@/hooks/use-insights-ia'
 
-interface Props { dataInicio: string; dataFim: string; contaIds?: string[] }
+interface Props {
+  workspaceId: string | null
+  dataInicio: string
+  dataFim: string
+  contaIds?: string[]
+  campaignIds: string[]
+  campaignsReady?: boolean
+}
 
-export function AbaAnuncios({ dataInicio, dataFim, contaIds = [] }: Props) {
+function VisualizacaoToggle({
+  modo,
+  onChange,
+}: {
+  modo: VisualizacaoAnuncios
+  onChange: (modo: VisualizacaoAnuncios) => void
+}) {
+  return (
+    <div style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 4,
+      padding: 4,
+      background: 'var(--ws-glass-bg)',
+      border: '1px solid var(--ws-glass-border)',
+      borderRadius: 'var(--ws-radius-md)',
+      boxShadow: 'var(--ws-glass-shadow-sm)',
+      backdropFilter: 'blur(10px)',
+      WebkitBackdropFilter: 'blur(10px)',
+    }}>
+      {([
+        { value: 'linhas' as const, label: 'Linhas', Icon: LayoutList },
+        { value: 'blocos' as const, label: 'Blocos', Icon: LayoutGrid },
+      ] as const).map(({ value, label, Icon }) => {
+        const ativo = modo === value
+        return (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={ativo}
+            onClick={() => onChange(value)}
+            style={{
+              height: 28,
+              padding: '0 10px',
+              borderRadius: 'calc(var(--ws-radius-md) - 2px)',
+              border: '1px solid transparent',
+              background: ativo ? 'var(--ws-blue-soft)' : 'transparent',
+              color: ativo ? 'var(--ws-blue)' : 'var(--ws-text-2)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              transition: 'var(--ws-transition)',
+            }}
+          >
+            <Icon size={13} />
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function AbaAnuncios({
+  workspaceId,
+  dataInicio,
+  dataFim,
+  contaIds = [],
+  campaignIds,
+  campaignsReady = true,
+}: Props) {
+  const [modoVisualizacao, setModoVisualizacao] = useState<VisualizacaoAnuncios>('linhas')
+  const [pagina, setPagina] = useState(1)
   const [filtros, setFiltros] = useState<FiltrosAnuncios>({
-    campanha: 'todas',
     status: 'todos',
+    plataforma: 'todas',
     tipo: 'todos',
-    ordenarPor: 'score',
+    ordenarPor: 'campanha',
+    resultado: 'performance',
   })
-
-  const [agrupar, setAgrupar] = useState(true)
   const [anuncioAbertoId, setAnuncioAbertoId] = useState<string | null>(null)
 
-  const { anuncios } = useMetaAnuncios(filtros, dataInicio, dataFim, contaIds)
-  const { insights } = useInsightsIA()
+  const {
+    anuncios,
+    plataformasDisponiveis,
+    total,
+    resumo,
+    limit,
+    isLoading,
+    isValidating,
+  } = useMetaAnuncios(
+    filtros,
+    dataInicio,
+    dataFim,
+    contaIds,
+    workspaceId,
+    campaignIds,
+    campaignsReady,
+    pagina,
+  )
 
   const anuncioAberto = anuncios.find(a => a.id === anuncioAbertoId) ?? null
-  const insightDoAnuncio = insights.find(i => i.anuncioId === anuncioAbertoId) ?? null
+  const anunciosOrdenados = useMemo(
+    () => sortAnuncios(anuncios, filtros.ordenarPor),
+    [anuncios, filtros.ordenarPor],
+  )
+  const semCampanhasVisiveis = campaignsReady && campaignIds.length === 0
+  const contaIdsKey = contaIds.join(',')
+  const campaignIdsKey = [...campaignIds].sort().join(',')
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setPagina(1))
+    return () => window.cancelAnimationFrame(frame)
+  }, [
+    dataInicio,
+    dataFim,
+    workspaceId,
+    campaignsReady,
+    contaIdsKey,
+    campaignIdsKey,
+  ])
+
+  const atualizarFiltros = (proximo: FiltrosAnuncios) => {
+    setPagina(1)
+    setFiltros(proximo)
+  }
+
+  if (!campaignsReady) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 220,
+        padding: '20px',
+        background: 'var(--ws-glass-bg)',
+        border: '1px solid var(--ws-glass-border)',
+        borderRadius: 'var(--ws-radius-lg)',
+        color: 'var(--ws-text-2)',
+        fontSize: 13,
+      }}>
+        Carregando campanhas visíveis...
+      </div>
+    )
+  }
+
+  if (semCampanhasVisiveis) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 220,
+        padding: '20px',
+        background: 'var(--ws-glass-bg)',
+        border: '1px solid var(--ws-glass-border)',
+        borderRadius: 'var(--ws-radius-lg)',
+        color: 'var(--ws-text-2)',
+        fontSize: 13,
+      }}>
+        Nenhuma campanha visível no período e filtros selecionados.
+      </div>
+    )
+  }
 
   return (
-    <div>
-      <KpiBarAnuncios anuncios={anuncios} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <KpiBarAnuncios resumo={resumo} totalAnuncios={total} />
 
-      <InsightsIA 
-        insights={insights} 
-        onAbrirAnuncio={setAnuncioAbertoId} 
-      />
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        flexWrap: 'wrap',
+        padding: '12px 14px',
+        background: 'var(--ws-glass-bg)',
+        border: '1px solid var(--ws-glass-border)',
+        borderRadius: 'var(--ws-radius-lg)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow: 'var(--ws-glass-shadow-sm)',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 1,
+          background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)',
+        }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{
+            fontSize: 10,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: 'var(--ws-text-3)',
+            marginBottom: 4,
+          }}>
+            Visualização
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--ws-text-2)', lineHeight: 1.4 }}>
+            Linhas para leitura operacional e blocos para comparação visual dos criativos.
+          </div>
+        </div>
 
-      <FiltrosAnunciosComp filtros={filtros} onChange={setFiltros} />
-
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        {/* Toggle agrupar por conjunto */}
-        <button
-          onClick={() => setAgrupar(v => !v)}
-          title={agrupar ? 'Mostrar somente anúncios' : 'Agrupar por conjunto'}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '5px 12px',
-            background: agrupar ? 'rgba(62,91,255,0.08)' : 'var(--ws-glass-bg)',
-            border: `1px solid ${agrupar ? 'rgba(62,91,255,0.25)' : 'var(--ws-glass-border)'}`,
-            backdropFilter: 'blur(10px)',
-            borderRadius: 'var(--ws-radius-md)',
-            cursor: 'pointer', fontSize: 11, fontWeight: 500,
-            color: agrupar ? '#3E5BFF' : 'var(--ws-text-3)',
-            transition: 'all 150ms',
-          }}
-          onMouseEnter={e => {
-            if (!agrupar) {
-              e.currentTarget.style.background = 'rgba(62,91,255,0.06)'
-              e.currentTarget.style.color = '#3E5BFF'
-            }
-          }}
-          onMouseLeave={e => {
-            if (!agrupar) {
-              e.currentTarget.style.background = 'var(--ws-glass-bg)'
-              e.currentTarget.style.color = 'var(--ws-text-3)'
-            }
-          }}
-        >
-          <Layers size={13} />
-          {agrupar ? 'Agrupado por conjunto' : 'Todos os anúncios'}
-          {/* Ícone de check quando ativo */}
-          {agrupar && (
-            <span style={{
-              width: 14, height: 14, borderRadius: '50%',
-              background: '#3E5BFF',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <svg width="8" height="8" viewBox="0 0 10 8" fill="none">
-                <path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </span>
-          )}
-        </button>
+        <VisualizacaoToggle modo={modoVisualizacao} onChange={setModoVisualizacao} />
       </div>
 
-      <TabelaHierarquica 
-        anuncios={anuncios} 
-        agrupar={agrupar}
-        onAbrirAnuncio={setAnuncioAbertoId} 
+      <FiltrosAnunciosComp
+        filtros={filtros}
+        onChange={atualizarFiltros}
+        plataformasDisponiveis={plataformasDisponiveis}
+        campanhasVisiveisCount={campaignIds.length}
       />
 
-      <ModalAnuncio
+      {modoVisualizacao === 'linhas' ? (
+        <ListaAnuncios
+          anuncios={anunciosOrdenados}
+          onAbrirAnuncio={setAnuncioAbertoId}
+          ordenarPor={filtros.ordenarPor}
+          onOrdenarPorChange={(ordenarPor) => {
+            setPagina(1)
+            setFiltros(prev => ({ ...prev, ordenarPor }))
+          }}
+          isLoading={isLoading}
+          total={total}
+          page={pagina}
+          limit={limit}
+          onPageChange={setPagina}
+          isBusy={isLoading || isValidating}
+        />
+      ) : (
+        <GridAnuncios
+          anuncios={anunciosOrdenados}
+          onAbrirAnuncio={setAnuncioAbertoId}
+          isLoading={isLoading}
+          total={total}
+          page={pagina}
+          limit={limit}
+          onPageChange={setPagina}
+          isBusy={isLoading || isValidating}
+        />
+      )}
+
+      <ModalAnuncioDs
+        key={anuncioAberto?.id ?? 'anuncio-fechado'}
         anuncio={anuncioAberto}
-        insight={insightDoAnuncio}
         aberto={!!anuncioAbertoId}
         onFechar={() => setAnuncioAbertoId(null)}
+        workspaceId={workspaceId}
+        dataInicio={dataInicio}
+        dataFim={dataFim}
+        contaIds={contaIds}
       />
     </div>
   )
