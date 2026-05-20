@@ -19,7 +19,7 @@ from app.core.deps import exigir_platform_admin
 from app.models.ads_account import AdsAccount
 from app.models.sync_job import SyncJob
 from app.models.user import User
-from app.services.meta_sync import sincronizar_conta
+from app.services.meta_sync import sincronizar_conta, reprocessar_imagens_hq_conta
 from app.services.scheduler import scheduler
 from app.services.object_storage import get_object, stat_object
 from app.core.config import settings
@@ -366,6 +366,20 @@ def sync_conta_manual(
 
     job_id, started = _iniciar_sync_conta(ads_account_id, db)
     return {"job_id": job_id, "status": "pending" if started else "running"}
+
+
+@router.post("/reprocessar-imagens/{ads_account_id}")
+def reprocessar_imagens_conta(
+    ads_account_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Backfill HQ: re-resolve imagens/capas de baixa qualidade (SHARE e vídeo)
+    da conta via thumbnail @1200 no nível do creative. Idempotente."""
+    conta = db.get(AdsAccount, ads_account_id)
+    if not conta:
+        raise HTTPException(status_code=404, detail="Conta não encontrada")
+    return reprocessar_imagens_hq_conta(db, conta)
 
 
 @router.get("/sync/job/{job_id}")

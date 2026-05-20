@@ -535,6 +535,97 @@ def _fetch_adimages_by_hashes(
     return out
 
 
+def _e_throttle_meta(resp: httpx.Response) -> bool:
+    """Detecta rate-limit da Graph API (por ad-account/usuário)."""
+    try:
+        err = resp.json().get("error", {})
+    except Exception:
+        return False
+    if int(err.get("code") or 0) in {17, 80004, 80000, 4}:
+        return True
+    msg = (err.get("message") or "").lower()
+    return any(s in msg for s in ("too many calls", "reduce the amount", "request limit reached"))
+
+
+def _fetch_creative_thumbnails_hq_by_ids(
+    client: httpx.Client,
+    creative_ids: list[str],
+    token: str,
+    on_progress=None,
+) -> dict[str, str]:
+    """Resolve thumbnail HQ por creative_id.
+
+    A Graph API ignora `thumbnail_width/height` quando `thumbnail_url` vem
+    aninhado em `creative{...}` no batch por ad_id (retorna p64x64). Pedindo
+    direto no nível do creative com box grande, retorna a versão HQ (ex.: 1080px).
+    Usado para criativos SHARE (sem image_hash) e capas de vídeo.
+    Box quadrado 1200 — fontes não-quadradas sofrem center-crop (ver plano).
+    """
+    uniq = [c for c in dict.fromkeys(creative_ids) if c]
+    if not uniq:
+        return {}
+
+    out: dict[str, str] = {}
+    total_batches = max((len(uniq) + 49) // 50, 1)
+    for batch_index, i in enumerate(range(0, len(uniq), 50), start=1):
+        batch = uniq[i:i + 50]
+        if on_progress:
+            try:
+                on_progress(f"anuncios:midia:thumb_hq ({batch_index}/{total_batches})", 70)
+            except Exception:
+                pass
+        resp = None
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                resp = client.get(
+                    f"{META_BASE}/",
+                    params={
+                        "access_token": token,
+                        "ids": ",".join(batch),
+                        "fields": "thumbnail_url",
+                        "thumbnail_width": 1200,
+                        "thumbnail_height": 1200,
+                    },
+                )
+            except httpx.HTTPError as exc:
+                log.warning("Erro thumb_hq batch tentativa %d/%d: %s", attempt + 1, max_attempts, exc)
+                if attempt < max_attempts - 1:
+                    time.sleep(2 ** attempt)
+                continue
+
+            if resp.status_code == 200:
+                break
+            if attempt == max_attempts - 1:
+                break
+            # Throttle do Graph (rate-limit por ad-account) vem como 400 com
+            # code 17/80004 ou mensagem "too many calls"/"reduce the amount".
+            # Backoff mais longo nesses casos; senão só 429/5xx valem retry.
+            if _e_throttle_meta(resp):
+                time.sleep(15 * (attempt + 1))
+                continue
+            if resp.status_code in {429, 500, 502, 503, 504}:
+                time.sleep(2 ** attempt)
+                continue
+            break
+
+        if resp is None or resp.status_code != 200:
+            if resp is not None:
+                try:
+                    err = resp.json().get("error", {})
+                    log.warning("Erro thumb_hq batch: %s", err.get("message", resp.text[:200]))
+                except Exception:
+                    log.warning("Erro thumb_hq batch: %s", resp.text[:200])
+            continue
+
+        for cid, payload in resp.json().items():
+            if isinstance(payload, dict):
+                url = _safe_str(payload.get("thumbnail_url"))
+                if url:
+                    out[str(cid)] = url
+    return out
+
+
 def _fetch_videos_by_ids(client: httpx.Client, token: str, video_ids: list[str], on_progress=None) -> dict[str, dict]:
     out: dict[str, dict] = {}
     uniq = [v for v in dict.fromkeys(video_ids) if v]
@@ -572,6 +663,13 @@ def _fetch_videos_by_ids(client: httpx.Client, token: str, video_ids: list[str],
 
 
 def _merge_hq_image_data(creative_data: dict, adimage_map: dict[str, dict]) -> None:
+    # Para VÍDEO o adimage do hash devolve uma capa 64px (lixo). Pulamos o
+    # adimage e deixamos cair em thumbnail_fallback, onde _aplicar_thumbnail_hq
+    # resolve a capa HQ via thumbnail do creative @1200.
+    if creative_data.get("tipo") == "VIDEO":
+        creative_data["hq_source"] = creative_data.get("hq_source") or "thumbnail_fallback"
+        return
+
     hashes = creative_data.get("image_hashes") or []
     if not hashes:
         creative_data["hq_source"] = creative_data.get("hq_source") or "thumbnail_fallback"
@@ -777,10 +875,16 @@ def _persist_hq_images_to_minio(
         log.warning("MinIO não configurado; mantendo URL temporária da Meta para HQ.")
         return
 
-    total = sum(1 for creative in creative_map.values() if creative.get("hq_source") == "adimage")
+    # source HQ pendente -> source final após gravar no MinIO
+    persist_targets = {
+        "adimage": "adimage_minio",
+        "creative_thumbnail_hq": "creative_thumbnail_hq_minio",
+    }
+    total = sum(1 for creative in creative_map.values() if creative.get("hq_source") in persist_targets)
     done = 0
     for creative in creative_map.values():
-        if creative.get("hq_source") != "adimage":
+        src = creative.get("hq_source")
+        if src not in persist_targets:
             continue
         src_url = creative.get("meta_image_url_tmp")
         creative_id = creative.get("id")
@@ -803,7 +907,7 @@ def _persist_hq_images_to_minio(
             object_name = f"ads-accounts/{ads_account_uuid}/criativos/{creative_id}{ext}"
             put_bytes(bucket, object_name, resp.content, content_type)
             creative["image_url_hq"] = public_url(bucket, object_name)
-            creative["hq_source"] = "adimage_minio"
+            creative["hq_source"] = persist_targets[src]
             done += 1
             if on_progress and (done % 10 == 0 or done == total):
                 try:
@@ -1295,6 +1399,43 @@ def _sync_catalog_conjuntos(
     db.commit()
 
 
+def _aplicar_thumbnail_hq(
+    client: httpx.Client,
+    criativos_map: dict[str, dict],
+    token: str,
+    on_progress=None,
+) -> None:
+    """Resolve thumbnail HQ no nível do creative para os casos que o adimages
+    não cobre: criativos SHARE (sem image_hash, hq_source=thumbnail_fallback) e
+    capas de vídeo (que vêm 64px mesmo via adimage). Marca-os com
+    hq_source=creative_thumbnail_hq para o persist baixar ao MinIO.
+    """
+    def _precisa(c: dict) -> bool:
+        return (
+            c.get("hq_source") in (None, "", "thumbnail_fallback")
+            or c.get("tipo") == "VIDEO"
+        )
+
+    creative_ids = [
+        _safe_str(c.get("id"))
+        for c in criativos_map.values()
+        if c.get("id") and _precisa(c)
+    ]
+    if not creative_ids:
+        return
+
+    thumb_map = _fetch_creative_thumbnails_hq_by_ids(client, creative_ids, token, on_progress=on_progress)
+    if not thumb_map:
+        return
+
+    for c in criativos_map.values():
+        cid = _safe_str(c.get("id"))
+        url = thumb_map.get(cid)
+        if url and _precisa(c):
+            c["meta_image_url_tmp"] = url
+            c["hq_source"] = "creative_thumbnail_hq"
+
+
 def _sync_catalog_anuncios_criativos_videos(
     client: httpx.Client,
     db: Session,
@@ -1339,6 +1480,7 @@ def _sync_catalog_anuncios_criativos_videos(
     )
     for c in criativos_map.values():
         _merge_hq_image_data(c, adimage_map)
+    _aplicar_thumbnail_hq(client, criativos_map, token)
     _persist_hq_images_to_minio(client, criativos_map, str(conta.id))
     video_ids = [str(c.get("video_id")) for c in criativos_map.values() if c.get("video_id")]
     video_map = _fetch_videos_by_ids(client, token, video_ids)
@@ -1386,12 +1528,19 @@ def _sync_catalog_anuncios_criativos_videos(
                 str(video_id),
                 str(conta.id),
             )
-        image_url_hq = (
-            video_thumbnail_hq_url
-            or video_thumbnail_url
-            or creative_enriquecido.get("image_url_hq")
-            or image_url_hq
-        )
+        # Se o creative já tem HQ resolvido e persistido no MinIO (inclui a capa
+        # de vídeo @1200 via _aplicar_thumbnail_hq), ela tem prioridade sobre o
+        # caminho legado de thumbnail de vídeo, que devolve 64px nesta conta.
+        creative_hq = creative_enriquecido.get("image_url_hq")
+        if creative_hq and str(creative_enriquecido.get("hq_source") or "").endswith("_minio"):
+            image_url_hq = creative_hq
+        else:
+            image_url_hq = (
+                video_thumbnail_hq_url
+                or video_thumbnail_url
+                or creative_hq
+                or image_url_hq
+            )
 
         db.execute(text("""
             INSERT INTO meta_ads_catalog
@@ -1455,7 +1604,16 @@ def _sync_catalog_anuncios_criativos_videos(
                     effective_object_story_id = EXCLUDED.effective_object_story_id,
                     video_id = EXCLUDED.video_id,
                     thumbnail_url = EXCLUDED.thumbnail_url,
-                    image_url_hq = EXCLUDED.image_url_hq,
+                    -- Guarda anti-regressão: nunca sobrescrever um HQ já bom com
+                    -- thumbnail_fallback (sync com rate-limit pode falhar a resolução).
+                    image_url_hq = CASE
+                        WHEN COALESCE(EXCLUDED.hq_source, '') <> 'thumbnail_fallback'
+                             AND EXCLUDED.image_url_hq IS NOT NULL
+                            THEN EXCLUDED.image_url_hq
+                        WHEN COALESCE(meta_creatives_catalog.hq_source, '') NOT IN ('', 'thumbnail_fallback')
+                            THEN meta_creatives_catalog.image_url_hq
+                        ELSE EXCLUDED.image_url_hq
+                    END,
                     link_anuncio = EXCLUDED.link_anuncio,
                     carousel_items = EXCLUDED.carousel_items,
                     raw_payload = EXCLUDED.raw_payload,
@@ -1464,7 +1622,13 @@ def _sync_catalog_anuncios_criativos_videos(
                     meta_permalink_url = EXCLUDED.meta_permalink_url,
                     original_width = EXCLUDED.original_width,
                     original_height = EXCLUDED.original_height,
-                    hq_source = EXCLUDED.hq_source,
+                    hq_source = CASE
+                        WHEN COALESCE(EXCLUDED.hq_source, '') <> 'thumbnail_fallback'
+                            THEN EXCLUDED.hq_source
+                        WHEN COALESCE(meta_creatives_catalog.hq_source, '') NOT IN ('', 'thumbnail_fallback')
+                            THEN meta_creatives_catalog.hq_source
+                        ELSE EXCLUDED.hq_source
+                    END,
                     hq_last_resolved_at = EXCLUDED.hq_last_resolved_at,
                     headline = EXCLUDED.headline,
                     destination_url = EXCLUDED.destination_url,
@@ -1696,6 +1860,69 @@ def _carregar_objetivos_catalogo(db: Session, ads_account_uuid: Any) -> list[dic
         WHERE ads_account_id = CAST(:ads_account_id AS uuid)
         GROUP BY campaign_id
     """), {"ads_account_id": str(ads_account_uuid)}).mappings().all()
+
+
+def reprocessar_imagens_hq_conta(db: Session, conta: AdsAccount) -> dict:
+    """Backfill: re-resolve HQ (thumbnail @1200 no nível do creative) para
+    criativos já gravados em baixa qualidade — SHARE (hq_source thumbnail_fallback)
+    e capas de vídeo (64px). Idempotente. Atualiza meta_creatives_catalog e
+    meta_anuncios_insights. Retorna contagem.
+    """
+    token = conta.bm_token
+    if not token:
+        return {"processados": 0, "recuperados": 0, "falhas": 0, "erro": "conta sem bm_token"}
+
+    rows = db.execute(text("""
+        SELECT creative_id, tipo_criativo, hq_source
+        FROM meta_creatives_catalog
+        WHERE ads_account_id = CAST(:acct AS uuid)
+          AND creative_id IS NOT NULL
+          AND (COALESCE(hq_source, '') IN ('', 'thumbnail_fallback') OR tipo_criativo = 'VIDEO')
+    """), {"acct": str(conta.id)}).mappings().all()
+
+    criativos_map: dict[str, dict] = {}
+    for r in rows:
+        cid = _safe_str(r.get("creative_id"))
+        if not cid:
+            continue
+        criativos_map[cid] = {
+            "id": cid,
+            "tipo": _safe_str(r.get("tipo_criativo")) or "IMAGE",
+            "hq_source": _safe_str(r.get("hq_source")) or "thumbnail_fallback",
+            "meta_image_url_tmp": None,
+        }
+
+    processados = len(criativos_map)
+    if not processados:
+        return {"processados": 0, "recuperados": 0, "falhas": 0}
+
+    with httpx.Client(timeout=60.0) as client:
+        _aplicar_thumbnail_hq(client, criativos_map, token)
+        _persist_hq_images_to_minio(client, criativos_map, str(conta.id))
+
+    recuperados = 0
+    falhas = 0
+    for c in criativos_map.values():
+        if c.get("hq_source") == "creative_thumbnail_hq_minio" and c.get("image_url_hq"):
+            cid = c["id"]
+            url = c["image_url_hq"]
+            db.execute(text("""
+                UPDATE meta_creatives_catalog
+                SET image_url_hq = :url, hq_source = 'creative_thumbnail_hq_minio',
+                    hq_last_resolved_at = now()
+                WHERE ads_account_id = CAST(:acct AS uuid) AND creative_id = :cid
+            """), {"url": url, "acct": str(conta.id), "cid": cid})
+            db.execute(text("""
+                UPDATE meta_anuncios_insights
+                SET image_url_hq = :url
+                WHERE ads_account_id = CAST(:acct AS uuid) AND creative_id = :cid
+            """), {"url": url, "acct": str(conta.id), "cid": cid})
+            recuperados += 1
+        else:
+            falhas += 1
+    db.commit()
+
+    return {"processados": processados, "recuperados": recuperados, "falhas": falhas}
 
 
 # ── sync principal ─────────────────────────────────────────────────────────────
@@ -2276,6 +2503,7 @@ def _sync_anuncios(
     )
     for c in criativos.values():
         _merge_hq_image_data(c, adimage_map)
+    _aplicar_thumbnail_hq(client, criativos, token, on_progress=_progress)
     _persist_hq_images_to_minio(client, criativos, str(ads_account_uuid), on_progress=_progress)
     log.info("Criativos buscados: %d de %d ads únicos", len(criativos), len(ad_ids))
     _progress(f"anuncios:midia ({len(adimage_map)})", 70)
@@ -2360,7 +2588,13 @@ def _sync_anuncios(
                 creative_id   = EXCLUDED.creative_id,
                 thumbnail_url = EXCLUDED.thumbnail_url,
                 tipo_criativo = EXCLUDED.tipo_criativo,
-                image_url_hq  = EXCLUDED.image_url_hq,
+                -- Guarda anti-regressão: HQ sempre é URL do MinIO (/meta/storage/).
+                -- Não trocar um HQ persistido por uma URL fbcdn crua (baixa qualidade).
+                image_url_hq  = CASE
+                    WHEN EXCLUDED.image_url_hq LIKE '%/meta/storage/%' THEN EXCLUDED.image_url_hq
+                    WHEN meta_anuncios_insights.image_url_hq LIKE '%/meta/storage/%' THEN meta_anuncios_insights.image_url_hq
+                    ELSE EXCLUDED.image_url_hq
+                END,
                 link_anuncio  = EXCLUDED.link_anuncio,
                 carousel_items = EXCLUDED.carousel_items,
                 publisher_platform = EXCLUDED.publisher_platform,
