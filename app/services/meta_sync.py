@@ -8,14 +8,21 @@ Sincroniza dados de uma conta de anúncios Meta nas tabelas:
 """
 import json
 import logging
+import mimetypes
+import time
 from datetime import date, datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.database import SessionLocal
 from app.models.ads_account import AdsAccount
+from app.core.config import settings
+from app.services.object_storage import put_bytes, public_url
+from app.services.meta_tracking import extrair_tracking_info
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +33,32 @@ LEAD_ACTION_TYPES = {
     # Conversa iniciada (janela 7d) usada como lead principal em campanhas de mensagem
     "onsite_conversion.messaging_conversation_started_7d",
 }
+
+RESULTADO_MENSAGEM_PREFIXOS = (
+    "onsite_conversion.messaging_conversation_started",
+    "messaging_conversation_started",
+    "onsite_conversion.conversation_started",
+)
+
+RESULTADO_LEAD_ACTIONS = {
+    "lead",
+    "onsite_conversion.lead_grouped",
+    "offsite_conversion.fb_pixel_lead",
+}
+
+RESULTADO_VIDEO_ACTIONS = {
+    "video_view",
+    "thruplay",
+}
+
+RESULTADO_TRAFFIC_ACTIONS = {
+    "link_click",
+    "landing_page_view",
+    "outbound_click",
+    "inline_link_click",
+}
+
+SYNC_JOB_INTERRUPTED_ERROR = "Job interrompido por reinicialização do serviço"
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -42,6 +75,71 @@ def _extrair_link_click(actions: list[dict]) -> int:
         for a in actions
         if a.get("action_type") == "link_click"
     )
+
+
+def _action_types(rows: list[dict]) -> dict[str, int]:
+    totais: dict[str, int] = {}
+    for row in rows or []:
+        action_type = str(row.get("action_type") or "").strip()
+        if not action_type:
+            continue
+        totais[action_type] = totais.get(action_type, 0) + _safe_int(row.get("value"))
+    return totais
+
+
+def _extrair_action_prioritaria(
+    rows: list[dict],
+    *,
+    action_types: set[str] | None = None,
+    prefixes: tuple[str, ...] = (),
+) -> tuple[int, str | None]:
+    totais = _action_types(rows)
+    if not totais:
+        return 0, None
+
+    candidatos: list[tuple[str, int]] = []
+    for action_type, value in totais.items():
+        if action_types is not None and action_type not in action_types and not any(action_type.startswith(prefix) for prefix in prefixes):
+            continue
+        candidatos.append((action_type, value))
+
+    if not candidatos:
+        return 0, None
+
+    action_type, value = max(candidatos, key=lambda item: (item[1], item[0]))
+    return value, action_type
+
+
+def _extrair_resultado_anuncio(
+    actions: list[dict],
+    objective: str | None,
+) -> tuple[int, str | None]:
+    fontes = [actions or []]
+
+    for fonte in fontes:
+        count, action_type = _extrair_action_prioritaria(
+            fonte,
+            prefixes=RESULTADO_MENSAGEM_PREFIXOS,
+        )
+        if count > 0 and action_type:
+            return count, f"actions:{action_type}"
+
+    for fonte in fontes:
+        count, action_type = _extrair_action_prioritaria(fonte, action_types=RESULTADO_LEAD_ACTIONS)
+        if count > 0 and action_type:
+            return count, f"actions:{action_type}"
+
+    for fonte in fontes:
+        count, action_type = _extrair_action_prioritaria(fonte, action_types=RESULTADO_VIDEO_ACTIONS)
+        if count > 0 and action_type:
+            return count, f"actions:{action_type}"
+
+    for fonte in fontes:
+        count, action_type = _extrair_action_prioritaria(fonte, action_types=RESULTADO_TRAFFIC_ACTIONS)
+        if count > 0 and action_type:
+            return count, f"actions:{action_type}"
+
+    return 0, None
 
 
 def _valor_action(actions: list[dict], action_type: str) -> int:
@@ -94,8 +192,10 @@ def _paginar(client: httpx.Client, url: str, params: dict) -> list[dict]:
     resultados: list[dict] = []
     current_url: str | None = url
     current_params: dict | None = params
+    page = 0
 
     while current_url:
+        page += 1
         if current_params is not None:
             resp = client.get(current_url, params=current_params)
         else:
@@ -109,6 +209,7 @@ def _paginar(client: httpx.Client, url: str, params: dict) -> list[dict]:
 
         data = resp.json()
         resultados.extend(data.get("data", []))
+        log.info("_paginar %s página %d -> %d registros acumulados", url, page, len(resultados))
         next_url = data.get("paging", {}).get("next")
         current_url = next_url
         current_params = None  # próximas páginas já têm tudo na URL
@@ -123,16 +224,613 @@ def _construir_link_facebook(story_id: str | None) -> str | None:
     return None
 
 
-def _fetch_criativos_batch(client: httpx.Client, ad_ids: list[str], token: str) -> dict[str, dict]:
+def _extrair_imagem_criativo(creative: dict) -> str | None:
+    """Resolve imagem principal do criativo com fallback robusto."""
+    story_spec = creative.get("object_story_spec") or {}
+    link_data = story_spec.get("link_data") or {}
+    photo_data = story_spec.get("photo_data") or {}
+    video_data = story_spec.get("video_data") or {}
+    child_attachments = link_data.get("child_attachments") or []
+
+    # Link/image simples
+    image_obj = link_data.get("image") or {}
+    if image_obj.get("url"):
+        return image_obj.get("url")
+
+    # Carrossel
+    if child_attachments:
+        for child in child_attachments:
+            if child.get("picture"):
+                return child.get("picture")
+
+    # Photo ad (escolhe maior resolução disponível)
+    images = photo_data.get("images") or {}
+    if isinstance(images, dict) and images:
+        def _area(k: str) -> int:
+            try:
+                w, h = k.lower().split("x", 1)
+                return int(w) * int(h)
+            except Exception:
+                return 0
+
+        best_key = sorted(images.keys(), key=_area, reverse=True)[0]
+        best = images.get(best_key) or {}
+        if isinstance(best, dict) and best.get("url"):
+            return best.get("url")
+
+    # Vídeo
+    if video_data.get("image_url"):
+        return video_data.get("image_url")
+
+    # Fallback final
+    return creative.get("thumbnail_url")
+
+
+def _resolver_tipo_criativo(creative: dict) -> str:
+    story_spec = creative.get("object_story_spec") or {}
+    link_data = story_spec.get("link_data") or {}
+    child_attachments = link_data.get("child_attachments") or []
+    obj_type = str(creative.get("object_type") or "").upper()
+    if len(child_attachments) > 1:
+        return "CAROUSEL"
+    if "VIDEO" in obj_type or _extrair_video_id_criativo(creative):
+        return "VIDEO"
+    return "IMAGE"
+
+
+def _extract_creative_image_hashes(creative: dict) -> list[str]:
+    hashes: list[str] = []
+
+    def _push(val: Any) -> None:
+        if not val:
+            return
+        s = str(val).strip()
+        if s and s not in hashes:
+            hashes.append(s)
+
+    _push(creative.get("image_hash"))
+    story_spec = creative.get("object_story_spec") or {}
+
+    link_data = story_spec.get("link_data") or {}
+    _push(link_data.get("image_hash"))
+
+    photo_data = story_spec.get("photo_data") or {}
+    _push(photo_data.get("image_hash"))
+
+    video_data = story_spec.get("video_data") or {}
+    _push(video_data.get("image_hash"))
+
+    for child in link_data.get("child_attachments") or []:
+        _push(child.get("image_hash"))
+
+    return hashes
+
+
+def _safe_str(val: Any) -> str | None:
+    if val is None:
+        return None
+    s = str(val).strip()
+    return s or None
+
+
+def _extrair_video_id_criativo(creative: dict) -> str | None:
+    story_spec = creative.get("object_story_spec") or {}
+    video_data = story_spec.get("video_data") or {}
+    return _safe_str(creative.get("video_id") or video_data.get("video_id"))
+
+
+def _normalizar_video_thumbnails(raw_thumbnails: Any) -> list[dict]:
+    if not raw_thumbnails:
+        return []
+
+    if isinstance(raw_thumbnails, dict):
+        if isinstance(raw_thumbnails.get("data"), list):
+            raw_items = raw_thumbnails.get("data") or []
+        else:
+            raw_items = [raw_thumbnails]
+    elif isinstance(raw_thumbnails, list):
+        raw_items = raw_thumbnails
+    else:
+        raw_items = [raw_thumbnails]
+
+    thumbnails: list[dict] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        uri = _safe_str(item.get("uri") or item.get("url"))
+        if not uri:
+            continue
+        thumbnails.append({
+            "uri": uri,
+            "width": _safe_int(item.get("width")),
+            "height": _safe_int(item.get("height")),
+            "is_preferred": bool(item.get("is_preferred")),
+        })
+    return thumbnails
+
+
+def _selecionar_melhor_thumbnail_video(raw_thumbnails: Any) -> dict | None:
+    thumbnails = _normalizar_video_thumbnails(raw_thumbnails)
+    if not thumbnails:
+        return None
+
+    preferred = [thumb for thumb in thumbnails if thumb.get("is_preferred")]
+    candidates = preferred or thumbnails
+
+    def _score(item: dict) -> tuple[int, int, int]:
+        width = _safe_int(item.get("width"))
+        height = _safe_int(item.get("height"))
+        area = width * height
+        return area, width, height
+
+    return max(candidates, key=_score)
+
+
+def _persist_video_thumbnail_to_minio(
+    client: httpx.Client,
+    thumb_url: str | None,
+    video_id: str | None,
+    ads_account_uuid: str,
+) -> str | None:
+    if not thumb_url or not video_id:
+        return None
+
+    bucket = settings.MINIO_BUCKET_CRIATIVOS
+    if not settings.MINIO_ACCESS_KEY or not settings.MINIO_SECRET_KEY:
+        return None
+
+    try:
+        resp = None
+        for attempt in range(3):
+            try:
+                resp = client.get(
+                    thumb_url,
+                    follow_redirects=True,
+                    timeout=15,
+                    headers={
+                        "Referer": "https://www.facebook.com/",
+                        "User-Agent": "Mozilla/5.0",
+                    },
+                )
+            except httpx.HTTPError as exc:
+                log.warning("Falha ao buscar thumbnail de vídeo %s tentativa %d/3: %s", video_id, attempt + 1, exc)
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
+                continue
+
+            if resp.status_code < 400 and resp.content:
+                break
+            if resp.status_code not in {429, 500, 502, 503, 504} or attempt == 2:
+                break
+            time.sleep(2 ** attempt)
+
+        if resp is None or resp.status_code >= 400 or not resp.content:
+            return None
+
+        content_type = resp.headers.get("content-type", "image/jpeg")
+        ext = _guess_extension(content_type, thumb_url)
+        object_name = f"ads-accounts/{ads_account_uuid}/videos/{video_id}{ext}"
+        put_bytes(bucket, object_name, resp.content, content_type)
+        return public_url(bucket, object_name)
+    except Exception as exc:
+        log.warning("Falha ao persistir thumbnail de vídeo %s no MinIO: %s", video_id, exc)
+        return None
+
+
+def _extract_carousel_cards(creative: dict, adimage_map: dict[str, dict]) -> list[dict]:
+    story_spec = creative.get("object_story_spec") or {}
+    link_data = story_spec.get("link_data") or {}
+    children = link_data.get("child_attachments") or []
+    cards: list[dict] = []
+    for idx, child in enumerate(children):
+        image_hash = _safe_str(child.get("image_hash"))
+        video_id = _safe_str(child.get("video_id"))
+        adimg = adimage_map.get(image_hash) if image_hash else None
+        image_url_hq = (
+            (adimg or {}).get("url")
+            or child.get("picture")
+            or child.get("image_url")
+            or creative.get("thumbnail_url")
+        )
+        if adimg and adimg.get("url"):
+            source_type = "adimage"
+        elif video_id:
+            source_type = "video_thumb"
+        elif child.get("picture") or child.get("image_url"):
+            source_type = "picture"
+        else:
+            source_type = "thumbnail_fallback"
+        cards.append({
+            "creative_id": _safe_str(creative.get("id")),
+            "card_index": idx,
+            "image_hash": image_hash,
+            "video_id": video_id,
+            "image_url_hq": image_url_hq,
+            "source_type": source_type,
+            "link": _safe_str(child.get("link")),
+            "name": _safe_str(child.get("name")),
+            "description": _safe_str(child.get("description")),
+            "picture": child.get("picture") or child.get("image_url"),
+        })
+    return cards
+
+
+def _valor_action_any(actions: list[dict], action_types: set[str]) -> int:
+    total = 0
+    for a in actions:
+        if a.get("action_type") in action_types:
+            total += _safe_int(a.get("value"))
+    return total
+
+
+def _valor_video_action(rows: list[dict]) -> int:
+    total = 0
+    for a in rows or []:
+        total += _safe_int(a.get("value"))
+    return total
+
+
+def _fetch_adimages_by_hashes(
+    client: httpx.Client,
+    account_id: str,
+    token: str,
+    hashes: list[str],
+    on_progress=None,
+) -> dict[str, dict]:
+    if not hashes:
+        return {}
+
+    out: dict[str, dict] = {}
+    total_batches = max((len(hashes) + 49) // 50, 1)
+    for batch_index, i in enumerate(range(0, len(hashes), 50), start=1):
+        batch = hashes[i:i + 50]
+        if on_progress:
+            try:
+                on_progress(f"anuncios:midia:adimages ({batch_index}/{total_batches})", 70)
+            except Exception:
+                pass
+        resp = None
+        for attempt in range(3):
+            try:
+                resp = client.get(
+                    f"{META_BASE}/{account_id}/adimages",
+                    params={
+                        "access_token": token,
+                        "hashes": json.dumps(batch),
+                        "fields": "hash,url,permalink_url,original_width,original_height",
+                        "limit": 50,
+                    },
+                )
+            except httpx.HTTPError as exc:
+                log.warning("Erro adimages batch tentativa %d/3: %s", attempt + 1, exc)
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
+                continue
+
+            if resp.status_code == 200:
+                break
+            if resp.status_code not in {429, 500, 502, 503, 504} or attempt == 2:
+                break
+            try:
+                err = resp.json().get("error", {})
+                log.warning(
+                    "Erro adimages batch tentativa %d/3: %s",
+                    attempt + 1,
+                    err.get("message", resp.text[:200]),
+                )
+            except Exception:
+                log.warning("Erro adimages batch tentativa %d/3: %s", attempt + 1, resp.text[:200])
+            time.sleep(2 ** attempt)
+
+        if resp is None:
+            continue
+        if resp.status_code != 200:
+            err = resp.json().get("error", {})
+            log.warning("Erro adimages batch: %s", err.get("message", resp.text[:200]))
+            continue
+        for row in resp.json().get("data", []):
+            h = row.get("hash")
+            if h:
+                out[str(h)] = row
+    return out
+
+
+def _fetch_videos_by_ids(client: httpx.Client, token: str, video_ids: list[str], on_progress=None) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    uniq = [v for v in dict.fromkeys(video_ids) if v]
+    total_batches = max((len(uniq) + 49) // 50, 1)
+    for batch_index, i in enumerate(range(0, len(uniq), 50), start=1):
+        batch = uniq[i:i + 50]
+        if on_progress:
+            try:
+                on_progress(f"anuncios:midia:videos ({batch_index}/{total_batches})", 70)
+            except Exception:
+                pass
+        resp = client.get(
+            f"{META_BASE}/",
+            params={
+                "access_token": token,
+                "ids": ",".join(batch),
+                "fields": "id,picture,source,permalink_url,thumbnails{uri,width,height,is_preferred}",
+            },
+        )
+        if resp.status_code != 200:
+            err = resp.json().get("error", {})
+            log.warning("Erro batch videos: %s", err.get("message", resp.text[:200]))
+            continue
+        for vid, payload in resp.json().items():
+            if isinstance(payload, dict):
+                payload["thumbnails"] = _normalizar_video_thumbnails(payload.get("thumbnails"))
+                best_thumb = _selecionar_melhor_thumbnail_video(payload.get("thumbnails"))
+                payload["thumbnail_url"] = (
+                    _safe_str(best_thumb.get("uri"))
+                    if best_thumb
+                    else _safe_str(payload.get("picture"))
+                )
+                out[str(vid)] = payload
+    return out
+
+
+def _merge_hq_image_data(creative_data: dict, adimage_map: dict[str, dict]) -> None:
+    hashes = creative_data.get("image_hashes") or []
+    if not hashes:
+        creative_data["hq_source"] = creative_data.get("hq_source") or "thumbnail_fallback"
+        return
+
+    match = None
+    for h in hashes:
+        match = adimage_map.get(h)
+        if match:
+            break
+
+    if not match:
+        creative_data["hq_source"] = creative_data.get("hq_source") or "thumbnail_fallback"
+        return
+
+    creative_data["image_hash"] = creative_data.get("image_hash") or str(match.get("hash"))
+    source = _safe_str(match.get("hq_source") or match.get("source")) or "adimage"
+    meta_tmp = _safe_str(match.get("meta_image_url_tmp"))
+    if not meta_tmp and source == "adimage":
+        meta_tmp = _safe_str(match.get("url"))
+    if meta_tmp:
+        creative_data["meta_image_url_tmp"] = meta_tmp
+    creative_data["meta_permalink_url"] = match.get("permalink_url")
+    creative_data["original_width"] = _safe_int(match.get("original_width")) if match.get("original_width") else None
+    creative_data["original_height"] = _safe_int(match.get("original_height")) if match.get("original_height") else None
+    if match.get("url"):
+        creative_data["image_url_hq"] = match.get("url")
+    creative_data["hq_source"] = source
+
+
+def _hq_source_priority(source: str | None) -> int:
+    if source == "adimage_minio":
+        return 3
+    if source == "adimage":
+        return 2
+    if source == "thumbnail_fallback":
+        return 0
+    return 1
+
+
+def _hq_area(width: Any, height: Any) -> int:
+    w = _safe_int(width)
+    h = _safe_int(height)
+    return max(w, 0) * max(h, 0)
+
+
+def _eh_url_publica_minio(url: str | None) -> bool:
+    if not url:
+        return False
+    base = settings.SERVER_URL.rstrip("/")
+    return url.startswith(f"{base}/meta/storage/")
+
+
+def _registrar_hq_cache(
+    cache: dict[str, dict],
+    *,
+    image_hash: Any,
+    image_url: Any,
+    hq_source: Any = None,
+    meta_image_url_tmp: Any = None,
+    permalink_url: Any = None,
+    original_width: Any = None,
+    original_height: Any = None,
+) -> None:
+    hash_norm = _safe_str(image_hash)
+    url_norm = _safe_str(image_url)
+    if not hash_norm or not url_norm:
+        return
+
+    source_norm = _safe_str(hq_source) or "adimage"
+    if _eh_url_publica_minio(url_norm):
+        source_norm = "adimage_minio"
+
+    meta_tmp_norm = _safe_str(meta_image_url_tmp)
+    if not meta_tmp_norm and source_norm == "adimage":
+        meta_tmp_norm = url_norm
+
+    candidate = {
+        "hash": hash_norm,
+        "url": url_norm,
+        "hq_source": source_norm,
+        "meta_image_url_tmp": meta_tmp_norm,
+        "permalink_url": _safe_str(permalink_url),
+        "original_width": _safe_int(original_width) if original_width else None,
+        "original_height": _safe_int(original_height) if original_height else None,
+    }
+
+    current = cache.get(hash_norm)
+    if current is None:
+        cache[hash_norm] = candidate
+        return
+
+    current_priority = _hq_source_priority(current.get("hq_source"))
+    candidate_priority = _hq_source_priority(candidate.get("hq_source"))
+    if candidate_priority > current_priority:
+        cache[hash_norm] = candidate
+        return
+
+    if candidate_priority == current_priority and _hq_area(candidate.get("original_width"), candidate.get("original_height")) >= _hq_area(current.get("original_width"), current.get("original_height")):
+        cache[hash_norm] = candidate
+
+
+def _carregar_hq_cache_imagens(db: Session, ads_account_uuid: str) -> dict[str, dict]:
+    cache: dict[str, dict] = {}
+
+    creative_rows = db.execute(text("""
+        SELECT image_hash, image_url_hq, meta_image_url_tmp, meta_permalink_url,
+               original_width, original_height, hq_source
+        FROM meta_creatives_catalog
+        WHERE ads_account_id = CAST(:ads_account_id AS uuid)
+          AND image_hash IS NOT NULL
+          AND image_url_hq IS NOT NULL
+          AND COALESCE(hq_source, '') <> 'thumbnail_fallback'
+    """), {"ads_account_id": str(ads_account_uuid)}).mappings().all()
+    for row in creative_rows:
+        _registrar_hq_cache(
+            cache,
+            image_hash=row.get("image_hash"),
+            image_url=row.get("image_url_hq"),
+            hq_source=row.get("hq_source"),
+            meta_image_url_tmp=row.get("meta_image_url_tmp"),
+            permalink_url=row.get("meta_permalink_url"),
+            original_width=row.get("original_width"),
+            original_height=row.get("original_height"),
+        )
+
+    card_rows = db.execute(text("""
+        SELECT image_hash, image_url_hq, source_type
+        FROM meta_creative_cards_catalog
+        WHERE ads_account_id = CAST(:ads_account_id AS uuid)
+          AND image_hash IS NOT NULL
+          AND image_url_hq IS NOT NULL
+          AND source_type = 'adimage'
+    """), {"ads_account_id": str(ads_account_uuid)}).mappings().all()
+    for row in card_rows:
+        _registrar_hq_cache(
+            cache,
+            image_hash=row.get("image_hash"),
+            image_url=row.get("image_url_hq"),
+            hq_source="adimage",
+            meta_image_url_tmp=row.get("image_url_hq"),
+        )
+
+    return cache
+
+
+def _resolver_mapa_adimages_hq(
+    client: httpx.Client,
+    db: Session,
+    account_id: str,
+    token: str,
+    hashes: list[str],
+    ads_account_uuid: str,
+    on_progress=None,
+) -> dict[str, dict]:
+    cache_map = _carregar_hq_cache_imagens(db, ads_account_uuid)
+    missing_hashes = [h for h in hashes if h and h not in cache_map]
+
+    if cache_map:
+        cache_minio = sum(1 for row in cache_map.values() if row.get("hq_source") == "adimage_minio")
+        cache_adimage = sum(1 for row in cache_map.values() if row.get("hq_source") == "adimage")
+        log.info(
+            "HQ cache reaproveitado: %d hashes (minio=%d, adimage=%d), faltantes=%d",
+            len(cache_map),
+            cache_minio,
+            cache_adimage,
+            len(missing_hashes),
+        )
+        if on_progress:
+            try:
+                on_progress(f"anuncios:midia:cache ({len(cache_map)})", 70)
+            except Exception:
+                pass
+
+    live_map = _fetch_adimages_by_hashes(client, account_id, token, missing_hashes, on_progress=on_progress) if missing_hashes else {}
+    if missing_hashes:
+        log.info("HQ adimages consultados na Meta: %d hashes faltantes", len(missing_hashes))
+    return {**cache_map, **live_map}
+
+
+def _guess_extension(content_type: str | None, url: str | None) -> str:
+    if content_type:
+        ext = mimetypes.guess_extension(content_type.split(";", 1)[0].strip().lower())
+        if ext:
+            return ext
+    if url:
+        path = urlparse(url).path
+        if "." in path:
+            raw_ext = "." + path.rsplit(".", 1)[1].lower()
+            if 1 < len(raw_ext) <= 6:
+                return raw_ext
+    return ".jpg"
+
+
+def _persist_hq_images_to_minio(
+    client: httpx.Client,
+    creative_map: dict[str, dict],
+    ads_account_uuid: str,
+    on_progress=None,
+) -> None:
+    bucket = settings.MINIO_BUCKET_CRIATIVOS
+    if not settings.MINIO_ACCESS_KEY or not settings.MINIO_SECRET_KEY:
+        log.warning("MinIO não configurado; mantendo URL temporária da Meta para HQ.")
+        return
+
+    total = sum(1 for creative in creative_map.values() if creative.get("hq_source") == "adimage")
+    done = 0
+    for creative in creative_map.values():
+        if creative.get("hq_source") != "adimage":
+            continue
+        src_url = creative.get("meta_image_url_tmp")
+        creative_id = creative.get("id")
+        if not src_url or not creative_id:
+            continue
+        try:
+            resp = client.get(
+                src_url,
+                follow_redirects=True,
+                timeout=15,
+                headers={
+                    "Referer": "https://www.facebook.com/",
+                    "User-Agent": "Mozilla/5.0",
+                },
+            )
+            if resp.status_code >= 400:
+                continue
+            content_type = resp.headers.get("content-type", "image/jpeg")
+            ext = _guess_extension(content_type, src_url)
+            object_name = f"ads-accounts/{ads_account_uuid}/criativos/{creative_id}{ext}"
+            put_bytes(bucket, object_name, resp.content, content_type)
+            creative["image_url_hq"] = public_url(bucket, object_name)
+            creative["hq_source"] = "adimage_minio"
+            done += 1
+            if on_progress and (done % 10 == 0 or done == total):
+                try:
+                    on_progress(f"anuncios:midia:minio ({done}/{total})", 70)
+                except Exception:
+                    pass
+        except Exception as exc:
+            log.warning("Falha ao persistir criativo %s no MinIO: %s", creative_id, exc)
+
+
+def _fetch_criativos_batch(client: httpx.Client, ad_ids: list[str], token: str, on_progress=None) -> dict[str, dict]:
     """Busca criativo HQ, tipo e link para ad_ids em batches de 50."""
     criativos: dict[str, dict] = {}
     fields = (
-        "creative{id,name,object_type,image_url,thumbnail_url,video_id,"
-        "instagram_permalink_url,effective_object_story_id,"
-        "object_story_spec{link_data{child_attachments{picture,image_url,video_id,link}}}}"
+        "creative{id,name,object_type,thumbnail_url,video_id,image_hash,"
+        "instagram_permalink_url,effective_object_story_id,url_tags,"
+        "object_story_spec{link_data{image_hash,child_attachments{image_hash,picture,video_id}},"
+        "photo_data{image_hash},video_data{image_hash,video_id}}}"
     )
-    for i in range(0, len(ad_ids), 50):
+    total_batches = max((len(ad_ids) + 49) // 50, 1)
+    for batch_index, i in enumerate(range(0, len(ad_ids), 50), start=1):
         batch = ad_ids[i:i + 50]
+        if on_progress:
+            try:
+                on_progress(f"anuncios:criativos ({batch_index}/{total_batches})", 69)
+            except Exception:
+                pass
         resp = client.get(
             f"{META_BASE}/",
             params={
@@ -153,6 +851,7 @@ def _fetch_criativos_batch(client: httpx.Client, ad_ids: list[str], token: str) 
             story_spec = creative.get("object_story_spec") or {}
             link_data = story_spec.get("link_data") or {}
             child_attachments = link_data.get("child_attachments") or []
+            video_id = _extrair_video_id_criativo(creative)
 
             if len(child_attachments) > 1:
                 tipo = "CAROUSEL"
@@ -164,18 +863,14 @@ def _fetch_criativos_batch(client: httpx.Client, ad_ids: list[str], token: str) 
                     }
                     for c in child_attachments
                 ]
-            elif creative.get("video_id"):
+            elif video_id:
                 tipo = "VIDEO"
                 carousel_items = []
             else:
                 tipo = "IMAGE"
                 carousel_items = []
 
-            image_url_hq = (
-                creative.get("image_url")
-                or creative.get("thumbnail_url")
-                or (child_attachments[0].get("picture") if child_attachments else None)
-            )
+            image_url_hq = _extrair_imagem_criativo(creative)
 
             link_anuncio = (
                 creative.get("instagram_permalink_url")
@@ -186,10 +881,170 @@ def _fetch_criativos_batch(client: httpx.Client, ad_ids: list[str], token: str) 
                 "id": creative.get("id"),
                 "thumbnail_url": creative.get("thumbnail_url"),
                 "tipo": tipo,
+                "video_id": video_id,
                 "image_url_hq": image_url_hq,
                 "link_anuncio": link_anuncio,
                 "carousel_items": carousel_items,
+                "image_hashes": _extract_creative_image_hashes(creative),
+                "image_hash": None,
+                "meta_image_url_tmp": None,
+                "meta_permalink_url": None,
+                "original_width": None,
+                "original_height": None,
+                "hq_source": "thumbnail_fallback",
+                "raw_creative": creative,
             }
+    return criativos
+
+
+def _fetch_criativos_batch_minimo(client: httpx.Client, ad_ids: list[str], token: str, on_progress=None) -> dict[str, dict]:
+    """Fallback por IDs com campos mínimos para máxima compatibilidade."""
+    criativos: dict[str, dict] = {}
+    fields = (
+        "creative{id,object_type,thumbnail_url,video_id,image_hash,instagram_permalink_url,"
+        "effective_object_story_id,url_tags,object_story_spec{link_data{image_hash,child_attachments{image_hash,video_id}},"
+        "video_data{image_hash,video_id}}}"
+    )
+    total_batches = max((len(ad_ids) + 49) // 50, 1)
+    for batch_index, i in enumerate(range(0, len(ad_ids), 50), start=1):
+        batch = ad_ids[i:i + 50]
+        if on_progress:
+            try:
+                on_progress(f"anuncios:criativos:minimo ({batch_index}/{total_batches})", 69)
+            except Exception:
+                pass
+        resp = client.get(
+            f"{META_BASE}/",
+            params={
+                "access_token": token,
+                "ids": ",".join(batch),
+                "fields": fields,
+                "thumbnail_width": 1200,
+                "thumbnail_height": 628,
+            },
+        )
+        if resp.status_code != 200:
+            err = resp.json().get("error", {})
+            log.warning("Erro criativos batch mínimo: %s", err.get("message", resp.text[:200]))
+            continue
+        for ad_id, ad_data in resp.json().items():
+            creative = ad_data.get("creative") or {}
+            obj_type = (creative.get("object_type") or "").upper()
+            video_id = _extrair_video_id_criativo(creative)
+            if "VIDEO" in obj_type or video_id:
+                tipo = "VIDEO"
+            else:
+                tipo = "IMAGE"
+            criativos[ad_id] = {
+                "id": creative.get("id"),
+                "thumbnail_url": creative.get("thumbnail_url"),
+                "tipo": tipo,
+                "video_id": video_id,
+                "image_url_hq": _extrair_imagem_criativo(creative),
+                "link_anuncio": (
+                    creative.get("instagram_permalink_url")
+                    or _construir_link_facebook(creative.get("effective_object_story_id"))
+                ),
+                "carousel_items": [],
+                "image_hashes": _extract_creative_image_hashes(creative),
+                "image_hash": None,
+                "meta_image_url_tmp": None,
+                "meta_permalink_url": None,
+                "original_width": None,
+                "original_height": None,
+                "hq_source": "thumbnail_fallback",
+                "raw_creative": creative,
+            }
+    return criativos
+
+
+def _fetch_criativos_por_conta(
+    client: httpx.Client,
+    account_id: str,
+    token: str,
+    ad_ids_alvo: set[str],
+    on_progress=None,
+) -> dict[str, dict]:
+    """Fallback: busca criativos via endpoint /{account_id}/ads.
+
+    Em algumas contas o endpoint batch por `ids` não retorna `creative`.
+    """
+    criativos: dict[str, dict] = {}
+    fields = (
+        "id,creative{id,name,object_type,thumbnail_url,video_id,image_hash,"
+        "instagram_permalink_url,effective_object_story_id,url_tags,"
+        "object_story_spec{link_data{image_hash,child_attachments{image_hash,picture,video_id}},"
+        "photo_data{image_hash},video_data{image_hash,video_id}}}"
+    )
+    rows = _paginar(
+        client,
+        f"{META_BASE}/{account_id}/ads",
+        {
+            "access_token": token,
+            "fields": fields,
+            "limit": 100,
+        },
+    )
+    total_rows = max(len(rows), 1)
+    for index, ad_data in enumerate(rows, start=1):
+        ad_id = ad_data.get("id")
+        if not ad_id or ad_id not in ad_ids_alvo:
+            if on_progress and (index % 50 == 0 or index == total_rows):
+                try:
+                    on_progress(f"anuncios:criativos:fallback ({index}/{total_rows})", 69)
+                except Exception:
+                    pass
+            continue
+        creative = ad_data.get("creative") or {}
+        story_spec = creative.get("object_story_spec") or {}
+        link_data = story_spec.get("link_data") or {}
+        child_attachments = link_data.get("child_attachments") or []
+        video_id = _extrair_video_id_criativo(creative)
+
+        if len(child_attachments) > 1:
+            tipo = "CAROUSEL"
+            carousel_items = [
+                {
+                    "picture": c.get("picture") or c.get("image_url"),
+                    "video_id": c.get("video_id"),
+                    "link": c.get("link"),
+                }
+                for c in child_attachments
+            ]
+        elif video_id:
+            tipo = "VIDEO"
+            carousel_items = []
+        else:
+            tipo = "IMAGE"
+            carousel_items = []
+
+        image_url_hq = _extrair_imagem_criativo(creative)
+        link_anuncio = (
+            creative.get("instagram_permalink_url")
+            or _construir_link_facebook(creative.get("effective_object_story_id"))
+        )
+        criativos[ad_id] = {
+            "id": creative.get("id"),
+            "thumbnail_url": creative.get("thumbnail_url"),
+            "tipo": tipo,
+            "video_id": video_id,
+            "image_url_hq": image_url_hq,
+            "link_anuncio": link_anuncio,
+            "carousel_items": carousel_items,
+            "image_hashes": _extract_creative_image_hashes(creative),
+            "image_hash": None,
+            "meta_image_url_tmp": None,
+            "meta_permalink_url": None,
+            "original_width": None,
+            "original_height": None,
+            "hq_source": "thumbnail_fallback",
+            "raw_creative": creative,
+        }
+        if on_progress and (index % 50 == 0 or index == total_rows):
+            try:
+                on_progress(f"anuncios:criativos:fallback ({index}/{total_rows})", 69)
+            except Exception:
+                pass
     return criativos
 
 
@@ -207,6 +1062,49 @@ def _safe_int(val: Any, default: int = 0) -> int:
         return default
 
 
+def _normalizar_status_meta(raw: Any, default: str = "ACTIVE") -> str:
+    s = str(raw or "").strip().upper()
+    if not s:
+        return default
+    if s in {"ACTIVE", "PAUSED", "ARCHIVED", "DELETED"}:
+        return s
+    if s in {"IN_PROCESS", "PENDING_REVIEW", "DISAPPROVED", "PREAPPROVED"}:
+        return "PAUSED"
+    return s
+
+
+def _parse_meta_datetime(raw: Any) -> datetime | None:
+    if not raw:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+
+def marcar_sync_jobs_ativos_como_interrompidos(motivo: str = SYNC_JOB_INTERRUPTED_ERROR) -> int:
+    """Marca jobs ativos antigos como interrompidos após restart do serviço."""
+    with SessionLocal() as db:
+        result = db.execute(
+            text("""
+                UPDATE sync_jobs
+                SET status = 'error',
+                    etapa_atual = 'interrompido',
+                    erro = :motivo,
+                    updated_at = NOW()
+                WHERE status IN ('pending', 'running')
+            """),
+            {"motivo": motivo},
+        )
+        db.commit()
+        return int(getattr(result, "rowcount", 0) or 0)
+
+
 def _sync_publicos_region(
     client: httpx.Client,
     db: Session,
@@ -215,10 +1113,12 @@ def _sync_publicos_region(
     time_range: str,
     ads_account_uuid: Any,
     totais: dict,
+    campaign_id: str = 'ALL',
 ) -> None:
+    url_id = campaign_id if campaign_id != 'ALL' else account_id
     rows = _paginar(
         client,
-        f"{META_BASE}/{account_id}/insights",
+        f"{META_BASE}/{url_id}/insights",
         {
             "access_token": token,
             "fields": "spend,impressions,clicks,actions,ctr",
@@ -238,12 +1138,12 @@ def _sync_publicos_region(
             continue
         db.execute(text("""
             INSERT INTO meta_publicos_insights
-                (ads_account_id, data, breakdown_type, breakdown_value,
+                (ads_account_id, data, breakdown_type, breakdown_value, campaign_id,
                  leads, spend, impressions, clicks, ctr, cpl)
             VALUES
-                (:ads_account_id, :data, 'region', :breakdown_value,
+                (:ads_account_id, :data, 'region', :breakdown_value, :campaign_id,
                  :leads, :spend, :impressions, :clicks, :ctr, :cpl)
-            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value) DO UPDATE SET
+            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value, campaign_id) DO UPDATE SET
                 leads       = EXCLUDED.leads,
                 spend       = EXCLUDED.spend,
                 impressions = EXCLUDED.impressions,
@@ -254,6 +1154,7 @@ def _sync_publicos_region(
             "ads_account_id": str(ads_account_uuid),
             "data": r.get("date_start"),
             "breakdown_value": breakdown_value,
+            "campaign_id": campaign_id,
             "leads": leads,
             "spend": spend,
             "impressions": _safe_int(r.get("impressions")),
@@ -265,9 +1166,545 @@ def _sync_publicos_region(
     db.commit()
 
 
+def _sync_catalogo(
+    client: httpx.Client,
+    db: Session,
+    conta: AdsAccount,
+    account_id: str,
+    token: str,
+    totais: dict,
+) -> None:
+    _sync_catalog_campanhas(client, db, conta, account_id, token, totais)
+    _sync_catalog_conjuntos(client, db, conta, account_id, token, totais)
+    _sync_catalog_anuncios_criativos_videos(client, db, conta, account_id, token, totais)
+
+
+def _sync_catalog_campanhas(
+    client: httpx.Client,
+    db: Session,
+    conta: AdsAccount,
+    account_id: str,
+    token: str,
+    totais: dict,
+) -> None:
+    rows = _paginar(
+        client,
+        f"{META_BASE}/{account_id}/campaigns",
+        {
+            "access_token": token,
+            "fields": "id,name,effective_status,status,objective,start_time,stop_time,daily_budget,lifetime_budget,updated_time",
+            "limit": 500,
+        },
+    )
+    for r in rows:
+        db.execute(text("""
+            INSERT INTO meta_campaigns_catalog
+                (workspace_id, ads_account_id, campaign_id, nome, objetivo,
+                 effective_status, configured_status, start_time, stop_time,
+                 daily_budget, lifetime_budget, raw_payload, last_seen_at)
+            VALUES
+                (:workspace_id, :ads_account_id, :campaign_id, :nome, :objetivo,
+                 :effective_status, :configured_status, :start_time, :stop_time,
+                 :daily_budget, :lifetime_budget, CAST(:raw_payload AS JSONB), NOW())
+            ON CONFLICT (ads_account_id, campaign_id) DO UPDATE SET
+                workspace_id = EXCLUDED.workspace_id,
+                nome = EXCLUDED.nome,
+                objetivo = EXCLUDED.objetivo,
+                effective_status = EXCLUDED.effective_status,
+                configured_status = EXCLUDED.configured_status,
+                start_time = EXCLUDED.start_time,
+                stop_time = EXCLUDED.stop_time,
+                daily_budget = EXCLUDED.daily_budget,
+                lifetime_budget = EXCLUDED.lifetime_budget,
+                raw_payload = EXCLUDED.raw_payload,
+                last_seen_at = NOW()
+        """), {
+            "workspace_id": str(conta.workspace_id),
+            "ads_account_id": str(conta.id),
+            "campaign_id": r.get("id"),
+            "nome": r.get("name"),
+            "objetivo": r.get("objective"),
+            "effective_status": _normalizar_status_meta(r.get("effective_status") or r.get("status")),
+            "configured_status": str(r.get("status") or "").upper() or None,
+            "start_time": _parse_meta_datetime(r.get("start_time")),
+            "stop_time": _parse_meta_datetime(r.get("stop_time")),
+            "daily_budget": _safe_float(r.get("daily_budget")) / 100 if r.get("daily_budget") else None,
+            "lifetime_budget": _safe_float(r.get("lifetime_budget")) / 100 if r.get("lifetime_budget") else None,
+            "raw_payload": json.dumps(r),
+        })
+        totais["catalog_campanhas"] += 1
+    db.commit()
+
+
+def _sync_catalog_conjuntos(
+    client: httpx.Client,
+    db: Session,
+    conta: AdsAccount,
+    account_id: str,
+    token: str,
+    totais: dict,
+) -> None:
+    rows = _paginar(
+        client,
+        f"{META_BASE}/{account_id}/adsets",
+        {
+            "access_token": token,
+            "fields": "id,name,campaign_id,effective_status,status,start_time,end_time,daily_budget,lifetime_budget,bid_strategy,optimization_goal,billing_event,destination_type,updated_time",
+            "limit": 500,
+        },
+    )
+    for r in rows:
+        db.execute(text("""
+            INSERT INTO meta_adsets_catalog
+                (workspace_id, ads_account_id, adset_id, campaign_id, nome,
+                 effective_status, configured_status, start_time, end_time,
+                 daily_budget, lifetime_budget, bid_strategy, raw_payload, last_seen_at)
+            VALUES
+                (:workspace_id, :ads_account_id, :adset_id, :campaign_id, :nome,
+                 :effective_status, :configured_status, :start_time, :end_time,
+                 :daily_budget, :lifetime_budget, :bid_strategy, CAST(:raw_payload AS JSONB), NOW())
+            ON CONFLICT (ads_account_id, adset_id) DO UPDATE SET
+                workspace_id = EXCLUDED.workspace_id,
+                campaign_id = EXCLUDED.campaign_id,
+                nome = EXCLUDED.nome,
+                effective_status = EXCLUDED.effective_status,
+                configured_status = EXCLUDED.configured_status,
+                start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time,
+                daily_budget = EXCLUDED.daily_budget,
+                lifetime_budget = EXCLUDED.lifetime_budget,
+                bid_strategy = EXCLUDED.bid_strategy,
+                raw_payload = EXCLUDED.raw_payload,
+                last_seen_at = NOW()
+        """), {
+            "workspace_id": str(conta.workspace_id),
+            "ads_account_id": str(conta.id),
+            "adset_id": r.get("id"),
+            "campaign_id": r.get("campaign_id"),
+            "nome": r.get("name"),
+            "effective_status": _normalizar_status_meta(r.get("effective_status") or r.get("status")),
+            "configured_status": str(r.get("status") or "").upper() or None,
+            "start_time": _parse_meta_datetime(r.get("start_time")),
+            "end_time": _parse_meta_datetime(r.get("end_time")),
+            "daily_budget": _safe_float(r.get("daily_budget")) / 100 if r.get("daily_budget") else None,
+            "lifetime_budget": _safe_float(r.get("lifetime_budget")) / 100 if r.get("lifetime_budget") else None,
+            "bid_strategy": r.get("bid_strategy"),
+            "raw_payload": json.dumps(r),
+        })
+        totais["catalog_conjuntos"] += 1
+    db.commit()
+
+
+def _sync_catalog_anuncios_criativos_videos(
+    client: httpx.Client,
+    db: Session,
+    conta: AdsAccount,
+    account_id: str,
+    token: str,
+    totais: dict,
+) -> None:
+    rows = _paginar(
+        client,
+        f"{META_BASE}/{account_id}/ads",
+        {
+            "access_token": token,
+            "fields": "id,name,campaign_id,adset_id,effective_status,status",
+            "limit": 100,
+        },
+    )
+
+    ad_ids = [r.get("id") for r in rows if r.get("id")]
+    criativos_map = _fetch_criativos_batch(client, ad_ids, token) if ad_ids else {}
+    if ad_ids and len(criativos_map) < len(ad_ids):
+        faltantes = set(ad_ids) - set(criativos_map.keys())
+        if faltantes:
+            criativos_map.update(_fetch_criativos_batch_minimo(client, list(faltantes), token))
+            faltantes = set(ad_ids) - set(criativos_map.keys())
+        if faltantes:
+            criativos_map.update(_fetch_criativos_por_conta(client, account_id, token, faltantes))
+    hashes = list({
+        h
+        for c in criativos_map.values()
+        for h in (c.get("image_hashes") or [])
+        if h
+    })
+    adimage_map = _resolver_mapa_adimages_hq(
+        client,
+        db,
+        account_id,
+        token,
+        hashes,
+        str(conta.id),
+        on_progress=None,
+    )
+    for c in criativos_map.values():
+        _merge_hq_image_data(c, adimage_map)
+    _persist_hq_images_to_minio(client, criativos_map, str(conta.id))
+    video_ids = [str(c.get("video_id")) for c in criativos_map.values() if c.get("video_id")]
+    video_map = _fetch_videos_by_ids(client, token, video_ids)
+
+    for r in rows:
+        ad_id = r.get("id")
+        creative = r.get("creative") or {}
+        creative_enriquecido = criativos_map.get(ad_id) or {}
+        creative_id = creative.get("id") or creative_enriquecido.get("id")
+        tipo = (
+            creative_enriquecido.get("tipo")
+            or (_resolver_tipo_criativo(creative) if creative else "IMAGE")
+        )
+        image_url_hq = (
+            creative_enriquecido.get("image_url_hq")
+            or (_extrair_imagem_criativo(creative) if creative else None)
+        )
+        link_anuncio = (
+            creative_enriquecido.get("link_anuncio")
+            or
+            creative.get("instagram_permalink_url")
+            or _construir_link_facebook(creative.get("effective_object_story_id"))
+            if creative else None
+        )
+        carousel_items = _extract_carousel_cards(creative_enriquecido.get("raw_creative") or creative, adimage_map)
+        if not carousel_items:
+            carousel_items = creative_enriquecido.get("carousel_items") or []
+        video_id = creative_enriquecido.get("video_id") or creative.get("video_id")
+        video_payload = video_map.get(str(video_id)) if video_id else {}
+        video_thumbnail_url = None
+        video_thumbnail_hq_url = None
+        if video_id:
+            best_video_thumb = _selecionar_melhor_thumbnail_video((video_payload or {}).get("thumbnails"))
+            video_thumbnail_url = _safe_str(
+                best_video_thumb.get("uri") if best_video_thumb else (
+                    (video_payload or {}).get("thumbnail_url")
+                    or (video_payload or {}).get("picture")
+                    or creative_enriquecido.get("thumbnail_url")
+                    or creative.get("thumbnail_url")
+                )
+            )
+            video_thumbnail_hq_url = _persist_video_thumbnail_to_minio(
+                client,
+                video_thumbnail_url,
+                str(video_id),
+                str(conta.id),
+            )
+        image_url_hq = (
+            video_thumbnail_hq_url
+            or video_thumbnail_url
+            or creative_enriquecido.get("image_url_hq")
+            or image_url_hq
+        )
+
+        db.execute(text("""
+            INSERT INTO meta_ads_catalog
+                (workspace_id, ads_account_id, ad_id, campaign_id, adset_id, creative_id, nome,
+                 effective_status, configured_status, raw_payload, last_seen_at)
+            VALUES
+                (:workspace_id, :ads_account_id, :ad_id, :campaign_id, :adset_id, :creative_id, :nome,
+                 :effective_status, :configured_status, CAST(:raw_payload AS JSONB), NOW())
+            ON CONFLICT (ads_account_id, ad_id) DO UPDATE SET
+                workspace_id = EXCLUDED.workspace_id,
+                campaign_id = EXCLUDED.campaign_id,
+                adset_id = EXCLUDED.adset_id,
+                creative_id = EXCLUDED.creative_id,
+                nome = EXCLUDED.nome,
+                effective_status = EXCLUDED.effective_status,
+                configured_status = EXCLUDED.configured_status,
+                raw_payload = EXCLUDED.raw_payload,
+                last_seen_at = NOW()
+        """), {
+            "workspace_id": str(conta.workspace_id),
+            "ads_account_id": str(conta.id),
+            "ad_id": ad_id,
+            "campaign_id": r.get("campaign_id"),
+            "adset_id": r.get("adset_id"),
+            "creative_id": creative_id,
+            "nome": r.get("name"),
+            "effective_status": _normalizar_status_meta(r.get("effective_status") or r.get("status")),
+            "configured_status": str(r.get("status") or "").upper() or None,
+            "raw_payload": json.dumps(r),
+        })
+        totais["catalog_anuncios"] += 1
+
+        if creative_id:
+            _raw_for_tracking = creative_enriquecido.get("raw_creative") or creative or {}
+            _tracking = extrair_tracking_info(_raw_for_tracking, headline_fallback=creative.get("name"))
+            db.execute(text("""
+                INSERT INTO meta_creatives_catalog
+                    (workspace_id, ads_account_id, creative_id, ad_id, campaign_id, adset_id,
+                     nome, object_type, tipo_criativo, effective_object_story_id, video_id,
+                     thumbnail_url, image_url_hq, link_anuncio, carousel_items, raw_payload,
+                     image_hash, meta_image_url_tmp, meta_permalink_url, original_width, original_height,
+                     hq_source, hq_last_resolved_at,
+                     headline, destination_url, url_tags, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+                     last_seen_at)
+                VALUES
+                    (:workspace_id, :ads_account_id, :creative_id, :ad_id, :campaign_id, :adset_id,
+                     :nome, :object_type, :tipo_criativo, :effective_object_story_id, :video_id,
+                     :thumbnail_url, :image_url_hq, :link_anuncio, CAST(:carousel_items AS JSONB), CAST(:raw_payload AS JSONB),
+                     :image_hash, :meta_image_url_tmp, :meta_permalink_url, :original_width, :original_height,
+                     :hq_source, :hq_last_resolved_at,
+                     :headline, :destination_url, :url_tags, :utm_source, :utm_medium, :utm_campaign, :utm_content, :utm_term,
+                     NOW())
+                ON CONFLICT (ads_account_id, creative_id) DO UPDATE SET
+                    workspace_id = EXCLUDED.workspace_id,
+                    ad_id = EXCLUDED.ad_id,
+                    campaign_id = EXCLUDED.campaign_id,
+                    adset_id = EXCLUDED.adset_id,
+                    nome = EXCLUDED.nome,
+                    object_type = EXCLUDED.object_type,
+                    tipo_criativo = EXCLUDED.tipo_criativo,
+                    effective_object_story_id = EXCLUDED.effective_object_story_id,
+                    video_id = EXCLUDED.video_id,
+                    thumbnail_url = EXCLUDED.thumbnail_url,
+                    image_url_hq = EXCLUDED.image_url_hq,
+                    link_anuncio = EXCLUDED.link_anuncio,
+                    carousel_items = EXCLUDED.carousel_items,
+                    raw_payload = EXCLUDED.raw_payload,
+                    image_hash = EXCLUDED.image_hash,
+                    meta_image_url_tmp = EXCLUDED.meta_image_url_tmp,
+                    meta_permalink_url = EXCLUDED.meta_permalink_url,
+                    original_width = EXCLUDED.original_width,
+                    original_height = EXCLUDED.original_height,
+                    hq_source = EXCLUDED.hq_source,
+                    hq_last_resolved_at = EXCLUDED.hq_last_resolved_at,
+                    headline = EXCLUDED.headline,
+                    destination_url = EXCLUDED.destination_url,
+                    url_tags = EXCLUDED.url_tags,
+                    utm_source = EXCLUDED.utm_source,
+                    utm_medium = EXCLUDED.utm_medium,
+                    utm_campaign = EXCLUDED.utm_campaign,
+                    utm_content = EXCLUDED.utm_content,
+                    utm_term = EXCLUDED.utm_term,
+                    last_seen_at = NOW()
+            """), {
+                "workspace_id": str(conta.workspace_id),
+                "ads_account_id": str(conta.id),
+                "creative_id": creative_id,
+                "ad_id": ad_id,
+                "campaign_id": r.get("campaign_id"),
+                "adset_id": r.get("adset_id"),
+                "nome": creative.get("name"),
+                "object_type": creative.get("object_type"),
+                "tipo_criativo": tipo,
+                "effective_object_story_id": creative.get("effective_object_story_id"),
+                "video_id": video_id,
+                "thumbnail_url": video_thumbnail_url or creative_enriquecido.get("thumbnail_url") or creative.get("thumbnail_url"),
+                "image_url_hq": image_url_hq,
+                "link_anuncio": link_anuncio,
+                "carousel_items": json.dumps(carousel_items) if carousel_items else None,
+                "raw_payload": json.dumps({
+                    "ad": r.get("id"),
+                    "creative": _raw_for_tracking,
+                    "video": video_payload,
+                    "selected_thumbnail_url": video_thumbnail_url,
+                    "selected_thumbnail_hq_url": video_thumbnail_hq_url,
+                }),
+                "image_hash": creative_enriquecido.get("image_hash"),
+                "meta_image_url_tmp": creative_enriquecido.get("meta_image_url_tmp"),
+                "meta_permalink_url": creative_enriquecido.get("meta_permalink_url"),
+                "original_width": creative_enriquecido.get("original_width"),
+                "original_height": creative_enriquecido.get("original_height"),
+                "hq_source": creative_enriquecido.get("hq_source") or "thumbnail_fallback",
+                "hq_last_resolved_at": datetime.now(timezone.utc),
+                "headline": _tracking.get("headline"),
+                "destination_url": _tracking.get("destination_url"),
+                "url_tags": _tracking.get("url_tags"),
+                "utm_source": _tracking.get("utm_source"),
+                "utm_medium": _tracking.get("utm_medium"),
+                "utm_campaign": _tracking.get("utm_campaign"),
+                "utm_content": _tracking.get("utm_content"),
+                "utm_term": _tracking.get("utm_term"),
+            })
+            totais["catalog_criativos"] += 1
+            for card in carousel_items:
+                db.execute(text("""
+                    INSERT INTO meta_creative_cards_catalog
+                        (workspace_id, ads_account_id, creative_id, ad_id, campaign_id, adset_id,
+                         card_index, image_hash, video_id, image_url_hq, source_type, link, name,
+                         description, raw_payload, last_seen_at)
+                    VALUES
+                        (:workspace_id, :ads_account_id, :creative_id, :ad_id, :campaign_id, :adset_id,
+                         :card_index, :image_hash, :video_id, :image_url_hq, :source_type, :link, :name,
+                         :description, CAST(:raw_payload AS JSONB), NOW())
+                    ON CONFLICT (ads_account_id, creative_id, card_index) DO UPDATE SET
+                        ad_id = EXCLUDED.ad_id,
+                        campaign_id = EXCLUDED.campaign_id,
+                        adset_id = EXCLUDED.adset_id,
+                        image_hash = EXCLUDED.image_hash,
+                        video_id = EXCLUDED.video_id,
+                        image_url_hq = EXCLUDED.image_url_hq,
+                        source_type = EXCLUDED.source_type,
+                        link = EXCLUDED.link,
+                        name = EXCLUDED.name,
+                        description = EXCLUDED.description,
+                        raw_payload = EXCLUDED.raw_payload,
+                        last_seen_at = NOW()
+                """), {
+                    "workspace_id": str(conta.workspace_id),
+                    "ads_account_id": str(conta.id),
+                    "creative_id": creative_id,
+                    "ad_id": ad_id,
+                    "campaign_id": r.get("campaign_id"),
+                    "adset_id": r.get("adset_id"),
+                    "card_index": card.get("card_index"),
+                    "image_hash": card.get("image_hash"),
+                    "video_id": card.get("video_id"),
+                    "image_url_hq": card.get("image_url_hq"),
+                    "source_type": card.get("source_type"),
+                    "link": card.get("link"),
+                    "name": card.get("name"),
+                    "description": card.get("description"),
+                    "raw_payload": json.dumps(card),
+                })
+
+            if video_id:
+                db.execute(text("""
+                    INSERT INTO meta_videos_catalog
+                        (workspace_id, ads_account_id, video_id, creative_id, ad_id,
+                         campaign_id, adset_id, thumbnail_url, image_url_hq, source_url, raw_payload, last_seen_at)
+                    VALUES
+                        (:workspace_id, :ads_account_id, :video_id, :creative_id, :ad_id,
+                         :campaign_id, :adset_id, :thumbnail_url, :image_url_hq, :source_url, CAST(:raw_payload AS JSONB), NOW())
+                    ON CONFLICT (ads_account_id, video_id) DO UPDATE SET
+                        workspace_id = EXCLUDED.workspace_id,
+                        creative_id = EXCLUDED.creative_id,
+                        ad_id = EXCLUDED.ad_id,
+                        campaign_id = EXCLUDED.campaign_id,
+                        adset_id = EXCLUDED.adset_id,
+                        thumbnail_url = EXCLUDED.thumbnail_url,
+                        image_url_hq = EXCLUDED.image_url_hq,
+                        source_url = EXCLUDED.source_url,
+                        raw_payload = EXCLUDED.raw_payload,
+                        last_seen_at = NOW()
+                """), {
+                    "workspace_id": str(conta.workspace_id),
+                    "ads_account_id": str(conta.id),
+                    "video_id": video_id,
+                    "creative_id": creative_id,
+                    "ad_id": ad_id,
+                    "campaign_id": r.get("campaign_id"),
+                    "adset_id": r.get("adset_id"),
+                    "thumbnail_url": (
+                        video_thumbnail_url
+                        or (video_payload or {}).get("picture")
+                        or creative_enriquecido.get("thumbnail_url")
+                        or creative.get("thumbnail_url")
+                    ),
+                    "image_url_hq": image_url_hq,
+                    "source_url": (video_payload or {}).get("source"),
+                    "raw_payload": json.dumps({
+                        "ad": r.get("id"),
+                        "creative": creative,
+                        "video": video_payload,
+                        "selected_thumbnail_url": video_thumbnail_url,
+                        "selected_thumbnail_hq_url": video_thumbnail_hq_url,
+                    }),
+                })
+                totais["catalog_videos"] += 1
+
+    db.commit()
+
+
+def _sync_video_metrics(
+    client: httpx.Client,
+    db: Session,
+    account_id: str,
+    token: str,
+    time_range: str,
+    ads_account_uuid: Any,
+) -> None:
+    ad_rows = _paginar(
+        client,
+        f"{META_BASE}/{account_id}/ads",
+        {"access_token": token, "fields": "id", "limit": 500},
+    )
+    ad_ids = [r.get("id") for r in ad_rows if r.get("id")]
+    criativos = _fetch_criativos_batch(client, ad_ids, token) if ad_ids else {}
+    ad_to_video = {ad_id: c.get("video_id") for ad_id, c in criativos.items() if c.get("video_id")}
+    if not ad_to_video:
+        return
+    rows = _paginar(
+        client,
+        f"{META_BASE}/{account_id}/insights",
+        {
+            "access_token": token,
+            "fields": (
+                "ad_id,date_start,video_play_actions,video_avg_time_watched_actions,"
+                "video_30_sec_watched_actions,video_p25_watched_actions,video_p50_watched_actions,"
+                "video_p75_watched_actions,video_p95_watched_actions,video_p100_watched_actions,"
+                "video_thruplay_watched_actions,cost_per_thruplay,actions"
+            ),
+            "level": "ad",
+            "time_range": time_range,
+            "time_increment": 1,
+            "limit": 500,
+        },
+    )
+    for r in rows:
+        ad_id = r.get("ad_id")
+        video_id = ad_to_video.get(ad_id)
+        if not ad_id or not video_id:
+            continue
+        actions = r.get("actions") or []
+        db.execute(text("""
+            INSERT INTO meta_video_metrics_daily
+                (ads_account_id, ad_id, video_id, data, video_views, video_play_actions,
+                 video_avg_pct_watched_actions, video_complete_watched_actions, video_p25, video_p50,
+                 video_p75, video_p95, video_p100, thruplay, video_3_sec, cost_per_thruplay, atualizado_em)
+            VALUES
+                (:ads_account_id, :ad_id, :video_id, :data, :video_views, :video_play_actions,
+                 :video_avg_pct_watched_actions, :video_complete_watched_actions, :video_p25, :video_p50,
+                 :video_p75, :video_p95, :video_p100, :thruplay, :video_3_sec, :cost_per_thruplay, NOW())
+            ON CONFLICT (ads_account_id, video_id, ad_id, data) DO UPDATE SET
+                video_views = EXCLUDED.video_views,
+                video_play_actions = EXCLUDED.video_play_actions,
+                video_avg_pct_watched_actions = EXCLUDED.video_avg_pct_watched_actions,
+                video_complete_watched_actions = EXCLUDED.video_complete_watched_actions,
+                video_p25 = EXCLUDED.video_p25,
+                video_p50 = EXCLUDED.video_p50,
+                video_p75 = EXCLUDED.video_p75,
+                video_p95 = EXCLUDED.video_p95,
+                video_p100 = EXCLUDED.video_p100,
+                thruplay = EXCLUDED.thruplay,
+                video_3_sec = EXCLUDED.video_3_sec,
+                cost_per_thruplay = EXCLUDED.cost_per_thruplay,
+                atualizado_em = NOW()
+        """), {
+            "ads_account_id": str(ads_account_uuid),
+            "ad_id": ad_id,
+            "video_id": str(video_id),
+            "data": r.get("date_start"),
+            "video_views": _valor_action_any(actions, {"video_view"}),
+            "video_play_actions": _valor_video_action(r.get("video_play_actions") or []),
+            "video_avg_pct_watched_actions": _valor_video_action(r.get("video_avg_time_watched_actions") or []),
+            "video_complete_watched_actions": _valor_video_action(r.get("video_30_sec_watched_actions") or []),
+            "video_p25": _valor_video_action(r.get("video_p25_watched_actions") or []),
+            "video_p50": _valor_video_action(r.get("video_p50_watched_actions") or []),
+            "video_p75": _valor_video_action(r.get("video_p75_watched_actions") or []),
+            "video_p95": _valor_video_action(r.get("video_p95_watched_actions") or []),
+            "video_p100": _valor_video_action(r.get("video_p100_watched_actions") or []),
+            "thruplay": _valor_video_action(r.get("video_thruplay_watched_actions") or []),
+            "video_3_sec": 0,
+            "cost_per_thruplay": _safe_float((r.get("cost_per_thruplay") or [{}])[0].get("value") if r.get("cost_per_thruplay") else 0.0),
+        })
+    db.commit()
+
+
+def _carregar_objetivos_catalogo(db: Session, ads_account_uuid: Any) -> list[dict]:
+    return db.execute(text("""
+        SELECT campaign_id, MAX(objetivo) AS objetivo
+        FROM meta_campaigns_catalog
+        WHERE ads_account_id = CAST(:ads_account_id AS uuid)
+        GROUP BY campaign_id
+    """), {"ads_account_id": str(ads_account_uuid)}).mappings().all()
+
+
 # ── sync principal ─────────────────────────────────────────────────────────────
 
-def sincronizar_conta(ads_account_id: str, db: Session) -> dict:
+def sincronizar_conta(
+    ads_account_id: str,
+    db: Session,
+    on_progress=None,  # callable(etapa: str, progresso: int) | None
+) -> dict:
     conta: AdsAccount | None = db.get(AdsAccount, ads_account_id)
     if not conta:
         raise ValueError(f"AdsAccount {ads_account_id} não encontrada")
@@ -281,6 +1718,13 @@ def sincronizar_conta(ads_account_id: str, db: Session) -> dict:
     if conta.token_expira_em and conta.token_expira_em < datetime.now(tz=timezone.utc):
         return {"skipped": True, "reason": "token expirado"}
 
+    def _progress(etapa: str, pct: int) -> None:
+        if on_progress:
+            try:
+                on_progress(etapa, pct)
+            except Exception:
+                pass
+
     token = conta.bm_token
     meta_account_id = conta.account_id  # e.g. "act_123456789"
     since = (conta.periodo_sync_inicio or date.today().replace(day=1)).isoformat()
@@ -288,6 +1732,11 @@ def sincronizar_conta(ads_account_id: str, db: Session) -> dict:
     time_range = json.dumps({"since": since, "until": until})
 
     totais: dict[str, int] = {
+        "catalog_campanhas": 0,
+        "catalog_conjuntos": 0,
+        "catalog_anuncios": 0,
+        "catalog_criativos": 0,
+        "catalog_videos": 0,
         "diarios": 0,
         "campanhas": 0,
         "anuncios": 0,
@@ -295,36 +1744,118 @@ def sincronizar_conta(ads_account_id: str, db: Session) -> dict:
     }
 
     with httpx.Client(timeout=60.0) as client:
+        _progress("balance", 5)
         resp_saldo = client.get(
             f"{META_BASE}/{meta_account_id}",
             params={"access_token": token, "fields": "balance,amount_spent,spend_cap,currency"},
         )
+        saldo_data: dict = {}
         if resp_saldo.status_code == 200:
             saldo_data = resp_saldo.json()
-            db.execute(text("""
-                UPDATE ads_accounts SET
-                    balance      = :balance,
-                    amount_spent = :amount_spent,
-                    spend_cap    = :spend_cap
-                WHERE id = :id
-            """), {
-                "id": str(conta.id),
-                "balance":      float(saldo_data.get("balance", 0)) / 100,
-                "amount_spent": float(saldo_data.get("amount_spent", 0)) / 100,
-                "spend_cap":    float(saldo_data.get("spend_cap", 0)) / 100,
-            })
-            db.commit()
+            conta.balance = float(saldo_data.get("balance", 0)) / 100
+            conta.amount_spent = float(saldo_data.get("amount_spent", 0)) / 100
+            conta.spend_cap = float(saldo_data.get("spend_cap", 0)) / 100
+            conta.config = {
+                **(conta.config or {}),
+                "currency": saldo_data.get("currency"),
+            }
         else:
             log.warning("Erro ao buscar saldo %s: %s", meta_account_id, resp_saldo.text[:200])
 
+        try:
+            resp_financeiro = client.get(
+                f"{META_BASE}/{meta_account_id}",
+                params={
+                    "access_token": token,
+                    "fields": "is_prepay_account,funding_source_details,business,account_status",
+                },
+            )
+            if resp_financeiro.status_code == 200:
+                financeiro_data = resp_financeiro.json()
+                funding_details = financeiro_data.get("funding_source_details") or {}
+                business = financeiro_data.get("business") or {}
+                if not isinstance(funding_details, dict):
+                    funding_details = {}
+                if not isinstance(business, dict):
+                    business = {}
+                account_status = financeiro_data.get("account_status")
+                if account_status is not None:
+                    try:
+                        conta.account_status = int(account_status)
+                    except (TypeError, ValueError):
+                        log.warning(
+                            "Valor inválido de account_status recebido para %s: %r",
+                            meta_account_id,
+                            account_status,
+                        )
+                conta.config = {
+                    **(conta.config or {}),
+                    "is_prepay_account": financeiro_data.get("is_prepay_account"),
+                    "funding_source_details": funding_details,
+                    "funding_source_display": funding_details.get("display_string"),
+                    "funding_source_type": funding_details.get("type"),
+                    "funding_source_id": funding_details.get("id"),
+                    "funding_source_brand": funding_details.get("brand"),
+                    "bm_id": business.get("id"),
+                    "bm_name": business.get("name"),
+                }
+            else:
+                log.warning(
+                    "Dados financeiros opcionais não atualizados %s: %s",
+                    meta_account_id,
+                    resp_financeiro.text[:200],
+                )
+        except Exception as exc:
+            log.warning("Falha ao buscar dados financeiros opcionais %s: %s", meta_account_id, exc)
+
+        db.commit()
+        _progress("balance", 10)
+
+        _progress("catalogo", 12)
+        _sync_catalogo(client, db, conta, meta_account_id, token, totais)
+        _progress("catalogo", 25)
+
+        _progress("diarios", 27)
         _sync_diarios(client, db, meta_account_id, token, time_range, totais)
+        _progress("diarios", 35)
+
+        _progress("campanhas", 37)
         _sync_campanhas(client, db, meta_account_id, token, time_range, conta.id, totais)
-        _sync_anuncios(client, db, meta_account_id, token, time_range, conta.id, totais)
+        _progress("campanhas", 55)
+
+        _progress("anuncios", 57)
+        _sync_anuncios(client, db, meta_account_id, token, time_range, conta.id, totais, on_progress=_progress)
+        _progress("anuncios", 72)
+
+        _progress("videos", 73)
+        _sync_video_metrics(client, db, meta_account_id, token, time_range, conta.id)
+        _progress("videos", 74)
+
+        _progress("publicos", 74)
         _sync_publicos_demograficos(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_publicos_placement(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_publicos_device(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_publicos_hourly(client, db, meta_account_id, token, time_range, conta.id, totais)
         _sync_publicos_region(client, db, meta_account_id, token, time_range, conta.id, totais)
+        _progress("publicos", 80)
+
+        camp_rows = db.execute(text(
+            "SELECT DISTINCT campaign_id FROM meta_campanhas_insights "
+            "WHERE ads_account_id = :uuid"
+        ), {"uuid": str(conta.id)}).fetchall()
+
+        valid_camps = [cid for (cid,) in camp_rows if cid]
+        for i, cid in enumerate(valid_camps):
+            _sync_publicos_demograficos(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
+            _sync_publicos_placement(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
+            _sync_publicos_device(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
+            _sync_publicos_hourly(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
+            _sync_publicos_region(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
+            pct = 80 + int(15 * (i + 1) / max(len(valid_camps), 1))
+            _progress("publicos_campanha", pct)
+
+        log.info("Sync por campanha concluído: %d campanhas", len(valid_camps))
+        _progress("finalizando", 98)
 
     conta.sincronizado_em = datetime.now(tz=timezone.utc)
     db.commit()
@@ -443,19 +1974,25 @@ def _sync_campanhas(
     )
 
     camp_orcamentos: dict[str, float] = {}
+    camp_statuses: dict[str, str] = {}
+    camp_stop_times: dict[str, datetime | None] = {}
     try:
         camp_budget_rows = _paginar(
             client,
             f"{META_BASE}/{account_id}/campaigns",
             {
                 "access_token": token,
-                "fields": "id,daily_budget,lifetime_budget,status",
+                "fields": "id,daily_budget,lifetime_budget,effective_status,status,stop_time",
                 "limit": 500,
             },
         )
         for cb in camp_budget_rows:
             raw = cb.get("daily_budget") or cb.get("lifetime_budget") or 0
             camp_orcamentos[cb["id"]] = int(raw) / 100
+            camp_statuses[cb["id"]] = _normalizar_status_meta(
+                cb.get("effective_status") or cb.get("status")
+            )
+            camp_stop_times[cb["id"]] = _parse_meta_datetime(cb.get("stop_time"))
     except Exception:
         pass
 
@@ -492,6 +2029,11 @@ def _sync_campanhas(
         spend = _safe_float(r.get("spend"))
         camp_id = r.get("campaign_id")
         orcamento = calcular_orcamento(camp_id) if camp_id else None
+        camp_status = camp_statuses.get(camp_id, "ACTIVE")
+        stop_time = camp_stop_times.get(camp_id)
+        if stop_time and stop_time < datetime.now(timezone.utc):
+            camp_status = "PAUSED"
+
         db.execute(text("""
             INSERT INTO meta_campanhas_insights
                 (ads_account_id, campaign_id, nome, objetivo, status, data,
@@ -520,7 +2062,7 @@ def _sync_campanhas(
             "campaign_id": camp_id,
             "nome": r.get("campaign_name"),
             "objetivo": r.get("objective"),
-            "status": "ACTIVE",
+            "status": camp_status,
             "data": r.get("date_start"),
             "spend": spend,
             "leads": leads,
@@ -534,6 +2076,18 @@ def _sync_campanhas(
             "orcamento_diario": orcamento,
         })
         totais["campanhas"] += 1
+    db.execute(text("""
+        UPDATE meta_campaigns_catalog c
+        SET spend_total = s.spend_total
+        FROM (
+            SELECT ads_account_id, campaign_id, COALESCE(SUM(spend),0) AS spend_total
+            FROM meta_campanhas_insights
+            WHERE ads_account_id = CAST(:ads_account_id AS uuid)
+            GROUP BY ads_account_id, campaign_id
+        ) s
+        WHERE c.ads_account_id = s.ads_account_id
+          AND c.campaign_id = s.campaign_id
+    """), {"ads_account_id": str(ads_account_uuid)})
     db.commit()
 
 
@@ -547,7 +2101,23 @@ def _sync_anuncios(
     time_range: str,
     ads_account_uuid: Any,
     totais: dict,
+    on_progress=None,
 ) -> None:
+    def _progress(etapa: str, pct: int) -> None:
+        if on_progress:
+            try:
+                on_progress(etapa, pct)
+            except Exception:
+                pass
+
+    def _rollback_e_log(stage: str, exc: Exception) -> None:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.warning("Falha em %s: %s", stage, exc)
+
+    _progress("anuncios:insights", 57)
     rows = _paginar(
         client,
         f"{META_BASE}/{account_id}/insights",
@@ -557,17 +2127,177 @@ def _sync_anuncios(
                 "spend,impressions,reach,clicks,actions,cpm,cpc,ctr,frequency,"
                 "ad_id,ad_name,adset_id,adset_name,campaign_id"
             ),
+            "breakdowns": "publisher_platform",
             "level": "ad",
             "time_range": time_range,
             "time_increment": 1,
             "limit": 500,
         },
     )
+    _progress(f"anuncios:insights ({len(rows)})", 58)
+
+    ad_statuses: dict[str, str] = {}
+    try:
+        _progress("anuncios:status", 59)
+        ads_status_rows = _paginar(
+            client,
+            f"{META_BASE}/{account_id}/ads",
+            {
+                "access_token": token,
+                "fields": "id,effective_status,status",
+                "limit": 500,
+            },
+        )
+        for ar in ads_status_rows:
+            aid = ar.get("id")
+            if aid:
+                ad_statuses[aid] = _normalizar_status_meta(
+                    ar.get("effective_status") or ar.get("status")
+                )
+        _progress(f"anuncios:status ({len(ad_statuses)})", 60)
+    except Exception as exc:
+        _rollback_e_log("anuncios:status", exc)
+
+    camp_statuses: dict[str, str] = {}
+    camp_stop_times: dict[str, datetime | None] = {}
+    try:
+        _progress("anuncios:campaign_status", 61)
+        camp_rows = _paginar(
+            client,
+            f"{META_BASE}/{account_id}/campaigns",
+            {
+                "access_token": token,
+                "fields": "id,effective_status,status,stop_time",
+                "limit": 500,
+            },
+        )
+        for c in camp_rows:
+            cid = c.get("id")
+            if not cid:
+                continue
+            camp_statuses[cid] = _normalizar_status_meta(
+                c.get("effective_status") or c.get("status")
+            )
+            camp_stop_times[cid] = _parse_meta_datetime(c.get("stop_time"))
+        _progress(f"anuncios:campaign_status ({len(camp_statuses)})", 62)
+    except Exception as exc:
+        _rollback_e_log("anuncios:campaign_status", exc)
+
+    adset_statuses: dict[str, str] = {}
+    adset_end_times: dict[str, datetime | None] = {}
+    try:
+        _progress("anuncios:adset_status", 63)
+        adset_rows = _paginar(
+            client,
+            f"{META_BASE}/{account_id}/adsets",
+            {
+                "access_token": token,
+                "fields": "id,effective_status,status,end_time,campaign_id",
+                "limit": 500,
+            },
+        )
+        for a in adset_rows:
+            aid = a.get("id")
+            if not aid:
+                continue
+            adset_statuses[aid] = _normalizar_status_meta(
+                a.get("effective_status") or a.get("status")
+            )
+            adset_end_times[aid] = _parse_meta_datetime(a.get("end_time"))
+        _progress(f"anuncios:adset_status ({len(adset_statuses)})", 64)
+    except Exception as exc:
+        _rollback_e_log("anuncios:adset_status", exc)
+
+    campaign_objectives: dict[str, str] = {}
+    try:
+        _progress("anuncios:objetivos_insights", 65)
+        objetivo_rows = db.execute(text("""
+            SELECT campaign_id, MAX(objetivo) AS objetivo
+            FROM meta_campanhas_insights
+            WHERE ads_account_id = CAST(:ads_account_id AS uuid)
+            GROUP BY campaign_id
+        """), {"ads_account_id": str(ads_account_uuid)}).mappings().all()
+        for row in objetivo_rows:
+            campaign_id = str(row.get("campaign_id") or "")
+            objetivo = str(row.get("objetivo") or "").strip()
+            if campaign_id and objetivo:
+                campaign_objectives[campaign_id] = objetivo
+        _progress(f"anuncios:objetivos_insights ({len(campaign_objectives)})", 66)
+    except Exception as exc:
+        _rollback_e_log("anuncios:objetivos_insights", exc)
+
+    try:
+        _progress("anuncios:objetivos_catalogo", 67)
+        objetivo_rows = _carregar_objetivos_catalogo(db, ads_account_uuid)
+        for row in objetivo_rows:
+            campaign_id = str(row.get("campaign_id") or "")
+            objetivo = str(row.get("objetivo") or "").strip()
+            if campaign_id and objetivo and campaign_id not in campaign_objectives:
+                campaign_objectives[campaign_id] = objetivo
+        _progress(f"anuncios:objetivos_catalogo ({len(campaign_objectives)})", 68)
+    except Exception as exc:
+        _rollback_e_log("anuncios:objetivos_catalogo", exc)
 
     ad_ids = list({r["ad_id"] for r in rows if r.get("ad_id")})
-    criativos = _fetch_criativos_batch(client, ad_ids, token) if ad_ids else {}
+    criativos = _fetch_criativos_batch(client, ad_ids, token, on_progress=_progress) if ad_ids else {}
+    if ad_ids and len(criativos) < len(ad_ids):
+        faltantes = set(ad_ids) - set(criativos.keys())
+        if faltantes:
+            fallback_min = _fetch_criativos_batch_minimo(client, list(faltantes), token, on_progress=_progress)
+            criativos.update(fallback_min)
+            faltantes = set(ad_ids) - set(criativos.keys())
+            log.info(
+                "Criativos fallback batch mínimo: +%d (faltantes=%d)",
+                len(fallback_min),
+                len(faltantes),
+            )
+            fallback = _fetch_criativos_por_conta(client, account_id, token, faltantes, on_progress=_progress)
+            criativos.update(fallback)
+            log.info(
+                "Criativos fallback por conta: +%d (faltantes=%d)",
+                len(fallback),
+                len(faltantes),
+            )
+    _progress(f"anuncios:criativos ({len(criativos)})", 69)
+    hashes = list({
+        h
+        for c in criativos.values()
+        for h in (c.get("image_hashes") or [])
+        if h
+    })
+    adimage_map = _resolver_mapa_adimages_hq(
+        client,
+        db,
+        account_id,
+        token,
+        hashes,
+        str(ads_account_uuid),
+        on_progress=_progress,
+    )
+    for c in criativos.values():
+        _merge_hq_image_data(c, adimage_map)
+    _persist_hq_images_to_minio(client, criativos, str(ads_account_uuid), on_progress=_progress)
     log.info("Criativos buscados: %d de %d ads únicos", len(criativos), len(ad_ids))
+    _progress(f"anuncios:midia ({len(adimage_map)})", 70)
 
+    # O sync por anúncio agora quebra publisher_platform em múltiplas linhas.
+    # Limpamos o intervalo atual antes de persistir para evitar duplicar os dados
+    # agregados de execuções anteriores com a nova granularidade.
+    range_data = json.loads(time_range)
+    since = str(range_data.get("since") or "")
+    until = str(range_data.get("until") or "")
+    if since and until:
+        db.execute(text("""
+            DELETE FROM meta_anuncios_insights
+            WHERE ads_account_id = CAST(:ads_account_id AS uuid)
+              AND data BETWEEN CAST(:since AS date) AND CAST(:until AS date)
+        """), {
+            "ads_account_id": str(ads_account_uuid),
+            "since": since,
+            "until": until,
+        })
+
+    total_rows = max(len(rows), 1)
     for r in rows:
         actions = r.get("actions") or []
         leads = _extrair_leads(actions)
@@ -578,22 +2308,50 @@ def _sync_anuncios(
         tipo_criativo = creative.get("tipo", "IMAGE")
         image_url_hq = creative.get("image_url_hq")
         link_anuncio = creative.get("link_anuncio")
-        carousel_raw = creative.get("carousel_items") or []
+        carousel_raw = _extract_carousel_cards(creative.get("raw_creative") or {}, adimage_map)
+        if not carousel_raw:
+            carousel_raw = creative.get("carousel_items") or []
         carousel_json = json.dumps(carousel_raw) if carousel_raw else None
-        ad_status = "ACTIVE"
+        ad_status = ad_statuses.get(ad_id, "ACTIVE")
+        campaign_id = r.get("campaign_id")
+        adset_id = r.get("adset_id")
+        camp_status = camp_statuses.get(campaign_id, "ACTIVE") if campaign_id else "ACTIVE"
+        camp_stop = camp_stop_times.get(campaign_id) if campaign_id else None
+        camp_objective = campaign_objectives.get(str(campaign_id or ""), "")
+        adset_status = adset_statuses.get(adset_id, "ACTIVE") if adset_id else "ACTIVE"
+        adset_end = adset_end_times.get(adset_id) if adset_id else None
+
+        camp_not_delivering = (
+            camp_status != "ACTIVE"
+            or (camp_stop is not None and camp_stop < datetime.now(timezone.utc))
+        )
+        adset_not_delivering = (
+            adset_status != "ACTIVE"
+            or (adset_end is not None and adset_end < datetime.now(timezone.utc))
+        )
+        if ad_status == "ACTIVE":
+            if camp_not_delivering:
+                ad_status = "CAMPAIGN_PAUSED"
+            elif adset_not_delivering:
+                ad_status = "ADSET_PAUSED"
         spend = _safe_float(r.get("spend"))
+        result_count, result_indicator = _extrair_resultado_anuncio(
+            actions,
+            camp_objective,
+        )
+        publisher_platform = str(r.get("publisher_platform") or "unknown").strip().lower() or "unknown"
         db.execute(text("""
             INSERT INTO meta_anuncios_insights
                 (ads_account_id, ad_id, adset_id, adset_name, campaign_id, nome,
                  status, creative_id, thumbnail_url, tipo_criativo, image_url_hq,
-                 link_anuncio, carousel_items, data,
-                 spend, leads, impressions, reach, clicks, ctr, cpc, cpm, frequencia)
+                 link_anuncio, carousel_items, publisher_platform, data,
+                 spend, leads, impressions, reach, clicks, link_click, result_count, result_indicator, ctr, cpc, cpm, frequencia)
             VALUES
                 (:ads_account_id, :ad_id, :adset_id, :adset_name, :campaign_id, :nome,
                  :status, :creative_id, :thumbnail_url, :tipo_criativo, :image_url_hq,
-                 :link_anuncio, CAST(:carousel_items AS JSONB), :data,
-                 :spend, :leads, :impressions, :reach, :clicks, :ctr, :cpc, :cpm, :frequencia)
-            ON CONFLICT (ads_account_id, ad_id, data) DO UPDATE SET
+                 :link_anuncio, CAST(:carousel_items AS JSONB), :publisher_platform, :data,
+                 :spend, :leads, :impressions, :reach, :clicks, :link_click, :result_count, :result_indicator, :ctr, :cpc, :cpm, :frequencia)
+            ON CONFLICT (ads_account_id, ad_id, data, publisher_platform) DO UPDATE SET
                 adset_id      = EXCLUDED.adset_id,
                 adset_name    = EXCLUDED.adset_name,
                 campaign_id   = EXCLUDED.campaign_id,
@@ -605,11 +2363,15 @@ def _sync_anuncios(
                 image_url_hq  = EXCLUDED.image_url_hq,
                 link_anuncio  = EXCLUDED.link_anuncio,
                 carousel_items = EXCLUDED.carousel_items,
+                publisher_platform = EXCLUDED.publisher_platform,
                 spend         = EXCLUDED.spend,
                 leads         = EXCLUDED.leads,
                 impressions   = EXCLUDED.impressions,
                 reach         = EXCLUDED.reach,
                 clicks        = EXCLUDED.clicks,
+                link_click    = EXCLUDED.link_click,
+                result_count  = EXCLUDED.result_count,
+                result_indicator = EXCLUDED.result_indicator,
                 ctr           = EXCLUDED.ctr,
                 cpc           = EXCLUDED.cpc,
                 cpm           = EXCLUDED.cpm,
@@ -628,19 +2390,40 @@ def _sync_anuncios(
             "image_url_hq": image_url_hq,
             "link_anuncio": link_anuncio,
             "carousel_items": carousel_json,
+            "publisher_platform": publisher_platform,
             "data": r.get("date_start"),
             "spend": spend,
             "leads": leads,
             "impressions": _safe_int(r.get("impressions")),
             "reach": _safe_int(r.get("reach")),
             "clicks": _safe_int(r.get("clicks")),
+            "link_click": _extrair_link_click(actions),
+            "result_count": result_count,
+            "result_indicator": result_indicator,
             "ctr": _safe_float(r.get("ctr")),
             "cpc": _safe_float(r.get("cpc")),
             "cpm": _safe_float(r.get("cpm")),
             "frequencia": _safe_float(r.get("frequency")),
         })
         totais["anuncios"] += 1
+        if totais["anuncios"] % 100 == 0 or totais["anuncios"] == total_rows:
+            pct = 70 + int(2 * totais["anuncios"] / total_rows)
+            _progress(f"anuncios:persistindo ({totais['anuncios']}/{len(rows)})", min(pct, 72))
+    db.execute(text("""
+        UPDATE meta_adsets_catalog a
+        SET spend_total = s.spend_total
+        FROM (
+            SELECT ads_account_id, adset_id, COALESCE(SUM(spend),0) AS spend_total
+            FROM meta_anuncios_insights
+            WHERE ads_account_id = CAST(:ads_account_id AS uuid)
+              AND adset_id IS NOT NULL
+            GROUP BY ads_account_id, adset_id
+        ) s
+        WHERE a.ads_account_id = s.ads_account_id
+          AND a.adset_id = s.adset_id
+    """), {"ads_account_id": str(ads_account_uuid)})
     db.commit()
+    _progress("anuncios:concluido", 72)
 
 
 # ── sync públicos ──────────────────────────────────────────────────────────────
@@ -653,10 +2436,12 @@ def _sync_publicos_demograficos(
     time_range: str,
     ads_account_uuid: Any,
     totais: dict,
+    campaign_id: str = 'ALL',
 ) -> None:
+    url_id = campaign_id if campaign_id != 'ALL' else account_id
     rows = _paginar(
         client,
-        f"{META_BASE}/{account_id}/insights",
+        f"{META_BASE}/{url_id}/insights",
         {
             "access_token": token,
             "fields": "spend,impressions,clicks,actions,ctr",
@@ -674,12 +2459,12 @@ def _sync_publicos_demograficos(
         breakdown_value = f"{r.get('age','?')}|{r.get('gender','?')}"
         db.execute(text("""
             INSERT INTO meta_publicos_insights
-                (ads_account_id, data, breakdown_type, breakdown_value,
+                (ads_account_id, data, breakdown_type, breakdown_value, campaign_id,
                  leads, spend, impressions, clicks, ctr, cpl)
             VALUES
-                (:ads_account_id, :data, 'demographic', :breakdown_value,
+                (:ads_account_id, :data, 'demographic', :breakdown_value, :campaign_id,
                  :leads, :spend, :impressions, :clicks, :ctr, :cpl)
-            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value) DO UPDATE SET
+            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value, campaign_id) DO UPDATE SET
                 leads       = EXCLUDED.leads,
                 spend       = EXCLUDED.spend,
                 impressions = EXCLUDED.impressions,
@@ -690,6 +2475,7 @@ def _sync_publicos_demograficos(
             "ads_account_id": str(ads_account_uuid),
             "data": r.get("date_start"),
             "breakdown_value": breakdown_value,
+            "campaign_id": campaign_id,
             "leads": leads,
             "spend": spend,
             "impressions": _safe_int(r.get("impressions")),
@@ -709,10 +2495,12 @@ def _sync_publicos_placement(
     time_range: str,
     ads_account_uuid: Any,
     totais: dict,
+    campaign_id: str = 'ALL',
 ) -> None:
+    url_id = campaign_id if campaign_id != 'ALL' else account_id
     rows = _paginar(
         client,
-        f"{META_BASE}/{account_id}/insights",
+        f"{META_BASE}/{url_id}/insights",
         {
             "access_token": token,
             "fields": "spend,impressions,clicks,actions,ctr",
@@ -732,12 +2520,12 @@ def _sync_publicos_placement(
         breakdown_value = f"{platform}|{position}"
         db.execute(text("""
             INSERT INTO meta_publicos_insights
-                (ads_account_id, data, breakdown_type, breakdown_value,
+                (ads_account_id, data, breakdown_type, breakdown_value, campaign_id,
                  leads, spend, impressions, clicks, ctr, cpl)
             VALUES
-                (:ads_account_id, :data, 'placement', :breakdown_value,
+                (:ads_account_id, :data, 'placement', :breakdown_value, :campaign_id,
                  :leads, :spend, :impressions, :clicks, :ctr, :cpl)
-            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value) DO UPDATE SET
+            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value, campaign_id) DO UPDATE SET
                 leads       = EXCLUDED.leads,
                 spend       = EXCLUDED.spend,
                 impressions = EXCLUDED.impressions,
@@ -748,6 +2536,7 @@ def _sync_publicos_placement(
             "ads_account_id": str(ads_account_uuid),
             "data": r.get("date_start"),
             "breakdown_value": breakdown_value,
+            "campaign_id": campaign_id,
             "leads": leads,
             "spend": spend,
             "impressions": _safe_int(r.get("impressions")),
@@ -767,10 +2556,12 @@ def _sync_publicos_device(
     time_range: str,
     ads_account_uuid: Any,
     totais: dict,
+    campaign_id: str = 'ALL',
 ) -> None:
+    url_id = campaign_id if campaign_id != 'ALL' else account_id
     rows = _paginar(
         client,
-        f"{META_BASE}/{account_id}/insights",
+        f"{META_BASE}/{url_id}/insights",
         {
             "access_token": token,
             "fields": "spend,impressions,clicks,actions,ctr",
@@ -788,12 +2579,12 @@ def _sync_publicos_device(
         breakdown_value = r.get("device_platform", "unknown")
         db.execute(text("""
             INSERT INTO meta_publicos_insights
-                (ads_account_id, data, breakdown_type, breakdown_value,
+                (ads_account_id, data, breakdown_type, breakdown_value, campaign_id,
                  leads, spend, impressions, clicks, ctr, cpl)
             VALUES
-                (:ads_account_id, :data, 'device', :breakdown_value,
+                (:ads_account_id, :data, 'device', :breakdown_value, :campaign_id,
                  :leads, :spend, :impressions, :clicks, :ctr, :cpl)
-            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value) DO UPDATE SET
+            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value, campaign_id) DO UPDATE SET
                 leads       = EXCLUDED.leads,
                 spend       = EXCLUDED.spend,
                 impressions = EXCLUDED.impressions,
@@ -804,6 +2595,7 @@ def _sync_publicos_device(
             "ads_account_id": str(ads_account_uuid),
             "data": r.get("date_start"),
             "breakdown_value": breakdown_value,
+            "campaign_id": campaign_id,
             "leads": leads,
             "spend": spend,
             "impressions": _safe_int(r.get("impressions")),
@@ -823,11 +2615,13 @@ def _sync_publicos_hourly(
     time_range: str,
     ads_account_uuid: Any,
     totais: dict,
+    campaign_id: str = 'ALL',
 ) -> None:
     from datetime import date as _date
+    url_id = campaign_id if campaign_id != 'ALL' else account_id
     rows = _paginar(
         client,
-        f"{META_BASE}/{account_id}/insights",
+        f"{META_BASE}/{url_id}/insights",
         {
             "access_token": token,
             "fields": "spend,impressions,clicks,actions",
@@ -855,12 +2649,12 @@ def _sync_publicos_hourly(
         breakdown_value = f"{dia_semana}|{hora}"
         db.execute(text("""
             INSERT INTO meta_publicos_insights
-                (ads_account_id, data, breakdown_type, breakdown_value,
+                (ads_account_id, data, breakdown_type, breakdown_value, campaign_id,
                  leads, spend, impressions, clicks, ctr, cpl)
             VALUES
-                (:ads_account_id, :data, 'hourly', :breakdown_value,
+                (:ads_account_id, :data, 'hourly', :breakdown_value, :campaign_id,
                  :leads, :spend, :impressions, :clicks, 0, :cpl)
-            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value) DO UPDATE SET
+            ON CONFLICT (ads_account_id, data, breakdown_type, breakdown_value, campaign_id) DO UPDATE SET
                 leads       = EXCLUDED.leads,
                 spend       = EXCLUDED.spend,
                 impressions = EXCLUDED.impressions,
@@ -870,6 +2664,7 @@ def _sync_publicos_hourly(
             "ads_account_id": str(ads_account_uuid),
             "data": date_str,
             "breakdown_value": breakdown_value,
+            "campaign_id": campaign_id,
             "leads": leads,
             "spend": spend,
             "impressions": _safe_int(r.get("impressions")),
