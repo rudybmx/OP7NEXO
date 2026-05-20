@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server'
 const COOKIE = 'ws-session'
 const LOGIN_PATH = '/login'
 const DASHBOARD_PATH = '/marketing/campanhas/meta-ads'
-const PUBLIC_PATHS = ['/login', '/api/']
+const PUBLIC_PATHS = ['/login', '/api/', '/graph.html']
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl

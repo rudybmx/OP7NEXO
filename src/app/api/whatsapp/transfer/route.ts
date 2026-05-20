@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { getUserFromRequest, unauthorized } from '@/lib/api-auth'
+import { resolveWhatsappWorkspaceAccess } from '@/lib/whatsapp-workspace-access'
 import { getSql } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Autenticacao
-    const user = await getUserFromRequest(req)
-    if (!user) return unauthorized()
+    const access = await resolveWhatsappWorkspaceAccess(req)
+    if (access instanceof Response) return access
 
     // 2. Parse e validacao do body
     const body = await req.json()
@@ -28,10 +27,9 @@ export async function POST(req: NextRequest) {
 
     // 3. Buscar conversa atual para obter dados anteriores e verificar existencia
     const conversas = await db`
-      SELECT id, org_id, equipe_id, responsavel_id, historico_transferencias
+      SELECT id, workspace_id, equipe_id, responsavel_id, historico_transferencias
       FROM public.crm_whatsapp_conversas
       WHERE id = ${conversaId}::uuid
-        ${user.level === 0 ? db`` : db`AND org_id = ${user.org_id || null}::uuid`}
     `
 
     if (conversas.length === 0) {
@@ -44,33 +42,33 @@ export async function POST(req: NextRequest) {
     const conversa = conversas[0]
     const oldResponsavelId = conversa.responsavel_id
     const oldEquipeId = conversa.equipe_id
-    const orgId = conversa.org_id
+    const workspaceId = conversa.workspace_id
 
-    if (user.level !== 0 && (!user.org_id || orgId !== user.org_id)) {
+    if (!access.allowedWorkspaceIds.has(workspaceId)) {
       return NextResponse.json({ error: 'Conversa nao encontrada' }, { status: 404 })
     }
 
     const responsavel = await db`
       SELECT 1
-      FROM public.org_members
-      WHERE user_id = ${novoResponsavelId}::uuid
-        AND org_id = ${orgId}::uuid
-        AND is_active = true
+      FROM public.users
+      WHERE id = ${novoResponsavelId}::uuid
+        AND workspace_id = ${workspaceId}::uuid
+        AND ativo = true
       LIMIT 1
     `
     if (responsavel.length === 0) {
-      return NextResponse.json({ error: 'Novo responsavel nao pertence a organizacao da conversa' }, { status: 400 })
+      return NextResponse.json({ error: 'Novo responsavel nao pertence ao workspace da conversa' }, { status: 400 })
     }
 
     if (novaEquipeId) {
       const equipeDestino = await db`
         SELECT 1 FROM public.crm_whatsapp_equipes
         WHERE id = ${novaEquipeId}::uuid
-          AND org_id = ${orgId}::uuid
+          AND workspace_id = ${workspaceId}::uuid
         LIMIT 1
       `
       if (equipeDestino.length === 0) {
-        return NextResponse.json({ error: 'Equipe destino nao pertence a organizacao da conversa' }, { status: 400 })
+        return NextResponse.json({ error: 'Equipe destino nao pertence ao workspace da conversa' }, { status: 400 })
       }
     }
 
@@ -88,7 +86,7 @@ export async function POST(req: NextRequest) {
         SELECT perfil
         FROM public.crm_whatsapp_equipe_membros
         WHERE equipe_id = ${oldEquipeId}::uuid
-          AND user_id = ${user.id}::uuid
+          AND user_id = ${access.user.id}::uuid
           AND perfil = 'admin'
         LIMIT 1
       `
@@ -104,7 +102,7 @@ export async function POST(req: NextRequest) {
       const algumAdmin = await db`
         SELECT 1
         FROM public.crm_whatsapp_equipe_membros
-        WHERE user_id = ${user.id}::uuid
+        WHERE user_id = ${access.user.id}::uuid
           AND perfil = 'admin'
         LIMIT 1
       `
@@ -123,7 +121,7 @@ export async function POST(req: NextRequest) {
       de_equipe: oldEquipeId,
       para_equipe: novaEquipeId,
       quando: new Date().toISOString(),
-      transferido_por: user.id,
+      transferido_por: access.user.id,
     }
 
     // 6. Atualizar conversa (query condicional para novaEquipeId opcional)

@@ -1,31 +1,139 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { getUserFromRequest, unauthorized } from '@/lib/api-auth'
+import { resolveWhatsappWorkspaceAccess, normalizeWorkspaceId } from '@/lib/whatsapp-workspace-access'
+import { getSql } from '@/lib/db'
 
-const WHATSAPP_WEBHOOK_BASE_URL = process.env.WHATSAPP_WEBHOOK_URL || 'https://agente-op7-nexo.qozt.com.br'
+const API_BASE_URL = 'http://op7nexo-api:8000'
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getUserFromRequest(request)
-    if (!user) return unauthorized()
+    const access = await resolveWhatsappWorkspaceAccess(request)
+    if (access instanceof Response) return access
 
     const payload = await request.json()
-    const number = payload?.number
-    const text = payload?.text
+    const { conversa_id, number, text } = payload
+    const workspaceIdBody = normalizeWorkspaceId(typeof payload?.workspace_id === 'string' ? payload.workspace_id : null)
 
-    if (!number || !text) {
+    if ((!conversa_id && !number) || !text) {
       return NextResponse.json(
-        { error: 'number e text são obrigatórios' },
+        { error: 'Informe conversa_id ou number, e text' },
         { status: 400 }
       )
     }
 
-    const response = await fetch(`${WHATSAPP_WEBHOOK_BASE_URL}/send`, {
+    const db = getSql()
+
+    let canalId: string | null = null
+    let conversaNumber: string | null = number || null
+
+    if (conversa_id) {
+      // Resolve canal pela conversa existente
+      const conversaRows = await db`
+        SELECT
+          conv.instance,
+          conv.workspace_id::text AS workspace_id,
+          c.id::text AS canal_id,
+          c.evolution_instance_id
+        FROM public.crm_whatsapp_conversas conv
+        LEFT JOIN public.canais_entrada c
+          ON (
+            c.evolution_instance_id = conv.instance
+            OR CONCAT('op7-', c.workspace_id::text, '-', c.id::text) = conv.instance
+          )
+        WHERE conv.id = ${conversa_id}::uuid
+        LIMIT 1
+      `
+
+      if (conversaRows.length === 0) {
+        return NextResponse.json(
+          { error: 'Conversa não encontrada' },
+          { status: 404 }
+        )
+      }
+
+      const conversa = conversaRows[0]
+      if (!access.allowedWorkspaceIds.has(conversa.workspace_id)) {
+        return NextResponse.json(
+          { error: 'Sem acesso a esta conversa.' },
+          { status: 403 }
+        )
+      }
+      canalId = conversa.canal_id
+
+      // Legado: algumas conversas antigas podem carregar "opcl" ou instance nula.
+      if (!canalId) {
+        const fallbackRows = await db`
+          SELECT id::text AS canal_id
+          FROM public.canais_entrada
+          WHERE workspace_id = ${conversa.workspace_id}::uuid
+            AND tipo = 'whatsapp_evolution'
+            AND (connection_status = 'connected' OR status = 'ativo')
+          ORDER BY
+            CASE
+              WHEN connection_status = 'connected' THEN 0
+              WHEN status = 'ativo' THEN 1
+              ELSE 2
+            END,
+            criado_em DESC
+          LIMIT 1
+        `
+        canalId = fallbackRows[0]?.canal_id ?? null
+      }
+    } else {
+      const workspaceId = workspaceIdBody
+      if (!workspaceId) {
+        return NextResponse.json(
+          { error: 'Workspace não informado para enviar mensagem.' },
+          { status: 400 }
+        )
+      }
+      if (!access.allowedWorkspaceIds.has(workspaceId)) {
+        return NextResponse.json(
+          { error: 'Sem acesso a este workspace.' },
+          { status: 403 }
+        )
+      }
+
+      // Sem conversa_id, usa o canal ativo do workspace informado.
+      const canalRows = await db`
+          SELECT id::text AS canal_id
+          FROM public.canais_entrada
+          WHERE tipo = 'whatsapp_evolution'
+            AND workspace_id = ${workspaceId}::uuid
+            AND (connection_status = 'connected' OR status = 'ativo')
+          ORDER BY
+            CASE
+              WHEN connection_status = 'connected' THEN 0
+              WHEN status = 'ativo' THEN 1
+              ELSE 2
+            END,
+            criado_em DESC
+          LIMIT 1
+        `
+
+      canalId = canalRows[0]?.canal_id ?? null
+      if (!canalId) {
+        return NextResponse.json(
+          { error: 'Nenhum canal WhatsApp ativo encontrado para este workspace.' },
+          { status: 404 }
+        )
+      }
+      conversaNumber = number
+    }
+
+    // Pega token de autenticação do header
+    // Chama API Python para enviar mensagem
+    const response = await fetch(`${API_BASE_URL}/canais/${canalId}/enviar-mensagem`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': access.tokenToForward,
       },
-      body: JSON.stringify({ number, text }),
+      body: JSON.stringify(
+        conversa_id
+          ? { conversa_id, texto: text }
+          : { numero: conversaNumber, texto: text }
+      ),
       cache: 'no-store',
     })
 
@@ -34,7 +142,7 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       return NextResponse.json(
         {
-          error: 'Falha ao enviar mensagem via Evolution',
+          error: data?.detail || 'Falha ao enviar mensagem via Evolution',
           details: data,
         },
         { status: response.status }

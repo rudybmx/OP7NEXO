@@ -41,9 +41,18 @@ export async function GET(request: NextRequest) {
     const limitParam = Number(url.searchParams.get('limit') || '300')
     const limit = Math.min(Math.max(Number.isFinite(limitParam) ? limitParam : 300, 1), 1000)
     const since = url.searchParams.get('since')
+    const workspaceIdParam = url.searchParams.get('workspace_id')
 
     const db = getSql()
-    const orgFilter = user.level === 0 ? db`` : db`AND c.org_id = ${user.org_id || null}::uuid`
+    let workspaceFilter
+    if (workspaceIdParam) {
+      if (user.role !== 'platform_admin' && user.workspace_id !== workspaceIdParam) {
+        return unauthorized()
+      }
+      workspaceFilter = db`AND c.workspace_id = ${workspaceIdParam}::uuid`
+    } else {
+      workspaceFilter = user.role === 'platform_admin' ? db`` : db`AND c.workspace_id = ${user.workspace_id || null}::uuid`
+    }
 
     const rows = since
       ? await db<DbMensagem[]>`
@@ -62,7 +71,7 @@ export async function GET(request: NextRequest) {
           FROM public.crm_whatsapp_mensagens m
           JOIN public.crm_whatsapp_conversas c ON c.id = m.conversa_id
           WHERE COALESCE(m.enviada_em, m.recebida_em) >= ${since}::timestamptz
-            ${orgFilter}
+            ${workspaceFilter}
           ORDER BY COALESCE(m.enviada_em, m.recebida_em) DESC
           LIMIT ${limit}
         `
@@ -82,7 +91,7 @@ export async function GET(request: NextRequest) {
           FROM public.crm_whatsapp_mensagens m
           JOIN public.crm_whatsapp_conversas c ON c.id = m.conversa_id
           WHERE TRUE
-            ${orgFilter}
+            ${workspaceFilter}
           ORDER BY COALESCE(m.enviada_em, m.recebida_em) DESC
           LIMIT ${limit}
         `

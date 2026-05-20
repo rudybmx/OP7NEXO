@@ -1,9 +1,14 @@
 import type { NextRequest } from 'next/server'
-import { getUserFromRequest, unauthorized } from '@/lib/api-auth'
+import { forbidden, getUserFromRequest, unauthorized } from '@/lib/api-auth'
 import { subscribeToWhatsappEvents, type WhatsappRealtimeEvent } from '@/lib/whatsapp-realtime'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+const API_BASE_URL = 'http://op7nexo-api:8000'
+
+interface WorkspaceAccessRow {
+  workspace_id?: string | null
+}
 
 const encoder = new TextEncoder()
 
@@ -28,6 +33,39 @@ function serializeEvent(event: WhatsappRealtimeEvent) {
 export async function GET(request: NextRequest) {
   const user = await getUserFromRequest(request)
   if (!user) return unauthorized()
+
+  const url = new URL(request.url)
+  const workspaceId = url.searchParams.get('workspace_id')
+  if (!workspaceId) {
+    return Response.json({ error: 'workspace_id é obrigatório para o stream.' }, { status: 400 })
+  }
+
+  const authHeader = request.headers.get('authorization') || ''
+  const cookieToken = request.cookies.get('ws-session')?.value
+  const tokenToForward = authHeader || (cookieToken ? `Bearer ${cookieToken}` : '')
+
+  const allowedResponse = await fetch(`${API_BASE_URL}/users/me/workspaces`, {
+    headers: { Authorization: tokenToForward },
+    cache: 'no-store',
+  })
+
+  if (!allowedResponse.ok) {
+    return Response.json(
+      { error: 'Falha ao validar workspace.' },
+      { status: allowedResponse.status }
+    )
+  }
+
+  const allowedData = await allowedResponse.json().catch(() => [])
+  const allowedWorkspaceIds = new Set(
+    (Array.isArray(allowedData) ? allowedData as WorkspaceAccessRow[] : [])
+      .map((row) => row.workspace_id)
+      .filter(Boolean)
+  )
+
+  if (!allowedWorkspaceIds.has(workspaceId)) {
+    return forbidden()
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -57,10 +95,8 @@ export async function GET(request: NextRequest) {
       send(JSON.stringify({ ok: true, mode: 'sse' }), 'ready')
 
       unsubscribe = await subscribeToWhatsappEvents((event) => {
-        if (user.level !== 0) {
-          if (!user.org_id || !event.orgId || event.orgId !== user.org_id) {
-            return
-          }
+        if (!event.workspaceId || event.workspaceId !== workspaceId) {
+          return
         }
 
         send(serializeEvent(event), 'whatsapp.refresh')

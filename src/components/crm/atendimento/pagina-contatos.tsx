@@ -9,6 +9,7 @@ import {
   MessageCircle as Instagram,
   ChevronLeft, ChevronRight as ChevronRightIcon,
 } from 'lucide-react'
+import { useContatos, type ContatoApi } from '@/hooks/use-contatos'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ interface Contato {
   email?: string
   avatarInitials: string
   avatarCor: string
+  avatarUrl?: string | null
   canais: Canal[]
   campanhaOrigem?: string
   adNome?: string
@@ -126,11 +128,78 @@ const MOCK_CONTATOS: Contato[] = [
   },
 ]
 
+const CORES_AVATAR_DETERMINISTICAS = ['#3E5BFF', '#7A5AF8', '#0fa856', '#FF5C8D', '#EF9F27', '#FF3B3B']
+
+function corDoAvatar(id: string): string {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash)
+  const idx = Math.abs(hash) % CORES_AVATAR_DETERMINISTICAS.length
+  return CORES_AVATAR_DETERMINISTICAS[idx]
+}
+
+function getIniciais(nome: string): string {
+  const partes = nome.trim().split(' ').filter(Boolean)
+  if (partes.length >= 2) return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  return (partes[0]?.[0] ?? '?').toUpperCase()
+}
+
+function formatarDataCurta(iso?: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+}
+
+function origemParaCanais(origem?: string | null): Canal[] {
+  if (!origem) return ['organico']
+  const o = origem.toLowerCase()
+  if (o.includes('whatsapp')) return ['whatsapp']
+  if (o.includes('meta')) return ['messenger']
+  if (o.includes('instagram')) return ['instagram_dm']
+  if (o.includes('facebook')) return ['lead_form_facebook']
+  return ['organico']
+}
+
+function etapaParaStage(etapa?: string | null): Stage {
+  const map: Record<string, Stage> = {
+    'nova': 'novo',
+    'em_atendimento': 'contato',
+    'aguardando': 'qualificado',
+    'resgate': 'proposta',
+    'resolvido': 'fechado',
+    'arquivada': 'perdido',
+  }
+  return map[etapa || ''] || 'novo'
+}
+
+function mapearContatoReal(c: ContatoApi): Contato {
+  const nome = c.nome || c.push_name || c.telefone || c.jid.split('@')[0] || 'Sem nome'
+  return {
+    id: c.id,
+    nome,
+    telefone: c.telefone || c.jid.split('@')[0] || '',
+    email: undefined,
+    avatarInitials: getIniciais(nome),
+    avatarCor: corDoAvatar(c.id),
+    avatarUrl: c.avatar_url,
+    canais: origemParaCanais(c.origem),
+    campanhaOrigem: c.campanha_origem || undefined,
+    adNome: c.meta_ad_id || undefined,
+    stage: etapaParaStage(c.etapa_funil),
+    atribuidoA: c.responsavel_nome || undefined,
+    tags: c.tags || [],
+    primeiroContato: formatarDataCurta(c.primeira_conversa_at || c.criado_em),
+    ultimoContato: formatarDataCurta(c.last_message_at || c.atualizado_em),
+    notas: c.notas || undefined,
+    criadoEm: c.criado_em.slice(0, 10),
+  }
+}
+
 const STATS = [
-  { label: 'Total de contatos', valor: '1.284', sub: '+38 esta semana', cor: 'var(--ws-text-1)' },
-  { label: 'Leads ativos', valor: '312', sub: 'em acompanhamento', cor: '#3E5BFF' },
-  { label: 'Sem atribuição', valor: '47', sub: 'aguardando agente', cor: '#EF9F27' },
-  { label: 'Fechados este mês', valor: '28', sub: 'taxa 9,0%', cor: '#0fa856' },
+  { label: 'Total de contatos', valor: '—', sub: 'carregando...', cor: 'var(--ws-text-1)' },
+  { label: 'Leads ativos', valor: '—', sub: 'carregando...', cor: '#3E5BFF' },
+  { label: 'Sem atribuição', valor: '—', sub: 'carregando...', cor: '#EF9F27' },
+  { label: 'Fechados este mês', valor: '—', sub: 'carregando...', cor: '#0fa856' },
 ]
 
 const POR_PAGINA = 8
@@ -163,14 +232,21 @@ function StageBadge({ stage }: { stage: Stage }) {
   )
 }
 
-function Avatar({ initials, cor, size = 32 }: { initials: string; cor: string; size?: number }) {
+function Avatar({ initials, cor, src, size = 32 }: { initials: string; cor: string; src?: string | null; size?: number }) {
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%',
-      background: cor, flexShrink: 0,
+      background: src ? 'transparent' : cor, flexShrink: 0,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontSize: size * 0.34, fontWeight: 700, color: 'white',
-    }}>{initials}</div>
+      overflow: 'hidden',
+    }}>
+      {src ? (
+        <img src={src} alt={initials} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover' }} />
+      ) : (
+        initials
+      )}
+    </div>
   )
 }
 
@@ -446,7 +522,10 @@ function ModalContato({ contato, modo, onFechar, onSalvar, onExcluir }: ModalCon
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function PaginaContatos() {
-  const [contatos, setContatos] = useState<Contato[]>(MOCK_CONTATOS)
+  const { contatos: contatosReal, isLoading, error, refetch } = useContatos()
+  const contatosMapeados = useMemo(() => contatosReal.map(mapearContatoReal), [contatosReal])
+
+  const [contatos, setContatos] = useState<Contato[]>([])
   const [busca, setBusca] = useState('')
   const [filtroStage, setFiltroStage] = useState<Stage | 'todos'>('todos')
   const [filtroCanal, setFiltroCanal] = useState<Canal | 'todos'>('todos')
@@ -454,6 +533,11 @@ export function PaginaContatos() {
   const [ordenarPor, setOrdenarPor] = useState<'nome' | 'primeiroContato' | 'ultimoContato' | 'stage'>('ultimoContato')
   const [paginaAtual, setPaginaAtual] = useState(1)
   const [modal, setModal] = useState<{ aberto: boolean; modo: 'criar' | 'editar' | 'ver'; contato: Contato | null }>({ aberto: false, modo: 'criar', contato: null })
+
+  // Sync mapped real data into local state (for client-side create/edit/delete)
+  useMemo(() => {
+    setContatos(contatosMapeados)
+  }, [contatosMapeados])
 
   const filtrados = useMemo(() => {
     let lista = [...contatos]
@@ -613,7 +697,7 @@ export function PaginaContatos() {
                 >
                   <td style={{ padding: '10px 12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <Avatar initials={c.avatarInitials} cor={c.avatarCor} size={30} />
+                      <Avatar initials={c.avatarInitials} cor={c.avatarCor} src={c.avatarUrl} size={30} />
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ws-text-1)' }}>{c.nome}</div>
                         {c.email && <div style={{ fontSize: 10, color: 'var(--ws-text-3)' }}>{c.email}</div>}

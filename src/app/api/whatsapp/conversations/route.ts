@@ -1,47 +1,38 @@
 import { NextResponse } from 'next/server'
-import { getSql } from '@/lib/db'
-import { getUserFromRequest, unauthorized } from '@/lib/api-auth'
+import { resolveWhatsappWorkspaceAccess, normalizeWorkspaceId } from '@/lib/whatsapp-workspace-access'
 import type { NextRequest } from 'next/server'
+
+const API_BASE_URL = 'http://op7nexo-api:8000'
 
 export const dynamic = 'force-dynamic'
 
-type DbConversation = {
+interface BackendConversaRow {
   id: string
-  instance: string
+  instance?: string | null
   remote_jid: string
-  status: 'nova' | 'em_atendimento' | 'aguardando' | 'resolvida' | 'arquivada'
-  ia_ativa: boolean
-  nao_lidas: number
-  ultima_mensagem: string | null
-  ultima_msg_at: Date | string | null
-  agente: string | null
-  campanha: string | null
+  status: string
+  nao_lidas?: number | null
+  ultima_mensagem?: string | null
+  ultima_msg_at?: string | null
+  agente?: string | null
+  campanha?: string | null
+  is_group?: boolean | null
+  group_name?: string | null
+  group_avatar_url?: string | null
   contato_id: string
-  telefone: string | null
-  contato_nome: string | null
-  avatar_url: string | null
-  tags: string[] | null
-  equipe_id: string | null
-  equipe_nome: string | null
-  equipe_membros_count: number | null
-  responsavel_id: string | null
-  mensagens: Array<{
-    id: string
-    direcao: 'entrada' | 'saida'
-    conteudo: string
-    messageType?: string | null
-    mediaUrl?: string | null
-    remetenteNome: string | null
-    remetenteTipo: 'contato' | 'agente' | 'ia' | 'sistema'
-    enviadaEm: string | null
-    recebidaEm: string | null
-    criadaEm: string | null
-    quotedText?: string | null
-    quotedAuthor?: string | null
-    quotedRemoteJid?: string | null
-    quotedMessageId?: string | null
-    quotedMessageType?: string | null
-  }>
+  contato_nome?: string | null
+  contato_avatar_url?: string | null
+  contato_campanha_origem?: string | null
+  contato_meta_headline?: string | null
+  contato_meta_body?: string | null
+  contato_meta_image_url?: string | null
+  contato_meta_source_url?: string | null
+  contato_utm_source?: string | null
+  contato_utm_medium?: string | null
+  contato_primeira_conversa_at?: string | null
+  equipe_id?: string | null
+  equipe_nome?: string | null
+  responsavel_id?: string | null
 }
 
 function iso(value: Date | string | null | undefined) {
@@ -50,229 +41,115 @@ function iso(value: Date | string | null | undefined) {
 }
 
 function formatPhone(telefone: string | null, remoteJid: string) {
-  const digits = telefone || remoteJid.split('@')[0]?.replace(/\D/g, '') || remoteJid
+  const digits = telefone || remoteJid?.split('@')[0]?.replace(/\D/g, '') || remoteJid || ''
   if (!digits.startsWith('55') || digits.length < 12) return digits
   return `+55 ${digits.slice(2, 4)} ${digits.slice(4)}`
 }
 
 export async function GET(request: NextRequest) {
   try {
-    // --- Autenticação ---
-    const user = await getUserFromRequest(request)
-    if (!user) return unauthorized()
+    const access = await resolveWhatsappWorkspaceAccess(request)
+    if (access instanceof Response) return access
 
-    // --- Parâmetros ---
     const url = new URL(request.url)
     const limitParam = Number(url.searchParams.get('limit') || '80')
     const limit = Math.min(Math.max(Number.isFinite(limitParam) ? limitParam : 80, 1), 200)
-    const instance = url.searchParams.get('instance') || 'opcl'
+    const instance = url.searchParams.get('instance')
+    const workspaceIdParam = normalizeWorkspaceId(url.searchParams.get('workspace_id'))
     const filtro = url.searchParams.get('filtro')
     const equipeIdParam = url.searchParams.get('equipe_id')
 
-    const db = getSql()
-
-    // --- Monta query base (SELECT / FROM / JOINs) ---
-    let query = db`
-      SELECT
-        c.id::text,
-        c.instance,
-        c.remote_jid,
-        c.status,
-        c.ia_ativa,
-        c.nao_lidas,
-        c.ultima_mensagem,
-        c.ultima_msg_at,
-        c.agente,
-        c.campanha,
-        c.responsavel_id::text,
-        ct.id::text AS contato_id,
-        ct.telefone,
-        COALESCE(ct.nome, ct.push_name, ct.telefone, ct.jid) AS contato_nome,
-        ct.avatar_url,
-        ct.tags,
-        e.id::text AS equipe_id,
-        e.nome AS equipe_nome,
-        (SELECT COUNT(*) FROM public.crm_whatsapp_equipe_membros em WHERE em.equipe_id = c.equipe_id)::int AS equipe_membros_count,
-        COALESCE(msgs.mensagens, '[]'::jsonb) AS mensagens
-      FROM public.crm_whatsapp_conversas c
-      JOIN public.crm_whatsapp_contatos ct ON ct.id = c.contato_id
-      LEFT JOIN public.crm_whatsapp_equipes e ON e.id = c.equipe_id
-      LEFT JOIN LATERAL (
-        SELECT jsonb_agg(
-          jsonb_build_object(
-            'id', m.id::text,
-            'direcao', m.direcao,
-            'conteudo', m.conteudo,
-            'messageType', m.message_type,
-            'remetenteNome', m.remetente_nome,
-            'remetenteTipo', m.remetente_tipo,
-            'enviadaEm', m.enviada_em,
-            'recebidaEm', m.recebida_em,
-            'criadaEm', m.created_at,
-            'mediaUrl', CASE 
-              WHEN m.message_type IN ('imageMessage','videoMessage','audioMessage','documentMessage','stickerMessage','ptvMessage')
-              THEN (SELECT '/api/whatsapp/media/file?path=' || md.minio_path 
-                    FROM public.crm_whatsapp_midia md 
-                    WHERE md.conversa_id = m.conversa_id 
-                      AND md.created_at >= m.recebida_em - interval '5 seconds'
-                      AND md.created_at <= m.recebida_em + interval '5 seconds'
-                    ORDER BY md.created_at DESC LIMIT 1)
-              ELSE NULL
-            END,
-            'quotedText', CASE
-              WHEN m.payload #>> '{data,contextInfo,stanzaId}' IS NOT NULL THEN COALESCE(
-                m.payload #>> '{data,contextInfo,quotedMessage,conversation}',
-                m.payload #>> '{data,contextInfo,quotedMessage,extendedTextMessage,text}',
-                m.payload #>> '{data,contextInfo,quotedMessage,imageMessage,caption}',
-                m.payload #>> '{data,contextInfo,quotedMessage,videoMessage,caption}',
-                m.payload #>> '{data,contextInfo,quotedMessage,documentMessage,caption}',
-                m.payload #>> '{data,contextInfo,quotedMessage,audioMessage,ptt}',
-                CASE
-                  WHEN m.payload #> '{data,contextInfo,quotedMessage,imageMessage}' IS NOT NULL THEN '📷 Imagem'
-                  WHEN m.payload #> '{data,contextInfo,quotedMessage,audioMessage}' IS NOT NULL THEN '🎵 Áudio'
-                  WHEN m.payload #> '{data,contextInfo,quotedMessage,videoMessage}' IS NOT NULL THEN '📹 Vídeo'
-                  WHEN m.payload #> '{data,contextInfo,quotedMessage,documentMessage}' IS NOT NULL THEN '📄 Documento'
-                  WHEN m.payload #> '{data,contextInfo,quotedMessage,stickerMessage}' IS NOT NULL THEN '🎯 Sticker'
-                  ELSE NULL
-                END
-              )
-              ELSE NULL
-            END,
-            'quotedAuthor', NULLIF(COALESCE(m.payload #>> '{data,contextInfo,participant}', m.remetente_nome, ''), ''),
-            'quotedRemoteJid', NULLIF(COALESCE(m.payload #>> '{data,contextInfo,participant}', m.remote_jid, ''), ''),
-            'quotedMessageId', NULLIF(m.payload #>> '{data,contextInfo,stanzaId}', ''),
-            'quotedMessageType', CASE
-              WHEN m.payload #> '{data,contextInfo,quotedMessage,imageMessage}' IS NOT NULL THEN 'imageMessage'
-              WHEN m.payload #> '{data,contextInfo,quotedMessage,audioMessage}' IS NOT NULL THEN 'audioMessage'
-              WHEN m.payload #> '{data,contextInfo,quotedMessage,videoMessage}' IS NOT NULL THEN 'videoMessage'
-              WHEN m.payload #> '{data,contextInfo,quotedMessage,documentMessage}' IS NOT NULL THEN 'documentMessage'
-              WHEN m.payload #> '{data,contextInfo,quotedMessage,stickerMessage}' IS NOT NULL THEN 'stickerMessage'
-              WHEN m.payload #> '{data,contextInfo,quotedMessage,ptvMessage}' IS NOT NULL THEN 'ptvMessage'
-              ELSE 'conversation'
-            END
-          )
-          ORDER BY COALESCE(m.enviada_em, m.recebida_em, m.created_at) ASC
-        ) AS mensagens
-        FROM (
-          SELECT *
-          FROM public.crm_whatsapp_mensagens mx
-          WHERE mx.conversa_id = c.id
-          ORDER BY COALESCE(mx.enviada_em, mx.recebida_em, mx.created_at) DESC
-          LIMIT 120
-        ) m
-      ) msgs ON true
-      WHERE c.instance = ${instance}
-    `
-
-    // --- RBAC: filtro de visibilidade ---
-    const isOrgAdmin = user.role === 'owner' || user.role === 'admin'
-
-    if (user.level === 0) {
-      // Superadmin: vê tudo, sem restrições adicionais
-    } else {
-      if (!user.org_id) return unauthorized()
-      query = db`${query} AND c.org_id = ${user.org_id}::uuid`
-
-      if (isOrgAdmin) {
-        // Admin/owner da organização vê todas as conversas da própria org.
-      } else {
-        // Busca equipes do usuário dentro da mesma organização
-      const membros = await db<{ equipe_id: string }[]>`
-        SELECT em.equipe_id
-        FROM public.crm_whatsapp_equipe_membros em
-        JOIN public.crm_whatsapp_equipes e ON e.id = em.equipe_id
-        WHERE em.user_id = ${user.id}::uuid
-          AND e.org_id = ${user.org_id}::uuid
-      `
-      const teamIds = membros.map((m) => m.equipe_id)
-
-      // Busca permissões extras de visibilidade
-      const perms = await db<{
-        pode_ver_outras_equipes: boolean
-        equipes_visiveis: string[] | null
-      }[]>`
-        SELECT pode_ver_outras_equipes, equipes_visiveis
-        FROM public.crm_whatsapp_permissoes
-        WHERE user_id = ${user.id}::uuid
-      `
-
-      // Constrói conjunto de equipes visíveis
-      const visibleTeamIds = new Set<string>(teamIds)
-      if (perms.length > 0 && perms[0].pode_ver_outras_equipes && perms[0].equipes_visiveis) {
-        for (const tid of perms[0].equipes_visiveis) {
-          visibleTeamIds.add(tid)
-        }
-      }
-
-      if (visibleTeamIds.size > 0) {
-        const ids = Array.from(visibleTeamIds)
-        // Vê conversas das suas equipes OU onde é o responsável
-        query = db`${query} AND (c.equipe_id = ANY(${ids}::uuid[]) OR c.responsavel_id = ${user.id}::uuid)`
-      } else {
-        // Sem equipes: vê apenas conversas próprias
-        query = db`${query} AND c.responsavel_id = ${user.id}::uuid`
-      }
-      }
+    if (!workspaceIdParam) {
+      return NextResponse.json(
+        { error: 'workspace_id é obrigatório para listar conversas.' },
+        { status: 400 }
+      )
+    }
+    if (!access.allowedWorkspaceIds.has(workspaceIdParam)) {
+      return NextResponse.json(
+        { error: 'Sem acesso a este workspace.' },
+        { status: 403 }
+      )
     }
 
-    // --- Filtro por status/atribuição ---
-    if (filtro === 'novos') {
-      query = db`${query} AND c.status = 'nova' AND c.responsavel_id IS NULL`
-    } else if (filtro === 'meus') {
-      query = db`${query} AND c.responsavel_id = ${user.id}::uuid`
-    } else if (filtro === 'outros') {
-      // Conversas visíveis atribuídas a outros agentes (não ao usuário atual)
-      query = db`${query} AND c.responsavel_id IS NOT NULL AND c.responsavel_id != ${user.id}::uuid`
+    // Monta query params para backend Python
+    const backendUrl = new URL(`${API_BASE_URL}/conversas`)
+    backendUrl.searchParams.set('limit', String(limit))
+    backendUrl.searchParams.set('workspace_id', workspaceIdParam)
+    if (instance) backendUrl.searchParams.set('instance', instance)
+    if (filtro) backendUrl.searchParams.set('status', filtro)
+    if (equipeIdParam) backendUrl.searchParams.set('equipe_id', equipeIdParam)
+
+    const response = await fetch(backendUrl.toString(), {
+      headers: { Authorization: access.tokenToForward },
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null)
+      return NextResponse.json(
+        { error: errorData?.detail || 'Erro ao buscar conversas' },
+        { status: response.status }
+      )
     }
-    // 'todos' ou valor inválido: sem filtro adicional
 
-    // --- Filtro por equipe específica ---
-    if (equipeIdParam) {
-      query = db`${query} AND c.equipe_id = ${equipeIdParam}::uuid`
-    }
+    const data = await response.json()
+    const backendConversas: BackendConversaRow[] = Array.isArray(data) ? data : []
 
-    // --- Ordenação e limite ---
-    query = db`${query} ORDER BY c.ultima_msg_at DESC NULLS LAST, c.updated_at DESC LIMIT ${limit}`
-
-    const rows = (await query) as DbConversation[]
-
-    // --- Mapeamento da resposta ---
-    const conversations = rows.map((row) => ({
+      // Transforma resposta do backend para formato do frontend
+    const conversations = backendConversas.map((row) => ({
       id: row.id,
       instance: row.instance,
       remoteJid: row.remote_jid,
       status: row.status,
-      iaAtiva: row.ia_ativa,
-      naoLidas: row.nao_lidas,
+      iaAtiva: true, // legado, removido do schema
+      naoLidas: row.nao_lidas || 0,
       ultimaMensagem: row.ultima_mensagem || '',
       ultimaMensagemAt: iso(row.ultima_msg_at),
       agente: row.agente || 'Op7 Nexo',
       campanha: row.campanha,
       canal: 'whatsapp',
-      tags: row.tags?.length ? row.tags : ['WhatsApp', 'Evolution'],
+      tags: ['WhatsApp', 'Evolution'],
       responsavelId: row.responsavel_id,
+      isGroup: row.is_group || false,
+      groupName: row.group_name || null,
+      groupAvatarUrl: row.group_avatar_url || null,
       contato: {
         id: row.contato_id,
-        nome: row.contato_nome || formatPhone(row.telefone, row.remote_jid),
-        telefone: formatPhone(row.telefone, row.remote_jid),
+        nome: row.contato_nome || formatPhone(null, row.remote_jid),
+        telefone: formatPhone(null, row.remote_jid),
         remoteJid: row.remote_jid,
-        avatarUrl: row.avatar_url,
+        numeroEvo: null,
+        avatarUrl: row.contato_avatar_url || null,
+        campanhaOrigem: row.contato_campanha_origem || null,
+        metaHeadline: row.contato_meta_headline || null,
+        metaBody: row.contato_meta_body || null,
+        metaImageUrl: row.contato_meta_image_url || null,
+        metaSourceUrl: row.contato_meta_source_url || null,
+        utmSource: row.contato_utm_source || null,
+        utmMedium: row.contato_utm_medium || null,
+        primeiraConversaAt: iso(row.contato_primeira_conversa_at),
       },
       equipe: row.equipe_id
-        ? {
-            id: row.equipe_id,
-            nome: row.equipe_nome,
-            membrosCount: row.equipe_membros_count || 0,
-          }
+        ? { id: row.equipe_id, nome: row.equipe_nome, membrosCount: 0 }
         : null,
-      mensagens: row.mensagens || [],
+      mensagens: [], // mensagens são carregadas sob demanda no painel de chat
     }))
 
-    return NextResponse.json({
-      conversations,
-      source: 'postgres',
-      count: conversations.length,
-    })
+    return NextResponse.json(
+      {
+        conversations,
+        source: 'api',
+        count: conversations.length,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      }
+    )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro inesperado'
     console.error('[API /whatsapp/conversations] erro:', error)

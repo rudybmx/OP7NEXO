@@ -86,14 +86,14 @@ export async function POST(request: NextRequest) {
 
     // Verifica se a conversa existe e pertence à organização do usuário
     const db = getSql()
-    const conversa = user.level === 0
+    const conversa = user.role === 'platform_admin'
       ? await db<{ id: string }[]>`
           SELECT id FROM public.crm_whatsapp_conversas WHERE id = ${conversaId}::uuid
         `
       : await db<{ id: string }[]>`
           SELECT id FROM public.crm_whatsapp_conversas
           WHERE id = ${conversaId}::uuid
-            AND org_id = ${user.org_id || null}::uuid
+            AND workspace_id = ${user.workspace_id || null}::uuid
         `
     if (conversa.length === 0) {
       return NextResponse.json(

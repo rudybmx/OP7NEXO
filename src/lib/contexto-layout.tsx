@@ -13,6 +13,7 @@ import {
 type ItemNavegacao = {
   nome: string
   rota?: string
+  chaveIcone?: string
 }
 
 type GrupoNavegacao = {
@@ -151,6 +152,7 @@ export const secoesNavegacao: SecaoNavegacao[] = [
         itens: [
           { nome: "Clientes", rota: "/administracao/empresas/contas" },
           { nome: "Contas Ads", rota: "/administracao/contas-ads" },
+          { nome: "Gestão de Tokens", rota: "/admin/tokens" },
           { nome: "Canais", rota: "/administracao/canais-omnichannel" },
           { nome: "Planos" },
           { nome: "Financeiro" },
@@ -169,6 +171,16 @@ export const secoesNavegacao: SecaoNavegacao[] = [
         abertoPadrao: false,
         itens: [
           { nome: "Lista Usuários", rota: "/administracao/usuarios" },
+        ],
+      },
+      {
+        nome: "Infra",
+        secao: "Administração",
+        chaveIcone: "Server",
+        administrativo: true,
+        abertoPadrao: false,
+        itens: [
+          { nome: "Arquivos (SFTP)", rota: "/administracao/arquivos" },
         ],
       },
     ],

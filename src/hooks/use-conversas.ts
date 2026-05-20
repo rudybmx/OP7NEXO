@@ -1,0 +1,198 @@
+'use client'
+
+import { useState, useCallback, useEffect, useRef } from 'react'
+
+export type StatusConversa = 'nova' | 'em_atendimento' | 'aguardando' | 'resgate' | 'resolvido' | 'processando'
+
+export interface ContatoApi {
+  id: string
+  nome: string
+  telefone: string
+  remoteJid: string
+  numeroEvo?: string | null
+  avatarUrl?: string | null
+  campanhaOrigem?: string | null
+  metaHeadline?: string | null
+  metaBody?: string | null
+  metaImageUrl?: string | null
+  metaSourceUrl?: string | null
+  utmSource?: string | null
+  utmMedium?: string | null
+  primeiraConversaAt?: string | null
+}
+
+export interface EquipeApi {
+  id: string
+  nome: string
+  membrosCount: number
+}
+
+export interface MensagemApi {
+  id: string
+  direcao: 'entrada' | 'saida'
+  conteudo: string
+  messageType?: string | null
+  mediaUrl?: string | null
+  remetenteNome: string | null
+  remetenteTipo: 'contato' | 'agente' | 'ia' | 'sistema'
+  enviadaEm: string | null
+  recebidaEm: string | null
+  criadaEm: string | null
+  participantJid?: string | null
+  participantName?: string | null
+  isMentioned?: boolean
+  quotedText?: string | null
+  quotedAuthor?: string | null
+  quotedRemoteJid?: string | null
+  quotedMessageId?: string | null
+  quotedMessageType?: string | null
+}
+
+export interface ConversaApi {
+  id: string
+  instance: string
+  remoteJid: string
+  status: StatusConversa
+  iaAtiva: boolean
+  naoLidas: number
+  ultimaMensagem: string
+  ultimaMensagemAt: string | null
+  agente: string
+  campanha?: string | null
+  canal: string
+  tags: string[]
+  responsavelId?: string | null
+  isGroup?: boolean
+  groupName?: string | null
+  groupAvatarUrl?: string | null
+  contato: ContatoApi
+  equipe: EquipeApi | null
+  mensagens: MensagemApi[]
+}
+
+interface UseConversasReturn {
+  conversas: ConversaApi[]
+  isLoading: boolean
+  isLoadingMore: boolean
+  error: string | null
+  refetch: () => void
+  loadMore: () => void
+  hasMore: boolean
+}
+
+export function useConversas(
+  filtro?: string,
+  equipeId?: string,
+  workspaceId?: string,
+  enabled = true
+): UseConversasReturn {
+  const [conversas, setConversas] = useState<ConversaApi[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(true)
+  const abortRef = useRef<AbortController | null>(null)
+
+  const fetchConversas = useCallback(async (append = false) => {
+    if (!enabled) return
+    if (!workspaceId) {
+      abortRef.current?.abort()
+      if (!append) {
+        setConversas([])
+        setError(null)
+        setHasMore(false)
+      }
+      setIsLoading(false)
+      setIsLoadingMore(false)
+      return
+    }
+    let controller: AbortController | null = null
+    try {
+      abortRef.current?.abort()
+      controller = new AbortController()
+      abortRef.current = controller
+      if (!append) setIsLoading(true)
+      else setIsLoadingMore(true)
+
+      const params = new URLSearchParams()
+      params.set('limit', '80')
+      if (filtro) params.set('filtro', filtro)
+      if (equipeId) params.set('equipe_id', equipeId)
+      if (workspaceId) params.set('workspace_id', workspaceId)
+
+      const res = await fetch(`/api/whatsapp/conversations?${params.toString()}`, {
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error('Erro ao carregar conversas')
+      if (controller.signal.aborted) return
+
+      const data = await res.json()
+      if (controller.signal.aborted) return
+      const novas = data.conversations ?? []
+
+      if (append) {
+        setConversas(prev => {
+          const ids = new Set(prev.map(c => c.id))
+          const unicas = novas.filter((c: ConversaApi) => !ids.has(c.id))
+          return [...prev, ...unicas]
+        })
+      } else {
+        setConversas(novas)
+      }
+
+      setHasMore(novas.length === 80)
+      setError(null)
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') return
+      setError(err instanceof Error ? err.message : 'Erro desconhecido')
+    } finally {
+      if (!controller || abortRef.current !== controller || controller.signal.aborted) return
+      setIsLoading(false)
+      setIsLoadingMore(false)
+    }
+  }, [enabled, filtro, equipeId, workspaceId])
+
+  useEffect(() => {
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled) return
+      if (!enabled) {
+        abortRef.current?.abort()
+        setConversas([])
+        setHasMore(false)
+        setError(null)
+        setIsLoading(false)
+        setIsLoadingMore(false)
+        return
+      }
+      abortRef.current?.abort()
+      setConversas([])
+      setHasMore(true)
+      setError(null)
+      void fetchConversas(false)
+    })
+    return () => {
+      cancelled = true
+      abortRef.current?.abort()
+    }
+  }, [enabled, fetchConversas])
+
+  const refetch = useCallback(() => {
+    fetchConversas(false)
+  }, [fetchConversas])
+
+  const loadMore = useCallback(() => {
+    if (isLoadingMore || !hasMore) return
+    fetchConversas(true)
+  }, [fetchConversas, isLoadingMore, hasMore])
+
+  return {
+    conversas,
+    isLoading: enabled ? isLoading : false,
+    isLoadingMore: enabled ? isLoadingMore : false,
+    error: enabled ? error : null,
+    refetch,
+    loadMore,
+    hasMore,
+  }
+}

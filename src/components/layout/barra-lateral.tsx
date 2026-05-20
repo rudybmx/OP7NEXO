@@ -17,6 +17,7 @@ import {
   CreditCard,
   LayoutDashboard,
   LayoutGrid,
+  KeyRound,
   LogOut,
   Mail,
   MessageCircle,
@@ -25,6 +26,7 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Server,
   Settings,
   Sparkles,
   Sun,
@@ -45,6 +47,7 @@ import {
 import { secoesNavegacao, useLayout } from "@/lib/contexto-layout"
 import { useTheme } from "@/components/provedores/provedor-tema"
 import { useAuth } from "@/hooks/use-auth"
+import { useWorkspace } from "@/lib/workspace-context"
 
 // Tokens de Design (Visual Parity with Design System)
 const W04 = "rgba(255,255,255,0.04)"
@@ -82,11 +85,24 @@ const mapaIcones: Record<string, any> = {
   Settings2: LayoutDashboard,
   Briefcase,
   UserCog,
+  KeyRound,
+  Server,
 }
 
 // SubItem Component (Produção)
-const SubItem = ({ label, rota, isActive = false }: { label: string; rota?: string; isActive?: boolean }) => {
+const SubItem = ({
+  label,
+  rota,
+  isActive = false,
+  iconKey,
+}: {
+  label: string
+  rota?: string
+  isActive?: boolean
+  iconKey?: string
+}) => {
   const [isHovered, setIsHovered] = useState(false)
+  const ItemIcon = iconKey ? mapaIcones[iconKey] : null
 
   const content = (
     <div
@@ -130,6 +146,7 @@ const SubItem = ({ label, rota, isActive = false }: { label: string; rota?: stri
           }}
         />
       )}
+      {ItemIcon && <ItemIcon size={12} style={{ color: isActive ? "#ffffff" : W45, flexShrink: 0 }} />}
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
       {!isActive && <span style={{ paddingLeft: 11 }} />}
     </div>
@@ -245,7 +262,7 @@ const NavItem = ({
                 }}
               >
                 {subItems.map((sub: any, i: number) => (
-                  <SubItem key={i} label={sub.nome} rota={sub.rota} isActive={sub.isActive} />
+                  <SubItem key={i} label={sub.nome} rota={sub.rota} isActive={sub.isActive} iconKey={sub.chaveIcone} />
                 ))}
               </div>
             )}
@@ -314,31 +331,38 @@ export function BarraLateral() {
   const pathname = usePathname()
   const { resolvedTheme, setTheme } = useTheme()
   const { user } = useAuth()
+  const { workspaceAtual, workspaces, setWorkspaceAtual, canSwitchWorkspace } = useWorkspace()
+  const workspacesAtivos = workspaces.filter((w) => w.ativo)
+  const workspaceAtualItem = workspacesAtivos.find((w) => w.workspace_id === workspaceAtual) ?? workspacesAtivos[0] ?? null
 
   const role = user?.role ?? ''
 
-  const SECOES_POR_ROLE: Record<string, string[]> = {
-    platform_admin: ['*'],
-    network_admin:  ['Marketing', 'CRM'],
-    network_viewer: ['Marketing', 'CRM'],
-    company_admin:  ['Marketing', 'CRM'],
-    company_agent:  ['CRM'],
+  const gruposPermitidos = (secao: any) => {
+    if (secao.administrativa) {
+      return role === 'platform_admin' ? secao.grupos : []
+    }
+
+    if (role === 'platform_admin' || role === 'network_admin' || role === 'network_viewer') {
+      return secao.grupos
+    }
+
+    if (role === 'company_admin') {
+      if (secao.nome === 'Marketing') return secao.grupos
+      if (secao.nome === 'CRM') {
+        return secao.grupos.filter((grupo) => ['Atendimento', 'Campanhas', 'Gestão'].includes(grupo.nome))
+      }
+      return []
+    }
+
+    if (role === 'company_agent' && secao.nome === 'CRM') {
+      return secao.grupos.filter((grupo) => ['Atendimento', 'Campanhas', 'Gestão'].includes(grupo.nome))
+    }
+
+    return []
   }
 
   const secoesFiltradas = secoesNavegacao
-    .map((secao) => {
-      if (role === 'company_admin' && secao.nome === 'Marketing') {
-        return { ...secao, grupos: secao.grupos.filter((g) => g.nome === 'Performance') }
-      }
-      return secao
-    })
-    .filter((secao) => {
-      if (secao.administrativa) return role === 'platform_admin'
-      const permitidas = SECOES_POR_ROLE[role]
-      if (!permitidas) return false
-      if (permitidas[0] === '*') return true
-      return permitidas.includes(secao.nome)
-    })
+    .map((secao) => ({ ...secao, grupos: gruposPermitidos(secao) }))
     .filter((secao) => secao.grupos.length > 0)
 
   const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>({})
@@ -462,6 +486,10 @@ export function BarraLateral() {
                             flexShrink: 0,
                           }} />
                         )}
+                        {item.chaveIcone && (() => {
+                          const IconeItem = mapaIcones[item.chaveIcone] || Activity
+                          return <IconeItem size={12} style={{ color: pathname === item.rota ? '#ffffff' : 'rgba(255,255,255,0.55)' }} />
+                        })()}
                         {item.nome}
                       </div>
                     </Link>
@@ -662,7 +690,8 @@ export function BarraLateral() {
       style={{
         position: "relative",
         width: currentWidth,
-        height: "100vh",
+        height: "100dvh",
+        minHeight: 0,
         display: "flex",
         flexDirection: "column",
         background: "linear-gradient(160deg, rgba(30, 40, 80, 0.97) 0%, rgba(14, 20, 42, 0.99) 45%, rgba(10, 15, 35, 1.0) 100%)",
@@ -796,7 +825,13 @@ export function BarraLateral() {
                     {aberto && !isCollapsed && (
                       <div style={{ marginLeft: 26, paddingLeft: 12, borderLeft: `1px solid ${W08}`, marginTop: 2, marginBottom: 4, display: "flex", flexDirection: "column", gap: 2 }}>
                         {grupo.itens.map((item) => (
-                          <SubItem key={item.nome} label={item.nome} rota={item.rota} isActive={pathname === item.rota} />
+                          <SubItem
+                            key={item.nome}
+                            label={item.nome}
+                            rota={item.rota}
+                            isActive={pathname === item.rota}
+                            iconKey={item.chaveIcone}
+                          />
                         ))}
                       </div>
                     )}
@@ -810,6 +845,106 @@ export function BarraLateral() {
 
       {/* Footer Cards */}
       <div style={{ borderTop: `1px solid ${W08}`, paddingTop: 14, marginTop: "auto", display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+        {/* Workspace Selector */}
+        {canSwitchWorkspace && workspacesAtivos.length > 1 ? (
+          <div style={{ width: isCollapsed ? 40 : "100%" }}>
+            {isCollapsed ? (
+              <div
+                title={workspaceAtualItem?.workspace_nome ?? "Workspace"}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 8,
+                  background: W06,
+                  border: `1px solid ${W08}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: W70,
+                }}
+              >
+                {(workspaceAtualItem?.workspace_nome ?? "W").charAt(0).toUpperCase()}
+              </div>
+            ) : (
+              <select
+                value={workspaceAtual ?? ""}
+                onChange={(e) => {
+                  setWorkspaceAtual(e.target.value)
+                  window.location.reload()
+                }}
+                style={{
+                  width: "100%",
+                  padding: "7px 10px",
+                  borderRadius: 8,
+                  background: "rgba(20,28,56,0.80)",
+                  border: `1px solid ${W08}`,
+                  color: W80,
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  outline: "none",
+                }}
+              >
+                {workspacesAtivos.map((w) => (
+                  <option key={w.workspace_id} value={w.workspace_id}>
+                    {w.workspace_nome ?? w.workspace_id}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        ) : (
+          <div
+            title={workspaceAtualItem?.workspace_nome ?? "Workspace"}
+            style={{
+              width: isCollapsed ? 40 : "100%",
+              minHeight: isCollapsed ? 40 : 44,
+              borderRadius: 8,
+              background: W06,
+              border: `1px solid ${W08}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: isCollapsed ? "center" : "flex-start",
+              gap: 8,
+              padding: isCollapsed ? 0 : "7px 10px",
+              color: W80,
+            }}
+          >
+            {isCollapsed ? (
+              <span style={{ fontSize: 11, fontWeight: 700, color: W70 }}>
+                {(workspaceAtualItem?.workspace_nome ?? "W").charAt(0).toUpperCase()}
+              </span>
+            ) : (
+              <>
+                <div style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  background: "linear-gradient(135deg, rgba(62,91,255,0.22), rgba(122,90,248,0.14))",
+                  border: `1px solid rgba(62,91,255,0.20)`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#ffffff",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  flexShrink: 0,
+                }}>
+                  {(workspaceAtualItem?.workspace_nome ?? "W").charAt(0).toUpperCase()}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                  <span style={{ fontSize: 10, color: W45, lineHeight: 1.1 }}>Workspace</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#ffffff", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {workspaceAtualItem?.workspace_nome ?? "Workspace"}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         {/* AI Assistant */}
         <div
           onClick={() => setChatAberto(true)}

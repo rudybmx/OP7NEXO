@@ -27,16 +27,16 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // --- Garante escopo da organização antes de ler Redis ---
+    // --- Garante escopo do workspace antes de ler Redis ---
     const db = getSql()
-    const conversas = user.level === 0
+    const conversas = user.role === 'platform_admin'
       ? await db<{ id: string }[]>`
           SELECT id FROM public.crm_whatsapp_conversas WHERE id = ${conversaId}::uuid
         `
       : await db<{ id: string }[]>`
           SELECT id FROM public.crm_whatsapp_conversas
           WHERE id = ${conversaId}::uuid
-            AND org_id = ${user.org_id || null}::uuid
+            AND workspace_id = ${user.workspace_id || null}::uuid
         `
     if (conversas.length === 0) {
       return NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 })
@@ -78,16 +78,16 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    // --- Garante escopo da organização antes de limpar Redis ---
+    // --- Garante escopo do workspace antes de limpar Redis ---
     const db = getSql()
-    const conversas = user.level === 0
+    const conversas = user.role === 'platform_admin'
       ? await db<{ id: string }[]>`
           SELECT id FROM public.crm_whatsapp_conversas WHERE id = ${conversaId}::uuid
         `
       : await db<{ id: string }[]>`
           SELECT id FROM public.crm_whatsapp_conversas
           WHERE id = ${conversaId}::uuid
-            AND org_id = ${user.org_id || null}::uuid
+            AND workspace_id = ${user.workspace_id || null}::uuid
         `
     if (conversas.length === 0) {
       return NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 })

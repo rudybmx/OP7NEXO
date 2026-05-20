@@ -5,6 +5,7 @@ import { BarraLateral } from '@/components/layout/barra-lateral'
 import { PainelChat } from '@/components/layout/painel-chat'
 import { ProvedorLayout } from '@/lib/contexto-layout'
 import { AuthProvider } from '@/lib/auth-provider'
+import { WorkspaceProvider } from '@/lib/workspace-context'
 
 export default function LayoutPlataforma({
   children,
@@ -21,12 +22,14 @@ export default function LayoutPlataforma({
 
   return (
     <AuthProvider>
+      <WorkspaceProvider>
       <ProvedorLayout>
         <div
         style={{
           display: 'flex',
           flexDirection: 'row',
-          height: '100vh',
+          height: '100dvh',
+          minHeight: 0,
           overflow: 'hidden',
           fontFamily: 'var(--font-plus-jakarta-sans)',
           background: 'var(--bg)',
@@ -36,7 +39,10 @@ export default function LayoutPlataforma({
         <main
           style={{
             flex: 1,
+            height: '100%',
             overflowY: 'auto',
+            overflowX: 'hidden',
+            minHeight: 0,
             minWidth: 0,
             background: 'var(--bg)',
             position: 'relative',
@@ -48,6 +54,7 @@ export default function LayoutPlataforma({
       </div>
         <PainelChat />
       </ProvedorLayout>
+      </WorkspaceProvider>
     </AuthProvider>
   )
 }

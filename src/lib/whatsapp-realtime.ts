@@ -1,11 +1,11 @@
 import Redis from 'ioredis'
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://default:t868uuo98kj2g9q0akmvlnf82elr1q6t@redis_op7-nexo:6379'
+const REDIS_URL = process.env.REDIS_URL || 'redis://default:hgyQW64RKLQCdYz3ATb5vtfXhoVvfH3y@redis:6379'
 const WHATSAPP_EVENTS_CHANNEL = process.env.WHATSAPP_EVENTS_CHANNEL || 'whatsapp:events'
 
 type WhatsappRealtimeEvent = {
-  type: 'message.upsert' | 'conversation.refresh'
-  orgId?: string | null
+  type: 'message.upsert' | 'conversation.refresh' | 'message.sent'
+  workspaceId?: string | null
   conversaId?: string | null
   remoteJid?: string | null
   direction?: 'entrada' | 'saida' | null

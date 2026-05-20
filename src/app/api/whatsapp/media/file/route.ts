@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getMinioClient } from '@/lib/minio-client'
+import { getUserFromRequest, unauthorized } from '@/lib/api-auth'
 
 export const dynamic = 'force-dynamic'
 
 // GET /api/whatsapp/media/file?path=whatsapp/xxxx/yyyy.jpg
-// Proxy para servir arquivos do MinIO publicamente
+// Proxy para servir arquivos do MinIO — requer autenticação
 export async function GET(request: NextRequest) {
   try {
+    const user = await getUserFromRequest(request)
+    if (!user) return unauthorized()
+
     const url = new URL(request.url)
     const objectPath = url.searchParams.get('path')
 
