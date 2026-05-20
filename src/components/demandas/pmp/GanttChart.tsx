@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, Search } from 'lucide-react'
-import { differenceInCalendarDays, parseISO } from 'date-fns'
+import { differenceInCalendarDays, endOfMonth, format, parseISO } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { InfoTooltip } from '@/components/ui/info-tooltip'
@@ -16,16 +16,18 @@ import {
 import GanttMonthHeader from '@/components/demandas/pmp/GanttMonthHeader'
 import GanttTaskRow from '@/components/demandas/pmp/GanttTaskRow'
 import { getMonthsInRange, getTodayOffsetPercent, getWeeksInRange } from '@/lib/gantt-utils'
-import type { PmpPlan, PmpTask, TaskStatus } from '@/types/pmp'
+import type { PmpPlan, PmpTask, TaskStatus, TaskStatusDerived } from '@/types/pmp'
 
 interface GanttChartProps {
   plan: PmpPlan
   expandedPhases: Set<string>
   zoom: 'mes' | 'semana'
-  statusFilter: TaskStatus | 'todos'
+  selectedYear: number
+  selectedMonth: number
+  statusFilter: TaskStatusDerived | 'todos'
   focusTarget?: { taskId?: string; phaseId?: string } | null
   onZoomChange: (zoom: 'mes' | 'semana') => void
-  onStatusFilterChange: (status: TaskStatus | 'todos') => void
+  onStatusFilterChange: (status: TaskStatusDerived | 'todos') => void
   onTogglePhase: (phaseId: string) => void
   onTaskSelect: (task: PmpTask) => void
 }
@@ -36,6 +38,8 @@ export default function GanttChart({
   plan,
   expandedPhases,
   zoom,
+  selectedYear,
+  selectedMonth,
   statusFilter,
   focusTarget,
   onZoomChange,
@@ -45,11 +49,39 @@ export default function GanttChart({
 }: GanttChartProps) {
   const [search, setSearch] = useState('')
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
 
-  const months = useMemo(() => getMonthsInRange(plan.startDate, plan.endDate), [plan.endDate, plan.startDate])
-  const weeks = useMemo(() => getWeeksInRange(plan.startDate, plan.endDate), [plan.endDate, plan.startDate])
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      setContainerWidth(entries[0]?.contentRect.width ?? 0)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Visible range: full year for month view, full month for week view
+  const viewStart = zoom === 'mes'
+    ? `${selectedYear}-01-01`
+    : `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`
+  const viewEnd = zoom === 'mes'
+    ? `${selectedYear}-12-31`
+    : format(endOfMonth(new Date(selectedYear, selectedMonth - 1)), 'yyyy-MM-dd')
+
+  const months = useMemo(() => getMonthsInRange(viewStart, viewEnd), [viewStart, viewEnd])
+  const weeks = useMemo(() => getWeeksInRange(viewStart, viewEnd), [viewStart, viewEnd])
   const unitCount = zoom === 'mes' ? months.length : weeks.length
-  const columnWidth = zoom === 'mes' ? 120 : 80
+
+  const columnWidth = useMemo(() => {
+    if (zoom === 'mes') return 120
+    if (containerWidth > TASK_COLUMN_WIDTH && unitCount > 0) {
+      return Math.floor((containerWidth - TASK_COLUMN_WIDTH) / unitCount)
+    }
+    return 80
+  }, [zoom, containerWidth, unitCount])
+
   const timelineWidth = unitCount * columnWidth
   const totalGridWidth = TASK_COLUMN_WIDTH + timelineWidth
 
@@ -60,7 +92,7 @@ export default function GanttChart({
       .map((phase) => ({
         ...phase,
         tasks: phase.tasks.filter((task) => {
-          const matchesStatus = statusFilter === 'todos' || task.status === statusFilter
+          const matchesStatus = statusFilter === 'todos' || task.statusDerived === statusFilter
           const matchesQuery =
             query.length === 0 ||
             task.title.toLowerCase().includes(query) ||
@@ -73,7 +105,7 @@ export default function GanttChart({
       .filter((phase) => phase.tasks.length > 0)
   }, [plan.phases, search, statusFilter])
 
-  const todayPercent = useMemo(() => getTodayOffsetPercent(plan.startDate, plan.endDate), [plan.endDate, plan.startDate])
+  const todayPercent = useMemo(() => getTodayOffsetPercent(viewStart, viewEnd), [viewStart, viewEnd])
   const todayLineLeft = TASK_COLUMN_WIDTH + (todayPercent / 100) * timelineWidth
 
   useEffect(() => {
@@ -93,20 +125,16 @@ export default function GanttChart({
 
   function handleScrollToToday() {
     if (!scrollRef.current) return
-
     const baseDate = new Date().toISOString().slice(0, 10)
-    const startOffset = differenceInCalendarDays(parseISO(baseDate), parseISO(plan.startDate))
-    const totalDays = differenceInCalendarDays(parseISO(plan.endDate), parseISO(plan.startDate)) + 1
+    const startOffset = differenceInCalendarDays(parseISO(baseDate), parseISO(viewStart))
+    const totalDays = differenceInCalendarDays(parseISO(viewEnd), parseISO(viewStart)) + 1
     const left = TASK_COLUMN_WIDTH + (Math.max(Math.min(startOffset, totalDays), 0) / totalDays) * timelineWidth - timelineWidth * 0.35
-
-    scrollRef.current.scrollTo({
-      left: Math.max(left, 0),
-      behavior: 'smooth',
-    })
+    scrollRef.current.scrollTo({ left: Math.max(left, 0), behavior: 'smooth' })
   }
 
   return (
     <section
+      ref={containerRef}
       className="relative"
       style={{
         background: 'var(--ws-glass-bg)',
@@ -157,17 +185,18 @@ export default function GanttChart({
           Hoje
         </Button>
 
-        <Select value={statusFilter} onValueChange={(value) => onStatusFilterChange(value as TaskStatus | 'todos')}>
+        <Select value={statusFilter} onValueChange={(value) => onStatusFilterChange(value as TaskStatusDerived | 'todos')}>
           <SelectTrigger className="h-9 min-w-40 text-foreground" style={{ border: '1px solid var(--ws-glass-border)' }}>
             <SelectValue placeholder="Filtrar status" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos os status</SelectItem>
-            <SelectItem value="nao_iniciado">Não iniciado</SelectItem>
-            <SelectItem value="em_andamento">Em andamento</SelectItem>
-            <SelectItem value="concluido">Concluído</SelectItem>
+            <SelectItem value="todo">A Fazer</SelectItem>
+            <SelectItem value="in_progress">Em Andamento</SelectItem>
+            <SelectItem value="done">Concluído</SelectItem>
+            <SelectItem value="blocked">Bloqueado</SelectItem>
             <SelectItem value="atrasado">Atrasado</SelectItem>
-            <SelectItem value="em_risco">Em risco</SelectItem>
+            <SelectItem value="em_risco">Em Risco</SelectItem>
           </SelectContent>
         </Select>
 
@@ -186,8 +215,8 @@ export default function GanttChart({
       <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden">
         <div className="relative min-w-max" style={{ width: totalGridWidth }}>
           <GanttMonthHeader
-            planStart={plan.startDate}
-            planEnd={plan.endDate}
+            planStart={viewStart}
+            planEnd={viewEnd}
             zoom={zoom}
             columnWidth={columnWidth}
             taskColumnWidth={TASK_COLUMN_WIDTH}
@@ -208,8 +237,8 @@ export default function GanttChart({
                   isPhase
                   expanded={expandedPhases.has(phase.id)}
                   onTogglePhase={onTogglePhase}
-                  planStart={plan.startDate}
-                  planEnd={plan.endDate}
+                  planStart={viewStart}
+                  planEnd={viewEnd}
                   unitCount={unitCount}
                   columnWidth={columnWidth}
                   taskColumnWidth={TASK_COLUMN_WIDTH}
@@ -223,8 +252,8 @@ export default function GanttChart({
                       task={task}
                       isPhase={false}
                       onTaskClick={onTaskSelect}
-                      planStart={plan.startDate}
-                      planEnd={plan.endDate}
+                      planStart={viewStart}
+                      planEnd={viewEnd}
                       unitCount={unitCount}
                       columnWidth={columnWidth}
                       taskColumnWidth={TASK_COLUMN_WIDTH}

@@ -1,3 +1,4 @@
+import { calcularStatusDerived } from '@/types/pmp'
 import type { PmpPhase, PmpPlan, PmpTask, PmpVersion, TaskPriority, TaskStatus } from '@/types/pmp'
 
 const PHASES = [
@@ -24,34 +25,34 @@ const CLIENTS = [
     updatedAt: '2026-03-15',
     createdAt: '2026-01-08',
     createdBy: 'Fernanda Reis',
-    status: 'em_andamento' as const,
+    status: 'in_progress' as const,
     phaseTasks: [
       [
-        ['Mapear jornada das pacientes de implante', '2026-01-08', '2026-01-24', 'concluido', 100, 'alta'],
-        ['Diagnóstico de concorrência regional (clínicas)', '2026-01-15', '2026-02-02', 'concluido', 100, 'alta'],
-        ['Plano de diferenciação OdontoCompany', '2026-01-27', '2026-02-14', 'em_andamento', 78, 'alta'],
+        ['Mapear jornada das pacientes de implante', '2026-01-08', '2026-01-24', 'done', 100, 'alta'],
+        ['Diagnóstico de concorrência regional (clínicas)', '2026-01-15', '2026-02-02', 'done', 100, 'alta'],
+        ['Plano de diferenciação OdontoCompany', '2026-01-27', '2026-02-14', 'in_progress', 78, 'alta'],
       ],
       [
-        ['Refinar proposta de valor da unidade', '2026-02-10', '2026-03-04', 'concluido', 100, 'alta'],
-        ['Manual visual OdontoCompany local', '2026-02-20', '2026-03-18', 'em_andamento', 62, 'media'],
-        ['Ajuste de discurso comercial para avaliação', '2026-03-01', '2026-03-21', 'em_risco', 44, 'media'],
+        ['Refinar proposta de valor da unidade', '2026-02-10', '2026-03-04', 'done', 100, 'alta'],
+        ['Manual visual OdontoCompany local', '2026-02-20', '2026-03-18', 'in_progress', 62, 'media'],
+        ['Ajuste de discurso comercial para avaliação', '2026-03-01', '2026-03-21', 'in_progress', 44, 'media'],
       ],
       [
-        ['Calendário editorial Odonto (Q2)', '2026-03-15', '2026-04-18', 'em_andamento', 58, 'alta'],
-        ['Produção de reels sobre implantes', '2026-03-28', '2026-05-12', 'atrasado', 36, 'alta'],
-        ['Sequência de e-mails para nutrição de leads', '2026-04-03', '2026-05-20', 'nao_iniciado', 0, 'media'],
-        ['Biblioteca de provas sociais (Sorrisos)', '2026-04-10', '2026-05-02', 'em_andamento', 54, 'baixa'],
+        ['Calendário editorial Odonto (Q2)', '2026-03-15', '2026-04-18', 'in_progress', 58, 'alta'],
+        ['Produção de reels sobre implantes', '2026-03-28', '2026-04-30', 'in_progress', 36, 'alta'],
+        ['Sequência de e-mails para nutrição de leads', '2026-04-03', '2026-05-20', 'todo', 0, 'media'],
+        ['Biblioteca de provas sociais (Sorrisos)', '2026-04-10', '2026-05-02', 'in_progress', 54, 'baixa'],
       ],
       [
-        ['Estrutura de campanhas Meta Ads (Always-on)', '2026-05-06', '2026-06-14', 'atrasado', 41, 'alta'],
-        ['Campanha "Mês do Implante"', '2026-05-20', '2026-07-12', 'em_andamento', 49, 'alta'],
-        ['Teste criativo de captação local (WhatsApp)', '2026-06-01', '2026-07-05', 'em_risco', 31, 'media'],
-        ['Retargeting para leads inativos no CRM', '2026-06-15', '2026-07-25', 'nao_iniciado', 0, 'media'],
+        ['Estrutura de campanhas Meta Ads (Always-on)', '2026-04-15', '2026-05-10', 'in_progress', 41, 'alta'],
+        ['Campanha "Mês do Implante"', '2026-05-20', '2026-07-12', 'in_progress', 49, 'alta'],
+        ['Teste criativo de captação local (WhatsApp)', '2026-06-01', '2026-07-05', 'in_progress', 31, 'media'],
+        ['Retargeting para leads inativos no CRM', '2026-06-15', '2026-07-25', 'todo', 0, 'media'],
       ],
       [
-        ['Painel de CAC por procedimento (Implante vs Orto)', '2026-08-01', '2026-09-05', 'nao_iniciado', 0, 'alta'],
-        ['Rotina quinzenal de otimização de anúncios', '2026-09-08', '2026-11-28', 'nao_iniciado', 0, 'media'],
-        ['Revisão anual de performance da unidade', '2026-12-01', '2026-12-19', 'nao_iniciado', 0, 'media'],
+        ['Painel de CAC por procedimento (Implante vs Orto)', '2026-08-01', '2026-09-05', 'todo', 0, 'alta'],
+        ['Rotina quinzenal de otimização de anúncios', '2026-09-08', '2026-11-28', 'todo', 0, 'media'],
+        ['Revisão anual de performance da unidade', '2026-12-01', '2026-12-19', 'todo', 0, 'media'],
       ],
     ],
     versions: [
@@ -67,32 +68,32 @@ const CLIENTS = [
     updatedAt: '2026-04-08',
     createdAt: '2026-01-10',
     createdBy: 'Marcos Dutra',
-    status: 'em_risco' as const,
+    status: 'in_progress' as const,
     phaseTasks: [
       [
-        ['Auditoria de mix de tratamentos', '2026-01-10', '2026-01-31', 'concluido', 100, 'alta'],
-        ['Mapa de canais por especialidade', '2026-01-20', '2026-02-07', 'concluido', 100, 'media'],
-        ['Planejamento promocional odontológico (Semestre)', '2026-02-01', '2026-02-28', 'em_andamento', 84, 'alta'],
+        ['Auditoria de mix de tratamentos', '2026-01-10', '2026-01-31', 'done', 100, 'alta'],
+        ['Mapa de canais por especialidade', '2026-01-20', '2026-02-07', 'done', 100, 'media'],
+        ['Planejamento promocional odontológico (Semestre)', '2026-02-01', '2026-02-28', 'in_progress', 84, 'alta'],
       ],
       [
-        ['Arquitetura de comunicação da clínica', '2026-02-18', '2026-03-17', 'em_andamento', 59, 'alta'],
-        ['Key visual de campanhas de Ortodontia', '2026-03-01', '2026-03-26', 'atrasado', 39, 'alta'],
-        ['Ajuste de copy por tratamento', '2026-03-05', '2026-03-28', 'em_risco', 47, 'media'],
+        ['Arquitetura de comunicação da clínica', '2026-02-18', '2026-03-17', 'in_progress', 59, 'alta'],
+        ['Key visual de campanhas de Ortodontia', '2026-03-01', '2026-04-10', 'in_progress', 39, 'alta'],
+        ['Ajuste de copy por tratamento', '2026-03-05', '2026-05-17', 'in_progress', 47, 'media'],
       ],
       [
-        ['Calendário de ofertas e avaliações', '2026-03-24', '2026-05-16', 'em_andamento', 52, 'alta'],
-        ['Conteúdo educativo sobre saúde bucal', '2026-04-01', '2026-05-30', 'em_andamento', 44, 'media'],
-        ['Série de criativos por especialidade', '2026-04-07', '2026-06-06', 'atrasado', 29, 'alta'],
+        ['Calendário de ofertas e avaliações', '2026-03-24', '2026-05-16', 'in_progress', 52, 'alta'],
+        ['Conteúdo educativo sobre saúde bucal', '2026-04-01', '2026-05-30', 'in_progress', 44, 'media'],
+        ['Série de criativos por especialidade', '2026-04-07', '2026-04-30', 'in_progress', 29, 'alta'],
       ],
       [
-        ['Campanhas de avaliação rápida', '2026-05-12', '2026-07-04', 'em_andamento', 33, 'alta'],
-        ['Promoções de inverno (Clareamento)', '2026-06-02', '2026-07-18', 'nao_iniciado', 0, 'media'],
-        ['Captação focada em Alinhadores Invisíveis', '2026-06-16', '2026-08-01', 'nao_iniciado', 0, 'media'],
+        ['Campanhas de avaliação rápida', '2026-05-12', '2026-07-04', 'in_progress', 33, 'alta'],
+        ['Promoções de inverno (Clareamento)', '2026-06-02', '2026-07-18', 'todo', 0, 'media'],
+        ['Captação focada em Alinhadores Invisíveis', '2026-06-16', '2026-08-01', 'todo', 0, 'media'],
       ],
       [
-        ['Modelo de dashboard da clínica no Meta', '2026-08-11', '2026-09-19', 'nao_iniciado', 0, 'media'],
-        ['Ciclo de otimização trimestral de leads', '2026-09-22', '2026-11-21', 'nao_iniciado', 0, 'baixa'],
-        ['Fechamento de aprendizados CPL', '2026-12-01', '2026-12-22', 'nao_iniciado', 0, 'baixa'],
+        ['Modelo de dashboard da clínica no Meta', '2026-08-11', '2026-09-19', 'todo', 0, 'media'],
+        ['Ciclo de otimização trimestral de leads', '2026-09-22', '2026-11-21', 'todo', 0, 'baixa'],
+        ['Fechamento de aprendizados CPL', '2026-12-01', '2026-12-22', 'todo', 0, 'baixa'],
       ],
     ],
     versions: [
@@ -108,122 +109,40 @@ const CLIENTS = [
     updatedAt: '2026-05-06',
     createdAt: '2026-01-06',
     createdBy: 'Ana Lima',
-    status: 'em_andamento' as const,
+    status: 'in_progress' as const,
     phaseTasks: [
       [
-        ['Pesquisa de satisfação com pacientes ativos', '2026-01-06', '2026-01-29', 'concluido', 100, 'alta'],
-        ['Diagnóstico de clínicas concorrentes na região', '2026-01-20', '2026-02-12', 'concluido', 100, 'alta'],
-        ['Plano de diferenciação do atendimento OdontoCompany', '2026-02-03', '2026-02-25', 'concluido', 100, 'alta'],
-        ['Estratégia de captação de avaliações (2º Semestre)', '2026-02-12', '2026-03-05', 'em_andamento', 77, 'alta'],
+        ['Pesquisa de satisfação com pacientes ativos', '2026-01-06', '2026-01-29', 'done', 100, 'alta'],
+        ['Diagnóstico de clínicas concorrentes na região', '2026-01-20', '2026-02-12', 'done', 100, 'alta'],
+        ['Plano de diferenciação do atendimento OdontoCompany', '2026-02-03', '2026-02-25', 'done', 100, 'alta'],
+        ['Estratégia de captação de avaliações (2º Semestre)', '2026-02-12', '2026-03-05', 'in_progress', 77, 'alta'],
       ],
       [
-        ['Refino do discurso institucional da clínica', '2026-03-01', '2026-03-28', 'concluido', 100, 'media'],
-        ['Sistema visual de campanha de avaliações gratuitas', '2026-03-08', '2026-04-09', 'em_andamento', 71, 'alta'],
-        ['Guia de tom para atendimento via WhatsApp', '2026-03-20', '2026-04-10', 'em_andamento', 63, 'media'],
+        ['Refino do discurso institucional da clínica', '2026-03-01', '2026-03-28', 'done', 100, 'media'],
+        ['Sistema visual de campanha de avaliações gratuitas', '2026-03-08', '2026-04-09', 'in_progress', 71, 'alta'],
+        ['Guia de tom para atendimento via WhatsApp', '2026-03-20', '2026-04-10', 'in_progress', 63, 'media'],
       ],
       [
-        ['Calendário de conteúdo de autoridade (Dentistas)', '2026-04-07', '2026-05-23', 'em_andamento', 56, 'alta'],
-        ['Cobertura audiovisual do espaço da clínica', '2026-04-14', '2026-06-06', 'em_risco', 42, 'media'],
-        ['Série de depoimentos de pacientes satisfeitos', '2026-04-28', '2026-06-20', 'em_andamento', 38, 'media'],
-        ['Fluxo de nutrição para agendamentos não comparecidos', '2026-05-05', '2026-06-27', 'nao_iniciado', 0, 'media'],
+        ['Calendário de conteúdo de autoridade (Dentistas)', '2026-04-07', '2026-05-23', 'in_progress', 56, 'alta'],
+        ['Cobertura audiovisual do espaço da clínica', '2026-04-14', '2026-06-06', 'in_progress', 42, 'media'],
+        ['Série de depoimentos de pacientes satisfeitos', '2026-04-28', '2026-06-20', 'in_progress', 38, 'media'],
+        ['Fluxo de nutrição para agendamentos não comparecidos', '2026-05-05', '2026-06-27', 'todo', 0, 'media'],
       ],
       [
-        ['Campanha de captação de implantes', '2026-06-02', '2026-08-01', 'nao_iniciado', 0, 'alta'],
-        ['Campanha de prevenção e limpeza segmentadas', '2026-06-16', '2026-08-15', 'nao_iniciado', 0, 'media'],
-        ['Retargeting para lista de pacientes inativos', '2026-07-01', '2026-08-29', 'nao_iniciado', 0, 'media'],
+        ['Campanha de captação de implantes', '2026-06-02', '2026-08-01', 'todo', 0, 'alta'],
+        ['Campanha de prevenção e limpeza segmentadas', '2026-06-16', '2026-08-15', 'todo', 0, 'media'],
+        ['Retargeting para lista de pacientes inativos', '2026-07-01', '2026-08-29', 'todo', 0, 'media'],
       ],
       [
-        ['Monitor de origem das avaliações agendadas', '2026-09-01', '2026-10-03', 'nao_iniciado', 0, 'alta'],
-        ['Ritual mensal de otimização de CPL e agendamentos', '2026-10-06', '2026-11-28', 'nao_iniciado', 0, 'media'],
-        ['Retrospectiva de captação odontológica 2026', '2026-12-01', '2026-12-18', 'nao_iniciado', 0, 'baixa'],
+        ['Monitor de origem das avaliações agendadas', '2026-09-01', '2026-10-03', 'todo', 0, 'alta'],
+        ['Ritual mensal de otimização de CPL e agendamentos', '2026-10-06', '2026-11-28', 'todo', 0, 'media'],
+        ['Retrospectiva de captação odontológica 2026', '2026-12-01', '2026-12-18', 'todo', 0, 'baixa'],
       ],
     ],
     versions: [
       ['4.1', '2026-05-06', 'Ana Lima', 'Ampliação da frente de conteúdo e ajustes para calendário de agendamentos.'],
       ['4.0', '2026-04-12', 'Leo Costa', 'Inclusão de automações de nutrição (WhatsApp) e revisão de dependências.'],
       ['3.9', '2026-03-18', 'Fernanda Reis', 'Versão inicial do plano anual com foco em retenção de pacientes.'],
-    ],
-  },
-  {
-    id: 'oc-jaguare',
-    name: 'ODC JAGUARÉ',
-    version: '3.4',
-    updatedAt: '2026-04-18',
-    createdAt: '2026-01-09',
-    createdBy: 'Juliana Park',
-    status: 'atrasado' as const,
-    phaseTasks: [
-      [
-        ['Mapeamento de jornadas por perfil de paciente', '2026-01-09', '2026-01-30', 'concluido', 100, 'alta'],
-        ['Benchmark regional de tratamentos estéticos', '2026-01-22', '2026-02-13', 'concluido', 100, 'alta'],
-        ['Estratégia de autoridade para o cirurgião-dentista', '2026-02-04', '2026-03-03', 'em_andamento', 73, 'media'],
-      ],
-      [
-        ['Reposicionamento visual da unidade', '2026-03-01', '2026-03-31', 'em_andamento', 64, 'alta'],
-        ['Manifesto de excelência para procedimentos estéticos', '2026-03-10', '2026-04-08', 'atrasado', 43, 'alta'],
-        ['Arquitetura de mensagens por especialidade', '2026-03-17', '2026-04-18', 'em_risco', 52, 'media'],
-      ],
-      [
-        ['Calendário de vídeos explicativos dos dentistas', '2026-04-07', '2026-05-23', 'em_andamento', 51, 'alta'],
-        ['Produção de tours curtos da clínica', '2026-04-15', '2026-06-10', 'atrasado', 35, 'alta'],
-        ['Série de conteúdos sobre clareamento e facetas', '2026-04-28', '2026-06-13', 'em_andamento', 39, 'media'],
-        ['Rotina de captação de leads orgânicos (Instagram)', '2026-05-05', '2026-06-20', 'nao_iniciado', 0, 'baixa'],
-      ],
-      [
-        ['Campanha de check-up preventivo', '2026-06-02', '2026-07-25', 'nao_iniciado', 0, 'alta'],
-        ['Mídia paga voltada a clareamento dental', '2026-06-16', '2026-08-08', 'nao_iniciado', 0, 'media'],
-        ['Campanha de remarketing WhatsApp (Agendamento)', '2026-07-01', '2026-08-22', 'nao_iniciado', 0, 'media'],
-      ],
-      [
-        ['Painel de conversão de leads para pacientes', '2026-09-01', '2026-10-10', 'nao_iniciado', 0, 'alta'],
-        ['Sprints de otimização de campanhas quinzenal', '2026-10-13', '2026-11-28', 'nao_iniciado', 0, 'media'],
-        ['Fechamento do ano (Aumento de ROI na clínica)', '2026-12-01', '2026-12-18', 'nao_iniciado', 0, 'baixa'],
-      ],
-    ],
-    versions: [
-      ['3.4', '2026-04-18', 'Juliana Park', 'Replanejamento da fase de posicionamento e reforço do conteúdo odontológico.'],
-      ['3.3', '2026-03-22', 'Fernanda Reis', 'Atualização de cronograma após inclusão de novos dentistas especialistas.'],
-      ['3.2', '2026-02-27', 'Leo Costa', 'Versão inicial com pilares de autoridade médica, mídia e captação de pacientes.'],
-    ],
-  },
-  {
-    id: 'oc-rio-negrinho',
-    name: 'ODC RIO NEGRINHO - SC',
-    version: '1.2',
-    updatedAt: '2026-05-01',
-    createdAt: '2026-02-15',
-    createdBy: 'Leo Costa',
-    status: 'em_andamento' as const,
-    phaseTasks: [
-      [
-        ['Auditoria de processos internos da clínica', '2026-02-15', '2026-03-10', 'concluido', 100, 'alta'],
-        ['Análise de market share em Rio Negrinho', '2026-03-01', '2026-03-20', 'concluido', 100, 'media'],
-        ['Definição de metas de agendamento Q2/Q3', '2026-03-15', '2026-04-05', 'concluido', 100, 'alta'],
-      ],
-      [
-        ['Ajuste de vitrine e sinalização física', '2026-04-01', '2026-04-25', 'concluido', 100, 'media'],
-        ['Treinamento de recepção para leads Meta', '2026-04-10', '2026-05-05', 'em_andamento', 85, 'alta'],
-        ['Padronização de uniformes e crachás', '2026-04-20', '2026-05-15', 'em_andamento', 40, 'baixa'],
-      ],
-      [
-        ['Sessão fotográfica da equipe técnica', '2026-05-10', '2026-06-05', 'nao_iniciado', 0, 'alta'],
-        ['Criação de anúncios para limpeza profunda', '2026-05-20', '2026-06-15', 'nao_iniciado', 0, 'media'],
-        ['Vídeos explicativos sobre próteses', '2026-06-01', '2026-06-30', 'nao_iniciado', 0, 'media'],
-      ],
-      [
-        ['Campanha Google Search (Palavras-chave locais)', '2026-07-01', '2026-08-15', 'nao_iniciado', 0, 'alta'],
-        ['Impulsionamento de posts educativos', '2026-07-15', '2026-08-30', 'nao_iniciado', 0, 'media'],
-        ['Anúncios de urgência 24h (se houver)', '2026-08-01', '2026-12-31', 'nao_iniciado', 0, 'baixa'],
-      ],
-      [
-        ['Relatório mensal de conversão final', '2026-09-01', '2026-12-31', 'nao_iniciado', 0, 'media'],
-        ['Otimização de lances por horário de pico', '2026-10-01', '2026-12-15', 'nao_iniciado', 0, 'baixa'],
-      ],
-    ],
-    versions: [
-      ['1.2', '2026-05-01', 'Leo Costa', 'Início da fase de treinamento e ajustes visuais na clínica.'],
-      ['1.1', '2026-03-25', 'Ana Lima', 'Aprovação do diagnóstico inicial e definição de metas regionais.'],
-      ['1.0', '2026-02-15', 'Marcos Dutra', 'Versão preliminar do plano de expansão local.'],
     ],
   },
 ] as const
@@ -248,17 +167,20 @@ function buildTask(
   task: readonly [string, string, string, TaskStatus, number, TaskPriority]
 ): PmpTask {
   const assignee = getPerson(phaseOrder + taskIndex)
+  const status = task[3]
+  const endDate = task[2]
 
   return {
     id: `${clientId}-${phase.id}-task-${taskIndex + 1}`,
-    phase: phase.name,
+    phase: phase.id as PmpTask['phase'],
     phaseOrder,
     title: task[0],
     assignee: assignee.name,
     assigneeInitials: assignee.initials,
     startDate: task[1],
-    endDate: task[2],
-    status: task[3],
+    endDate,
+    status,
+    statusDerived: calcularStatusDerived({ status, endDate }),
     priority: task[5],
     progress: task[4],
     description: `${descriptionTemplates[phase.name]} Esta frente cobre ${task[0].toLowerCase()} com acompanhamento semanal e checkpoints da agência.`,

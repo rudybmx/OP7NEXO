@@ -38,16 +38,16 @@ function getPhaseRange(phase: PmpPhase, planStart: string, planEnd: string) {
   )
 }
 
-function getTaskBarClasses(status: PmpTask['status']): string {
-  const classes: Record<PmpTask['status'], string> = {
-    concluido: 'opacity-90 saturate-75',
-    em_andamento: 'opacity-95',
+function getTaskBarClasses(statusDerived: PmpTask['statusDerived']): string {
+  const classes: Record<PmpTask['statusDerived'], string> = {
+    done: 'opacity-90 saturate-75',
+    in_progress: 'opacity-95',
     atrasado: 'opacity-95 ring-1 ring-inset ring-[#a32d2d]/30',
-    nao_iniciado: 'opacity-45',
+    todo: 'opacity-45',
     em_risco: 'opacity-80 ring-1 ring-inset ring-[#854f0b]/25',
+    blocked: 'opacity-50 saturate-50',
   }
-
-  return classes[status]
+  return classes[statusDerived] ?? ''
 }
 
 export default function GanttTaskRow({
@@ -117,7 +117,7 @@ export default function GanttTaskRow({
     return null
   }
 
-  const statusColor = getStatusColor(task.status)
+  const statusColor = getStatusColor(task.statusDerived)
   const position = calcTaskPosition(task, planStart, planEnd)
 
   return (
@@ -150,7 +150,7 @@ export default function GanttTaskRow({
                 statusColor.border
               )}
             >
-              {getStatusLabel(task.status)}
+              {getStatusLabel(task.statusDerived)}
             </Badge>
           </div>
         </div>
@@ -173,7 +173,7 @@ export default function GanttTaskRow({
                 onClick={() => onTaskClick?.(task)}
                 className={cn(
                   'absolute top-1/2 h-6 -translate-y-1/2 cursor-pointer rounded-md transition-transform duration-200 ease-out hover:-translate-y-[55%]',
-                  getTaskBarClasses(task.status)
+                  getTaskBarClasses(task.statusDerived)
                 )}
                 style={{
                   left: position.left,

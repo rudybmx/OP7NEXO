@@ -10,7 +10,7 @@ import {
   startOfMonth,
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import type { PmpTask, TaskPriority, TaskStatus } from '@/types/pmp'
+import type { PmpTask, TaskPriority, TaskStatus, TaskStatusDerived } from '@/types/pmp'
 
 export function daysBetween(start: string, end: string): number {
   return Math.max(1, differenceInCalendarDays(parseISO(end), parseISO(start)) + 1)
@@ -69,26 +69,26 @@ export function calcTaskPosition(task: PmpTask, planStart: string, planEnd: stri
   }
 }
 
-export function getStatusLabel(status: TaskStatus): string {
-  const labels: Record<TaskStatus, string> = {
-    nao_iniciado: 'Não iniciado',
-    em_andamento: 'Em andamento',
-    concluido: 'Concluído',
+export function getStatusLabel(status: TaskStatusDerived): string {
+  const labels: Record<TaskStatusDerived, string> = {
+    todo: 'A Fazer',
+    in_progress: 'Em Andamento',
+    done: 'Concluído',
+    blocked: 'Bloqueado',
     atrasado: 'Atrasado',
-    em_risco: 'Em risco',
+    em_risco: 'Em Risco',
   }
-
-  return labels[status]
+  return labels[status] ?? status
 }
 
-export function getStatusColor(status: TaskStatus): { bg: string; text: string; border: string } {
-  const colors: Record<TaskStatus, { bg: string; text: string; border: string }> = {
-    em_andamento: {
+export function getStatusColor(status: TaskStatusDerived): { bg: string; text: string; border: string } {
+  const colors: Record<TaskStatusDerived, { bg: string; text: string; border: string }> = {
+    in_progress: {
       bg: 'bg-[var(--ws-gold)]/10',
       text: 'text-[#92722a]',
       border: 'border-[var(--ws-gold)]/30',
     },
-    concluido: {
+    done: {
       bg: 'bg-[#3b6d11]/10',
       text: 'text-[#3b6d11]',
       border: 'border-[#3b6d11]/30',
@@ -98,7 +98,7 @@ export function getStatusColor(status: TaskStatus): { bg: string; text: string; 
       text: 'text-[#a32d2d]',
       border: 'border-[#a32d2d]/30',
     },
-    nao_iniciado: {
+    todo: {
       bg: 'bg-[#0f2744]/5',
       text: 'text-[#0f2744]/50',
       border: 'border-[#0f2744]/10',
@@ -108,9 +108,13 @@ export function getStatusColor(status: TaskStatus): { bg: string; text: string; 
       text: 'text-[#854f0b]',
       border: 'border-[#854f0b]/30',
     },
+    blocked: {
+      bg: 'bg-[#6b21a8]/10',
+      text: 'text-[#6b21a8]',
+      border: 'border-[#6b21a8]/30',
+    },
   }
-
-  return colors[status]
+  return colors[status] ?? colors.todo
 }
 
 export function getPriorityLabel(priority: TaskPriority): string {

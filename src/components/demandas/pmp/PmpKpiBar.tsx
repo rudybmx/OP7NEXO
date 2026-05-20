@@ -16,10 +16,11 @@ export default function PmpKpiBar({ plan }: PmpKpiBarProps) {
   const metrics = useMemo(() => {
     const tasks = plan.phases.flatMap((phase) => phase.tasks)
     const total = tasks.length
-    const completed = tasks.filter((task) => task.status === 'concluido').length
-    const inProgress = tasks.filter((task) => task.status === 'em_andamento').length
-    const delayed = tasks.filter((task) => task.status === 'atrasado').length
-    const averageProgress = Math.round(tasks.reduce((sum, task) => sum + task.progress, 0) / Math.max(total, 1))
+    const completed = tasks.filter((task) => task.status === 'done').length
+    const inProgress = tasks.filter((task) => task.status === 'in_progress').length
+    const delayed = tasks.filter((task) => task.statusDerived === 'atrasado').length
+    const activeTasks = tasks.filter((task) => task.status !== 'blocked')
+    const averageProgress = Math.round(activeTasks.reduce((sum, task) => sum + task.progress, 0) / Math.max(activeTasks.length, 1))
 
     return {
       total,

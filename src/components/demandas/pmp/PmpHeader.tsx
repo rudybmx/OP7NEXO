@@ -1,6 +1,6 @@
 'use client'
 
-import { Download, FileText, GitBranch } from 'lucide-react'
+import { FileText, GitBranch, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -12,14 +12,14 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { formatDateBR, getStatusColor, getStatusLabel } from '@/lib/gantt-utils'
-import type { TaskStatus } from '@/types/pmp'
+import type { TaskStatusDerived } from '@/types/pmp'
 
 interface PmpHeaderProps {
   clients: { id: string; name: string }[]
   selectedClientId: string
   selectedVersion: string
   updatedAt: string
-  planStatus: TaskStatus
+  planStatus: TaskStatusDerived
   onClientChange: (id: string) => void
   years: number[]
   selectedYear: number
@@ -27,7 +27,8 @@ interface PmpHeaderProps {
   selectedMonth: number
   onMonthChange: (month: number) => void
   onNewVersion: () => void
-  onExport: () => void
+  onNovaTarefa?: () => void
+  onNovoPlano?: () => void
 }
 
 export default function PmpHeader({
@@ -43,7 +44,8 @@ export default function PmpHeader({
   selectedMonth,
   onMonthChange,
   onNewVersion,
-  onExport,
+  onNovaTarefa,
+  onNovoPlano,
 }: PmpHeaderProps) {
   const statusColor = getStatusColor(planStatus)
 
@@ -120,6 +122,30 @@ export default function PmpHeader({
           </SelectContent>
         </Select>
 
+        {onNovoPlano && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onNovoPlano}
+            className="h-10 text-foreground hover:bg-muted/30"
+            style={{ border: '1px solid var(--ws-glass-border-strong)' }}
+          >
+            <Plus className="h-4 w-4" />
+            Novo Plano
+          </Button>
+        )}
+
+        {onNovaTarefa && (
+          <Button
+            type="button"
+            onClick={onNovaTarefa}
+            className="h-10 border-[var(--ws-gold)] bg-[var(--ws-gold)] text-white hover:bg-[#b8943d]"
+          >
+            <Plus className="h-4 w-4" />
+            Nova Tarefa
+          </Button>
+        )}
+
         <Button
           type="button"
           variant="outline"
@@ -129,15 +155,6 @@ export default function PmpHeader({
         >
           <GitBranch className="h-4 w-4" />
           Linha do Tempo
-        </Button>
-
-        <Button
-          type="button"
-          onClick={onExport}
-          className="h-10 border-[var(--ws-gold)] bg-[var(--ws-gold)] text-white hover:bg-[#b8943d]"
-        >
-          <Download className="h-4 w-4" />
-          Exportar PDF
         </Button>
       </div>
     </header>

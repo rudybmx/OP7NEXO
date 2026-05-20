@@ -25,8 +25,8 @@ export default function PmpSummaryView({ plan }: PmpSummaryViewProps) {
   const phaseCards = useMemo(
     () =>
       plan.phases.map((phase) => {
-        const completed = phase.tasks.filter((task) => task.status === 'concluido').length
-        const delayed = phase.tasks.filter((task) => task.status === 'atrasado').length
+        const completed = phase.tasks.filter((task) => task.status === 'done').length
+        const delayed = phase.tasks.filter((task) => task.statusDerived === 'atrasado').length
         const progress = Math.round(
           phase.tasks.reduce((sum, task) => sum + task.progress, 0) / Math.max(phase.tasks.length, 1)
         )
@@ -62,9 +62,9 @@ export default function PmpSummaryView({ plan }: PmpSummaryViewProps) {
         atrasado: 0,
       }
 
-      if (task.status === 'concluido') current.concluido += 1
-      if (task.status === 'em_andamento') current.em_andamento += 1
-      if (task.status === 'atrasado') current.atrasado += 1
+      if (task.status === 'done') current.concluido += 1
+      if (task.status === 'in_progress') current.em_andamento += 1
+      if (task.statusDerived === 'atrasado') current.atrasado += 1
 
       grouped.set(task.assignee, current)
     })

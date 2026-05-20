@@ -56,7 +56,7 @@ const CONFIG: Record<
 const DEFAULT_VISIBLE = 2
 
 function getOpenTasks(plan: PmpPlan): PmpTask[] {
-  return plan.phases.flatMap((phase) => phase.tasks).filter((task) => task.status !== 'concluido')
+  return plan.phases.flatMap((phase) => phase.tasks).filter((task) => task.status !== 'done')
 }
 
 export default function PmpInsights({ plan, onSelectInsightTarget }: PmpInsightsProps) {
@@ -69,7 +69,7 @@ export default function PmpInsights({ plan, onSelectInsightTarget }: PmpInsights
     const analisePhase = phases.find((phase) => phase.name === 'Análise e Otimização')
     const openTasks = getOpenTasks(plan)
 
-    const delayedInMedia = mediaPhase?.tasks.filter((task) => task.status === 'atrasado') ?? []
+    const delayedInMedia = mediaPhase?.tasks.filter((task) => task.statusDerived === 'atrasado') ?? []
     const diagnosticoProgress = diagnosticoPhase
       ? Math.round(
           diagnosticoPhase.tasks.reduce((sum, task) => sum + task.progress, 0) /
