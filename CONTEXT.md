@@ -186,6 +186,7 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Cadastro de Conta Ads com select de token (carrega todos os tokens globais)
 - Modal de Anúncios com vídeo: `AdVideo.source`, poster HQ no MinIO e retenção por quartis `P25/P50/P75/P100`
 - `/meta/insights/anuncios-performance` retorna `video_id`, `video_source_url`, `video_thumbnail_url` e `video_thumbnail_hq_url`
+- **HQ images fix (2026-05-20)**: criativos `object_type=SHARE` (posts impulsionados, sem `image_hash`) e capas de vídeo agora resolvem thumbnail via `/?ids={creative_id}&fields=thumbnail_url&thumbnail_width=1200` → 1080×1080. `hq_source` values: `adimage_minio` (hash presente), `creative_thumbnail_hq_minio` (SHARE/VIDEO). Guarda anti-regressão no UPSERT nunca sobrescreve HQ bom com fallback. Endpoint `POST /meta/reprocessar-imagens/{ads_account_id}` para backfill idempotente.
 
 ### ✅ Implementado (2026-05-13) — CRM Atendimento + Realtime
 - Webhook `/webhook/evolution/{token}` processa eventos `messages.upsert` da Evolution API
