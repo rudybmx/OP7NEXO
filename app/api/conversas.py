@@ -178,6 +178,7 @@ def listar_conversas(
     equipe_id: uuid.UUID | None = Query(None),
     responsavel_id: uuid.UUID | None = Query(None),
     busca: str | None = Query(None),
+    workspace_id: uuid.UUID | None = Query(None),
     limit: int = Query(80, ge=1, le=200),
     offset: int = Query(0, ge=0),
     usuario: User = Depends(get_usuario_atual),
@@ -186,11 +187,22 @@ def listar_conversas(
 ):
     q = db.query(Conversa).options(joinedload(Conversa.contato)).filter(Conversa.ativo.is_(True))
 
-    if workspace_filter is not None:
+    workspace_target: uuid.UUID | None = workspace_id
+    if workspace_target is None:
+        if workspace_filter is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace_id é obrigatório")
         if isinstance(workspace_filter, list):
-            q = q.filter(Conversa.workspace_id.in_(workspace_filter))
+            if len(workspace_filter) != 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Informe workspace_id quando há múltiplos workspaces.",
+                )
+            workspace_target = workspace_filter[0]
         else:
-            q = q.filter(Conversa.workspace_id == workspace_filter)
+            workspace_target = workspace_filter
+
+    verificar_acesso_workspace(usuario, workspace_target, db)
+    q = q.filter(Conversa.workspace_id == workspace_target)
 
     if status:
         q = q.filter(Conversa.status == status)

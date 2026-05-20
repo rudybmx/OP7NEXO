@@ -108,6 +108,7 @@ def _mensagem_out(m: Mensagem) -> MensagemOut:
 @router.get("", response_model=list[MensagemOut])
 def listar_mensagens(
     conversa_id: uuid.UUID = Query(...),
+    workspace_id: uuid.UUID | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     usuario: User = Depends(get_usuario_atual),
@@ -119,11 +120,22 @@ def listar_mensagens(
         Mensagem.ativo.is_(True),
     )
 
-    if workspace_filter is not None:
+    workspace_target: uuid.UUID | None = workspace_id
+    if workspace_target is None:
+        if workspace_filter is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace_id é obrigatório")
         if isinstance(workspace_filter, list):
-            q = q.filter(Mensagem.workspace_id.in_(workspace_filter))
+            if len(workspace_filter) != 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Informe workspace_id quando há múltiplos workspaces.",
+                )
+            workspace_target = workspace_filter[0]
         else:
-            q = q.filter(Mensagem.workspace_id == workspace_filter)
+            workspace_target = workspace_filter
+
+    verificar_acesso_workspace(usuario, workspace_target, db)
+    q = q.filter(Mensagem.workspace_id == workspace_target)
 
     q = q.order_by(Mensagem.criado_em.desc())
     total = q.offset(offset).limit(limit).all()
