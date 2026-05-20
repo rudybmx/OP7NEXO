@@ -1,8 +1,9 @@
 'use client'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import Link from 'next/link'
 import { X, TrendingUp, Eye, MousePointer } from 'lucide-react'
 
-function Modal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+function Modal({ onClose, children }: { onClose: () => void; children: ReactNode }) {
   return (
     <div
       style={{
@@ -19,7 +20,7 @@ function Modal({ onClose, children }: { onClose: () => void; children: React.Rea
   )
 }
 
-function ModalContent({ children, width = 480 }: { children: React.ReactNode; width?: number }) {
+function ModalContent({ children, width = 480 }: { children: ReactNode; width?: number }) {
   return (
     <div style={{
       width, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto',
@@ -48,6 +49,50 @@ export function DSModais() {
           3 variações: simples, anúncio com thumbnail, e análise IA com KPIs.
           Overlay com blur. Fechar clicando fora.
         </p>
+        <div style={{
+          marginTop: 14,
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 10,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'var(--ws-glass-bg)',
+          border: '1px solid var(--ws-glass-border)',
+          borderRadius: 'var(--ws-radius-lg)',
+          backdropFilter: 'blur(16px)',
+          boxShadow: 'var(--ws-glass-shadow-sm)',
+          padding: '12px 14px',
+          position: 'relative',
+          overflow: 'hidden',
+        }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)' }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ws-text-3)', marginBottom: 4 }}>
+              Novo componente
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--ws-text-2)', lineHeight: 1.5 }}>
+              O modal unificado de criativo está em uma página dedicada para aprovação visual.
+            </div>
+          </div>
+          <Link
+            href="/design-system/modal-anuncios"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '9px 12px',
+              borderRadius: 'var(--ws-radius-md)',
+              background: 'linear-gradient(135deg, var(--ws-blue), var(--ws-purple))',
+              color: 'white',
+              textDecoration: 'none',
+              fontSize: 13,
+              fontWeight: 600,
+              boxShadow: '0 6px 18px rgba(62,91,255,0.28)',
+            }}
+          >
+            Abrir modal unificado
+          </Link>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>

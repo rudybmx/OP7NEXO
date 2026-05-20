@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { WSTable, WSTableActions, WSTableShell } from '@/components/ui/ws-table'
 
 const CAMPANHAS = [
   { nome: 'LAL 3% - Lookalike Leads', status: 'Ativo', investimento: 8420, leads: 312, cpl: 26.99, roas: 4.2, grupos: [
@@ -75,15 +76,9 @@ export function DSTabela() {
 
       {/* Tabela simples */}
       <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ws-text-3)', marginBottom: 10 }}>Tabela Simples</div>
-      <div style={{
-        background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)',
-        borderRadius: 'var(--ws-radius-lg)', backdropFilter: 'blur(16px)',
-        boxShadow: 'var(--ws-glass-shadow)', overflow: 'hidden',
-        position: 'relative', marginBottom: 32,
-      }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)' }} />
+      <WSTableShell style={{ marginBottom: 32 }}>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+          <WSTable minWidth={600}>
             <thead>
               <tr>
                 {[['nome','Campanha'],['status','Status'],['investimento','Investimento'],['leads','Leads'],['cpl','CPL']].map(([col, label]) => (
@@ -114,9 +109,35 @@ export function DSTabela() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </WSTable>
         </div>
-      </div>
+      </WSTableShell>
+
+      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ws-text-3)', marginBottom: 10 }}>Ações em Linha (Padrão Admin)</div>
+      <WSTableShell style={{ marginBottom: 32 }}>
+        <WSTable minWidth={720}>
+          <thead>
+            <tr>
+              <th style={th}>Cliente</th>
+              <th style={th}>Status</th>
+              <th style={th}>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ borderBottom: '1px solid var(--ws-divider)' }}>
+              <td style={{ padding: '10px 14px', fontSize: 13, color: 'var(--ws-text-1)' }}>Clínica Aurora</td>
+              <td style={{ padding: '10px 14px' }}>{statusBadge('Ativo')}</td>
+              <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                <WSTableActions>
+                  <button style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.06)', color: 'var(--ws-text-2)' }}>Editar</button>
+                  <button style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, border: '1px solid rgba(62,91,255,0.20)', background: 'rgba(62,91,255,0.10)', color: 'var(--ws-blue)' }}>Conta Ads</button>
+                  <button style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, border: '1px solid rgba(122,90,248,0.20)', background: 'rgba(122,90,248,0.10)', color: 'var(--ws-purple)' }}>Usuário</button>
+                </WSTableActions>
+              </td>
+            </tr>
+          </tbody>
+        </WSTable>
+      </WSTableShell>
 
       {/* Tabela cascata */}
       <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ws-text-3)', marginBottom: 10 }}>Tabela Cascata (L0 → L1)</div>

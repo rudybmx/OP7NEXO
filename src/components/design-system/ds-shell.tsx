@@ -1,5 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useSyncExternalStore } from 'react'
+import Link from 'next/link'
 import { Moon, Sun } from 'lucide-react'
 import { useTheme } from '@/components/provedores/provedor-tema'
 import { DSCores } from './sections/ds-cores'
@@ -25,6 +26,7 @@ import { DSCrmChat } from './sections/ds-crm-chat'
 import { GLMCrmInbox } from './sections/glm-crm/glm-crm-inbox'
 import { GLMCrmContatos } from './sections/glm-crm/glm-crm-contatos'
 import { GLMCrmChat } from './sections/glm-crm/glm-crm-chat'
+import { DSFunil } from './sections/ds-funil'
 
 const SECTIONS = [
   { id: 'cores',      label: '🎨 Cores & Tokens' },
@@ -40,6 +42,7 @@ const SECTIONS = [
   { id: 'heatmap',    label: '🌡 Heatmaps' },
   { id: 'insights',   label: '🤖 Insights IA' },
   { id: 'modais',     label: '🪟 Modais' },
+  { id: 'modal-anuncios', label: 'Modal Anúncios', href: '/design-system/modal-anuncios' },
   { id: 'dropdown',   label: '⬇ Dropdowns' },
   { id: 'tabs',       label: '↔ Tabs & Navegação' },
   { id: 'minigauge',  label: '◎ Mini Gauge' },
@@ -50,6 +53,7 @@ const SECTIONS = [
   { id: 'glm-inbox',    label: '🧪 GLM · Inbox' },
   { id: 'glm-contatos', label: '🧪 GLM · Contatos' },
   { id: 'glm-chat',     label: '🧪 GLM · Chat' },
+  { id: 'funil',        label: '🔻 Funil de Campanhas' },
 ]
 
 const SECTION_MAP: Record<string, React.ReactNode> = {
@@ -76,14 +80,17 @@ const SECTION_MAP: Record<string, React.ReactNode> = {
   'glm-inbox':    <GLMCrmInbox />,
   'glm-contatos': <GLMCrmContatos />,
   'glm-chat':     <GLMCrmChat />,
+  funil: <DSFunil />,
 }
 
 export function DSShell() {
   const [activeSection, setActiveSection] = useState('cores')
   const { theme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => { setMounted(true) }, [])
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  )
 
   const isDark = theme === 'dark'
 
@@ -94,7 +101,7 @@ export function DSShell() {
       zIndex: 50,
       display: 'flex',
       background: 'var(--ws-page-bg)',
-      fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+      fontFamily: 'var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif',
       overflow: 'hidden',
     }}>
       {/* Sidebar DS */}
@@ -137,32 +144,49 @@ export function DSShell() {
 
         {/* Nav */}
         <nav style={{ flex: 1 }}>
-          {SECTIONS.map(s => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setActiveSection(s.id)}
-              style={{
-                width: '100%', textAlign: 'left',
-                display: 'flex', alignItems: 'center',
-                padding: '7px 10px', borderRadius: 8,
-                fontSize: 13, marginBottom: 2,
-                cursor: 'pointer', border: 'none',
-                transition: 'var(--ws-transition)',
-                background: activeSection === s.id
-                  ? 'var(--ws-glass-bg-hover)'
-                  : 'transparent',
-                color: activeSection === s.id ? 'var(--ws-blue)' : 'var(--ws-text-2)',
-                fontWeight: activeSection === s.id ? 500 : 400,
-                boxShadow: activeSection === s.id ? 'var(--ws-glass-shadow-sm)' : 'none',
-                borderWidth: activeSection === s.id ? 1 : 0,
-                borderStyle: 'solid',
-                borderColor: activeSection === s.id ? 'rgba(62,91,255,0.15)' : 'transparent',
-              }}
-            >
-              {s.label}
-            </button>
-          ))}
+          {SECTIONS.map(s => {
+            const isActive = activeSection === s.id
+            const navStyle = {
+              width: '100%',
+              textAlign: 'left' as const,
+              display: 'flex',
+              alignItems: 'center',
+              padding: '7px 10px',
+              borderRadius: 8,
+              fontSize: 13,
+              marginBottom: 2,
+              cursor: 'pointer',
+              border: 'none',
+              transition: 'var(--ws-transition)',
+              background: isActive ? 'var(--ws-glass-bg-hover)' : 'transparent',
+              color: isActive ? 'var(--ws-blue)' : 'var(--ws-text-2)',
+              fontWeight: isActive ? 500 : 400,
+              boxShadow: isActive ? 'var(--ws-glass-shadow-sm)' : 'none',
+              borderWidth: isActive ? 1 : 0,
+              borderStyle: 'solid',
+              borderColor: isActive ? 'rgba(62,91,255,0.15)' : 'transparent',
+              textDecoration: 'none',
+            }
+
+            if ('href' in s && s.href) {
+              return (
+                <Link key={s.id} href={s.href} style={navStyle}>
+                  {s.label}
+                </Link>
+              )
+            }
+
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setActiveSection(s.id)}
+                style={navStyle}
+              >
+                {s.label}
+              </button>
+            )
+          })}
         </nav>
 
         {/* Theme toggle no rodapé */}
