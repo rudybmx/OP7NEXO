@@ -1,5 +1,9 @@
 services:
   op7nexo-front:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_APP_URL: https://nexo.op7franquia.com.br
     image: op7nexo-front:latest
     container_name: op7nexo-front
     restart: unless-stopped
@@ -7,12 +11,16 @@ services:
       - "3000:3000"
     networks:
       - traefik-public
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - NEXT_PUBLIC_API_URL=http://op7nexo-api:8000
       - NEXT_PUBLIC_APP_URL=https://nexo.op7franquia.com.br
-      - JWT_SECRET=0085aed4be44de469e3fdd6cb8039bddf744927c1dfbf0099474dea450f6c2c9
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_USE_SSL=false
+      - MINIO_BUCKET=whatsapp-media
     labels:
       - traefik.enable=true
       - traefik.http.routers.op7nexo-front.rule=Host(`nexo.op7franquia.com.br`)
