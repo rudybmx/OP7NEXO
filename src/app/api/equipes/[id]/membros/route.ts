@@ -20,22 +20,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
       SELECT 
         em.user_id::text,
         em.perfil,
-        COALESCE(up.full_name, u.email) as nome,
-        u.email,
-        up.avatar_url
+        u.nome,
+        u.email
       FROM public.crm_whatsapp_equipe_membros em
       JOIN public.crm_whatsapp_equipes e ON e.id = em.equipe_id
-      LEFT JOIN public.user_profiles up ON up.id = em.user_id
-      LEFT JOIN auth.users u ON u.id = em.user_id
+      JOIN public.users u ON u.id = em.user_id
       WHERE em.equipe_id = ${id}::uuid
-        ${user.level === 0 ? db`` : db`AND e.org_id = ${user.org_id || null}::uuid`}
+        ${user.role === 'platform_admin' ? db`` : db`AND e.workspace_id = ${user.workspace_id || null}::uuid`}
       ORDER BY 
         CASE em.perfil 
           WHEN 'admin' THEN 1 
           WHEN 'agente' THEN 2 
           WHEN 'viewer' THEN 3 
         END,
-        nome
+        u.nome
     `
 
     return NextResponse.json({ membros, count: membros.length })
@@ -66,14 +64,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const eq = await db`
       SELECT id FROM public.crm_whatsapp_equipes
       WHERE id = ${id}::uuid
-        ${user.level === 0 ? db`` : db`AND org_id = ${user.org_id || null}::uuid`}
+        ${user.role === 'platform_admin' ? db`` : db`AND workspace_id = ${user.workspace_id || null}::uuid`}
     `
     if (eq.length === 0) {
       return NextResponse.json({ error: 'Equipe não encontrada' }, { status: 404 })
     }
 
     // Verifica se usuário existe
-    const usr = await db`SELECT id FROM auth.users WHERE id = ${userId}::uuid AND deleted_at IS NULL`
+    const usr = await db`SELECT id FROM public.users WHERE id = ${userId}::uuid AND ativo = true`
     if (usr.length === 0) {
       return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 })
     }
@@ -115,7 +113,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       WHERE em.equipe_id = e.id
         AND em.equipe_id = ${id}::uuid
         AND em.user_id = ${userId}::uuid
-        ${user.level === 0 ? db`` : db`AND e.org_id = ${user.org_id || null}::uuid`}
+        ${user.role === 'platform_admin' ? db`` : db`AND e.workspace_id = ${user.workspace_id || null}::uuid`}
     `
 
     return NextResponse.json({ ok: true })

@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
+import { WSTable, WSTableActions, WSTableShell } from '@/components/ui/ws-table'
 import { useAuth } from '@/hooks/use-auth'
 import api from '@/lib/api-client'
 
@@ -61,10 +63,8 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 14px',
   borderRadius: 10,
-  background: 'rgba(255,255,255,0.06)',
-  border: '1px solid rgba(255,255,255,0.12)',
+  ...wsSheetCreamInputStyle,
   fontSize: 13,
-  color: 'var(--ws-text-1)',
   outline: 'none',
   boxSizing: 'border-box',
 }
@@ -287,10 +287,7 @@ export default function ClientesPage() {
       </div>
 
       {/* Tabela */}
-      <div style={{
-        background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)',
-        borderRadius: 14, overflow: 'hidden', backdropFilter: 'blur(16px)',
-      }}>
+      <WSTableShell>
         {carregando ? (
           <div style={{ padding: 60, textAlign: 'center' }}>
             <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ws-blue)' }} />
@@ -304,19 +301,21 @@ export default function ClientesPage() {
             </p>
             {!busca && (
               <p style={{ fontSize: 12, color: 'var(--ws-text-3)', marginTop: 4 }}>
-                Clique em "Novo Cliente" para começar
+                Clique em &ldquo;Novo Cliente&rdquo; para começar
               </p>
             )}
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <WSTable minWidth={720}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--ws-glass-border)' }}>
+              <tr>
                 {['Nome', 'CNPJ', 'Módulos ativos', 'Status', 'Ações'].map(h => (
                   <th key={h} style={{
-                    padding: '14px 18px', fontSize: 11, fontWeight: 600,
-                    color: 'var(--ws-text-2)', textAlign: 'left',
-                    textTransform: 'uppercase', letterSpacing: '0.04em',
+                    padding: '8px 14px', fontSize: 10, fontWeight: 600,
+                    color: 'var(--ws-text-3)', textAlign: 'left',
+                    textTransform: 'uppercase', letterSpacing: '0.06em',
+                    whiteSpace: 'nowrap', background: 'rgba(62,91,255,0.04)',
+                    borderBottom: '1px solid var(--ws-divider)',
                   }}>
                     {h}
                   </th>
@@ -327,11 +326,11 @@ export default function ClientesPage() {
               {filtrados.map(c => (
                 <tr
                   key={c.id}
-                  style={{ borderBottom: '1px solid var(--ws-glass-border)', transition: 'background 0.15s' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                  style={{ borderBottom: '1px solid var(--ws-divider)', transition: 'var(--ws-transition)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(62,91,255,0.03)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <td style={{ padding: '14px 18px' }}>
+                  <td style={{ padding: '9px 14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{
                         width: 36, height: 36, borderRadius: 10, flexShrink: 0,
@@ -349,10 +348,10 @@ export default function ClientesPage() {
                       </div>
                     </div>
                   </td>
-                  <td style={{ padding: '14px 18px', fontSize: 13, color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '9px 14px', fontSize: 13, color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>
                     {c.cnpj || '—'}
                   </td>
-                  <td style={{ padding: '14px 18px' }}>
+                  <td style={{ padding: '9px 14px' }}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(c.modulos || []).length === 0 ? (
                         <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>—</span>
@@ -366,7 +365,7 @@ export default function ClientesPage() {
                       ))}
                     </div>
                   </td>
-                  <td style={{ padding: '14px 18px' }}>
+                  <td style={{ padding: '9px 14px' }}>
                     <span style={{
                       padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
                       background: c.ativo ? 'rgba(15,168,86,0.15)' : 'rgba(239,68,68,0.15)',
@@ -375,8 +374,8 @@ export default function ClientesPage() {
                       {c.ativo ? 'Ativo' : 'Inativo'}
                     </span>
                   </td>
-                  <td style={{ padding: '14px 18px' }}>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
+                    <WSTableActions>
                       <button
                         onClick={() => abrirEditar(c)}
                         style={{
@@ -407,14 +406,14 @@ export default function ClientesPage() {
                         <Users size={12} />
                         Usuário
                       </button>
-                    </div>
+                    </WSTableActions>
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </WSTable>
         )}
-      </div>
+      </WSTableShell>
 
       {/* Drawer */}
       <Sheet open={drawerAberto} onOpenChange={open => { if (!open) fecharDrawer() }}>
@@ -422,8 +421,7 @@ export default function ClientesPage() {
           side="right"
           style={{
             width: '100%', maxWidth: 520,
-            background: 'linear-gradient(160deg, rgba(20,28,60,0.99), rgba(10,15,35,0.99))',
-            border: '1px solid rgba(255,255,255,0.10)',
+            ...wsSheetCreamStyle,
             padding: 0, overflowY: 'auto',
           }}
         >
@@ -455,13 +453,13 @@ export default function ClientesPage() {
                   { icon: <CreditCard size={18} style={{ color: 'var(--ws-blue)' }} />, titulo: 'Adicionar Conta Ads', sub: 'Meta, Google, LinkedIn, TikTok', href: '/administracao/contas-ads' },
                   { icon: <Users size={18} style={{ color: 'var(--ws-purple)' }} />, titulo: 'Adicionar Usuário', sub: 'Vincular usuário ao workspace', href: null },
                 ] as const).map(item => (
-                  <button
+                    <button
                     key={item.titulo}
                     onClick={() => { if (item.href) { fecharDrawer(); router.push(item.href) } }}
                     style={{
                       padding: '14px 16px', borderRadius: 12,
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid rgba(255,255,255,0.10)',
+                      background: wsSheetCreamTokens.surface,
+                      border: `1px solid ${wsSheetCreamTokens.border}`,
                       color: 'var(--ws-text-1)', cursor: 'pointer',
                       display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left',
                     }}
@@ -480,7 +478,7 @@ export default function ClientesPage() {
                 onClick={fecharDrawer}
                 style={{
                   padding: '11px', borderRadius: 10, fontSize: 13,
-                  background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'transparent', border: `1px solid ${wsSheetCreamTokens.border}`,
                   color: 'var(--ws-text-2)', cursor: 'pointer', marginTop: 4,
                 }}
               >
@@ -503,7 +501,7 @@ export default function ClientesPage() {
                   onClick={fecharDrawer}
                   style={{
                     width: 32, height: 32, borderRadius: 8,
-                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)',
+                    ...wsSheetCreamCloseButtonStyle,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     cursor: 'pointer', color: 'var(--ws-text-2)', flexShrink: 0,
                   }}
@@ -637,8 +635,8 @@ export default function ClientesPage() {
                         onClick={() => toggleModulo(m.id)}
                         style={{
                           padding: '10px 14px', borderRadius: 10,
-                          background: ativo ? 'rgba(62,91,255,0.14)' : 'rgba(255,255,255,0.04)',
-                          border: `1px solid ${ativo ? 'rgba(62,91,255,0.40)' : 'rgba(255,255,255,0.10)'}`,
+                          background: ativo ? 'rgba(62,91,255,0.14)' : wsSheetCreamTokens.surface,
+                          border: `1px solid ${ativo ? 'rgba(62,91,255,0.40)' : wsSheetCreamTokens.border}`,
                           color: ativo ? 'var(--ws-blue)' : 'var(--ws-text-2)',
                           fontSize: 13, fontWeight: ativo ? 600 : 400,
                           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
@@ -647,8 +645,8 @@ export default function ClientesPage() {
                       >
                         <div style={{
                           width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                          background: ativo ? 'var(--ws-blue)' : 'rgba(255,255,255,0.08)',
-                          border: `1.5px solid ${ativo ? 'var(--ws-blue)' : 'rgba(255,255,255,0.20)'}`,
+                          background: ativo ? 'var(--ws-blue)' : wsSheetCreamTokens.checkboxUncheckedBg,
+                          border: `1.5px solid ${ativo ? 'var(--ws-blue)' : wsSheetCreamTokens.checkboxUncheckedBorder}`,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           transition: 'all 150ms ease',
                         }}>

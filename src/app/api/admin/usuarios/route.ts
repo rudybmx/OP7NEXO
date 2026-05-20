@@ -4,11 +4,11 @@ import { sql } from '@/lib/db'
 import { hashPassword } from '@/lib/password'
 import type { NextRequest } from 'next/server'
 
-// Lista todos os usuários com perfil e org
+// Lista todos os usuários com workspace
 export async function GET(req: NextRequest) {
   const user = await getUserFromRequest(req)
   if (!user) return unauthorized()
-  if (user.level !== 0) return forbidden()
+  if (user.role !== 'platform_admin') return forbidden()
 
   try {
     const { searchParams } = new URL(req.url)
@@ -18,29 +18,26 @@ export async function GET(req: NextRequest) {
       SELECT 
         u.id,
         u.email,
-        u.status as user_status,
-        u.email_verificado,
-        u.last_login_at,
-        u.created_at,
-        p.nome,
-        p.nivel,
-        p.cargo,
-        p.telefone,
-        p.status as perfil_status,
-        o.id as org_id,
-        o.nome as org_nome,
-        o.slug as org_slug
-      FROM public.usuarios u
-      LEFT JOIN public.perfis p ON p.id = u.id
-      LEFT JOIN public.organizacoes o ON o.id = p.org_id
-      WHERE 1=1
+        u.nome,
+        u.role as cargo,
+        u.ativo,
+        u.pode_atender_canais,
+        u.pode_acessar_crm,
+        u.workspace_id,
+        w.nome as workspace_nome,
+        w.slug as workspace_slug,
+        u.criado_em as created_at
+      FROM public.users u
+      LEFT JOIN public.workspaces w ON w.id = u.workspace_id
+      WHERE u.ativo = true
     `
 
     if (status) {
-      query = sql`${query} AND u.status = ${status}`
+      const ativo = status === 'ativo'
+      query = sql`${query} AND u.ativo = ${ativo}`
     }
 
-    query = sql`${query} ORDER BY u.created_at DESC`
+    query = sql`${query} ORDER BY u.criado_em DESC`
 
     const usuarios = await query
     return NextResponse.json(usuarios)
@@ -54,17 +51,17 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = await getUserFromRequest(req)
   if (!user) return unauthorized()
-  if (user.level !== 0) return forbidden()
+  if (user.role !== 'platform_admin') return forbidden()
 
   try {
     const body = await req.json()
-    const { email, password, nome, org_id, nivel = 2, cargo, telefone } = body
+    const { email, password, nome, workspace_id, role = 'company_agent' } = body
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email e senha obrigatorios' }, { status: 400 })
     }
 
-    const existente = await sql`SELECT id FROM public.usuarios WHERE email = ${email}`
+    const existente = await sql`SELECT id FROM public.users WHERE email = ${email} AND ativo = true`
     if (existente.length > 0) {
       return NextResponse.json({ error: 'Email ja cadastrado' }, { status: 409 })
     }
@@ -72,24 +69,19 @@ export async function POST(req: NextRequest) {
     const password_hash = await hashPassword(password)
 
     const usuario = await sql`
-      INSERT INTO public.usuarios (email, password_hash, email_verificado)
-      VALUES (${email}, ${password_hash}, true)
-      RETURNING id, email, status, created_at
+      INSERT INTO public.users (nome, email, senha_hash, role, workspace_id, ativo, pode_atender_canais, pode_acessar_crm, criado_em, atualizado_em)
+      VALUES (${nome || email.split('@')[0]}, ${email}, ${password_hash}, ${role}, ${workspace_id || null}, true, false, false, NOW(), NOW())
+      RETURNING id, email, nome, role, workspace_id, criado_em
     `
 
     const newUser = usuario[0]
 
-    await sql`
-      INSERT INTO public.perfis (id, org_id, nome, nivel, cargo, telefone, status)
-      VALUES (${newUser.id}, ${org_id || null}, ${nome || email.split('@')[0]}, ${nivel}, ${cargo || null}, ${telefone || null}, 'ativo')
-    `
-
     return NextResponse.json({
       id: newUser.id,
       email: newUser.email,
-      nome: nome || email.split('@')[0],
-      nivel,
-      org_id,
+      nome: newUser.nome,
+      role: newUser.role,
+      workspace_id: newUser.workspace_id,
     })
   } catch (err) {
     console.error('[API /admin/usuarios POST] erro:', err)
@@ -101,26 +93,27 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const user = await getUserFromRequest(req)
   if (!user) return unauthorized()
-  if (user.level !== 0) return forbidden()
+  if (user.role !== 'platform_admin') return forbidden()
 
   try {
     const body = await req.json()
-    const { id, nome, nivel, cargo, status, org_id, telefone } = body
+    const { id, nome, email, role, ativo, workspace_id, pode_atender_canais, pode_acessar_crm } = body
 
     if (!id) {
       return NextResponse.json({ error: 'ID obrigatorio' }, { status: 400 })
     }
 
     await sql`
-      UPDATE public.perfis
+      UPDATE public.users
       SET 
         nome = COALESCE(${nome}, nome),
-        nivel = COALESCE(${nivel}, nivel),
-        cargo = COALESCE(${cargo}, cargo),
-        status = COALESCE(${status}, status),
-        org_id = COALESCE(${org_id}, org_id),
-        telefone = COALESCE(${telefone}, telefone),
-        updated_at = NOW()
+        email = COALESCE(${email}, email),
+        role = COALESCE(${role}, role),
+        ativo = COALESCE(${ativo}, ativo),
+        workspace_id = COALESCE(${workspace_id}, workspace_id),
+        pode_atender_canais = COALESCE(${pode_atender_canais}, pode_atender_canais),
+        pode_acessar_crm = COALESCE(${pode_acessar_crm}, pode_acessar_crm),
+        atualizado_em = NOW()
       WHERE id = ${id}
     `
 

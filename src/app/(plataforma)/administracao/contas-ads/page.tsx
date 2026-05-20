@@ -1,12 +1,26 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Plus, Search, X, CreditCard, Check, ChevronLeft, Copy } from 'lucide-react'
+import { Loader2, Plus, Search, X, CreditCard, RefreshCw, Check, CheckCircle2, XCircle, Clock3, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { WSTable, WSTableActions, WSTableShell } from '@/components/ui/ws-table'
+import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
 import { useAuth } from '@/hooks/use-auth'
+import { Progress } from '@/components/ui/progress'
 import api from '@/lib/api-client'
+
+interface MetaToken {
+  id: string
+  nome: string
+  token: string
+  valido_ate: string | null
+  ativo: boolean
+  created_at: string
+  updated_at: string
+}
 
 interface Workspace {
   id: string
@@ -23,6 +37,7 @@ interface AdsAccount {
   bm_id?: string | null
   token?: string | null
   status: 'ativo' | 'expirado' | 'erro'
+  ativo: boolean
   sincronizado_em?: string | null
   periodo_sync_inicio?: string | null
   agrupamento?: string | null
@@ -35,7 +50,43 @@ interface MetaContaAPI {
   currency: string
 }
 
+interface SyncJobState {
+  jobId: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  progresso: number
+  etapa: string | null
+  erro: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+interface SyncJobAPI {
+  id: string
+  ads_account_id: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  etapa_atual: string | null
+  progresso: number
+  totais: Record<string, number> | null
+  erro: string | null
+  created_at: string
+  updated_at: string
+}
+
+interface SyncSchedulerJobAPI {
+  id: string
+  trigger: string
+  next_run_time: string | null
+  timezone: string | null
+}
+
+interface SyncSchedulerAPI {
+  running: boolean
+  jobs: SyncSchedulerJobAPI[]
+}
+
 type Plataforma = 'todas' | 'meta' | 'google' | 'linkedin' | 'tiktok'
+
+const SYNC_JOBS_STORAGE_KEY = 'op7nexo-meta-sync-jobs'
 
 const PLATAFORMAS: { id: Plataforma; label: string; cor: string }[] = [
   { id: 'todas', label: 'Todas', cor: 'var(--ws-blue)' },
@@ -91,10 +142,8 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 14px',
   borderRadius: 10,
-  background: 'rgba(255,255,255,0.06)',
-  border: '1px solid rgba(255,255,255,0.12)',
+  ...wsSheetCreamInputStyle,
   fontSize: 13,
-  color: 'var(--ws-text-1)',
   outline: 'none',
   boxSizing: 'border-box',
 }
@@ -121,6 +170,73 @@ function emptyForm() {
   }
 }
 
+function isSyncJobAtivo(job?: SyncJobState | null): boolean {
+  return job?.status === 'pending' || job?.status === 'running'
+}
+
+function syncJobFromApi(job: SyncJobAPI): SyncJobState {
+  return {
+    jobId: job.id,
+    status: job.status,
+    progresso: job.progresso,
+    etapa: job.etapa_atual,
+    erro: job.erro,
+    createdAt: job.created_at,
+    updatedAt: job.updated_at,
+  }
+}
+
+function loadPersistedSyncJobs(): Record<string, SyncJobState> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(SYNC_JOBS_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const entries = Object.entries(parsed as Record<string, SyncJobState>)
+    return Object.fromEntries(
+      entries.filter(([, job]) => isSyncJobAtivo(job) && !!job?.jobId),
+    )
+  } catch {
+    return {}
+  }
+}
+
+function savePersistedSyncJobs(jobs: Record<string, SyncJobState>) {
+  if (typeof window === 'undefined') return
+  try {
+    const ativos = Object.fromEntries(
+      Object.entries(jobs).filter(([, job]) => isSyncJobAtivo(job) && !!job?.jobId),
+    )
+    if (Object.keys(ativos).length === 0) {
+      localStorage.removeItem(SYNC_JOBS_STORAGE_KEY)
+      return
+    }
+    localStorage.setItem(SYNC_JOBS_STORAGE_KEY, JSON.stringify(ativos))
+  } catch {
+  }
+}
+
+function jobSemHeartbeatRecente(job: SyncJobState): boolean {
+  if (!isSyncJobAtivo(job) || !job.updatedAt) return false
+  const atualizadoEm = new Date(job.updatedAt).getTime()
+  if (!Number.isFinite(atualizadoEm)) return false
+  return Date.now() - atualizadoEm > 5 * 60 * 1000
+}
+
+function formatarTooltipSyncJob(job: SyncJobState): string {
+  const partes = [
+    `Job ${job.jobId}`,
+    `Status: ${job.status}`,
+    `Progresso: ${job.progresso}%`,
+  ]
+  if (job.etapa) partes.push(`Etapa: ${job.etapa}`)
+  if (job.createdAt) partes.push(`Iniciado: ${formatarDataHora(job.createdAt)}`)
+  if (job.updatedAt) partes.push(`Atualizado: ${formatarDataHora(job.updatedAt)}`)
+  if (job.erro) partes.push(`Erro: ${job.erro}`)
+  return partes.join(' | ')
+}
+
 export default function ContasAdsPage() {
   const { user, isLoading: authLoading } = useAuth()
   const router = useRouter()
@@ -144,6 +260,46 @@ export default function ContasAdsPage() {
   const [metaErro, setMetaErro] = useState('')
   const [buscandoMeta, setBuscandoMeta] = useState(false)
   const [metaFiltro, setMetaFiltro] = useState('')
+
+  // Meta tokens (step 1 selector)
+  const [metaTokens, setMetaTokens] = useState<MetaToken[]>([])
+  const [carregandoTokens, setCarregandoTokens] = useState(false)
+  const [tokenSelecionadoId, setTokenSelecionadoId] = useState('')
+
+  // Sync jobs
+  const [syncJobs, setSyncJobs] = useState<Record<string, SyncJobState>>(() => loadPersistedSyncJobs())
+  const syncJobsRef = React.useRef<Record<string, SyncJobState>>({})
+  const syncJobCleanupTimeoutsRef = React.useRef<number[]>([])
+  const [syncScheduler, setSyncScheduler] = useState<SyncSchedulerAPI | null>(null)
+  const [carregandoScheduler, setCarregandoScheduler] = useState(false)
+  useLayoutEffect(() => { syncJobsRef.current = syncJobs }, [syncJobs])
+  const atualizarSyncJobs = useCallback((updater: (current: Record<string, SyncJobState>) => Record<string, SyncJobState>) => {
+    setSyncJobs(prev => {
+      const next = updater(prev)
+      savePersistedSyncJobs(next)
+      return next
+    })
+  }, [])
+  const agendarRemocaoSyncJob = (contaId: string, delayMs: number) => {
+    const timeoutId = window.setTimeout(() => {
+      atualizarSyncJobs(prev => {
+        const next = { ...prev }
+        delete next[contaId]
+        return next
+      })
+      syncJobCleanupTimeoutsRef.current = syncJobCleanupTimeoutsRef.current.filter(id => id !== timeoutId)
+    }, delayMs)
+    syncJobCleanupTimeoutsRef.current.push(timeoutId)
+  }
+
+  useEffect(() => () => {
+    syncJobCleanupTimeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId))
+    syncJobCleanupTimeoutsRef.current = []
+  }, [])
+
+  // Confirm toggle
+  const [confirmToggle, setConfirmToggle] = useState<AdsAccount | null>(null)
+  const [toggling, setToggling] = useState(false)
 
   // Estado edição de agrupamento
   const [editandoConta, setEditandoConta] = useState<AdsAccount | null>(null)
@@ -182,8 +338,169 @@ export default function ContasAdsPage() {
     }
   }, [user, loadContas, loadWorkspaces])
 
+  const loadMetaTokens = useCallback(async () => {
+    setCarregandoTokens(true)
+    try {
+      const data = await api.get<MetaToken[]>('/meta/tokens')
+      setMetaTokens(data)
+    } catch {
+      setMetaTokens([])
+    } finally {
+      setCarregandoTokens(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (drawerAberto && metaTokens.length === 0 && !carregandoTokens) {
+      loadMetaTokens()
+    }
+  }, [drawerAberto, metaTokens.length, carregandoTokens, loadMetaTokens])
+
+  const loadSyncScheduler = useCallback(async () => {
+    setCarregandoScheduler(true)
+    try {
+      const data = await api.get<SyncSchedulerAPI>('/meta/sync/scheduler')
+      setSyncScheduler(data)
+    } catch {
+      setSyncScheduler(null)
+    } finally {
+      setCarregandoScheduler(false)
+    }
+  }, [])
+
+  const loadActiveSyncJobs = useCallback(async () => {
+    try {
+      const ativos = await api.get<SyncJobAPI[]>('/meta/sync/ativos')
+      atualizarSyncJobs(() => {
+        const next: Record<string, SyncJobState> = {}
+        for (const job of ativos) {
+          next[job.ads_account_id] = syncJobFromApi(job)
+        }
+        return next
+      })
+    } catch {
+      // se a API não responder, mantemos o estado persistido localmente
+    }
+  }, [atualizarSyncJobs])
+
+  useEffect(() => {
+    if (authLoading || user?.role !== 'platform_admin') return
+
+    void loadActiveSyncJobs()
+  }, [authLoading, user?.role, loadActiveSyncJobs])
+
+  useEffect(() => {
+    if (authLoading || user?.role !== 'platform_admin') return
+
+    void loadSyncScheduler()
+    const interval = window.setInterval(() => {
+      void loadSyncScheduler()
+    }, 60000)
+
+    return () => window.clearInterval(interval)
+  }, [authLoading, user?.role, loadSyncScheduler])
+
+  useEffect(() => {
+    if (authLoading || user?.role !== 'platform_admin') return
+
+    const interval = setInterval(async () => {
+      const current = syncJobsRef.current
+      const entries = Object.entries(current).filter(
+        ([, j]) => isSyncJobAtivo(j)
+      )
+      for (const [contaId, job] of entries) {
+        try {
+          const data = await api.get<SyncJobAPI>(`/meta/sync/job/${job.jobId}`)
+
+          atualizarSyncJobs(prev => ({
+            ...prev,
+            [contaId]: {
+              ...prev[contaId],
+              jobId: data.id,
+              status: data.status,
+              progresso: data.progresso,
+              etapa: data.etapa_atual,
+              erro: data.erro,
+              createdAt: data.created_at,
+              updatedAt: data.updated_at,
+            },
+          }))
+
+          if (data.status === 'done') {
+            setContas(prev => prev.map(c =>
+              c.id === contaId
+                ? { ...c, sincronizado_em: new Date().toISOString() }
+                : c
+            ))
+            agendarRemocaoSyncJob(contaId, 3000)
+          }
+
+          if (data.status === 'error') {
+            agendarRemocaoSyncJob(contaId, 5000)
+          }
+        } catch (err: any) {
+          const msg = String(err?.message ?? '')
+          if (msg.includes('404') || msg.includes('Job não encontrado')) {
+            atualizarSyncJobs(prev => {
+              const next = { ...prev }
+              delete next[contaId]
+              return next
+            })
+            continue
+          }
+          // ignore transient errors
+        }
+      }
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [authLoading, user?.role])
+
+  async function handleSync(conta: AdsAccount) {
+    if (syncJobs[conta.id]) return
+    try {
+      const data = await api.post<{ job_id: string; status: string }>(`/meta/sync/${conta.id}`)
+      const now = new Date().toISOString()
+      atualizarSyncJobs(prev => ({
+        ...prev,
+        [conta.id]: {
+          jobId: data.job_id,
+          status: (data.status as SyncJobState['status']) || 'pending',
+          progresso: 0,
+          etapa: null,
+          erro: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      }))
+      if (data.status === 'running') {
+        toast.info('Sincronização já estava em andamento')
+      } else {
+        toast.success('Sincronização iniciada')
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao iniciar sync')
+    }
+  }
+
+  async function handleToggleConta() {
+    if (!confirmToggle) return
+    setToggling(true)
+    try {
+      await api.patch(`/meta/ads-accounts/${confirmToggle.id}/toggle`)
+      toast.success(confirmToggle.ativo ? 'Conta desativada' : 'Conta ativada')
+      setConfirmToggle(null)
+      await loadContas()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao atualizar conta')
+    } finally {
+      setToggling(false)
+    }
+  }
+
   async function buscarContasMeta() {
-    if (!metaBmToken.trim()) { setMetaErro('Informe o token de acesso Meta'); return }
+    if (!form.workspace_id) { setMetaErro('Selecione um cliente primeiro'); return }
+    if (!metaBmToken.trim()) { setMetaErro('Selecione um token de acesso'); return }
     setMetaErro('')
     setBuscandoMeta(true)
     try {
@@ -214,7 +531,12 @@ export default function ContasAdsPage() {
         const c = metaContas.find(x => x.account_id === id)
         return { account_id: id, nome: c?.account_name || '' }
       })
-      const result = await api.post<{ criadas: number; atualizadas: number }>('/meta/importar-contas', {
+      const result = await api.post<{
+        criadas: number
+        atualizadas: number
+        jobs_iniciados?: number
+        jobs_reutilizados?: number
+      }>('/meta/importar-contas', {
         workspace_id: form.workspace_id,
         token: metaBmToken,
         token_expira_em: metaTokenExpira
@@ -226,8 +548,17 @@ export default function ContasAdsPage() {
       })
       fecharDrawer()
       await loadContas()
+      await loadActiveSyncJobs()
       const total = result.criadas + result.atualizadas
-      toast.success(`${total} conta${total !== 1 ? 's' : ''} importada${total !== 1 ? 's' : ''} com sucesso`)
+      const jobsIniciados = result.jobs_iniciados ?? 0
+      const jobsReutilizados = result.jobs_reutilizados ?? 0
+      if (jobsIniciados > 0) {
+        toast.success(`${total} conta${total !== 1 ? 's' : ''} importada${total !== 1 ? 's' : ''} e sincronização iniciada`)
+      } else if (jobsReutilizados > 0) {
+        toast.success(`${total} conta${total !== 1 ? 's' : ''} importada${total !== 1 ? 's' : ''}. Sincronização já estava em andamento`)
+      } else {
+        toast.success(`${total} conta${total !== 1 ? 's' : ''} importada${total !== 1 ? 's' : ''} com sucesso`)
+      }
     } catch (err: any) {
       toast.error(err.message || 'Erro ao importar contas')
     } finally {
@@ -270,6 +601,8 @@ export default function ContasAdsPage() {
     setMetaPeriodo('mes_atual')
     setMetaErro('')
     setMetaFiltro('')
+    setMetaTokens([])
+    setTokenSelecionadoId('')
   }
 
   async function salvarAgrupamento() {
@@ -306,6 +639,65 @@ export default function ContasAdsPage() {
     return matchBusca && matchPlat
   })
 
+  function renderSyncCell(c: AdsAccount) {
+    if (c.plataforma !== 'meta') return null
+    const job = syncJobs[c.id]
+    const jobTooltip = job ? formatarTooltipSyncJob(job) : undefined
+    if (job?.status === 'done') {
+      return (
+        <span
+          title={jobTooltip}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-green)' }}
+        >
+          <CheckCircle2 size={13} />
+          Concluído
+        </span>
+      )
+    }
+    if (job?.status === 'error') {
+      return (
+        <span
+          title={jobTooltip}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-coral)', cursor: 'help' }}
+        >
+          <XCircle size={13} />
+          Erro
+        </span>
+      )
+    }
+    if (job?.status === 'pending' || job?.status === 'running') {
+      const semHeartbeat = jobSemHeartbeatRecente(job)
+      return (
+        <div title={jobTooltip} style={{ minWidth: 110 }}>
+          <Progress
+            value={job.progresso}
+            className="h-1.5 mb-1"
+            indicatorClassName="bg-[var(--ws-blue)]"
+          />
+          <span style={{ fontSize: 10, color: 'var(--ws-text-3)' }}>
+            {job.etapa ?? 'iniciando...'} {job.progresso}%{semHeartbeat ? ' • sem atualização recente' : ''}
+          </span>
+        </div>
+      )
+    }
+    return (
+      <button
+        style={{
+          background: 'transparent',
+          border: '1px solid rgba(62,91,255,0.35)',
+          borderRadius: 6, padding: '4px 10px',
+          fontSize: 12, color: 'var(--ws-blue)',
+          cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+        }}
+        onClick={() => handleSync(c)}
+      >
+        <RefreshCw size={11} />
+        Sync
+      </button>
+    )
+  }
+
   if (authLoading || !user || user.role !== 'platform_admin') {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
@@ -315,6 +707,11 @@ export default function ContasAdsPage() {
   }
 
   const isMeta = form.plataforma === 'meta'
+  const selectedToken = metaTokens.find(x => x.token === tokenSelecionadoId) ?? null
+  const schedulerJob = syncScheduler?.jobs?.[0] ?? null
+  const schedulerStatusLabel = syncScheduler?.running ? 'Ativo' : 'Parado'
+  const schedulerStatusColor = syncScheduler?.running ? 'var(--ws-green)' : 'var(--ws-coral)'
+  const schedulerStatusBg = syncScheduler?.running ? 'rgba(15,168,86,0.12)' : 'rgba(255,92,141,0.12)'
 
   return (
     <div style={{ padding: '32px 24px', maxWidth: 1200, margin: '0 auto' }}>
@@ -386,12 +783,112 @@ export default function ContasAdsPage() {
         </span>
       </div>
 
+      {/* Scheduler status */}
+      <div
+        style={{
+          position: 'relative',
+          overflow: 'hidden',
+          background: 'var(--ws-glass-bg)',
+          border: '1px solid var(--ws-glass-border)',
+          borderRadius: 16,
+          padding: '16px 18px 18px',
+          marginBottom: 24,
+          boxShadow: 'var(--ws-glass-shadow-sm)',
+          backdropFilter: 'blur(14px)',
+        }}
+      >
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: 14,
+            right: 14,
+            top: 10,
+            height: 1,
+            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.78), transparent)',
+            pointerEvents: 'none',
+          }}
+        />
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--ws-text-2)', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <Clock3 size={14} />
+              Scheduler Meta Ads
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  background: schedulerStatusBg,
+                  color: schedulerStatusColor,
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: schedulerStatusColor, flexShrink: 0 }} />
+                {carregandoScheduler ? 'Atualizando' : schedulerStatusLabel}
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--ws-text-2)' }}>
+                Sync automático às 06:00, 12:00 e 18:00 de Brasília
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={() => { void loadSyncScheduler() }}
+            disabled={carregandoScheduler}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 14px',
+              borderRadius: 10,
+              border: '1px solid var(--ws-glass-border)',
+              background: 'rgba(255,255,255,0.03)',
+              color: 'var(--ws-text-2)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: carregandoScheduler ? 'wait' : 'pointer',
+            }}
+          >
+            <RefreshCw size={14} className={carregandoScheduler ? 'animate-spin' : ''} />
+            Recarregar
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
+          <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ws-glass-border)' }}>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ws-text-3)', fontWeight: 600 }}>Próxima execução</div>
+            <div style={{ marginTop: 6, fontSize: 13, color: 'var(--ws-text-1)', fontWeight: 600 }}>
+              {schedulerJob?.next_run_time ? formatarDataHora(schedulerJob.next_run_time) : 'Sem agendamento carregado'}
+            </div>
+          </div>
+          <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ws-glass-border)' }}>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ws-text-3)', fontWeight: 600 }}>Timezone</div>
+            <div style={{ marginTop: 6, fontSize: 13, color: 'var(--ws-text-1)', fontWeight: 600 }}>
+              {schedulerJob?.timezone || 'America/Sao_Paulo'}
+            </div>
+          </div>
+          <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ws-glass-border)' }}>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ws-text-3)', fontWeight: 600 }}>Job</div>
+            <div style={{ marginTop: 6, fontSize: 13, color: 'var(--ws-text-1)', fontWeight: 600 }}>
+              {schedulerJob ? schedulerJob.trigger : 'meta_sync'}
+            </div>
+          </div>
+        </div>
+
+        {schedulerJob && (
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--ws-text-2)' }}>
+            O job <strong style={{ fontWeight: 600, color: 'var(--ws-text-1)' }}>{schedulerJob.id}</strong> é o responsável pelo sync automático das contas Meta.
+          </div>
+        )}
+      </div>
+
       {/* Tabela */}
-      <div style={{
-        background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)',
-        borderRadius: 14, overflow: 'hidden', backdropFilter: 'blur(16px)',
-        overflowX: 'auto',
-      }}>
+      <WSTableShell>
         {carregando ? (
           <div style={{ padding: 60, textAlign: 'center' }}>
             <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ws-blue)' }} />
@@ -410,15 +907,16 @@ export default function ContasAdsPage() {
             )}
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <WSTable minWidth={1050}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--ws-glass-border)', background: 'rgba(0,0,0,0.03)' }}>
+              <tr>
                 {['Plataforma', 'Account ID', 'Nome', 'Cliente', 'Período', 'Insights', 'Última Atualização', 'Ações'].map(h => (
                   <th key={h} style={{
-                    padding: '10px 14px', fontSize: 11, fontWeight: 600,
-                    color: 'var(--ws-text-2)', textAlign: 'left',
-                    textTransform: 'uppercase', letterSpacing: '0.04em',
-                    whiteSpace: 'nowrap',
+                    padding: '8px 14px', fontSize: 10, fontWeight: 600,
+                    color: 'var(--ws-text-3)', textAlign: 'left',
+                    textTransform: 'uppercase', letterSpacing: '0.06em',
+                    whiteSpace: 'nowrap', background: 'rgba(62,91,255,0.04)',
+                    borderBottom: '1px solid var(--ws-divider)',
                   }}>
                     {h}
                   </th>
@@ -432,11 +930,11 @@ export default function ContasAdsPage() {
                 return (
                   <tr
                     key={c.id}
-                    style={{ borderBottom: '1px solid var(--ws-glass-border)', transition: 'background 0.15s' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                    style={{ borderBottom: '1px solid var(--ws-divider)', transition: 'var(--ws-transition)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(62,91,255,0.03)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6,
                         padding: '4px 10px', borderRadius: 6,
@@ -446,21 +944,21 @@ export default function ContasAdsPage() {
                         {plat.label}
                       </span>
                     </td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
                       <code style={{ fontSize: 11, color: 'var(--ws-text-3)', fontFamily: 'monospace' }}>
                         {c.account_id}
                       </code>
                     </td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13, color: 'var(--ws-text-1)', fontWeight: 500 }}>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13, color: 'var(--ws-text-1)', fontWeight: 500 }}>
                       {c.nome}
                     </td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-2)' }}>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-2)' }}>
                       {c.workspace_nome || '—'}
                     </td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-3)' }}>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-3)' }}>
                       {c.periodo_sync_inicio ? formatarPeriodo(c.periodo_sync_inicio) : '—'}
                     </td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6,
                         padding: '3px 8px', borderRadius: 6,
@@ -474,30 +972,45 @@ export default function ContasAdsPage() {
                         {insights.label}
                       </span>
                     </td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-3)' }}>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-3)' }}>
                       {c.sincronizado_em ? formatarDataHora(c.sincronizado_em) : 'Nunca sincronizado'}
                     </td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
-                      <button
-                        style={{
-                          background: 'transparent',
-                          border: '1px solid var(--ws-glass-border)',
-                          borderRadius: 6, padding: '4px 12px',
-                          fontSize: 12, color: 'var(--ws-text-2)',
-                          cursor: 'pointer',
-                        }}
-                        onClick={() => { setEditandoConta(c); setAgrupamentoEdit(c.agrupamento || '') }}
-                      >
-                        Editar
-                      </button>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
+                      <WSTableActions>
+                        <button
+                          style={{
+                            background: 'transparent',
+                            border: '1px solid var(--ws-glass-border)',
+                            borderRadius: 6, padding: '4px 12px',
+                            fontSize: 12, color: 'var(--ws-text-2)',
+                            cursor: 'pointer',
+                          }}
+                          onClick={() => { setEditandoConta(c); setAgrupamentoEdit(c.agrupamento || '') }}
+                        >
+                          Editar
+                        </button>
+                        {renderSyncCell(c)}
+                        <button
+                          style={{
+                            background: 'transparent',
+                            border: `1px solid ${c.ativo ? 'rgba(255,92,141,0.35)' : 'rgba(15,168,86,0.35)'}`,
+                            borderRadius: 6, padding: '4px 12px',
+                            fontSize: 12, color: c.ativo ? 'var(--ws-coral)' : 'var(--ws-green)',
+                            cursor: 'pointer',
+                          }}
+                          onClick={() => setConfirmToggle(c)}
+                        >
+                          {c.ativo ? 'Desativar' : 'Ativar'}
+                        </button>
+                      </WSTableActions>
                     </td>
                   </tr>
                 )
               })}
             </tbody>
-          </table>
+          </WSTable>
         )}
-      </div>
+      </WSTableShell>
 
       {/* Drawer Nova Conta */}
       <Sheet open={drawerAberto} onOpenChange={open => !open && fecharDrawer()}>
@@ -505,14 +1018,18 @@ export default function ContasAdsPage() {
           side="right"
           style={{
             width: isMeta ? 520 : 480,
-            background: 'var(--ws-glass-bg)',
-            borderLeft: '1px solid var(--ws-glass-border)',
-            backdropFilter: 'blur(24px)',
+            ...wsSheetCreamStyle,
             padding: 0,
             display: 'flex',
             flexDirection: 'column',
           }}
-        >
+          >
+          <SheetTitle className="sr-only">Nova Conta Ads</SheetTitle>
+          <SheetDescription className="sr-only">
+            {isMeta
+              ? `Importar via Meta — passo ${metaStep} de 3`
+              : 'Vincule uma conta de anúncios a um cliente'}
+          </SheetDescription>
           {/* Drawer header */}
           <div style={{
             padding: '24px 28px 20px',
@@ -532,8 +1049,7 @@ export default function ContasAdsPage() {
             <button
               onClick={fecharDrawer}
               style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid var(--ws-glass-border)',
+                ...wsSheetCreamCloseButtonStyle,
                 borderRadius: 8, width: 32, height: 32,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', color: 'var(--ws-text-2)',
@@ -587,9 +1103,9 @@ export default function ContasAdsPage() {
                           width: 28, height: 28, borderRadius: '50%',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: 12, fontWeight: 700,
-                          background: metaStep > s ? 'var(--ws-green)' : metaStep === s ? 'var(--ws-blue)' : 'rgba(255,255,255,0.06)',
+                          background: metaStep > s ? 'var(--ws-green)' : metaStep === s ? 'var(--ws-blue)' : wsSheetCreamTokens.surfaceHover,
                           color: metaStep >= s ? 'white' : 'var(--ws-text-3)',
-                          border: metaStep === s ? '2px solid rgba(62,91,255,0.4)' : '1px solid rgba(255,255,255,0.1)',
+                          border: metaStep === s ? '2px solid rgba(62,91,255,0.4)' : `1px solid ${wsSheetCreamTokens.border}`,
                           flexShrink: 0,
                         }}>
                           {metaStep > s ? <Check size={12} /> : s}
@@ -597,49 +1113,101 @@ export default function ContasAdsPage() {
                         {s < 3 && (
                           <div style={{
                             flex: 1, height: 1,
-                            background: metaStep > s ? 'var(--ws-green)' : 'rgba(255,255,255,0.1)',
+                            background: metaStep > s ? 'var(--ws-green)' : wsSheetCreamTokens.borderStrong,
                           }} />
                         )}
                       </React.Fragment>
                     ))}
                   </div>
 
-                  {/* Step 1: Token */}
+                  {/* Step 1: Cliente + Token */}
                   {metaStep === 1 && (
                     <>
                       <div>
-                        <label style={labelStyle}>Token de Acesso Meta *</label>
-                        <textarea
-                          placeholder="Cole o token de acesso aqui..."
-                          value={metaBmToken}
-                          onChange={e => { setMetaBmToken(e.target.value); setMetaErro('') }}
-                          rows={5}
-                          style={{
-                            ...inputStyle,
-                            resize: 'vertical',
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                            lineHeight: 1.5,
+                        <label style={labelStyle}>Cliente *</label>
+                        <select
+                          value={form.workspace_id}
+                          onChange={e => {
+                            const wsId = e.target.value
+                            setForm(prev => ({ ...prev, workspace_id: wsId }))
+                            setTokenSelecionadoId('')
+                            setMetaBmToken('')
+                            setMetaTokenExpira('')
                           }}
-                        />
-                        {metaErro && (
-                          <p style={{ fontSize: 12, color: 'var(--ws-coral)', marginTop: 6 }}>{metaErro}</p>
-                        )}
+                          style={{ ...inputStyle, cursor: 'pointer' }}
+                        >
+                          <option value="">Selecione um cliente...</option>
+                          {workspaces.map(w => (
+                            <option key={w.id} value={w.id}>{w.nome}</option>
+                          ))}
+                        </select>
                       </div>
 
                       <div>
-                        <label style={labelStyle}>
-                          Válido até{' '}
-                          <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
-                            (opcional)
-                          </span>
-                        </label>
-                        <input
-                          type="date"
-                          value={metaTokenExpira}
-                          onChange={e => setMetaTokenExpira(e.target.value)}
-                          style={inputStyle}
-                        />
+                        <label style={labelStyle}>Token de Acesso Meta *</label>
+                        {carregandoTokens ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0' }}>
+                            <Loader2 size={14} className="animate-spin" style={{ color: 'var(--ws-blue)' }} />
+                            <span style={{ fontSize: 13, color: 'var(--ws-text-2)' }}>Carregando tokens...</span>
+                          </div>
+                        ) : metaTokens.length === 0 ? (
+                          <p style={{ fontSize: 12, color: 'var(--ws-text-3)', padding: '8px 0' }}>
+                            Nenhum token cadastrado.{' '}
+                            <a href="/admin/tokens" target="_blank" style={{ color: 'var(--ws-blue)', textDecoration: 'underline' }}>
+                              Cadastrar token
+                            </a>
+                          </p>
+                        ) : (
+                          <Select
+                            value={tokenSelecionadoId}
+                            onValueChange={v => {
+                              setTokenSelecionadoId(v)
+                              const t = metaTokens.find(x => x.token === v)
+                              if (t) {
+                                setMetaBmToken(t.token)
+                                setMetaTokenExpira(t.valido_ate ?? '')
+                                setMetaErro('')
+                              }
+                            }}
+                          >
+                            <SelectTrigger
+                              className="w-full h-10 text-sm border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] backdrop-blur-md"
+                            >
+                              <SelectValue placeholder="Selecione um token..." />
+                            </SelectTrigger>
+                            <SelectContent position="popper" className="z-[200]">
+                              {metaTokens.map(t => (
+                                <SelectItem key={t.id} value={t.token} className="text-sm">
+                                  {t.nome}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {metaErro && (
+                          <p style={{ fontSize: 12, color: 'var(--ws-coral)', marginTop: 6 }}>{metaErro}</p>
+                        )}
+                        {tokenSelecionadoId && selectedToken && (
+                          <div style={{ marginTop: 10 }}>
+                            <label style={labelStyle}>Válido até</label>
+                            <input
+                              type="date"
+                              value={selectedToken.valido_ate ?? ''}
+                              readOnly
+                              style={{
+                                ...inputStyle,
+                                cursor: 'not-allowed',
+                                background: wsSheetCreamTokens.surface,
+                                opacity: 0.9,
+                              }}
+                            />
+                            <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>
+                              {selectedToken.valido_ate
+                                ? `Validade do token selecionado: ${new Date(selectedToken.valido_ate + 'T00:00:00').toLocaleDateString('pt-BR')}`
+                                : 'Token sem data de validade definida'}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
@@ -696,16 +1264,16 @@ export default function ContasAdsPage() {
                               style={{
                                 display: 'flex', alignItems: 'center', gap: 12,
                                 padding: '12px 14px', borderRadius: 10,
-                                background: selected ? 'rgba(0,129,251,0.08)' : 'rgba(255,255,255,0.04)',
-                                border: selected ? '1px solid rgba(0,129,251,0.35)' : '1px solid rgba(255,255,255,0.08)',
+                                background: selected ? 'rgba(0,129,251,0.08)' : wsSheetCreamTokens.surface,
+                                border: selected ? '1px solid rgba(0,129,251,0.35)' : `1px solid ${wsSheetCreamTokens.border}`,
                                 cursor: 'pointer', textAlign: 'left', width: '100%',
                                 transition: 'all 0.15s', flexShrink: 0,
                               }}
                             >
                               <div style={{
                                 width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-                                background: selected ? '#0081FB' : 'rgba(255,255,255,0.06)',
-                                border: selected ? '1px solid #0081FB' : '1px solid rgba(255,255,255,0.15)',
+                                background: selected ? '#0081FB' : wsSheetCreamTokens.checkboxUncheckedBg,
+                                border: selected ? '1px solid #0081FB' : `1px solid ${wsSheetCreamTokens.checkboxUncheckedBorder}`,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                               }}>
                                 {selected && <Check size={11} color="white" />}
@@ -804,8 +1372,8 @@ export default function ContasAdsPage() {
                       {form.workspace_id && (
                         <div style={{
                           padding: '12px 14px', borderRadius: 10,
-                          background: 'rgba(255,255,255,0.04)',
-                          border: '1px solid rgba(255,255,255,0.08)',
+                          background: wsSheetCreamTokens.surface,
+                          border: `1px solid ${wsSheetCreamTokens.border}`,
                           fontSize: 13, color: 'var(--ws-text-2)', lineHeight: 1.6,
                         }}>
                           <strong style={{ color: 'var(--ws-text-1)' }}>{metaSelecionadas.length}</strong> conta{metaSelecionadas.length !== 1 ? 's' : ''} ser{metaSelecionadas.length !== 1 ? 'ão' : 'á'} importada{metaSelecionadas.length !== 1 ? 's' : ''} para{' '}
@@ -997,13 +1565,13 @@ export default function ContasAdsPage() {
       </Sheet>
 
       <Sheet open={!!editandoConta} onOpenChange={open => !open && setEditandoConta(null)}>
-        <SheetContent side="right" style={{ width: 400, background: 'var(--ws-glass-bg)', borderLeft: '1px solid var(--ws-glass-border)', backdropFilter: 'blur(24px)', padding: 0, display: 'flex', flexDirection: 'column' }}>
+        <SheetContent side="right" style={{ width: 400, ...wsSheetCreamStyle, padding: 0, display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '24px 28px 20px', borderBottom: '1px solid var(--ws-glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--ws-text-1)' }}>Editar Conta</h2>
               <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0' }}>{editandoConta?.nome}</p>
             </div>
-            <button onClick={() => setEditandoConta(null)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--ws-glass-border)', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--ws-text-2)' }}>
+            <button onClick={() => setEditandoConta(null)} style={{ ...wsSheetCreamCloseButtonStyle, borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--ws-text-2)' }}>
               <X size={16} />
             </button>
           </div>
@@ -1029,6 +1597,63 @@ export default function ContasAdsPage() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Confirm Toggle Modal */}
+      {confirmToggle && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)',
+            borderRadius: 16, padding: '28px 32px', maxWidth: 400, width: '90%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+          }}>
+            <h3 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ws-text-1)', margin: '0 0 8px' }}>
+              {confirmToggle.ativo ? 'Desativar conta?' : 'Ativar conta?'}
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '0 0 6px', lineHeight: 1.6 }}>
+              {confirmToggle.ativo
+                ? 'Deseja desativar esta conta? Ela não aparecerá mais nos relatórios.'
+                : `Deseja reativar "${confirmToggle.nome}"?`}
+            </p>
+            {confirmToggle.ativo && (
+              <p style={{ fontSize: 12, color: 'var(--ws-text-3)', margin: '0 0 20px' }}>
+                <strong style={{ color: 'var(--ws-text-2)' }}>{confirmToggle.nome}</strong>
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+              <button
+                onClick={() => setConfirmToggle(null)}
+                style={{
+                  flex: 1, height: 40, borderRadius: 10,
+                  background: 'transparent', border: '1px solid var(--ws-glass-border)',
+                  fontSize: 13, fontWeight: 500, color: 'var(--ws-text-2)', cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleToggleConta}
+                disabled={toggling}
+                style={{
+                  flex: 1, height: 40, borderRadius: 10,
+                  background: confirmToggle.ativo
+                    ? (toggling ? 'rgba(255,92,141,0.4)' : 'linear-gradient(135deg, #FF5C8D, #c9447a)')
+                    : (toggling ? 'rgba(15,168,86,0.4)' : 'linear-gradient(135deg, #0fa856, #0d8a46)'),
+                  border: 'none', fontSize: 13, fontWeight: 600,
+                  color: 'white', cursor: toggling ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}
+              >
+                {toggling && <Loader2 size={14} className="animate-spin" />}
+                {confirmToggle.ativo ? 'Desativar' : 'Ativar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

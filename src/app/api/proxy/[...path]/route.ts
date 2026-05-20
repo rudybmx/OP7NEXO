@@ -12,12 +12,25 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
 
   const body = ['GET', 'HEAD'].includes(req.method) ? undefined : req.body
 
-  const upstream = await fetch(url.toString(), {
-    method: req.method,
-    headers,
-    body,
-    duplex: 'half',
-  } as RequestInit)
+  let upstream: Response
+  try {
+    upstream = await fetch(url.toString(), {
+      method: req.method,
+      headers,
+      body,
+      duplex: 'half',
+    } as RequestInit)
+  } catch (err: any) {
+    return NextResponse.json(
+      {
+        detail: 'Upstream API unavailable',
+        code: 'upstream_unavailable',
+        path: `/${path.join('/')}`,
+        error: err?.message ?? 'fetch failed',
+      },
+      { status: 503 }
+    )
+  }
 
   const resHeaders = new Headers(upstream.headers)
   resHeaders.delete('content-encoding')
