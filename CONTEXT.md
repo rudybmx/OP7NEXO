@@ -1,0 +1,241 @@
+# OP7NEXO — Context de Arquitetura e Negócio
+
+> Atualizado: 2026-05-15
+> Mantenha este arquivo atualizado conforme o sistema evolui.
+
+## O QUE É O SISTEMA
+
+SaaS de Marketing + CRM multi-tenant. Cada cliente é um **workspace**. O produto gerencia campanhas de Meta Ads, canais de comunicação (WhatsApp via Evolution API) e dados de performance.
+
+**Cliente piloto:** Doutor Feridas (rede de franquias de saúde)
+- Múltiplas unidades (Matriz, Osasco, SBC, etc.)
+- Cada unidade tem sua própria conta de Meta Ads
+- Um workspace agrupa todas as contas
+
+---
+
+## ARQUITETURA
+
+```
+op7nexo-api (Python/FastAPI · SQLAlchemy · Alembic · PostgreSQL)     op7nexo-front (Next.js)
+├── /auth                                  ├── /admin
+├── /meta                                  │   ├── contas-ads
+│   ├── /ads-accounts                      │   ├── tokens
+│   ├── /campanhas                         │   └── ...
+│   ├── /publicos                          ├── /[workspace]
+│   ├── /criativos                         │   ├── meta-ads
+│   └── /tokens                            │   │   ├── visao-geral
+├── /channels                              │   │   ├── campanhas
+│   └── /whatsapp (Evolution API)          │   │   ├── conjuntos
+│                                          │   │   ├── criativos
+VPS: api.op7franquia.com.br               │   │   └── publicos
+     nexo.op7franquia.com.br               └── ...
+     evo.op7franquia.com.br (Evolution)
+```
+
+---
+
+## BANCO DE DADOS (PostgreSQL)
+
+### Multi-tenancy
+- TODA tabela de dados tem `workspace_id UUID` com FK para `workspaces`
+- TODA query de leitura filtra por `workspace_id` — nunca expor dados cross-tenant
+- Soft delete padrão: `ativo BOOLEAN DEFAULT true`
+
+### Tabelas principais
+
+```sql
+workspaces          -- tenant raiz
+ads_accounts        -- contas Meta Ads vinculadas ao workspace
+                    -- campos: id, workspace_id, account_id, nome, token, valido_ate, ativo, plataforma
+meta_tokens         -- tokens de acesso globais do admin (migration 016+017)
+                    -- campos: id, nome, token, valido_ate, ativo
+                    -- NÃO tem workspace_id — token pertence ao admin/agência, compartilhado entre todos os clientes
+meta_campanhas_insights     -- dados de campanhas
+meta_conjuntos_insights     -- dados de ad sets / conjuntos
+meta_publicos_insights      -- dados de públicos (tem campaign_id desde migration 015)
+meta_criativos_insights     -- dados de criativos
+meta_videos_catalog         -- catálogo de vídeos com source_url, thumbnail_url e image_url_hq persistido no MinIO
+```
+
+### Migrations
+- Numeradas: `001_` ... `018_` (última aplicada: 018_sync_jobs)
+- Localização: `/root/op7nexo-api/migrations/` (confirmar path antes de criar nova)
+- Sempre rodar após criar: `bash /root/deploy.sh api` + testar endpoint
+
+---
+
+## META ADS — Regras de negócio
+
+### Estrutura de dados Meta (hierarquia)
+```
+Account
+└── Campaign (meta_campanhas_insights)
+    └── Ad Set / Conjunto (meta_conjuntos_insights)
+        ├── Público (meta_publicos_insights)  — filtro por campaign_id ativo
+        └── Criativo (meta_criativos_insights) — filtro por campaign_id + adset_id (a implementar)
+```
+
+### Sincronização
+- Sync manual: POST `/meta/sync/{account_id}` → retorna `{job_id, status: "pending"}` imediatamente (HTTP 202)
+- Polling: GET `/meta/sync/job/{job_id}` → campos: status (pending|running|done|error), etapa_atual, progresso (0-100), totais, erro
+- Sync automático: APScheduler 3x/dia (06h, 12h, 18h Brasília) via `app/services/scheduler.py`
+- Tabela `sync_jobs` persiste histórico de jobs — migration 018
+- Após cadastro de conta: sync automático a implementar
+
+### Filtros implementados
+- ✅ Públicos: dropdown de campanha filtrando por `campaign_id`
+- ⏳ Criativos: mesmo padrão, adicionar `campaign_id` + `adset_id` (próxima tarefa)
+
+---
+
+## TOKENS META ADS
+
+### Regra de negócio
+- Token é **global** — pertence ao admin/agência, não ao cliente (workspace)
+- Cadastrado em **Gestão de Tokens** (/admin/tokens) com nome e validade
+- Ao cadastrar Conta Ads, seleciona token do dropdown (lista todos os tokens ativos, sem filtro de workspace)
+- Token único pode ser usado em múltiplas contas de múltiplos workspaces
+- Status visual: Verde (ativo) / Amarelo (expira em < 30 dias) / Vermelho (expirado/inativo)
+- GET /meta/tokens retorna todos — sem filtro de workspace_id
+
+---
+
+## CONTAS ADS
+
+### Estados
+- `ativo = true` → aparece em todos os filtros, dropdowns e relatórios
+- `ativo = false` → invisível para o usuário final, só admin vê com `?include_inactive=true`
+- Toggle via: `PATCH /meta/ads-accounts/:id/toggle`
+
+---
+
+## CANAIS — WhatsApp (Evolution API)
+
+### Base URL
+`https://evo.op7franquia.com.br`
+
+### Fluxo de conexão
+1. Criar instância na Evolution API
+2. GET `/instance/connect/{instance_name}` → retorna QR Code
+3. Polling a cada 30s até status = connected
+4. Exibir QR Code no Drawer do canal
+
+---
+
+## PADRÕES FRONT-END
+
+### Stack
+- Next.js (App Router)
+- Tailwind CSS
+- Radix UI (primitivos de UI — sempre preferir Radix antes de instalar lib nova)
+- Lucide React (ícones)
+
+### Convenções de arquivo
+```
+src/hooks/use-[recurso].ts          ← data fetching, lógica de estado
+src/components/[modulo]/            ← componentes do módulo
+src/app/admin/[recurso]/page.tsx    ← páginas admin
+src/app/[workspace]/[rota]/         ← páginas por workspace
+```
+
+### Padrão de hook
+```ts
+// Sempre recebe workspace_id como param
+// Sempre retorna { data, isLoading, error, refetch }
+// Passa filtros como query params para a API
+```
+
+### Dropdowns/Selects com dados remotos
+- Usar Radix UI Select com scroll
+- Referência implementada: dropdown de campanhas em filtros de Públicos
+- Sempre incluir estado de loading e "Todas" como opção padrão
+
+---
+
+## PADRÕES BACK-END
+
+### Estrutura de endpoint padrão
+```
+GET    /meta/[recurso]?workspace_id=...&filtro=...
+POST   /meta/[recurso]
+PUT    /meta/[recurso]/:id
+DELETE /meta/[recurso]/:id          ← soft delete (ativo=false)
+PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
+```
+
+### Autenticação
+- JWT Bearer token em todas as rotas
+- `workspace_id` validado contra o token do usuário
+
+---
+
+## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
+
+### ✅ Implementado
+- Meta Ads: 5 abas com dados reais (Visão Geral, Campanhas, Conjuntos, Públicos, Criativos)
+- Filtro de campanha em Públicos
+- Migration 015: campaign_id em meta_publicos_insights
+- Dropdown campanhas com Radix UI + scroll
+- Botões Sincronizar/Ativar/Desativar em Contas Ads
+- Migration 016: tabela meta_tokens
+- Migration 017: removido workspace_id FK (tokens globais)
+- Migration 018: tabela sync_jobs para tracking de sync assíncrono
+- Sync assíncrono: POST /meta/sync retorna job_id em <1s, background thread atualiza progresso
+- Gestão de Tokens (página admin, CRUD) — sem filtro por workspace
+- Cadastro de Conta Ads com select de token (carrega todos os tokens globais)
+- Modal de Anúncios com vídeo: `AdVideo.source`, poster HQ no MinIO e retenção por quartis `P25/P50/P75/P100`
+- `/meta/insights/anuncios-performance` retorna `video_id`, `video_source_url`, `video_thumbnail_url` e `video_thumbnail_hq_url`
+
+### ✅ Implementado (2026-05-13) — CRM Atendimento + Realtime
+- Webhook `/webhook/evolution/{token}` processa eventos `messages.upsert` da Evolution API
+- Salva contato (`crm_whatsapp_contatos`), conversa (`crm_whatsapp_conversas`) e mensagem (`crm_whatsapp_mensagens`)
+- Regra: conversa `resolvido` + nova msg de entrada → cria **NOVA** conversa (não reabre)
+- Publica eventos no Redis (`whatsapp:events`) para consumo em tempo real pelo front
+- Serviço `app/services/redis_pub.py` para publicação de eventos
+- Dependência `redis==5.2.1` adicionada
+- **Bugfix**: comparação de evento `messages.upsert` (formato Evolution com ponto) vs `MESSAGES_UPSERT` — corrigido com `.upper().replace(".", "_")`
+
+### ✅ Implementado (2026-05-15) — Grupos WhatsApp e @mentions
+- Migration 033: `is_group`, `group_name` em `crm_whatsapp_conversas`; `participant_jid`, `participant_name`, `is_mentioned` em `crm_whatsapp_mensagens`
+- Webhook detecta grupos via `@g.us` no `remote_jid`, extrai remetente real do `key.participant`
+- Detecta `@mentions` comparando `mentionedJid` no `extendedTextMessage.contextInfo` com número do canal
+- Upsert automático de contato do participant em mensagens de grupo
+- API responde com campos `is_group`, `group_name` (conversa) e `participant_jid`, `participant_name`, `is_mentioned` (mensagem)
+- Frontend exibe ícone 👥 + nome do grupo na inbox, nome do participant no chat, e badge @mention
+
+### ⏳ Em andamento / Próximas tarefas
+1. Filtro campaign_id + adset_id em Criativos
+2. Sync automático ao cadastrar conta
+3. Botão desativar conta na tabela Contas Ads
+
+### 🔴 Débito técnico conhecido
+- (adicionar aqui conforme identificado)
+
+---
+
+## SPECS DOCUMENTADAS (spec-kit)
+
+```
+op7nexo-api/docs/specs/
+├── auth-multitenancy/spec.md   — Auth JWT + hierarquia multi-tenant
+├── meta-ads/spec.md            — Meta Ads sync + insights + scheduler
+└── canais-entrada/spec.md      — Canais WhatsApp/webhook
+
+op7nexo-front/docs/specs/
+├── marketing/spec.md           — Meta Ads UI, filtros, insights IA
+├── crm/spec.md                 — CRM painéis, follow-up, agenda, NPS
+└── administracao/spec.md       — Usuários, canais, contas-ads, empresas
+```
+
+Para nova feature: `/speckit.specify [nome]` → cria `spec.md`, depois `/speckit.plan` e `/speckit.tasks`.
+
+---
+
+## COMO ATUALIZAR ESTE ARQUIVO
+
+Sempre que implementar uma feature:
+1. Mover item de "Em andamento" para "Implementado"
+2. Adicionar novas regras de negócio descobertas
+3. Registrar qualquer débito técnico identificado
+4. Atualizar schema se migration foi aplicada

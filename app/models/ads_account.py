@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,6 +20,9 @@ class AdsAccount(Base, TimestampMixin):
     plataforma: Mapped[str] = mapped_column(String(20), nullable=False)
     account_id: Mapped[str] = mapped_column(String(100), nullable=False)
     account_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    balance: Mapped[float | None] = mapped_column(Numeric(14, 2), default=0, nullable=True)
+    amount_spent: Mapped[float | None] = mapped_column(Numeric(14, 2), default=0, nullable=True)
+    spend_cap: Mapped[float | None] = mapped_column(Numeric(14, 2), default=0, nullable=True)
     token_acesso: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_expira_em: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -31,6 +34,7 @@ class AdsAccount(Base, TimestampMixin):
     sincronizado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     periodo_sync_inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
     agrupamento: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="ads_accounts")

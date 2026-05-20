@@ -47,7 +47,9 @@ def iniciar_scheduler() -> None:
         misfire_grace_time=600,
     )
     scheduler.start()
-    log.info("Scheduler iniciado — jobs Meta Ads às 06h, 12h, 18h (Brasília)")
+    job = scheduler.get_job("meta_sync")
+    next_run = job.next_run_time.isoformat() if job and job.next_run_time else "n/a"
+    log.info("Scheduler iniciado — jobs Meta Ads às 06h, 12h, 18h (Brasília); próximo=%s", next_run)
 
 
 def parar_scheduler() -> None:

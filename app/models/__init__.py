@@ -11,6 +11,18 @@ from app.models.user_permission import UserPermission, NivelPermissao
 from app.models.workspace import Workspace
 from app.models.ads_account import AdsAccount
 from app.models.canal_entrada import CanalEntrada
+from app.models.meta_token import MetaToken
+from app.models.crm import (
+    Contato,
+    Conversa,
+    Equipe,
+    EquipeMembro,
+    Evento,
+    MemoriaIA,
+    Mensagem,
+    Midia,
+    Permissao,
+)
 
 __all__ = [
     "Base",
@@ -30,4 +42,14 @@ __all__ = [
     "Workspace",
     "AdsAccount",
     "CanalEntrada",
+    "MetaToken",
+    "Contato",
+    "Conversa",
+    "Mensagem",
+    "Equipe",
+    "EquipeMembro",
+    "Permissao",
+    "Midia",
+    "Evento",
+    "MemoriaIA",
 ]

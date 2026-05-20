@@ -1,5 +1,6 @@
 import calendar
 import json
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -10,14 +11,18 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.deps import exigir_platform_admin
 from app.models.ads_account import AdsAccount
+from app.models.sync_job import SyncJob
 from app.models.user import User
 from app.services.meta_sync import sincronizar_conta
+from app.services.scheduler import scheduler
+from app.services.object_storage import get_object, stat_object
+from app.core.config import settings
 
 router = APIRouter(prefix="/meta", tags=["meta"])
 
@@ -85,6 +90,30 @@ class ImportarContasInput(BaseModel):
     contas: list[ContaImport]
 
 
+class SyncJobOut(BaseModel):
+    id: str
+    ads_account_id: str
+    status: str
+    etapa_atual: str | None
+    progresso: int
+    totais: dict | None
+    erro: str | None
+    created_at: str
+    updated_at: str
+
+
+class SyncSchedulerJobOut(BaseModel):
+    id: str
+    trigger: str
+    next_run_time: str | None
+    timezone: str | None
+
+
+class SyncSchedulerOut(BaseModel):
+    running: bool
+    jobs: list[SyncSchedulerJobOut]
+
+
 _ALLOWED_IMAGE_HOSTS = {"fbcdn.net", "facebook.com"}
 
 
@@ -94,6 +123,56 @@ def _host_allowed(url: str) -> bool:
         return any(host == h or host.endswith("." + h) for h in _ALLOWED_IMAGE_HOSTS)
     except Exception:
         return False
+
+
+def _sync_job_out(job: SyncJob) -> SyncJobOut:
+    return SyncJobOut(
+        id=str(job.id),
+        ads_account_id=job.ads_account_id,
+        status=job.status,
+        etapa_atual=job.etapa_atual,
+        progresso=job.progresso,
+        totais=job.totais,
+        erro=job.erro,
+        created_at=job.created_at.isoformat(),
+        updated_at=job.updated_at.isoformat(),
+    )
+
+
+def _sync_scheduler_job_out(job) -> SyncSchedulerJobOut:
+    trigger = str(job.trigger)
+    trigger_tz = getattr(job.trigger, "timezone", None)
+    timezone_name = None
+    if trigger_tz is not None:
+        timezone_name = getattr(trigger_tz, "zone", None) or str(trigger_tz)
+    next_run_time = job.next_run_time.isoformat() if job.next_run_time else None
+    return SyncSchedulerJobOut(
+        id=str(job.id),
+        trigger=trigger,
+        next_run_time=next_run_time,
+        timezone=timezone_name,
+    )
+
+
+def _iniciar_sync_conta(ads_account_id: str, db: Session) -> tuple[str, bool]:
+    job_ativo = db.execute(
+        select(SyncJob).where(
+            SyncJob.ads_account_id == ads_account_id,
+            SyncJob.status.in_(("pending", "running")),
+        ).order_by(SyncJob.created_at.desc())
+    ).scalars().first()
+    if job_ativo:
+        return str(job_ativo.id), False
+
+    job = SyncJob(ads_account_id=ads_account_id, status="pending", progresso=0)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    job_id = str(job.id)
+
+    t = threading.Thread(target=_run_sync_background, args=(ads_account_id, job_id), daemon=True)
+    t.start()
+    return job_id, True
 
 
 @router.get("/imagem")
@@ -122,6 +201,31 @@ def proxy_imagem(url: str = Query(...)):
     )
 
 
+@router.get("/storage/{bucket}/{object_path:path}")
+def proxy_storage(bucket: str, object_path: str):
+    allowed_buckets = {
+        settings.MINIO_BUCKET_CRIATIVOS,
+        "whatsapp-avatars",
+        "whatsapp-media",
+    }
+    if bucket not in allowed_buckets:
+        raise HTTPException(status_code=404, detail="Bucket não permitido")
+    # Restrição de path só para bucket de criativos
+    if bucket == settings.MINIO_BUCKET_CRIATIVOS and not object_path.startswith("ads-accounts/"):
+        raise HTTPException(status_code=404, detail="Objeto não permitido")
+    try:
+        obj = get_object(bucket, object_path)
+        stat = stat_object(bucket, object_path)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    content_type = getattr(stat, "content_type", None) or "application/octet-stream"
+    return StreamingResponse(
+        obj.stream(32 * 1024),
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @router.get("/contas", response_model=list[MetaContaOut])
 def listar_contas_meta(
     token: str = Query(...),
@@ -146,9 +250,11 @@ def importar_contas_meta(
     current_user: User = Depends(exigir_platform_admin),
 ):
     periodo_inicio = calcular_periodo(body.periodo_sync)
-    agora = datetime.now(tz=timezone.utc)
     criadas = 0
     atualizadas = 0
+    jobs_iniciados = 0
+    jobs_reutilizados = 0
+    contas_para_sync: list[str] = []
 
     for item in body.contas:
         existing = db.execute(
@@ -161,10 +267,13 @@ def importar_contas_meta(
         if existing:
             existing.bm_token = body.token
             existing.token_expira_em = body.token_expira_em
-            existing.sincronizado_em = agora
+            existing.sincronizado_em = None
             existing.periodo_sync_inicio = periodo_inicio
             existing.account_name = item.nome or existing.account_name
+            existing.status = "ativo"
+            existing.ativo = True
             atualizadas += 1
+            contas_para_sync.append(str(existing.id))
         else:
             nova = AdsAccount(
                 workspace_id=uuid.UUID(body.workspace_id),
@@ -173,7 +282,7 @@ def importar_contas_meta(
                 account_name=item.nome,
                 bm_token=body.token,
                 token_expira_em=body.token_expira_em,
-                sincronizado_em=agora,
+                sincronizado_em=None,
                 periodo_sync_inicio=periodo_inicio,
                 account_status=1,
                 status="ativo",
@@ -181,22 +290,129 @@ def importar_contas_meta(
             )
             db.add(nova)
             criadas += 1
+            db.flush()
+            contas_para_sync.append(str(nova.id))
 
     db.commit()
-    return {"criadas": criadas, "atualizadas": atualizadas}
+
+    for ads_account_id in contas_para_sync:
+        _, started = _iniciar_sync_conta(ads_account_id, db)
+        if started:
+            jobs_iniciados += 1
+        else:
+            jobs_reutilizados += 1
+
+    return {
+        "criadas": criadas,
+        "atualizadas": atualizadas,
+        "jobs_iniciados": jobs_iniciados,
+        "jobs_reutilizados": jobs_reutilizados,
+    }
 
 
-@router.post("/sync/{ads_account_id}")
+def _run_sync_background(ads_account_id: str, job_id: str) -> None:
+    with SessionLocal() as db:
+        def _set(etapa: str, progresso: int) -> None:
+            db.execute(text("""
+                UPDATE sync_jobs
+                SET etapa_atual = :etapa, progresso = :progresso, updated_at = NOW()
+                WHERE id = :id
+            """), {"etapa": etapa, "progresso": progresso, "id": job_id})
+            db.commit()
+
+        def _finalizar(status: str, *, totais: dict | None = None, erro: str | None = None) -> None:
+            with SessionLocal() as status_db:
+                if status == "done":
+                    status_db.execute(text("""
+                        UPDATE sync_jobs
+                        SET status = 'done', progresso = 100, etapa_atual = 'concluido',
+                            totais = CAST(:totais AS JSONB), erro = NULL, updated_at = NOW()
+                        WHERE id = :id
+                    """), {"totais": json.dumps(totais or {}), "id": job_id})
+                else:
+                    status_db.execute(text("""
+                        UPDATE sync_jobs
+                        SET status = 'error', erro = :erro, updated_at = NOW()
+                        WHERE id = :id
+                    """), {"erro": erro or "Erro no sync", "id": job_id})
+                status_db.commit()
+
+        db.execute(text(
+            "UPDATE sync_jobs SET status = 'running', updated_at = NOW() WHERE id = :id"
+        ), {"id": job_id})
+        db.commit()
+
+        try:
+            result = sincronizar_conta(ads_account_id, db, on_progress=_set)
+            totais = result.get("totais") or {}
+            _finalizar("done", totais=totais)
+        except Exception as exc:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            _finalizar("error", erro=str(exc))
+
+
+@router.post("/sync/{ads_account_id}", status_code=202)
 def sync_conta_manual(
     ads_account_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(exigir_platform_admin),
+    _: User = Depends(exigir_platform_admin),
 ):
-    """Dispara sincronização imediata de uma conta Meta Ads."""
+    conta = db.get(AdsAccount, ads_account_id)
+    if not conta:
+        raise HTTPException(status_code=404, detail="Conta não encontrada")
+
+    job_id, started = _iniciar_sync_conta(ads_account_id, db)
+    return {"job_id": job_id, "status": "pending" if started else "running"}
+
+
+@router.get("/sync/job/{job_id}")
+def get_sync_job(
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    job = db.get(SyncJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+    return {
+        "id": str(job.id),
+        "ads_account_id": job.ads_account_id,
+        "status": job.status,
+        "etapa_atual": job.etapa_atual,
+        "progresso": job.progresso,
+        "totais": job.totais,
+        "erro": job.erro,
+        "created_at": job.created_at.isoformat(),
+        "updated_at": job.updated_at.isoformat(),
+    }
+
+
+@router.get("/sync/ativos", response_model=list[SyncJobOut])
+def listar_sync_jobs_ativos(
+    ads_account_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    q = select(SyncJob).where(SyncJob.status.in_(("pending", "running")))
+    if ads_account_id:
+        q = q.where(SyncJob.ads_account_id == ads_account_id)
+    jobs = db.execute(q.order_by(SyncJob.created_at.desc())).scalars().all()
+    return [_sync_job_out(job) for job in jobs]
+
+
+@router.get("/sync/scheduler", response_model=SyncSchedulerOut)
+def get_sync_scheduler(_: User = Depends(exigir_platform_admin)):
     try:
-        resultado = sincronizar_conta(ads_account_id, db)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Erro no sync: {exc}")
-    return resultado
+        jobs = sorted(
+            scheduler.get_jobs(),
+            key=lambda job: job.next_run_time or datetime.max.replace(tzinfo=timezone.utc),
+        )
+    except Exception:
+        jobs = []
+    return SyncSchedulerOut(
+        running=bool(getattr(scheduler, "running", False)),
+        jobs=[_sync_scheduler_job_out(job) for job in jobs],
+    )

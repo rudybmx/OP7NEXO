@@ -6,11 +6,17 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import exigir_platform_admin, get_usuario_atual, verificar_acesso_company
+from app.core.deps import (
+    exigir_platform_admin,
+    get_usuario_atual,
+    listar_workspaces_autorizados,
+    verificar_acesso_company,
+)
 from app.core.security import hash_senha
 from app.models.company import Company
 from app.models.user import RoleUsuario, User
 from app.models.user_company_access import UserCompanyAccess
+from app.models.user_workspace_access import UserWorkspaceAccess
 from app.models.workspace import Workspace
 
 router = APIRouter(tags=["users"])
@@ -45,6 +51,24 @@ class UsuarioAtualizarIn(BaseModel):
 
 class AcessoIn(BaseModel):
     company_ids: list[uuid.UUID]
+
+
+class WorkspaceAcessoIn(BaseModel):
+    workspace_id: uuid.UUID
+    role: str = "viewer"
+
+
+class WorkspaceRoleIn(BaseModel):
+    role: str
+
+
+class WorkspaceAcessoOut(BaseModel):
+    workspace_id: str
+    workspace_nome: str | None
+    role: str
+    ativo: bool
+    criado_em: str
+    padrao: bool
 
 
 class UsuarioOut(BaseModel):
@@ -141,57 +165,43 @@ def _criar_usuario_admin(payload: UsuarioIn, db: Session) -> UsuarioAdminOut:
         email=email,
         senha_hash=hash_senha(payload.senha),
         role=payload.role,
+        workspace_id=workspace.id if workspace else None,
     )
     db.add(novo)
-    db.flush()
-
-    if workspace:
-        db.execute(
-            text(
-                """
-                INSERT INTO user_resource_access (user_id, resource_type, resource_id)
-                VALUES (:user_id, 'workspace', :workspace_id)
-                ON CONFLICT (user_id, resource_type, resource_id) DO NOTHING
-                """
-            ),
-            {"user_id": str(novo.id), "workspace_id": str(workspace.id)},
-        )
-
     db.commit()
     db.refresh(novo)
-    return _usuario_admin_out(novo, workspace.id if workspace else None, workspace.nome if workspace else None)
+    return _usuario_admin_out(novo, novo.workspace_id, workspace.nome if workspace else None)
 
 
 @router.get("/usuarios", response_model=list[UsuarioAdminOut])
 def listar_usuarios_admin(
     db: Session = Depends(get_db),
-    usuario: User = Depends(exigir_platform_admin),
+    usuario: User = Depends(get_usuario_atual),
 ):
-    rows = db.execute(
-        text(
-            """
-            SELECT
-                u.id::text AS id,
-                u.nome,
-                u.email,
-                u.role::text AS role,
-                u.ativo,
-                ura.resource_id::text AS workspace_id,
-                w.nome AS workspace_nome
-            FROM users u
-            LEFT JOIN LATERAL (
-                SELECT resource_id
-                FROM user_resource_access
-                WHERE user_id = u.id
-                  AND resource_type = 'workspace'
-                ORDER BY criado_em DESC
-                LIMIT 1
-            ) ura ON TRUE
-            LEFT JOIN workspaces w ON w.id = ura.resource_id
-            ORDER BY u.criado_em DESC
-            """
-        )
-    ).mappings()
+    if usuario.role not in (RoleUsuario.platform_admin, RoleUsuario.company_admin):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado")
+
+    base_sql = """
+        SELECT
+            u.id::text AS id,
+            u.nome,
+            u.email,
+            u.role::text AS role,
+            u.ativo,
+            u.workspace_id::text AS workspace_id,
+            w.nome AS workspace_nome
+        FROM users u
+        LEFT JOIN workspaces w ON w.id = u.workspace_id
+    """
+    if usuario.role == RoleUsuario.company_admin:
+        rows = db.execute(
+            text(base_sql + " WHERE u.workspace_id = :ws_id ORDER BY u.criado_em DESC"),
+            {"ws_id": str(usuario.workspace_id)},
+        ).mappings()
+    else:
+        rows = db.execute(
+            text(base_sql + " ORDER BY u.criado_em DESC"),
+        ).mappings()
 
     return [UsuarioAdminOut(**row) for row in rows]
 
@@ -320,6 +330,180 @@ def desativar_usuario(
 
     alvo.ativo = False
     db.commit()
+
+
+@router.get("/me/workspaces", response_model=list[WorkspaceAcessoOut])
+def listar_meus_workspaces(
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_usuario_atual),
+):
+    if usuario.role == RoleUsuario.platform_admin:
+        wss = db.query(Workspace).filter(Workspace.ativo.is_(True)).order_by(Workspace.nome).all()
+        return [
+            WorkspaceAcessoOut(
+                workspace_id=str(w.id),
+                workspace_nome=w.nome,
+                role="admin",
+                ativo=True,
+                criado_em="",
+                padrao=False,
+            )
+            for w in wss
+        ]
+
+    workspaces = listar_workspaces_autorizados(usuario, db)
+    return [
+        WorkspaceAcessoOut(
+            workspace_id=str(w.id),
+            workspace_nome=w.nome,
+            role=usuario.role.value,
+            ativo=True,
+            criado_em="",
+            padrao=str(usuario.workspace_id) == str(w.id),
+        )
+        for w in workspaces
+    ]
+
+
+@router.get("/users/{usuario_id}/workspaces", response_model=list[WorkspaceAcessoOut])
+def listar_workspaces_usuario(
+    usuario_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    alvo = _get_usuario_or_404(usuario_id, db)
+    rows = db.execute(
+        text("""
+            SELECT uwa.workspace_id::text, w.nome AS workspace_nome, uwa.role, uwa.ativo,
+                   uwa.criado_em::text
+            FROM user_workspace_access uwa
+            JOIN workspaces w ON w.id = uwa.workspace_id
+            WHERE uwa.user_id = :uid
+            ORDER BY w.nome
+        """),
+        {"uid": str(alvo.id)},
+    ).mappings().all()
+    return [
+        WorkspaceAcessoOut(
+            workspace_id=row["workspace_id"],
+            workspace_nome=row["workspace_nome"],
+            role=row["role"],
+            ativo=row["ativo"],
+            criado_em=str(row["criado_em"]),
+            padrao=row["workspace_id"] == str(alvo.workspace_id),
+        )
+        for row in rows
+    ]
+
+
+@router.post("/users/{usuario_id}/workspaces", response_model=WorkspaceAcessoOut, status_code=status.HTTP_201_CREATED)
+def adicionar_workspace_usuario(
+    usuario_id: uuid.UUID,
+    payload: WorkspaceAcessoIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    alvo = _get_usuario_or_404(usuario_id, db)
+    ws = _get_workspace_or_404(payload.workspace_id, db)
+
+    existing = db.query(UserWorkspaceAccess).filter(
+        UserWorkspaceAccess.user_id == alvo.id,
+        UserWorkspaceAccess.workspace_id == ws.id,
+    ).first()
+
+    if existing:
+        existing.role = payload.role
+        existing.ativo = True
+    else:
+        existing = UserWorkspaceAccess(
+            user_id=alvo.id,
+            workspace_id=ws.id,
+            role=payload.role,
+        )
+        db.add(existing)
+
+    db.commit()
+    db.refresh(existing)
+    return WorkspaceAcessoOut(
+        workspace_id=str(existing.workspace_id),
+        workspace_nome=ws.nome,
+        role=existing.role,
+        ativo=existing.ativo,
+        criado_em=existing.criado_em.isoformat(),
+        padrao=str(alvo.workspace_id) == str(ws.id),
+    )
+
+
+@router.patch("/users/{usuario_id}/workspaces/{workspace_id}", response_model=WorkspaceAcessoOut)
+def atualizar_role_workspace(
+    usuario_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    payload: WorkspaceRoleIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    alvo = _get_usuario_or_404(usuario_id, db)
+    uwa = db.query(UserWorkspaceAccess).filter(
+        UserWorkspaceAccess.user_id == alvo.id,
+        UserWorkspaceAccess.workspace_id == workspace_id,
+    ).first()
+    if not uwa:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Acesso não encontrado")
+
+    uwa.role = payload.role
+    db.commit()
+    db.refresh(uwa)
+
+    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+    return WorkspaceAcessoOut(
+        workspace_id=str(uwa.workspace_id),
+        workspace_nome=ws.nome if ws else None,
+        role=uwa.role,
+        ativo=uwa.ativo,
+        criado_em=uwa.criado_em.isoformat(),
+        padrao=str(alvo.workspace_id) == str(workspace_id),
+    )
+
+
+@router.delete("/users/{usuario_id}/workspaces/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remover_workspace_usuario(
+    usuario_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    alvo = _get_usuario_or_404(usuario_id, db)
+    uwa = db.query(UserWorkspaceAccess).filter(
+        UserWorkspaceAccess.user_id == alvo.id,
+        UserWorkspaceAccess.workspace_id == workspace_id,
+    ).first()
+    if not uwa:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Acesso não encontrado")
+    db.delete(uwa)
+    db.commit()
+
+
+@router.patch("/users/{usuario_id}/workspace-padrao/{workspace_id}", response_model=dict)
+def definir_workspace_padrao(
+    usuario_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    alvo = _get_usuario_or_404(usuario_id, db)
+    ws = _get_workspace_or_404(workspace_id, db)
+
+    # Workspace must be in user's access list (or platform_admin can set any)
+    uwa = db.query(UserWorkspaceAccess).filter(
+        UserWorkspaceAccess.user_id == alvo.id,
+        UserWorkspaceAccess.workspace_id == ws.id,
+    ).first()
+    if not uwa:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Usuário não tem acesso a este workspace")
+
+    alvo.workspace_id = ws.id
+    db.commit()
+    return {"workspace_id": str(ws.id), "workspace_nome": ws.nome}
 
 
 @router.post("/users/{usuario_id}/access", status_code=status.HTTP_200_OK)

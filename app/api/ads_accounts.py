@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,7 @@ class AdsAccountOut(BaseModel):
     nome: str | None = None
     bm_id: str | None
     status: str
+    ativo: bool = True
     config: dict
     sincronizado_em: str | None = None
     periodo_sync_inicio: str | None = None
@@ -57,6 +58,7 @@ def _ads_account_out(a: AdsAccount, workspace_nome: str | None = None) -> AdsAcc
         sincronizado_em=a.sincronizado_em.isoformat() if a.sincronizado_em else None,
         periodo_sync_inicio=a.periodo_sync_inicio.isoformat() if a.periodo_sync_inicio else None,
         agrupamento=a.agrupamento,
+        ativo=a.ativo,
     )
 
 
@@ -76,10 +78,29 @@ def _get_workspace_or_404(workspace_id: uuid.UUID, db: Session) -> Workspace:
 
 @router.get("/ads-accounts", response_model=list[AdsAccountOut])
 def listar_todas_ads_accounts(
+    include_inactive: bool = Query(False),
     db: Session = Depends(get_db),
     _: User = Depends(exigir_platform_admin),
 ):
-    contas = db.query(AdsAccount).all()
+    q = db.query(AdsAccount)
+    if not include_inactive:
+        q = q.filter(AdsAccount.ativo == True)
+    contas = q.all()
+    workspace_ids = {a.workspace_id for a in contas}
+    workspaces = {w.id: w.nome for w in db.query(Workspace).filter(Workspace.id.in_(workspace_ids)).all()}
+    return [_ads_account_out(a, workspaces.get(a.workspace_id)) for a in contas]
+
+
+@router.get("/meta/ads-accounts", response_model=list[AdsAccountOut])
+def listar_todas_ads_accounts_meta(
+    include_inactive: bool = Query(False),
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    q = db.query(AdsAccount)
+    if not include_inactive:
+        q = q.filter(AdsAccount.ativo == True)
+    contas = q.all()
     workspace_ids = {a.workspace_id for a in contas}
     workspaces = {w.id: w.nome for w in db.query(Workspace).filter(Workspace.id.in_(workspace_ids)).all()}
     return [_ads_account_out(a, workspaces.get(a.workspace_id)) for a in contas]
@@ -88,13 +109,16 @@ def listar_todas_ads_accounts(
 @router.get("/workspaces/{workspace_id}/ads-accounts", response_model=list[AdsAccountOut])
 def listar_ads_accounts(
     workspace_id: uuid.UUID,
+    include_inactive: bool = Query(False),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
     _get_workspace_or_404(workspace_id, db)
     verificar_acesso_workspace(usuario, workspace_id, db)
-    contas = db.query(AdsAccount).filter(AdsAccount.workspace_id == workspace_id).all()
-    return [_ads_account_out(a) for a in contas]
+    q = db.query(AdsAccount).filter(AdsAccount.workspace_id == workspace_id)
+    if not include_inactive:
+        q = q.filter(AdsAccount.ativo == True)
+    return [_ads_account_out(a) for a in q.all()]
 
 
 @router.post(
@@ -165,3 +189,22 @@ def remover_ads_account(
     a = _get_ads_account_or_404(ads_account_id, db)
     db.delete(a)
     db.commit()
+
+
+class AdsAccountToggleOut(BaseModel):
+    id: str
+    ativo: bool
+    nome: str | None
+
+
+@router.patch("/meta/ads-accounts/{ads_account_id}/toggle", response_model=AdsAccountToggleOut)
+def toggle_ads_account(
+    ads_account_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    a = _get_ads_account_or_404(ads_account_id, db)
+    a.ativo = not a.ativo
+    db.commit()
+    db.refresh(a)
+    return AdsAccountToggleOut(id=str(a.id), ativo=a.ativo, nome=a.account_name)

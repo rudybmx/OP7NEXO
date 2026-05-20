@@ -9,6 +9,17 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = ""
     openai_model: str = "gpt-4o-mini"
+    EVOLUTION_API_URL: str = "https://evo.op7franquia.com.br"
+    EVOLUTION_API_KEY: str = ""
+    SERVER_URL: str = "https://api.op7franquia.com.br"
+    MINIO_ENDPOINT: str = "minio.op7franquia.com.br"
+    MINIO_PORT: int = 443
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_USE_SSL: bool = True
+    MINIO_BUCKET_CRIATIVOS: str = "criativos-meta"
+    MINIO_PUBLIC_BASE_URL: str = "https://minio.op7franquia.com.br"
+    META_APP_SECRET: str = ""  # para verificar assinatura de webhooks da Meta Cloud API
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

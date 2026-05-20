@@ -376,6 +376,22 @@ Dispara sincronização imediata de uma conta Meta Ads (busca dados da Graph API
 
 **Acesso:** `platform_admin`.
 
+### `GET /meta/sync/ativos`
+Lista jobs de sync em andamento para reidratar a UI após trocar de tela ou recarregar a página.
+
+**Query params:** `ads_account_id` *(opcional)*
+
+**Resposta 200:** `[{ "id": "uuid", "ads_account_id": "uuid", "status": "pending|running", "etapa_atual": "string|null", "progresso": 57, "totais": null, "erro": null, "created_at": "ISO8601", "updated_at": "ISO8601" }]`
+
+**Acesso:** `platform_admin`.
+
+### `GET /meta/sync/scheduler`
+Expõe o estado do APScheduler e o próximo disparo do job `meta_sync`.
+
+**Resposta 200:** `{ "running": true, "jobs": [{ "id": "meta_sync", "trigger": "cron[...]", "next_run_time": "ISO8601|null", "timezone": "America/Sao_Paulo" }] }`
+
+**Acesso:** `platform_admin`.
+
 ---
 
 ## Meta Ads — Insights (`/meta/insights`)

@@ -1,0 +1,197 @@
+import uuid
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
+from app.models.crm import Mensagem
+from app.models.user import User
+
+router = APIRouter(prefix="/mensagens", tags=["mensagens"])
+
+
+class MensagemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    conversa_id: str
+    contato_id: str | None
+    evolution_msg_id: str | None
+    instance: str | None
+    remote_jid: str | None
+    direcao: str
+    from_me: bool
+    remetente_tipo: str
+    remetente_nome: str | None
+    conteudo: str | None
+    message_type: str | None
+    wa_status: str | None
+    payload: dict | None
+    tokens_estimados: int | None
+    embedding_status: str | None
+    enviada_em: datetime | None
+    recebida_em: datetime | None
+    delivered_at: datetime | None
+    read_at: datetime | None
+    failed_reason: str | None
+    participant_jid: str | None
+    participant_name: str | None
+    is_mentioned: bool
+    ativo: bool
+    criado_em: datetime
+    atualizado_em: datetime | None = None
+
+
+class MensagemIn(BaseModel):
+    conversa_id: uuid.UUID
+    conteudo: str
+    direcao: str = "saida"
+    remetente_tipo: str = "agente"
+    remetente_nome: str | None = None
+    message_type: str = "text"
+
+
+def _get_mensagem_or_404(
+    mensagem_id: uuid.UUID,
+    db: Session,
+    workspace_filter: uuid.UUID | list | None,
+) -> Mensagem:
+    q = db.query(Mensagem).filter(Mensagem.id == mensagem_id, Mensagem.ativo.is_(True))
+    if workspace_filter is not None:
+        if isinstance(workspace_filter, list):
+            q = q.filter(Mensagem.workspace_id.in_(workspace_filter))
+        else:
+            q = q.filter(Mensagem.workspace_id == workspace_filter)
+    m = q.first()
+    if not m:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mensagem não encontrada")
+    return m
+
+
+def _mensagem_out(m: Mensagem) -> MensagemOut:
+    return MensagemOut(
+        id=str(m.id),
+        workspace_id=str(m.workspace_id),
+        conversa_id=str(m.conversa_id),
+        contato_id=str(m.contato_id) if m.contato_id else None,
+        evolution_msg_id=m.evolution_msg_id,
+        instance=m.instance,
+        remote_jid=m.remote_jid,
+        direcao=m.direcao,
+        from_me=m.from_me,
+        remetente_tipo=m.remetente_tipo,
+        remetente_nome=m.remetente_nome,
+        conteudo=m.conteudo,
+        message_type=m.message_type,
+        wa_status=m.wa_status,
+        payload=m.payload or {},
+        tokens_estimados=m.tokens_estimados,
+        embedding_status=m.embedding_status,
+        enviada_em=m.enviada_em,
+        recebida_em=m.recebida_em,
+        delivered_at=m.delivered_at,
+        read_at=m.read_at,
+        failed_reason=m.failed_reason,
+        participant_jid=m.participant_jid,
+        participant_name=m.participant_name,
+        is_mentioned=m.is_mentioned,
+        ativo=m.ativo,
+        criado_em=m.criado_em,
+        atualizado_em=getattr(m, 'atualizado_em', None),
+    )
+
+
+@router.get("", response_model=list[MensagemOut])
+def listar_mensagens(
+    conversa_id: uuid.UUID = Query(...),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    q = db.query(Mensagem).filter(
+        Mensagem.conversa_id == conversa_id,
+        Mensagem.ativo.is_(True),
+    )
+
+    if workspace_filter is not None:
+        if isinstance(workspace_filter, list):
+            q = q.filter(Mensagem.workspace_id.in_(workspace_filter))
+        else:
+            q = q.filter(Mensagem.workspace_id == workspace_filter)
+
+    q = q.order_by(Mensagem.criado_em.desc())
+    total = q.offset(offset).limit(limit).all()
+    return [_mensagem_out(m) for m in total]
+
+
+@router.post("", response_model=MensagemOut, status_code=status.HTTP_201_CREATED)
+def criar_mensagem(
+    data: MensagemIn,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    ws_id = workspace_filter if not isinstance(workspace_filter, list) else usuario.workspace_id
+    if ws_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Workspace não definido")
+
+    verificar_acesso_workspace(usuario, ws_id, db)
+
+    m = Mensagem(
+        workspace_id=ws_id,
+        conversa_id=data.conversa_id,
+        conteudo=data.conteudo,
+        direcao=data.direcao,
+        remetente_tipo=data.remetente_tipo,
+        remetente_nome=data.remetente_nome,
+        message_type=data.message_type,
+        wa_status="pending",
+        enviada_em=datetime.utcnow() if data.direcao == "saida" else None,
+        recebida_em=datetime.utcnow() if data.direcao == "entrada" else None,
+    )
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return _mensagem_out(m)
+
+
+@router.get("/{mensagem_id}", response_model=MensagemOut)
+def detalhar_mensagem(
+    mensagem_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    m = _get_mensagem_or_404(mensagem_id, db, workspace_filter)
+    verificar_acesso_workspace(usuario, m.workspace_id, db)
+    return _mensagem_out(m)
+
+
+@router.put("/{mensagem_id}/status", response_model=MensagemOut)
+def atualizar_status_mensagem(
+    mensagem_id: uuid.UUID,
+    wa_status: str,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    m = _get_mensagem_or_404(mensagem_id, db, workspace_filter)
+    verificar_acesso_workspace(usuario, m.workspace_id, db)
+
+    m.wa_status = wa_status
+    if wa_status == "delivered":
+        m.delivered_at = datetime.utcnow()
+    elif wa_status == "read":
+        m.read_at = datetime.utcnow()
+    elif wa_status == "failed":
+        m.failed_reason = m.failed_reason or "unknown"
+
+    db.commit()
+    db.refresh(m)
+    return _mensagem_out(m)

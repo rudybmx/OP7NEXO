@@ -271,9 +271,10 @@ Métricas diárias por anúncio (nível ad) Meta Ads.
 | `cpc` | NUMERIC(10,4) | DEFAULT 0 | |
 | `cpm` | NUMERIC(10,4) | DEFAULT 0 | |
 | `frequencia` | NUMERIC(10,4) | DEFAULT 0 | |
+| `publisher_platform` | VARCHAR(30) | NOT NULL DEFAULT `'unknown'` | Breakdown por plataforma |
 | `criado_em` | TIMESTAMPTZ | NOT NULL | |
 
-**Constraint:** `UNIQUE(ads_account_id, ad_id, data)`
+**Constraint:** `UNIQUE(ads_account_id, ad_id, data, publisher_platform)`
 
 **Índice:** `ix_meta_ad_insights_account` em `(ads_account_id)`
 
@@ -334,3 +335,4 @@ users (*) ──── (*) companies  [via user_company_access]
 | `005` | workspace_id em users + network_id em workspaces + índices |
 | `006` | Colunas extras em meta_insights_diarios (cpc, cpm, ctr, etc.) + tabelas meta_campanhas_insights, meta_anuncios_insights, meta_publicos_insights |
 | `007` | Coluna agrupamento VARCHAR(100) em ads_accounts |
+| `038` | `publisher_platform` em `meta_anuncios_insights` + chave única por plataforma |

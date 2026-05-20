@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,3 +26,9 @@ class CanalEntrada(Base, TimestampMixin):
         String(64), unique=True, nullable=True
     )
     status: Mapped[str] = mapped_column(String(20), default="inativo", nullable=False)
+    numero_telefone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    conectado_em: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evolution_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    connection_status: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, default="disconnected"
+    )
