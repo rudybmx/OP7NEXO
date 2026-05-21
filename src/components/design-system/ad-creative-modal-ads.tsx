@@ -921,7 +921,7 @@ export function AdCreativeModalAds({ data }: { data: AdCreativeModalAdsData }) {
                 style={{
                   width: '100%',
                   height: '100%',
-                  objectFit: 'cover',
+                  objectFit: 'contain',
                   display: 'block',
                 }}
                 referrerPolicy="no-referrer"

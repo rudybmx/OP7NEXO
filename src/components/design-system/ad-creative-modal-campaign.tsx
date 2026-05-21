@@ -412,7 +412,7 @@ function CampaignThumb({
         style={{
           width: '100%',
           height: '100%',
-          objectFit: 'cover',
+          objectFit: 'contain',
           display: 'block',
         }}
         referrerPolicy="no-referrer"
@@ -776,7 +776,7 @@ export function AdCreativeModalCampaign({ data }: { data: AdCreativeModalCampaig
                 style={{
                   width: '100%',
                   height: '100%',
-                  objectFit: 'cover',
+                  objectFit: 'contain',
                   display: 'block',
                 }}
                 referrerPolicy="no-referrer"

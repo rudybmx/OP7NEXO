@@ -1191,7 +1191,7 @@ export function AdCreativeModalOverview({ data }: { data: AdCreativeModalOvervie
                 style={{
                   width: '100%',
                   height: '100%',
-                  objectFit: 'cover',
+                  objectFit: 'contain',
                   display: 'block',
                 }}
                 referrerPolicy="no-referrer"
