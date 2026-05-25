@@ -25,3 +25,4 @@ class Workspace(Base, TimestampMixin):
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     ads_accounts: Mapped[list["AdsAccount"]] = relationship(back_populates="workspace")
+    ads_account_accesses: Mapped[list["AdsAccountWorkspaceAccess"]] = relationship(back_populates="workspace")

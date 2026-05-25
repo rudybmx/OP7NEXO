@@ -110,18 +110,29 @@ Account
 
 ---
 
-## CANAIS — WhatsApp (Evolution API)
+## CANAIS — WhatsApp (Evolution Go)
 
 ### Base URL
 `https://evo.op7franquia.com.br`
 
-### Fluxo de conexão
-1. Criar instância na Evolution API
-2. GET `/instance/connect/{instance_name}` → retorna QR Code
-3. Polling a cada 30s até status = connected
-4. Exibir QR Code no Drawer do canal
+### Stack atual
+- Evolution Go `evoapicloud/evolution-go:v0.7.1`
+- Redis `evolution-redis:7.4`
 
----
+### Fluxo de conexão
+1. Criar instância na Evolution Go com `name` e `token`
+2. Persistir `instance_name`, `instance_id` e `instance_token` em `config.evolution`
+3. Chamar `POST /instance/connect` com `webhookUrl`, `subscribe: ["ALL"]` e `immediate: true`
+4. Ler QR Code em `GET /instance/qr` e estado em `GET /instance/status`
+5. Manter `evolution_instance_id` como nome determinístico `op7-{workspace_id}-{canal_id}` para compatibilidade com o CRM
+
+### Webhook / realtime
+- `POST /webhook/evolution/{token}` processa `Message`, `Receipt`, `Connected`, `LoggedOut` e `QRCode`
+- `Message` cria/atualiza contato, conversa e mensagem
+- `Receipt` atualiza o status da mensagem
+- `whatsapp:events` é o canal Redis usado pelo SSE do front
+- O payload bruto é salvo para auditoria e debug
+- Normalizar eventos com `event.upper().replace(".", "_")` e tratar tanto o legado (`messages.upsert`, `messages.update`, `connection.update`) quanto o Go novo
 
 ## PADRÕES FRONT-END
 
@@ -189,13 +200,13 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - **HQ images fix (2026-05-20)**: criativos `object_type=SHARE` (posts impulsionados, sem `image_hash`) e capas de vídeo agora resolvem thumbnail via `/?ids={creative_id}&fields=thumbnail_url&thumbnail_width=1200` → 1080×1080. `hq_source` values: `adimage_minio` (hash presente), `creative_thumbnail_hq_minio` (SHARE/VIDEO). Guarda anti-regressão no UPSERT nunca sobrescreve HQ bom com fallback. Endpoint `POST /meta/reprocessar-imagens/{ads_account_id}` para backfill idempotente.
 
 ### ✅ Implementado (2026-05-13) — CRM Atendimento + Realtime
-- Webhook `/webhook/evolution/{token}` processa eventos `messages.upsert` da Evolution API
+- Webhook `/webhook/evolution/{token}` processa eventos `Message`, `Receipt`, `Connected`, `LoggedOut` e `QRCode` da Evolution Go
 - Salva contato (`crm_whatsapp_contatos`), conversa (`crm_whatsapp_conversas`) e mensagem (`crm_whatsapp_mensagens`)
-- Regra: conversa `resolvido` + nova msg de entrada → cria **NOVA** conversa (não reabre)
+- Regra: conversa `resolvido` + nova msg de entrada -> cria **NOVA** conversa (não reabre)
 - Publica eventos no Redis (`whatsapp:events`) para consumo em tempo real pelo front
 - Serviço `app/services/redis_pub.py` para publicação de eventos
 - Dependência `redis==5.2.1` adicionada
-- **Bugfix**: comparação de evento `messages.upsert` (formato Evolution com ponto) vs `MESSAGES_UPSERT` — corrigido com `.upper().replace(".", "_")`
+- **Bugfix**: normalização de eventos Evolution Go/legado com `.upper().replace(".", "_")` antes do roteamento interno
 
 ### ✅ Implementado (2026-05-15) — Grupos WhatsApp e @mentions
 - Migration 033: `is_group`, `group_name` em `crm_whatsapp_conversas`; `participant_jid`, `participant_name`, `is_mentioned` em `crm_whatsapp_mensagens`

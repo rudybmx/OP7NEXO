@@ -144,10 +144,26 @@ def _configurar_webhook_evolution(canal: CanalEntrada, db: Session) -> None:
         db.commit()
         db.refresh(canal)
 
-    instance_name = canal.evolution_instance_id or _nome_instancia_evo(canal)
+    instance_name, instance_id, instance_token = _evolution_meta(canal)
+    if not instance_id:
+        return
+
+    if canal.connection_status not in {"connecting", "connected"} and canal.status != "ativo":
+        return
+
     webhook_base = settings.SERVER_URL or "https://api.op7franquia.com.br"
     webhook_url = f"{webhook_base}/webhook/evolution/{canal.webhook_token}"
-    evo_service.configurar_webhook(instance_name, webhook_url)
+    try:
+        evo_service.configurar_webhook(
+            instance_name,
+            webhook_url,
+            instance_id=instance_id,
+            instance_token=instance_token,
+            subscribe=["ALL"],
+            immediate=False,
+        )
+    except evo_service.EvolutionError as exc:
+        logger.error("[canais] falha ao configurar webhook Evolution: %s", exc)
 
 
 def _normalizar_numero_whatsapp(valor: str | None) -> str | None:
@@ -170,7 +186,20 @@ def _normalizar_numero_whatsapp(valor: str | None) -> str | None:
 
 def _extrair_numero_evolution(payload: object) -> str | None:
     if isinstance(payload, dict):
-        for chave in ("phone", "user", "wid", "number", "ownerJid", "me", "jid"):
+        for chave in (
+            "phone",
+            "user",
+            "wid",
+            "number",
+            "ownerJid",
+            "me",
+            "jid",
+            "remoteJid",
+            "chat",
+            "Chat",
+            "senderPn",
+            "sender",
+        ):
             numero = _normalizar_numero_whatsapp(payload.get(chave))
             if numero:
                 return numero
@@ -187,6 +216,203 @@ def _extrair_numero_evolution(payload: object) -> str | None:
     elif isinstance(payload, str):
         return _normalizar_numero_whatsapp(payload)
     return None
+
+
+def _evolution_config(canal: CanalEntrada) -> dict:
+    config = canal.config or {}
+    evolution = config.get("evolution")
+    return evolution if isinstance(evolution, dict) else {}
+
+
+def _evolution_meta(canal: CanalEntrada) -> tuple[str, str | None, str | None]:
+    evolution = _evolution_config(canal)
+    instance_name = evolution.get("instance_name") or canal.evolution_instance_id or _nome_instancia_evo(canal)
+    instance_id = evolution.get("instance_id")
+    instance_token = evolution.get("instance_token")
+    return instance_name, instance_id, instance_token
+
+
+def _persistir_evolution_meta(
+    canal: CanalEntrada,
+    db: Session,
+    **updates,
+) -> dict:
+    config = dict(canal.config or {})
+    evolution = dict(config.get("evolution") or {})
+    for chave, valor in updates.items():
+        if valor is not None:
+            evolution[chave] = valor
+    config["evolution"] = evolution
+    canal.config = config
+    db.commit()
+    db.refresh(canal)
+    return evolution
+
+
+def _normalizar_evento_evolution(event: str) -> str:
+    return str(event or "").upper().replace(".", "_").replace("-", "_").strip()
+
+
+def _evolution_payload_raiz(payload: dict | None) -> dict:
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        if isinstance(data, dict):
+            return data
+        return payload
+    return {}
+
+
+def _evolution_info(payload: dict | None) -> dict:
+    raiz = _evolution_payload_raiz(payload)
+    if isinstance(raiz, dict):
+        info = raiz.get("Info")
+        return info if isinstance(info, dict) else {}
+    return {}
+
+
+def _evolution_message(payload: dict | None) -> dict:
+    raiz = _evolution_payload_raiz(payload)
+    if isinstance(raiz, dict):
+        for chave in ("Message", "message"):
+            message = raiz.get(chave)
+            if isinstance(message, dict):
+                return message
+    return {}
+
+
+def _evolution_message_type(payload: dict | None, fallback: str = "conversation") -> str:
+    info = _evolution_info(payload)
+    message = _evolution_message(payload)
+
+    for key in (
+        "conversation",
+        "extendedTextMessage",
+        "imageMessage",
+        "videoMessage",
+        "audioMessage",
+        "documentMessage",
+        "stickerMessage",
+        "ptvMessage",
+    ):
+        if key in message:
+            return key if key != "conversation" else "conversation"
+
+    raw_type = str(info.get("Type") or info.get("type") or info.get("MediaType") or info.get("mediaType") or fallback or "").strip().lower()
+    mapping = {
+        "text": "conversation",
+        "conversation": "conversation",
+        "extendedtextmessage": "extendedTextMessage",
+        "extendedtext": "extendedTextMessage",
+        "media": "media",
+        "image": "imageMessage",
+        "imagemessage": "imageMessage",
+        "video": "videoMessage",
+        "videomessage": "videoMessage",
+        "audio": "audioMessage",
+        "audiomessage": "audioMessage",
+        "document": "documentMessage",
+        "documentmessage": "documentMessage",
+        "sticker": "stickerMessage",
+        "stickermessage": "stickerMessage",
+        "ptv": "ptvMessage",
+        "ptvmessage": "ptvMessage",
+    }
+    if raw_type in mapping:
+        return mapping[raw_type]
+    if raw_type.endswith("message"):
+        return raw_type
+    return fallback or "conversation"
+
+
+def _evolution_media_payload(payload: dict | None) -> dict:
+    info = _evolution_info(payload)
+    message = _evolution_message(payload)
+    raiz = _evolution_payload_raiz(payload)
+    candidates = [message, raiz, info]
+
+    def _pick(*keys):
+        for candidate in candidates:
+            if isinstance(candidate, dict):
+                for key in keys:
+                    value = candidate.get(key)
+                    if value not in (None, ""):
+                        return value
+        return None
+
+    return {
+        "base64": _pick("base64", "Base64", "data", "mediaBase64"),
+        "url": _pick("mediaUrl", "mediaURL", "url", "Url", "downloadUrl", "downloadURL"),
+        "mimetype": _pick("mimetype", "mimeType", "mime_type", "contentType") or "application/octet-stream",
+        "filename": _pick("fileName", "filename", "name", "file_name"),
+        "caption": _pick("caption", "Caption", "text", "body"),
+    }
+
+
+def _evolution_text_and_mentions(payload: dict | None, canal: CanalEntrada) -> tuple[str, bool]:
+    info = _evolution_info(payload)
+    message = _evolution_message(payload)
+
+    msg_text = ""
+    is_mentioned = False
+    if isinstance(message, dict):
+        for key in ("conversation", "text", "body", "caption", "message", "content", "messageText"):
+            value = message.get(key)
+            if isinstance(value, str) and value.strip():
+                msg_text = value.strip()
+                break
+
+        if not msg_text:
+            ext = message.get("extendedTextMessage", {})
+            if isinstance(ext, dict):
+                msg_text = ext.get("text", "") or ""
+                ctx_info = ext.get("contextInfo", {})
+                if isinstance(ctx_info, dict):
+                    mentioned = ctx_info.get("mentionedJid", [])
+                    if isinstance(mentioned, list) and len(mentioned) > 0:
+                        canal_numero = str(canal.numero_telefone or "").replace("+", "").replace("-", "").replace(" ", "")
+                        for mj in mentioned:
+                            mj_clean = str(mj).split("@")[0].replace("+", "").replace("-", "").replace(" ", "")
+                            if canal_numero and (canal_numero in mj_clean or mj_clean in canal_numero):
+                                is_mentioned = True
+                                logger.info("[webhook-process] MENTION detected: %s", mj)
+                                break
+
+        if not msg_text:
+            for media_type in ("imageMessage", "videoMessage", "documentMessage", "audioMessage", "stickerMessage", "ptvMessage"):
+                media = message.get(media_type, {})
+                if isinstance(media, dict):
+                    msg_text = media.get("caption", "") or media.get("text", "")
+                    if msg_text:
+                        break
+
+    if not msg_text and isinstance(info, dict):
+        msg_text = info.get("Caption", "") or info.get("Text", "") or info.get("caption", "") or info.get("text", "")
+
+    if not msg_text:
+        media_payload = _evolution_media_payload(payload)
+        if media_payload.get("base64") or media_payload.get("url"):
+            msg_text = "[mídia]"
+
+    if not msg_text:
+        msg_text = "[mídia]"
+
+    if not is_mentioned and isinstance(message, dict):
+        for context_key in ("contextInfo", "ContextInfo"):
+            ctx_info = message.get(context_key)
+            if isinstance(ctx_info, dict):
+                mentioned = ctx_info.get("mentionedJid", [])
+                if isinstance(mentioned, list) and len(mentioned) > 0:
+                    canal_numero = str(canal.numero_telefone or "").replace("+", "").replace("-", "").replace(" ", "")
+                    for mj in mentioned:
+                        mj_clean = str(mj).split("@")[0].replace("+", "").replace("-", "").replace(" ", "")
+                        if canal_numero and (canal_numero in mj_clean or mj_clean in canal_numero):
+                            is_mentioned = True
+                            logger.info("[webhook-process] MENTION detected: %s", mj)
+                            break
+            if is_mentioned:
+                break
+
+    return msg_text, is_mentioned
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────
@@ -251,12 +477,18 @@ def criar_canal(
     # Se for WhatsApp Evolution, criar instância na Evolution API
     if c.tipo == "whatsapp_evolution":
         instance_name = _nome_instancia_evo(c)
+        instance_token = str(uuid.uuid4())
         try:
-            evo_service.criar_instancia(instance_name)
+            instancia = evo_service.criar_instancia(instance_name, token=instance_token)
             c.evolution_instance_id = instance_name
-            db.commit()
-            db.refresh(c)
-            # Configurar webhook da instância com o token persistido do canal.
+            _persistir_evolution_meta(
+                c,
+                db,
+                instance_name=instance_name,
+                instance_id=instancia.get("instance_id") or instancia.get("id"),
+                instance_token=instancia.get("instance_token") or instancia.get("token") or instance_token,
+            )
+            # Mantém o token do webhook do canal, mas só sincroniza com a Evolution quando houver conexão.
             _configurar_webhook_evolution(c, db)
         except evo_service.EvolutionError as exc:
             logger.error("[canais] falha ao criar instância Evolution: %s", exc)
@@ -304,9 +536,10 @@ def remover_canal(
     _exigir_admin_canal(usuario, c, db)
 
     # Se for Evolution, deletar instância na Evolution API
-    if c.tipo == "whatsapp_evolution" and c.evolution_instance_id:
+    if c.tipo == "whatsapp_evolution":
+        instance_name, instance_id, instance_token = _evolution_meta(c)
         try:
-            evo_service.deletar_instancia(c.evolution_instance_id)
+            evo_service.deletar_instancia(c.evolution_instance_id or instance_name, instance_id=instance_id, instance_token=instance_token)
         except evo_service.EvolutionError as exc:
             logger.error("[canais] falha ao deletar instância Evolution: %s", exc)
 
@@ -328,23 +561,68 @@ def conectar_canal(
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
 
-    instance_name = c.evolution_instance_id or _nome_instancia_evo(c)
+    instance_name, instance_id, instance_token = _evolution_meta(c)
 
-    # Criar instância se ainda não existir
-    if not c.evolution_instance_id:
+    if not instance_id:
         try:
-            evo_service.criar_instancia(instance_name)
+            instancia = evo_service.criar_instancia(instance_name, token=instance_token or str(uuid.uuid4()))
+            instance_id = instancia.get("instance_id") or instancia.get("id") or instance_id
+            instance_token = instancia.get("instance_token") or instancia.get("token") or instance_token
             c.evolution_instance_id = instance_name
-            db.commit()
-        except evo_service.EvolutionError:
-            pass  # pode já existir
+            _persistir_evolution_meta(
+                c,
+                db,
+                instance_name=instance_name,
+                instance_id=instance_id,
+                instance_token=instance_token,
+            )
+        except evo_service.EvolutionError as exc:
+            logger.warning("[canais] instância Evolution não pôde ser recriada: %s", exc)
+            instancia_existente = evo_service.obter_instancia(instance_name)
+            if instancia_existente:
+                instance_id = instancia_existente.get("instance_id") or instancia_existente.get("id") or instance_id
+                instance_token = instancia_existente.get("instance_token") or instancia_existente.get("token") or instance_token
+                _persistir_evolution_meta(
+                    c,
+                    db,
+                    instance_name=instance_name,
+                    instance_id=instance_id,
+                    instance_token=instance_token,
+                )
 
-    # Obter QR code
+    _configurar_webhook_evolution(c, db)
+    webhook_base = settings.SERVER_URL or "https://api.op7franquia.com.br"
+    webhook_url = f"{webhook_base}/webhook/evolution/{c.webhook_token}"
+
     try:
-        qr_data = evo_service.obter_qr_code(instance_name)
+        evo_service.conectar_instancia(
+            instance_name,
+            webhook_url,
+            instance_id=instance_id,
+            instance_token=instance_token,
+            subscribe=["ALL"],
+            immediate=True,
+        )
+        qr_data = evo_service.obter_qr_code(instance_name, instance_id=instance_id, instance_token=instance_token)
         qr_code = None
         if isinstance(qr_data, dict):
             qr_code = qr_data.get("base64") or qr_data.get("qrcode", {}).get("base64")
+        if not qr_code:
+            state = evo_service.estado_conexao(instance_name, instance_id=instance_id, instance_token=instance_token)
+            conn_state = state.get("state") or state.get("instance", {}).get("state", "close")
+            if conn_state == "open":
+                c.status = "ativo"
+                c.connection_status = "connected"
+                numero = _extrair_numero_evolution(state)
+                if numero:
+                    c.numero_telefone = numero
+                db.commit()
+                _configurar_webhook_evolution(c, db)
+                return ConectarOut(
+                    qr_code=None,
+                    connection_status="connected",
+                    message="Instância já está conectada",
+                )
         c.connection_status = "connecting"
         db.commit()
         return ConectarOut(
@@ -355,8 +633,8 @@ def conectar_canal(
     except evo_service.EvolutionError as exc:
         # Verificar se já está conectado
         try:
-            state = evo_service.estado_conexao(instance_name)
-            conn_state = state.get("instance", {}).get("state", "close")
+            state = evo_service.estado_conexao(instance_name, instance_id=instance_id, instance_token=instance_token)
+            conn_state = state.get("state") or state.get("instance", {}).get("state", "close")
             if conn_state == "open":
                 c.status = "ativo"
                 c.connection_status = "connected"
@@ -391,11 +669,11 @@ def status_evolution(
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
 
-    instance_name = c.evolution_instance_id or _nome_instancia_evo(c)
+    instance_name, instance_id, instance_token = _evolution_meta(c)
 
     try:
-        state_data = evo_service.estado_conexao(instance_name)
-        conn_state = state_data.get("instance", {}).get("state", "close")
+        state_data = evo_service.estado_conexao(instance_name, instance_id=instance_id, instance_token=instance_token)
+        conn_state = str(state_data.get("state") or state_data.get("instance", {}).get("state", "close")).lower()
 
         if conn_state == "open":
             c.status = "ativo"
@@ -410,6 +688,9 @@ def status_evolution(
                 _configurar_webhook_evolution(c, db)
             except evo_service.EvolutionError as exc:
                 logger.error("[canais] falha ao reconfigurar webhook Evolution: %s", exc)
+        elif conn_state == "connecting":
+            c.connection_status = "connecting"
+            db.commit()
         elif conn_state == "close":
             c.status = "inativo"
             c.connection_status = "disconnected"
@@ -442,10 +723,10 @@ def desconectar_canal(
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
 
-    instance_name = c.evolution_instance_id or _nome_instancia_evo(c)
+    instance_name, instance_id, instance_token = _evolution_meta(c)
 
     try:
-        evo_service.logout_instancia(instance_name)
+        evo_service.desconectar_instancia(instance_name, instance_id=instance_id, instance_token=instance_token)
     except evo_service.EvolutionError:
         pass
 
@@ -701,7 +982,7 @@ def enviar_mensagem_canal(
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
 
-    instance = c.evolution_instance_id or _nome_instancia_evo(c)
+    instance, instance_id, instance_token = _evolution_meta(c)
     from sqlalchemy import text
     from datetime import datetime, timedelta, timezone
 
@@ -846,12 +1127,14 @@ def enviar_mensagem_canal(
     # 1. Envia para Evolution API
     try:
         if payload.tipo == "texto" or not payload.media_url:
-            evo_resp = evo_service.enviar_mensagem_texto(instance, numero_evo, payload.texto or "")
+            evo_resp = evo_service.enviar_mensagem_texto(instance, numero_evo, payload.texto or "", instance_id=instance_id, instance_token=instance_token)
         else:
             evo_resp = evo_service.enviar_mensagem_midia(
                 instance, numero_evo, payload.tipo, payload.media_url,
                 caption=payload.caption or payload.texto,
                 file_name=payload.caption,
+                instance_id=instance_id,
+                instance_token=instance_token,
             )
     except evo_service.EvolutionError as exc:
         logger.error("[canais] falha ao enviar mensagem: %s", exc)
@@ -970,7 +1253,7 @@ def enviar_template_canal(
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
 
-    instance = c.evolution_instance_id or _nome_instancia_evo(c)
+    instance, instance_id, instance_token = _evolution_meta(c)
     from sqlalchemy import text
 
     # Resolve conversa e contato
@@ -1024,6 +1307,8 @@ def enviar_template_canal(
         evo_resp = evo_service.enviar_template_hsm(
             instance, numero_evo, payload.template_name,
             language=payload.language, components=payload.components,
+            instance_id=instance_id,
+            instance_token=instance_token,
         )
     except evo_service.EvolutionError as exc:
         logger.error("[canais] falha ao enviar template: %s", exc)
@@ -1281,14 +1566,15 @@ async def receber_webhook_evolution_test(
         payload = {}
 
     event = payload.get("event", "")
-    instance_data = payload.get("data", {})
+    event_norm = _normalizar_evento_evolution(event)
+    instance_data = payload.get("data", {}) if isinstance(payload.get("data", {}), dict) else {}
 
     logger.info("[webhook-test] event=%s payload_keys=%s", event, list(payload.keys()))
 
     # Salvar payload bruto
     _salvar_evento_raw(db, "test", "test", event, payload)
 
-    if event.upper().replace(".", "_") == "MESSAGES_UPSERT" and isinstance(instance_data, dict):
+    if event_norm in {"MESSAGE", "MESSAGES_UPSERT", "MESSAGE_UPSERT", "MESSAGE_RECEIVED"}:
         logger.info("[webhook-test] processando mensagem de teste")
         try:
             # Usar canal mock para teste
@@ -1309,6 +1595,10 @@ async def receber_webhook_evolution_test(
                     mensagem_db_id=resultado.get("mensagem_id", ""),
                     conversa_db_id=resultado.get("conversa_id", ""),
                     message_type_raw=resultado.get("message_type", ""),
+                    media_base64=resultado.get("media_base64"),
+                    media_url=resultado.get("media_url"),
+                    media_mime_type=resultado.get("media_mime_type"),
+                    media_filename=resultado.get("media_filename"),
                 )
         except Exception as e:
             logger.exception("[webhook-test] ERRO: %s", e)
@@ -1334,16 +1624,42 @@ async def receber_webhook_evolution(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token inválido")
 
     event = payload.get("event", "")
-    instance_data = payload.get("data", {})
+    event_norm = _normalizar_evento_evolution(event)
+    instance_data = payload.get("data", {}) if isinstance(payload.get("data", {}), dict) else {}
 
     logger.info("[webhook-evolution] canal=%s event=%s", canal.nome, event)
 
     # Sempre salvar payload bruto para audit trail
     _salvar_evento_raw(db, canal.id, canal.evolution_instance_id or "opcl", event, payload)
 
-    if event.upper().replace(".", "_") == "CONNECTION_UPDATE":
-        state = instance_data.get("state", "").lower()
-        if state == "open":
+    connection_events = {"CONNECTION_UPDATE", "CONNECTED", "LOGGEDOUT", "LOGGED_OUT", "DISCONNECTED", "QRCODE", "QR_CODE"}
+    message_events = {"MESSAGE", "MESSAGES_UPSERT", "MESSAGE_UPSERT", "MESSAGE_RECEIVED"}
+    receipt_events = {"RECEIPT", "READ_RECEIPT", "READRECEIPT", "MESSAGES_UPDATE", "MESSAGE_STATUS"}
+
+    if event_norm in connection_events:
+        connection_source = instance_data.get("Info") if isinstance(instance_data.get("Info"), dict) else instance_data
+        state_value = ""
+        if isinstance(connection_source, dict):
+            state_value = str(connection_source.get("state") or connection_source.get("State") or connection_source.get("status") or connection_source.get("Status") or "").lower()
+            if state_value in {"connected"}:
+                state_value = "open"
+            elif state_value in {"disconnected", "loggedout", "logged_out", "logout", "closed", "close"}:
+                state_value = "close"
+            elif state_value in {"qrcode", "qr_code", "pairing"}:
+                state_value = "connecting"
+            if not state_value and connection_source.get("Connected") is True:
+                state_value = "open"
+            if not state_value and connection_source.get("LoggedIn") is True:
+                state_value = "connecting"
+
+        if event_norm == "CONNECTED":
+            state_value = "open"
+        elif event_norm in {"LOGGEDOUT", "LOGGED_OUT", "DISCONNECTED"}:
+            state_value = "close"
+        elif event_norm in {"QRCODE", "QR_CODE"} and not state_value:
+            state_value = "connecting"
+
+        if state_value == "open":
             canal.status = "ativo"
             canal.connection_status = "connected"
             from datetime import datetime, timezone
@@ -1351,18 +1667,23 @@ async def receber_webhook_evolution(
             numero = _extrair_numero_evolution(instance_data)
             if numero:
                 canal.numero_telefone = numero
-        elif state == "close":
+            db.commit()
+            try:
+                _configurar_webhook_evolution(canal, db)
+            except evo_service.EvolutionError as exc:
+                logger.error("[canais] falha ao reconfigurar webhook Evolution: %s", exc)
+        elif state_value == "connecting":
+            canal.connection_status = "connecting"
+            db.commit()
+        elif state_value == "close":
             canal.status = "inativo"
             canal.connection_status = "disconnected"
-        elif state == "connecting":
-            canal.connection_status = "connecting"
-        db.commit()
+            db.commit()
 
-    if event.upper().replace(".", "_") == "MESSAGES_UPSERT":
-        logger.info("[webhook-evolution] processando MESSAGES_UPSERT")
+    if event_norm in message_events:
+        logger.info("[webhook-evolution] processando evento de mensagem")
         try:
             resultado = _processar_mensagem_evolution(db, canal, instance_data)
-            # Se for mensagem de entrada com mídia, agenda download em background
             if resultado and resultado.get("is_media"):
                 background_tasks.add_task(
                     _baixar_e_salvar_midia,
@@ -1371,8 +1692,11 @@ async def receber_webhook_evolution(
                     mensagem_db_id=resultado.get("mensagem_id", ""),
                     conversa_db_id=resultado.get("conversa_id", ""),
                     message_type_raw=resultado.get("message_type", ""),
+                    media_base64=resultado.get("media_base64"),
+                    media_url=resultado.get("media_url"),
+                    media_mime_type=resultado.get("media_mime_type"),
+                    media_filename=resultado.get("media_filename"),
                 )
-            # Enriquecimento de contato e grupo (não bloqueia webhook)
             if resultado:
                 instance_name = canal.evolution_instance_id or "opcl"
                 ws_id = resultado.get("workspace_id", "")
@@ -1394,15 +1718,14 @@ async def receber_webhook_evolution(
         except Exception:
             logger.exception("[webhook-evolution] ERRO no processamento")
 
-    if event.upper().replace(".", "_") == "MESSAGES_UPDATE":
-        logger.info("[webhook-evolution] processando MESSAGES_UPDATE")
+    if event_norm in receipt_events:
+        logger.info("[webhook-evolution] processando evento de receipt/status")
         try:
-            _processar_status_mensagem(db, canal, instance_data)
+            _processar_status_mensagem(db, canal, instance_data, event=event_norm)
         except Exception:
             logger.exception("[webhook-evolution] ERRO no processamento de status")
 
     return {"recebido": True}
-
 
 def _salvar_evento_raw(db: Session, canal_id: uuid.UUID, instance: str, event: str, payload: dict) -> None:
     """Salva o payload bruto do webhook para audit trail e debug."""
@@ -1411,6 +1734,13 @@ def _salvar_evento_raw(db: Session, canal_id: uuid.UUID, instance: str, event: s
     import json
 
     try:
+        remote_jid = ""
+        info = _evolution_info(payload)
+        if info:
+            remote_jid = info.get("Chat") or info.get("chat") or info.get("RemoteJid") or info.get("jid") or ""
+        if not remote_jid and isinstance(payload.get("data"), dict):
+            remote_jid = payload.get("data", {}).get("key", {}).get("remoteJid", "")
+
         db.execute(
             text("""
                 INSERT INTO public.crm_whatsapp_eventos (event, instance, remote_jid, payload, recebido_em)
@@ -1419,7 +1749,7 @@ def _salvar_evento_raw(db: Session, canal_id: uuid.UUID, instance: str, event: s
             {
                 "ev": event,
                 "inst": instance,
-                "rj": payload.get("data", {}).get("key", {}).get("remoteJid", "") if isinstance(payload.get("data"), dict) else "",
+                "rj": remote_jid,
                 "payload": json.dumps(payload),
                 "ts": datetime.now(timezone.utc),
             },
@@ -1428,24 +1758,44 @@ def _salvar_evento_raw(db: Session, canal_id: uuid.UUID, instance: str, event: s
     except Exception:
         logger.exception("[webhook] falha ao salvar evento raw")
 
-
 def _processar_mensagem_evolution(db: Session, canal: CanalEntrada, data: dict) -> dict | None:
     from datetime import datetime, timezone
     from sqlalchemy import text
 
-    key = data.get("key", {})
-    message = data.get("message", {})
-    remote_jid = key.get("remoteJid", "")
-    participant_jid = key.get("participant", "")  # quem enviou no grupo
-    from_me = key.get("fromMe", False)
-    evolution_msg_id = key.get("id", "")
-    push_name = data.get("pushName", "")
-    message_type = data.get("messageType", "conversation")
-    timestamp = data.get("messageTimestamp", 0)
+    info = _evolution_info(data)
+    key = data.get("key", {}) if isinstance(data, dict) else {}
+    message = _evolution_message(data) or data.get("message", {})
+    if info:
+        remote_jid = info.get("Chat") or info.get("chat") or info.get("RemoteJid") or info.get("jid") or ""
+        participant_jid = info.get("SenderAlt") or info.get("Sender") or info.get("sender") or ""
+        from_me = bool(info.get("IsFromMe", False))
+        evolution_msg_id = info.get("ID") or info.get("Id") or data.get("id", "")
+        push_name = info.get("PushName") or data.get("pushName", "")
+        message_type = _evolution_message_type(data, fallback=str(data.get("messageType", "conversation")))
+        timestamp_raw = info.get("Timestamp") or data.get("timestamp") or data.get("messageTimestamp", 0)
+    else:
+        remote_jid = key.get("remoteJid", "")
+        participant_jid = key.get("participant", "")
+        from_me = key.get("fromMe", False)
+        evolution_msg_id = key.get("id", "")
+        push_name = data.get("pushName", "")
+        message_type = _evolution_message_type(data, fallback=data.get("messageType", "conversation"))
+        timestamp_raw = data.get("messageTimestamp", 0)
+
+    if isinstance(timestamp_raw, str):
+        if timestamp_raw.isdigit():
+            timestamp_raw = int(timestamp_raw)
+        else:
+            try:
+                timestamp_raw = int(datetime.fromisoformat(timestamp_raw.replace("Z", "+00:00")).timestamp())
+            except ValueError:
+                timestamp_raw = 0
+    recebida_em = datetime.fromtimestamp(timestamp_raw, tz=timezone.utc) if timestamp_raw else datetime.now(timezone.utc)
     instance = canal.evolution_instance_id or "opcl"
+    media_payload = _evolution_media_payload(data)
 
     # Detecta se é mensagem de grupo
-    is_group = "@g.us" in remote_jid
+    is_group = bool(info.get("IsGroup")) or "@g.us" in remote_jid
     # Em grupos, o remetente real é o participant, não o remote_jid
     sender_jid = participant_jid if (is_group and participant_jid) else remote_jid
     sender_name = push_name
@@ -1522,38 +1872,7 @@ def _processar_mensagem_evolution(db: Session, canal: CanalEntrada, data: dict) 
                 return origem
         return origem
 
-    # Extrair texto da mensagem (robusto para vários tipos)
-    msg_text = ""
-    is_mentioned = False
-    if isinstance(message, dict):
-        msg_text = message.get("conversation", "")
-        if not msg_text:
-            ext = message.get("extendedTextMessage", {})
-            if isinstance(ext, dict):
-                msg_text = ext.get("text", "")
-                # Detectar menções
-                ctx_info = ext.get("contextInfo", {})
-                if isinstance(ctx_info, dict):
-                    mentioned = ctx_info.get("mentionedJid", [])
-                    if isinstance(mentioned, list) and len(mentioned) > 0:
-                        # Verifica se o número do canal foi mencionado
-                        canal_numero = str(canal.numero_telefone or "").replace("+", "").replace("-", "").replace(" ", "")
-                        for mj in mentioned:
-                            mj_clean = mj.split("@")[0].replace("+", "").replace("-", "").replace(" ", "")
-                            if canal_numero and (canal_numero in mj_clean or mj_clean in canal_numero):
-                                is_mentioned = True
-                                logger.info("[webhook-process] MENTION detected: %s", mj)
-                                break
-        if not msg_text:
-            # Tentar extrair caption de mídia
-            for media_type in ("imageMessage", "videoMessage", "documentMessage", "audioMessage"):
-                media = message.get(media_type, {})
-                if isinstance(media, dict):
-                    msg_text = media.get("caption", "")
-                    if msg_text:
-                        break
-        if not msg_text:
-            msg_text = "[mídia]"
+    msg_text, is_mentioned = _evolution_text_and_mentions(data, canal)
 
     # Extrair UTM / origem da mensagem (após texto extraído)
     lead_origem = _extrair_origem_lead(data, msg_text)
@@ -1565,11 +1884,10 @@ def _processar_mensagem_evolution(db: Session, canal: CanalEntrada, data: dict) 
         return
 
     direcao = "saida" if from_me else "entrada"
-    recebida_em = datetime.fromtimestamp(timestamp, tz=timezone.utc) if timestamp else datetime.now(timezone.utc)
     workspace_id = str(canal.workspace_id)
 
     # Extrai número real do payload (senderPn) se disponível — presente em mensagens LID
-    sender_pn = key.get("senderPn", "")
+    sender_pn = data.get("senderPn", "") or info.get("SenderPn", "") or info.get("SenderPN", "") or key.get("senderPn", "") or ""
     is_lid = "@lid" in remote_jid
     numero_evo = sender_pn if sender_pn else (remote_jid if "@s.whatsapp.net" in remote_jid else "")
 
@@ -1921,7 +2239,7 @@ def _processar_mensagem_evolution(db: Session, canal: CanalEntrada, data: dict) 
         logger.info("[webhook-process] REDIS FALHOU: %s", e)
 
     # Retorna metadados para o endpoint decidir se precisa baixar mídia
-    is_media = message_type in ("imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage", "ptvMessage")
+    is_media = message_type in ("imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage", "ptvMessage", "media") or bool(media_payload.get("base64") or media_payload.get("url"))
     return {
         "is_media": is_media and not from_me,
         "mensagem_id": str(mensagem_id) if mensagem_id else None,
@@ -1933,63 +2251,115 @@ def _processar_mensagem_evolution(db: Session, canal: CanalEntrada, data: dict) 
         "remote_jid": remote_jid,
         "participant_jid": participant_jid,
         "workspace_id": workspace_id,
+        "media_base64": media_payload.get("base64"),
+        "media_url": media_payload.get("url"),
+        "media_mime_type": media_payload.get("mimetype"),
+        "media_filename": media_payload.get("filename"),
     }
 
 
-def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict) -> None:
-    """Processa evento MESSAGES_UPDATE para atualizar status de entrega (sent, delivered, read)."""
+def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict, event: str = "") -> None:
+    """Processa evento de receipt/status para atualizar entrega/leitura."""
     from datetime import datetime, timezone
     from sqlalchemy import text
 
-    key = data.get("key", {})
-    status_info = data.get("status", {})
-    evolution_msg_id = key.get("id", "")
-    remote_jid = key.get("remoteJid", "")
-    status_type = status_info.get("status", "").lower() if isinstance(status_info, dict) else ""
-    instance = canal.evolution_instance_id or "opcl"
+    info = _evolution_info(data)
+    key = data.get("key", {}) if isinstance(data, dict) else {}
+    event_norm = _normalizar_evento_evolution(event)
 
-    if not evolution_msg_id or not status_type:
+    raw_status = data.get("status") or data.get("Status") or data.get("receiptStatus") or data.get("ReceiptStatus") or data.get("state") or data.get("State")
+    status_type = ""
+    if isinstance(raw_status, dict):
+        status_type = str(raw_status.get("status") or raw_status.get("Status") or raw_status.get("state") or raw_status.get("State") or "").lower()
+    elif isinstance(raw_status, str):
+        status_type = raw_status.lower()
+
+    if not status_type:
+        if event_norm in {"READ_RECEIPT", "READRECEIPT"}:
+            status_type = "read"
+        elif event_norm in {"RECEIPT", "MESSAGES_UPDATE", "MESSAGE_STATUS"}:
+            status_type = "delivered"
+        elif event_norm == "FAILED":
+            status_type = "failed"
+
+    message_ids: list[str] = []
+
+    def _append_message_id(value: object) -> None:
+        if isinstance(value, dict):
+            candidate = value.get("id") or value.get("ID") or value.get("messageId") or value.get("messageID")
+            if candidate:
+                message_ids.append(str(candidate))
+        elif isinstance(value, str) and value:
+            message_ids.append(value)
+        elif value not in (None, ""):
+            message_ids.append(str(value))
+
+    _append_message_id(key.get("id"))
+    _append_message_id(data.get("id"))
+    _append_message_id(data.get("ID"))
+    _append_message_id(info.get("ID") if isinstance(info, dict) else None)
+    _append_message_id(info.get("Id") if isinstance(info, dict) else None)
+
+    for field in ("MessageIDs", "messageIds", "messageIDs", "messagesIds", "messagesIDs", "ids", "Ids"):
+        value = data.get(field)
+        if isinstance(value, list):
+            for item in value:
+                _append_message_id(item)
+        else:
+            _append_message_id(value)
+
+    remote_jid = ""
+    if isinstance(info, dict):
+        remote_jid = info.get("Chat") or info.get("chat") or info.get("RemoteJid") or info.get("jid") or ""
+    if not remote_jid:
+        remote_jid = key.get("remoteJid", "") or data.get("remoteJid", "")
+
+    if not message_ids or not status_type:
         logger.info("[webhook-status] ABORTANDO: evolution_msg_id ou status vazio")
         return
 
-    # Mapeia status da Evolution para nosso enum
     status_map = {
         "sent": "sent",
-        "delivered": "delivered", 
+        "delivered": "delivered",
         "read": "read",
         "failed": "failed",
         "pending": "pending",
+        "received": "delivered",
+        "seen": "read",
     }
     wa_status = status_map.get(status_type, status_type)
+    instance = canal.evolution_instance_id or "opcl"
+    timestamp = datetime.now(timezone.utc)
 
-    # Atualiza a mensagem no banco
-    db.execute(
-        text("""
-            UPDATE public.crm_whatsapp_mensagens
-            SET wa_status = :status,
-                delivered_at = CASE WHEN :status = 'delivered' AND delivered_at IS NULL THEN NOW() ELSE delivered_at END,
-                read_at = CASE WHEN :status = 'read' AND read_at IS NULL THEN NOW() ELSE read_at END,
-                updated_at = NOW()
-            WHERE evolution_msg_id = :evid
-              AND instance = :inst
-        """),
-        {"status": wa_status, "evid": evolution_msg_id, "inst": instance},
-    )
+    for evolution_msg_id in dict.fromkeys(message_ids):
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_mensagens
+                SET wa_status = :status,
+                    delivered_at = CASE WHEN :status = 'delivered' AND delivered_at IS NULL THEN NOW() ELSE delivered_at END,
+                    read_at = CASE WHEN :status = 'read' AND read_at IS NULL THEN NOW() ELSE read_at END,
+                    updated_at = NOW()
+                WHERE evolution_msg_id = :evid
+                  AND instance = :inst
+            """),
+            {"status": wa_status, "evid": evolution_msg_id, "inst": instance},
+        )
+
     db.commit()
 
-    logger.info("[webhook-status] msg_id=%s status=%s", evolution_msg_id, wa_status)
+    logger.info("[webhook-status] msg_ids=%s status=%s", message_ids, wa_status)
 
-    # Notifica frontend via Redis
     try:
-        publish_whatsapp_event({
-            "type": "message.status",
-            "workspaceId": str(canal.workspace_id),
-            "evolutionMsgId": evolution_msg_id,
-            "remoteJid": remote_jid,
-            "status": wa_status,
-            "instance": instance,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        for evolution_msg_id in dict.fromkeys(message_ids):
+            publish_whatsapp_event({
+                "type": "message.status",
+                "workspaceId": str(canal.workspace_id),
+                "evolutionMsgId": evolution_msg_id,
+                "remoteJid": remote_jid,
+                "status": wa_status,
+                "instance": instance,
+                "timestamp": timestamp.isoformat(),
+            })
         logger.info("[webhook-status] REDIS PUBLICADO")
     except Exception as e:
         logger.info("[webhook-status] REDIS FALHOU: %s", e)
@@ -2004,26 +2374,51 @@ def _baixar_e_salvar_midia(
     mensagem_db_id: str,
     conversa_db_id: str,
     message_type_raw: str,
+    media_base64: str | None = None,
+    media_url: str | None = None,
+    media_mime_type: str | None = None,
+    media_filename: str | None = None,
 ) -> None:
     """Background task: baixa mídia da Evolution, salva no MinIO e registra no DB."""
     from app.core.config import settings
+    from urllib.request import urlopen
 
     logger.info("[midia-bg] iniciando download msg_id=%s", evolution_msg_id)
 
     try:
-        info = evo_service.baixar_midia(instance_name, evolution_msg_id)
-        if not info.get("found"):
-            logger.warning("[midia-bg] mídia não encontrada na Evolution: %s", evolution_msg_id)
-            return
+        content = None
+        mime = media_mime_type or "application/octet-stream"
+        filename = media_filename or evolution_msg_id
 
-        b64_data = info.get("base64", "")
-        if not b64_data:
-            logger.warning("[midia-bg] base64 vazio: %s", evolution_msg_id)
-            return
+        if media_base64:
+            raw_b64 = media_base64.split(",", 1)[1] if media_base64.startswith("data:") and "," in media_base64 else media_base64
+            content = base64.b64decode(raw_b64)
+        elif media_url:
+            try:
+                with urlopen(media_url) as resp:
+                    content = resp.read()
+                    headers = getattr(resp, "headers", None)
+                    if headers:
+                        mime = headers.get_content_type() or headers.get("content-type") or mime
+            except Exception:
+                logger.warning("[midia-bg] falha ao baixar mídia por URL, tentando fallback Evolution: %s", evolution_msg_id)
 
-        content = base64.b64decode(b64_data)
-        mime = info.get("mimetype", "application/octet-stream")
-        ext = mimetypes.guess_extension(mime) or ".bin"
+        if content is None:
+            info = evo_service.baixar_midia(instance_name, evolution_msg_id)
+            if not info.get("found"):
+                logger.warning("[midia-bg] mídia não encontrada na Evolution: %s", evolution_msg_id)
+                return
+
+            b64_data = info.get("base64", "")
+            if not b64_data:
+                logger.warning("[midia-bg] base64 vazio: %s", evolution_msg_id)
+                return
+
+            raw_b64 = b64_data.split(",", 1)[1] if isinstance(b64_data, str) and b64_data.startswith("data:") and "," in b64_data else b64_data
+            content = base64.b64decode(raw_b64)
+            mime = info.get("mimetype") or info.get("mimeType") or mime
+            if not media_filename:
+                filename = info.get("caption") or filename
 
         tipo_map = {
             "imageMessage": "image",
@@ -2032,8 +2427,25 @@ def _baixar_e_salvar_midia(
             "documentMessage": "document",
             "stickerMessage": "sticker",
             "ptvMessage": "video",
+            "image": "image",
+            "video": "video",
+            "audio": "audio",
+            "document": "document",
         }
         tipo = tipo_map.get(message_type_raw, "file")
+        if tipo == "file" and isinstance(mime, str):
+            if mime.startswith("image/"):
+                tipo = "image"
+            elif mime.startswith("video/"):
+                tipo = "video"
+            elif mime.startswith("audio/"):
+                tipo = "audio"
+            elif mime in {"application/pdf"} or mime.startswith("application/"):
+                tipo = "document"
+
+        ext = os.path.splitext(filename)[1]
+        if not ext:
+            ext = mimetypes.guess_extension(mime) or ".bin"
 
         object_key = f"whatsapp/{conversa_db_id}/{mensagem_db_id}{ext}"
         put_bytes(MEDIA_BUCKET, object_key, content, mime)
@@ -2300,16 +2712,47 @@ def _enriquecer_contato_background(
             return
 
         # 2. Busca foto de perfil
-        foto_url = evo_service.buscar_foto_perfil(instance, jid)
+        foto_info = evo_service.buscar_foto_perfil(instance, jid)
         minio_avatar_url = None
-        if foto_url:
+        if foto_info:
             safe_jid = jid.replace("@", "_").replace(".", "_")
-            minio_avatar_url = download_and_put(
-                "whatsapp-avatars",
-                f"contacts/{safe_jid}.jpg",
-                foto_url,
-                "image/jpeg",
-            )
+            if isinstance(foto_info, dict):
+                avatar_url = foto_info.get("url")
+                avatar_b64 = foto_info.get("base64")
+                avatar_mime = foto_info.get("mime_type") or foto_info.get("mimetype") or "image/jpeg"
+                if avatar_b64:
+                    try:
+                        raw_b64 = avatar_b64.split(",", 1)[1] if isinstance(avatar_b64, str) and avatar_b64.startswith("data:") and "," in avatar_b64 else avatar_b64
+                        avatar_bytes = base64.b64decode(raw_b64)
+                        ext = mimetypes.guess_extension(avatar_mime) or ".jpg"
+                        object_key = f"contacts/{safe_jid}{ext}"
+                        put_bytes("whatsapp-avatars", object_key, avatar_bytes, avatar_mime)
+                        minio_avatar_url = public_url("whatsapp-avatars", object_key)
+                    except Exception:
+                        logger.exception("[enrich-contato] falha ao salvar avatar base64: jid=%s", jid)
+                elif avatar_url:
+                    minio_avatar_url = download_and_put(
+                        "whatsapp-avatars",
+                        f"contacts/{safe_jid}.jpg",
+                        avatar_url,
+                        avatar_mime,
+                    )
+            elif isinstance(foto_info, str):
+                if foto_info.startswith("http"):
+                    minio_avatar_url = download_and_put(
+                        "whatsapp-avatars",
+                        f"contacts/{safe_jid}.jpg",
+                        foto_info,
+                        "image/jpeg",
+                    )
+                else:
+                    try:
+                        avatar_bytes = base64.b64decode(foto_info.split(",", 1)[1] if foto_info.startswith("data:") and "," in foto_info else foto_info)
+                        object_key = f"contacts/{safe_jid}.jpg"
+                        put_bytes("whatsapp-avatars", object_key, avatar_bytes, "image/jpeg")
+                        minio_avatar_url = public_url("whatsapp-avatars", object_key)
+                    except Exception:
+                        logger.exception("[enrich-contato] falha ao salvar avatar em string base64: jid=%s", jid)
             if minio_avatar_url:
                 logger.info("[enrich-contato] avatar salvo no MinIO: %s", minio_avatar_url)
 

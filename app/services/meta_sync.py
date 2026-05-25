@@ -10,7 +10,7 @@ import json
 import logging
 import mimetypes
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 
 META_API_VERSION = "v21.0"
 META_BASE = f"https://graph.facebook.com/{META_API_VERSION}"
+INSIGHTS_SYNC_WINDOW_DAYS = 3
 
 LEAD_ACTION_TYPES = {
     # Conversa iniciada (janela 7d) usada como lead principal em campanhas de mensagem
@@ -59,6 +60,10 @@ RESULTADO_TRAFFIC_ACTIONS = {
 }
 
 SYNC_JOB_INTERRUPTED_ERROR = "Job interrompido por reinicialização do serviço"
+
+
+class MetaContaInacessivelError(RuntimeError):
+    """Erro terminal quando a conta Meta deixou de responder ao sync."""
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -202,8 +207,8 @@ def _paginar(client: httpx.Client, url: str, params: dict) -> list[dict]:
             resp = client.get(current_url)
 
         if resp.status_code != 200:
-            body = resp.json()
-            err = body.get("error", {})
+            _levantar_se_meta_terminal(resp, f"Meta API em {url}")
+            err, _ = _meta_erro_payload(resp)
             log.error("Meta API erro %s em %s: %s", resp.status_code, url, err.get("message", resp.text))
             break
 
@@ -512,7 +517,7 @@ def _fetch_adimages_by_hashes(
             if resp.status_code not in {429, 500, 502, 503, 504} or attempt == 2:
                 break
             try:
-                err = resp.json().get("error", {})
+                err, _ = _meta_erro_payload(resp)
                 log.warning(
                     "Erro adimages batch tentativa %d/3: %s",
                     attempt + 1,
@@ -525,7 +530,8 @@ def _fetch_adimages_by_hashes(
         if resp is None:
             continue
         if resp.status_code != 200:
-            err = resp.json().get("error", {})
+            _levantar_se_meta_terminal(resp, f"adimages batch em {account_id}")
+            err, _ = _meta_erro_payload(resp)
             log.warning("Erro adimages batch: %s", err.get("message", resp.text[:200]))
             continue
         for row in resp.json().get("data", []):
@@ -612,7 +618,8 @@ def _fetch_creative_thumbnails_hq_by_ids(
         if resp is None or resp.status_code != 200:
             if resp is not None:
                 try:
-                    err = resp.json().get("error", {})
+                    _levantar_se_meta_terminal(resp, "thumbnail HQ batch")
+                    err, _ = _meta_erro_payload(resp)
                     log.warning("Erro thumb_hq batch: %s", err.get("message", resp.text[:200]))
                 except Exception:
                     log.warning("Erro thumb_hq batch: %s", resp.text[:200])
@@ -646,7 +653,8 @@ def _fetch_videos_by_ids(client: httpx.Client, token: str, video_ids: list[str],
             },
         )
         if resp.status_code != 200:
-            err = resp.json().get("error", {})
+            _levantar_se_meta_terminal(resp, "batch vídeos")
+            err, _ = _meta_erro_payload(resp)
             log.warning("Erro batch videos: %s", err.get("message", resp.text[:200]))
             continue
         for vid, payload in resp.json().items():
@@ -946,7 +954,8 @@ def _fetch_criativos_batch(client: httpx.Client, ad_ids: list[str], token: str, 
             },
         )
         if resp.status_code != 200:
-            err = resp.json().get("error", {})
+            _levantar_se_meta_terminal(resp, "batch criativos")
+            err, _ = _meta_erro_payload(resp)
             log.warning("Erro criativos batch: %s", err.get("message", resp.text[:200]))
             continue
 
@@ -1028,7 +1037,8 @@ def _fetch_criativos_batch_minimo(client: httpx.Client, ad_ids: list[str], token
             },
         )
         if resp.status_code != 200:
-            err = resp.json().get("error", {})
+            _levantar_se_meta_terminal(resp, "batch criativos mínimo")
+            err, _ = _meta_erro_payload(resp)
             log.warning("Erro criativos batch mínimo: %s", err.get("message", resp.text[:200]))
             continue
         for ad_id, ad_data in resp.json().items():
@@ -1175,6 +1185,87 @@ def _normalizar_status_meta(raw: Any, default: str = "ACTIVE") -> str:
     if s in {"IN_PROCESS", "PENDING_REVIEW", "DISAPPROVED", "PREAPPROVED"}:
         return "PAUSED"
     return s
+
+
+def _meta_erro_payload(resp: httpx.Response) -> tuple[dict[str, Any], str]:
+    try:
+        body = resp.json()
+        err = body.get("error", {}) if isinstance(body, dict) else {}
+    except Exception:
+        err = {}
+    mensagem = str(err.get("message") or resp.text[:200] or "").strip()
+    return err, mensagem
+
+
+def _meta_erro_terminal(resp: httpx.Response) -> tuple[bool, str]:
+    err, mensagem = _meta_erro_payload(resp)
+    status_code = resp.status_code
+    code = int(err.get("code") or 0)
+    subcode = int(err.get("error_subcode") or err.get("subcode") or 0)
+    mensagem_norm = mensagem.lower()
+
+    if code in {17, 4, 80000, 80004}:
+        return False, mensagem
+
+    if status_code in {401, 403, 404}:
+        return True, mensagem or f"HTTP {status_code}"
+
+    if code in {10, 190, 200, 368}:
+        return True, mensagem
+
+    if code == 803:
+        return True, mensagem or "Objeto Meta não encontrado"
+
+    if code == 100 and (
+        "act_" in mensagem_norm
+        or "ad account" in mensagem_norm
+        or "adaccount" in mensagem_norm
+        or "business manager" in mensagem_norm
+    ) and (
+        "unsupported get request" in mensagem_norm
+        or "does not exist" in mensagem_norm
+        or "missing permissions" in mensagem_norm
+        or "cannot be loaded" in mensagem_norm
+        or "not authorized" in mensagem_norm
+        or "api access blocked" in mensagem_norm
+    ):
+        return True, mensagem
+
+    if subcode in {2108006, 2108007, 2108009}:
+        return True, mensagem
+
+    if any(
+        trecho in mensagem_norm
+        for trecho in (
+            "invalid oauth",
+            "permissions error",
+            "api access blocked",
+        )
+    ) and (
+        "act_" in mensagem_norm
+        or "ad account" in mensagem_norm
+        or "adaccount" in mensagem_norm
+        or "business manager" in mensagem_norm
+        or "account" in mensagem_norm
+    ):
+        return True, mensagem
+
+    return False, mensagem
+
+
+def _levantar_se_meta_terminal(resp: httpx.Response, contexto: str) -> None:
+    terminal, mensagem = _meta_erro_terminal(resp)
+    if terminal:
+        raise MetaContaInacessivelError(f"{contexto}: {mensagem or 'acesso à conta Meta indisponível'}")
+
+
+def _janela_insights_para_conta(conta: AdsAccount, modo_sync: str) -> str:
+    hoje = date.today()
+    if modo_sync == "backfill":
+        since = conta.periodo_sync_inicio or hoje.replace(day=1)
+    else:
+        since = hoje - timedelta(days=INSIGHTS_SYNC_WINDOW_DAYS - 1)
+    return json.dumps({"since": since.isoformat(), "until": hoje.isoformat()})
 
 
 def _parse_meta_datetime(raw: Any) -> datetime | None:
@@ -1931,10 +2022,14 @@ def sincronizar_conta(
     ads_account_id: str,
     db: Session,
     on_progress=None,  # callable(etapa: str, progresso: int) | None
+    modo_sync: str = "recorrente",
 ) -> dict:
     conta: AdsAccount | None = db.get(AdsAccount, ads_account_id)
     if not conta:
         raise ValueError(f"AdsAccount {ads_account_id} não encontrada")
+
+    if conta.sync_paused:
+        return {"skipped": True, "reason": "sync pausado"}
 
     if conta.status != "ativo":
         return {"skipped": True, "reason": "conta inativa"}
@@ -1954,9 +2049,7 @@ def sincronizar_conta(
 
     token = conta.bm_token
     meta_account_id = conta.account_id  # e.g. "act_123456789"
-    since = (conta.periodo_sync_inicio or date.today().replace(day=1)).isoformat()
-    until = date.today().isoformat()
-    time_range = json.dumps({"since": since, "until": until})
+    time_range = _janela_insights_para_conta(conta, modo_sync)
 
     totais: dict[str, int] = {
         "catalog_campanhas": 0,
@@ -1974,7 +2067,7 @@ def sincronizar_conta(
         _progress("balance", 5)
         resp_saldo = client.get(
             f"{META_BASE}/{meta_account_id}",
-            params={"access_token": token, "fields": "balance,amount_spent,spend_cap,currency"},
+            params={"access_token": token, "fields": "balance,amount_spent,spend_cap,currency,name"},
         )
         saldo_data: dict = {}
         if resp_saldo.status_code == 200:
@@ -1982,11 +2075,20 @@ def sincronizar_conta(
             conta.balance = float(saldo_data.get("balance", 0)) / 100
             conta.amount_spent = float(saldo_data.get("amount_spent", 0)) / 100
             conta.spend_cap = float(saldo_data.get("spend_cap", 0)) / 100
+            nome_meta_atual = saldo_data.get("name")
+            if nome_meta_atual:
+                nome_meta_anterior = conta.meta_account_name or conta.account_name
+                conta.meta_account_name = nome_meta_atual
+                if not conta.account_name or (
+                    nome_meta_anterior and conta.account_name == nome_meta_anterior
+                ):
+                    conta.account_name = nome_meta_atual
             conta.config = {
                 **(conta.config or {}),
                 "currency": saldo_data.get("currency"),
             }
         else:
+            _levantar_se_meta_terminal(resp_saldo, f"saldo da conta {meta_account_id}")
             log.warning("Erro ao buscar saldo %s: %s", meta_account_id, resp_saldo.text[:200])
 
         try:
@@ -2027,6 +2129,7 @@ def sincronizar_conta(
                     "bm_name": business.get("name"),
                 }
             else:
+                _levantar_se_meta_terminal(resp_financeiro, f"dados financeiros da conta {meta_account_id}")
                 log.warning(
                     "Dados financeiros opcionais não atualizados %s: %s",
                     meta_account_id,

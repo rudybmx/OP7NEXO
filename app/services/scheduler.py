@@ -7,7 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.core.database import SessionLocal
 from app.models.ads_account import AdsAccount
-from app.services.meta_sync import sincronizar_conta
+from app.services.meta_sync import MetaContaInacessivelError, sincronizar_conta
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ def _job_sync_todas_contas() -> None:
         contas = db.query(AdsAccount).filter(
             AdsAccount.plataforma == "meta",
             AdsAccount.status == "ativo",
+            AdsAccount.sync_paused.is_(False),
         ).all()
 
         for conta in contas:
@@ -31,6 +32,14 @@ def _job_sync_todas_contas() -> None:
             try:
                 resultado = sincronizar_conta(str(conta.id), db)
                 log.info("Conta %s: %s", conta.account_id, resultado)
+            except MetaContaInacessivelError as exc:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                conta.sync_paused = True
+                db.commit()
+                log.warning("Conta %s pausada após erro terminal no sync: %s", conta.account_id, exc)
             except Exception as exc:
                 log.exception("Erro sync conta %s: %s", conta.account_id, exc)
 

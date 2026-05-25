@@ -20,6 +20,7 @@ class AdsAccount(Base, TimestampMixin):
     plataforma: Mapped[str] = mapped_column(String(20), nullable=False)
     account_id: Mapped[str] = mapped_column(String(100), nullable=False)
     account_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    meta_account_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     balance: Mapped[float | None] = mapped_column(Numeric(14, 2), default=0, nullable=True)
     amount_spent: Mapped[float | None] = mapped_column(Numeric(14, 2), default=0, nullable=True)
     spend_cap: Mapped[float | None] = mapped_column(Numeric(14, 2), default=0, nullable=True)
@@ -31,6 +32,7 @@ class AdsAccount(Base, TimestampMixin):
     bm_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="ativo", nullable=False)
     account_status: Mapped[int | None] = mapped_column(Integer, default=1, nullable=True)
+    sync_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     sincronizado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     periodo_sync_inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
     agrupamento: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -38,3 +40,7 @@ class AdsAccount(Base, TimestampMixin):
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="ads_accounts")
+    workspace_accesses: Mapped[list["AdsAccountWorkspaceAccess"]] = relationship(
+        back_populates="ads_account",
+        cascade="all, delete-orphan",
+    )

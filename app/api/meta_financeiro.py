@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.deps import get_usuario_atual
 from app.models.ads_account import AdsAccount
 from app.models.user import User
+from app.services.ads_account_access import listar_ads_accounts_acessiveis
 
 router = APIRouter(prefix="/meta", tags=["meta_financeiro"])
 
@@ -355,15 +356,17 @@ def financeiro_meta(
 
     conta_ids_filtro = _parse_conta_ids(conta_ids)
 
-    contas_disponiveis = (
-        db.query(AdsAccount)
-        .filter(
-            AdsAccount.workspace_id == workspace_uuid,
-            AdsAccount.plataforma == "meta",
-            AdsAccount.ativo == True,
-        )
-        .order_by(AdsAccount.account_name.asc(), AdsAccount.account_id.asc())
-        .all()
+    contas_disponiveis = sorted(
+        listar_ads_accounts_acessiveis(
+            db,
+            workspace_uuid,
+            plataforma="meta",
+            include_inactive=False,
+        ),
+        key=lambda conta: (
+            (conta.account_name or conta.account_id or "").lower(),
+            conta.account_id.lower(),
+        ),
     )
 
     contas_serializadas = [_conta_item(conta) for conta in contas_disponiveis]

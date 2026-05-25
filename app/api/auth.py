@@ -1,39 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual
 from app.core.security import criar_token, hash_senha, verificar_senha
 from app.models.user import RoleUsuario, User
+from app.schemas.auth import RegistroIn, LoginIn, TokenOut, UsuarioOut
+
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-class RegistroIn(BaseModel):
-    nome: str
-    email: EmailStr
-    senha: str
-
-
-class LoginIn(BaseModel):
-    email: EmailStr
-    senha: str
-
-
-class TokenOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-
-
-class UsuarioOut(BaseModel):
-    id: str
-    nome: str
-    email: str
-    role: str
-    ativo: bool
-
-    model_config = {"from_attributes": True}
 
 
 @router.post("/registro", response_model=UsuarioOut, status_code=status.HTTP_201_CREATED)

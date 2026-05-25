@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, verificar_acesso_workspace
 from app.models.user import User
+from app.services.ads_account_access import listar_ads_account_ids_acessiveis
 from app.api.meta_delivery import (
     resolver_veiculacao_campanha,
     resolver_veiculacao_conjunto,
@@ -36,47 +37,26 @@ def _contas_workspace(
     workspace_id: str,
     ads_account_id: str | None,
 ) -> list[uuid.UUID]:
-    if ads_account_id:
-        rows = db.execute(
-            text(
-                "SELECT id FROM ads_accounts "
-                "WHERE workspace_id = CAST(:ws AS uuid) "
-                "  AND id = CAST(:ads_account_id AS uuid) "
-                "  AND plataforma = 'meta'"
-            ),
-            {"ws": workspace_id, "ads_account_id": ads_account_id},
-        ).fetchall()
-    else:
-        rows = db.execute(
-            text(
-                "SELECT id FROM ads_accounts "
-                "WHERE workspace_id = CAST(:ws AS uuid) AND plataforma = 'meta'"
-            ),
-            {"ws": workspace_id},
-        ).fetchall()
-    return [r[0] for r in rows]
+    workspace_uuid = uuid.UUID(workspace_id)
+    ads_account_uuid = uuid.UUID(ads_account_id) if ads_account_id else None
+    return listar_ads_account_ids_acessiveis(
+        db,
+        workspace_uuid,
+        ads_account_uuid=ads_account_uuid,
+        plataforma="meta",
+        include_inactive=True,
+    )
 
 
 def _conta_ids_da_query(workspace_id: str, conta_ids: list[str], db: Session) -> list[uuid.UUID]:
-    if conta_ids:
-        rows = db.execute(
-            text(
-                "SELECT id FROM ads_accounts "
-                "WHERE workspace_id = CAST(:ws AS uuid) "
-                "  AND account_id = ANY(:ids) "
-                "  AND plataforma = 'meta'"
-            ),
-            {"ws": workspace_id, "ids": conta_ids},
-        ).fetchall()
-    else:
-        rows = db.execute(
-            text(
-                "SELECT id FROM ads_accounts "
-                "WHERE workspace_id = CAST(:ws AS uuid) AND plataforma = 'meta'"
-            ),
-            {"ws": workspace_id},
-        ).fetchall()
-    return [r[0] for r in rows]
+    workspace_uuid = uuid.UUID(workspace_id)
+    return listar_ads_account_ids_acessiveis(
+        db,
+        workspace_uuid,
+        conta_ids=conta_ids,
+        plataforma="meta",
+        include_inactive=True,
+    )
 
 
 def _safe_div(num: float, den: float) -> float:

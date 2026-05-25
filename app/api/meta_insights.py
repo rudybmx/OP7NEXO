@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, listar_workspaces_autorizados, verificar_acesso_workspace
+from app.services.ads_account_access import listar_ads_account_ids_acessiveis
 from app.api.meta_delivery import (
     resolver_veiculacao_anuncio,
     resolver_veiculacao_campanha,
@@ -39,23 +40,13 @@ _DETALHE_CACHE: dict[tuple[str, ...], tuple[float, dict]] = {}
 def _conta_ids_da_query(workspace_id: str, conta_ids: list[str], db: Session, usuario: User | None = None) -> list[uuid.UUID]:
     if usuario is not None:
         verificar_acesso_workspace(usuario, uuid.UUID(workspace_id), db)
-    if conta_ids:
-        rows = db.execute(
-            text(
-                "SELECT id FROM ads_accounts "
-                "WHERE workspace_id = CAST(:ws AS uuid) AND account_id = ANY(:ids) AND plataforma = 'meta'"
-            ),
-            {"ws": workspace_id, "ids": conta_ids},
-        ).fetchall()
-    else:
-        rows = db.execute(
-            text(
-                "SELECT id FROM ads_accounts "
-                "WHERE workspace_id = CAST(:ws AS uuid) AND plataforma = 'meta'"
-            ),
-            {"ws": workspace_id},
-        ).fetchall()
-    return [r[0] for r in rows]
+    return listar_ads_account_ids_acessiveis(
+        db,
+        uuid.UUID(workspace_id),
+        conta_ids=conta_ids,
+        plataforma="meta",
+        include_inactive=True,
+    )
 
 
 def _workspace_padrao_detalhe(usuario: User, db: Session) -> uuid.UUID:

@@ -19,7 +19,7 @@ from app.core.deps import exigir_platform_admin
 from app.models.ads_account import AdsAccount
 from app.models.sync_job import SyncJob
 from app.models.user import User
-from app.services.meta_sync import sincronizar_conta, reprocessar_imagens_hq_conta
+from app.services.meta_sync import MetaContaInacessivelError, sincronizar_conta, reprocessar_imagens_hq_conta
 from app.services.scheduler import scheduler
 from app.services.object_storage import get_object, stat_object
 from app.core.config import settings
@@ -154,7 +154,7 @@ def _sync_scheduler_job_out(job) -> SyncSchedulerJobOut:
     )
 
 
-def _iniciar_sync_conta(ads_account_id: str, db: Session) -> tuple[str, bool]:
+def _iniciar_sync_conta(ads_account_id: str, db: Session, modo_sync: str = "recorrente") -> tuple[str, bool]:
     job_ativo = db.execute(
         select(SyncJob).where(
             SyncJob.ads_account_id == ads_account_id,
@@ -170,7 +170,7 @@ def _iniciar_sync_conta(ads_account_id: str, db: Session) -> tuple[str, bool]:
     db.refresh(job)
     job_id = str(job.id)
 
-    t = threading.Thread(target=_run_sync_background, args=(ads_account_id, job_id), daemon=True)
+    t = threading.Thread(target=_run_sync_background, args=(ads_account_id, job_id, modo_sync), daemon=True)
     t.start()
     return job_id, True
 
@@ -267,9 +267,15 @@ def importar_contas_meta(
         if existing:
             existing.bm_token = body.token
             existing.token_expira_em = body.token_expira_em
+            existing.sync_paused = False
             existing.sincronizado_em = None
             existing.periodo_sync_inicio = periodo_inicio
-            existing.account_name = item.nome or existing.account_name
+            nome_meta_anterior = existing.meta_account_name or existing.account_name
+            existing.meta_account_name = item.nome or existing.meta_account_name
+            if not existing.account_name or (
+                nome_meta_anterior and existing.account_name == nome_meta_anterior
+            ):
+                existing.account_name = item.nome
             existing.status = "ativo"
             existing.ativo = True
             atualizadas += 1
@@ -280,6 +286,7 @@ def importar_contas_meta(
                 plataforma="meta",
                 account_id=item.account_id,
                 account_name=item.nome,
+                meta_account_name=item.nome,
                 bm_token=body.token,
                 token_expira_em=body.token_expira_em,
                 sincronizado_em=None,
@@ -296,7 +303,7 @@ def importar_contas_meta(
     db.commit()
 
     for ads_account_id in contas_para_sync:
-        _, started = _iniciar_sync_conta(ads_account_id, db)
+        _, started = _iniciar_sync_conta(ads_account_id, db, modo_sync="backfill")
         if started:
             jobs_iniciados += 1
         else:
@@ -310,7 +317,7 @@ def importar_contas_meta(
     }
 
 
-def _run_sync_background(ads_account_id: str, job_id: str) -> None:
+def _run_sync_background(ads_account_id: str, job_id: str, modo_sync: str) -> None:
     with SessionLocal() as db:
         def _set(etapa: str, progresso: int) -> None:
             db.execute(text("""
@@ -343,9 +350,19 @@ def _run_sync_background(ads_account_id: str, job_id: str) -> None:
         db.commit()
 
         try:
-            result = sincronizar_conta(ads_account_id, db, on_progress=_set)
+            result = sincronizar_conta(ads_account_id, db, on_progress=_set, modo_sync=modo_sync)
             totais = result.get("totais") or {}
             _finalizar("done", totais=totais)
+        except MetaContaInacessivelError as exc:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            conta = db.get(AdsAccount, uuid.UUID(ads_account_id))
+            if conta:
+                conta.sync_paused = True
+                db.commit()
+            _finalizar("error", erro=str(exc))
         except Exception as exc:
             try:
                 db.rollback()
@@ -364,7 +381,19 @@ def sync_conta_manual(
     if not conta:
         raise HTTPException(status_code=404, detail="Conta não encontrada")
 
-    job_id, started = _iniciar_sync_conta(ads_account_id, db)
+    job_ativo = db.execute(
+        select(SyncJob).where(
+            SyncJob.ads_account_id == ads_account_id,
+            SyncJob.status.in_(("pending", "running")),
+        ).order_by(SyncJob.created_at.desc())
+    ).scalars().first()
+    if conta.sync_paused and not job_ativo:
+        return {"job_id": None, "status": "skipped", "reason": "sync pausado"}
+
+    if job_ativo:
+        return {"job_id": str(job_ativo.id), "status": "running"}
+
+    job_id, started = _iniciar_sync_conta(ads_account_id, db, modo_sync="recorrente")
     return {"job_id": job_id, "status": "pending" if started else "running"}
 
 
