@@ -1,7 +1,6 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -13,25 +12,7 @@ from app.models.workspace import Workspace
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
-class WorkspaceIn(BaseModel):
-    nome: str
-    razao_social: str | None = None
-    cnpj: str | None = None
-    endereco: dict = {}
-    modulos: list[str] = []
-
-
-class WorkspaceOut(BaseModel):
-    id: str
-    nome: str
-    razao_social: str | None
-    cnpj: str | None
-    endereco: dict
-    ativo: bool
-    modulos: list[str] = []
-
-    model_config = {"from_attributes": True}
-
+from app.schemas.workspace import WorkspaceIn, WorkspaceOut
 
 def _get_modulos(workspace_id: uuid.UUID, db: Session) -> list[str]:
     rows = db.execute(
