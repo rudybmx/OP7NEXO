@@ -1,7 +1,6 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -10,30 +9,9 @@ from app.models.company import Company
 from app.models.network import Network
 from app.models.user import RoleUsuario, User
 from app.models.user_company_access import UserCompanyAccess
+from app.schemas.company import CompanyIn, CompanyOut
 
 router = APIRouter(tags=["companies"])
-
-
-class CompanyIn(BaseModel):
-    nome: str
-    slug: str
-    cidade: str | None = None
-    estado: str | None = None
-    telefone: str | None = None
-
-
-class CompanyOut(BaseModel):
-    id: str
-    network_id: str
-    nome: str
-    slug: str
-    cidade: str | None
-    estado: str | None
-    telefone: str | None
-    ativo: bool
-
-    model_config = {"from_attributes": True}
-
 
 def _company_out(c: Company) -> CompanyOut:
     return CompanyOut(
@@ -47,13 +25,11 @@ def _company_out(c: Company) -> CompanyOut:
         ativo=c.ativo,
     )
 
-
 def _get_company_or_404(company_id: uuid.UUID, db: Session) -> Company:
     c = db.query(Company).filter(Company.id == company_id).first()
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company não encontrada")
     return c
-
 
 def _get_network_or_404(network_id: uuid.UUID, db: Session) -> Network:
     n = db.query(Network).filter(Network.id == network_id, Network.ativo.is_(True)).first()
@@ -61,13 +37,11 @@ def _get_network_or_404(network_id: uuid.UUID, db: Session) -> Network:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Network não encontrada")
     return n
 
-
 def _verificar_acesso_network(usuario: User, network_id: uuid.UUID) -> None:
     if usuario.role == RoleUsuario.platform_admin:
         return
     if usuario.network_id != network_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem acesso a esta network")
-
 
 def _companies_visiveis(usuario: User, network_id: uuid.UUID, db: Session) -> list[Company]:
     base = db.query(Company).filter(Company.network_id == network_id, Company.ativo.is_(True))
@@ -86,7 +60,6 @@ def _companies_visiveis(usuario: User, network_id: uuid.UUID, db: Session) -> li
     ).subquery()
     return base.filter(Company.id.in_(acessos)).all()
 
-
 @router.get("/networks/{network_id}/companies", response_model=list[CompanyOut])
 def listar_companies(
     network_id: uuid.UUID,
@@ -96,7 +69,6 @@ def listar_companies(
     _get_network_or_404(network_id, db)
     companies = _companies_visiveis(usuario, network_id, db)
     return [_company_out(c) for c in companies]
-
 
 @router.post(
     "/networks/{network_id}/companies",
@@ -131,7 +103,6 @@ def criar_company(
     db.refresh(c)
     return _company_out(c)
 
-
 @router.get("/companies/{company_id}", response_model=CompanyOut)
 def detalhe_company(
     company_id: uuid.UUID,
@@ -141,7 +112,6 @@ def detalhe_company(
     c = _get_company_or_404(company_id, db)
     verificar_acesso_company(usuario, company_id, db)
     return _company_out(c)
-
 
 @router.put("/companies/{company_id}", response_model=CompanyOut)
 def atualizar_company(
@@ -168,7 +138,6 @@ def atualizar_company(
     db.commit()
     db.refresh(c)
     return _company_out(c)
-
 
 @router.delete("/companies/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
 def desativar_company(

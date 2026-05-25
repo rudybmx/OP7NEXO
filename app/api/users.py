@@ -1,7 +1,6 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -18,6 +17,7 @@ from app.models.user import RoleUsuario, User
 from app.models.user_company_access import UserCompanyAccess
 from app.models.user_workspace_access import UserWorkspaceAccess
 from app.models.workspace import Workspace
+from app.schemas.user import UsuarioIn, UsuarioAtualizarIn, AcessoIn, WorkspaceAcessoIn, WorkspaceRoleIn, WorkspaceAcessoOut, UsuarioOut, UsuarioAdminOut
 
 router = APIRouter(tags=["users"])
 
@@ -33,67 +33,6 @@ _ROLES_PERMITIDAS: dict[RoleUsuario, set[RoleUsuario]] = {
 }
 
 
-class UsuarioIn(BaseModel):
-    nome: str
-    email: EmailStr
-    senha: str
-    role: RoleUsuario
-    workspace_id: uuid.UUID | None = None
-
-
-class UsuarioAtualizarIn(BaseModel):
-    nome: str | None = None
-    email: EmailStr | None = None
-    senha: str | None = None
-    role: RoleUsuario | None = None
-    ativo: bool | None = None
-
-
-class AcessoIn(BaseModel):
-    company_ids: list[uuid.UUID]
-
-
-class WorkspaceAcessoIn(BaseModel):
-    workspace_id: uuid.UUID
-    role: str = "viewer"
-
-
-class WorkspaceRoleIn(BaseModel):
-    role: str
-
-
-class WorkspaceAcessoOut(BaseModel):
-    workspace_id: str
-    workspace_nome: str | None
-    role: str
-    ativo: bool
-    criado_em: str
-    padrao: bool
-
-
-class UsuarioOut(BaseModel):
-    id: str
-    network_id: str | None
-    nome: str
-    email: str
-    role: str
-    ativo: bool
-
-    model_config = {"from_attributes": True}
-
-
-class UsuarioAdminOut(BaseModel):
-    id: str
-    nome: str
-    email: str
-    role: str
-    workspace_id: str | None
-    workspace_nome: str | None
-    ativo: bool
-
-    model_config = {"from_attributes": True}
-
-
 def _usuario_out(u: User) -> UsuarioOut:
     return UsuarioOut(
         id=str(u.id),
@@ -104,13 +43,11 @@ def _usuario_out(u: User) -> UsuarioOut:
         ativo=u.ativo,
     )
 
-
 def _get_company_or_404(company_id: uuid.UUID, db: Session) -> Company:
     c = db.query(Company).filter(Company.id == company_id, Company.ativo.is_(True)).first()
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company não encontrada")
     return c
-
 
 def _get_usuario_or_404(usuario_id: uuid.UUID, db: Session) -> User:
     u = db.query(User).filter(User.id == usuario_id).first()
@@ -118,13 +55,11 @@ def _get_usuario_or_404(usuario_id: uuid.UUID, db: Session) -> User:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
     return u
 
-
 def _get_workspace_or_404(workspace_id: uuid.UUID, db: Session) -> Workspace:
     w = db.query(Workspace).filter(Workspace.id == workspace_id, Workspace.ativo.is_(True)).first()
     if not w:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace não encontrado")
     return w
-
 
 def _verificar_pode_criar_role(criador: User, role_alvo: RoleUsuario) -> None:
     permitidas = _ROLES_PERMITIDAS.get(criador.role, set())
@@ -133,7 +68,6 @@ def _verificar_pode_criar_role(criador: User, role_alvo: RoleUsuario) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Seu perfil não pode criar usuários com role '{role_alvo.value}'",
         )
-
 
 def _usuario_admin_out(u: User, workspace_id: uuid.UUID | None, workspace_nome: str | None) -> UsuarioAdminOut:
     return UsuarioAdminOut(
@@ -145,7 +79,6 @@ def _usuario_admin_out(u: User, workspace_id: uuid.UUID | None, workspace_nome: 
         workspace_nome=workspace_nome,
         ativo=u.ativo,
     )
-
 
 def _criar_usuario_admin(payload: UsuarioIn, db: Session) -> UsuarioAdminOut:
     nome = payload.nome.strip()
@@ -171,7 +104,6 @@ def _criar_usuario_admin(payload: UsuarioIn, db: Session) -> UsuarioAdminOut:
     db.commit()
     db.refresh(novo)
     return _usuario_admin_out(novo, novo.workspace_id, workspace.nome if workspace else None)
-
 
 @router.get("/usuarios", response_model=list[UsuarioAdminOut])
 def listar_usuarios_admin(
@@ -205,7 +137,6 @@ def listar_usuarios_admin(
 
     return [UsuarioAdminOut(**row) for row in rows]
 
-
 @router.post("/usuarios", response_model=UsuarioAdminOut, status_code=status.HTTP_201_CREATED)
 def criar_usuario_admin(
     payload: UsuarioIn,
@@ -214,7 +145,6 @@ def criar_usuario_admin(
 ):
     return _criar_usuario_admin(payload, db)
 
-
 @router.post("/auth/registro-usuario", response_model=UsuarioAdminOut, status_code=status.HTTP_201_CREATED)
 def registro_usuario_admin(
     payload: UsuarioIn,
@@ -222,7 +152,6 @@ def registro_usuario_admin(
     usuario: User = Depends(exigir_platform_admin),
 ):
     return _criar_usuario_admin(payload, db)
-
 
 @router.get("/companies/{company_id}/users", response_model=list[UsuarioOut])
 def listar_usuarios(
@@ -237,7 +166,6 @@ def listar_usuarios(
     ids = [a.usuario_id for a in acessos]
     usuarios = db.query(User).filter(User.id.in_(ids), User.ativo.is_(True)).all()
     return [_usuario_out(u) for u in usuarios]
-
 
 @router.post(
     "/companies/{company_id}/users",
@@ -273,7 +201,6 @@ def criar_usuario(
     db.commit()
     db.refresh(novo)
     return _usuario_out(novo)
-
 
 @router.put("/users/{usuario_id}", response_model=UsuarioOut)
 def atualizar_usuario(
@@ -312,7 +239,6 @@ def atualizar_usuario(
     db.refresh(alvo)
     return _usuario_out(alvo)
 
-
 @router.delete("/users/{usuario_id}", status_code=status.HTTP_204_NO_CONTENT)
 def desativar_usuario(
     usuario_id: uuid.UUID,
@@ -330,7 +256,6 @@ def desativar_usuario(
 
     alvo.ativo = False
     db.commit()
-
 
 @router.get("/me/workspaces", response_model=list[WorkspaceAcessoOut])
 def listar_meus_workspaces(
@@ -364,7 +289,6 @@ def listar_meus_workspaces(
         for w in workspaces
     ]
 
-
 @router.get("/users/{usuario_id}/workspaces", response_model=list[WorkspaceAcessoOut])
 def listar_workspaces_usuario(
     usuario_id: uuid.UUID,
@@ -394,7 +318,6 @@ def listar_workspaces_usuario(
         )
         for row in rows
     ]
-
 
 @router.post("/users/{usuario_id}/workspaces", response_model=WorkspaceAcessoOut, status_code=status.HTTP_201_CREATED)
 def adicionar_workspace_usuario(
@@ -433,7 +356,6 @@ def adicionar_workspace_usuario(
         padrao=str(alvo.workspace_id) == str(ws.id),
     )
 
-
 @router.patch("/users/{usuario_id}/workspaces/{workspace_id}", response_model=WorkspaceAcessoOut)
 def atualizar_role_workspace(
     usuario_id: uuid.UUID,
@@ -464,7 +386,6 @@ def atualizar_role_workspace(
         padrao=str(alvo.workspace_id) == str(workspace_id),
     )
 
-
 @router.delete("/users/{usuario_id}/workspaces/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remover_workspace_usuario(
     usuario_id: uuid.UUID,
@@ -481,7 +402,6 @@ def remover_workspace_usuario(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Acesso não encontrado")
     db.delete(uwa)
     db.commit()
-
 
 @router.patch("/users/{usuario_id}/workspace-padrao/{workspace_id}", response_model=dict)
 def definir_workspace_padrao(
@@ -504,7 +424,6 @@ def definir_workspace_padrao(
     alvo.workspace_id = ws.id
     db.commit()
     return {"workspace_id": str(ws.id), "workspace_nome": ws.nome}
-
 
 @router.post("/users/{usuario_id}/access", status_code=status.HTTP_200_OK)
 def vincular_companies(

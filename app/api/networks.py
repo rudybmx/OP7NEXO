@@ -1,32 +1,15 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import exigir_platform_admin, get_usuario_atual
 from app.models.network import Network
 from app.models.user import RoleUsuario, User
+from app.schemas.network import NetworkIn, NetworkOut
 
 router = APIRouter(prefix="/networks", tags=["networks"])
-
-
-class NetworkIn(BaseModel):
-    nome: str
-    slug: str
-    descricao: str | None = None
-
-
-class NetworkOut(BaseModel):
-    id: str
-    nome: str
-    slug: str
-    descricao: str | None
-    ativo: bool
-
-    model_config = {"from_attributes": True}
-
 
 def _get_or_404(network_id: uuid.UUID, db: Session) -> Network:
     n = db.query(Network).filter(Network.id == network_id).first()
@@ -34,10 +17,8 @@ def _get_or_404(network_id: uuid.UUID, db: Session) -> Network:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Network não encontrada")
     return n
 
-
 def _network_out(n: Network) -> NetworkOut:
     return NetworkOut(id=str(n.id), nome=n.nome, slug=n.slug, descricao=n.descricao, ativo=n.ativo)
-
 
 @router.get("", response_model=list[NetworkOut])
 def listar_networks(
@@ -46,7 +27,6 @@ def listar_networks(
 ):
     redes = db.query(Network).filter(Network.ativo.is_(True)).all()
     return [_network_out(r) for r in redes]
-
 
 @router.post("", response_model=NetworkOut, status_code=status.HTTP_201_CREATED)
 def criar_network(
@@ -62,7 +42,6 @@ def criar_network(
     db.refresh(n)
     return _network_out(n)
 
-
 @router.get("/{network_id}", response_model=NetworkOut)
 def detalhe_network(
     network_id: uuid.UUID,
@@ -73,7 +52,6 @@ def detalhe_network(
     if usuario.role != RoleUsuario.platform_admin and usuario.network_id != network_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem acesso a esta network")
     return _network_out(n)
-
 
 @router.put("/{network_id}", response_model=NetworkOut)
 def atualizar_network(
@@ -92,7 +70,6 @@ def atualizar_network(
     db.commit()
     db.refresh(n)
     return _network_out(n)
-
 
 @router.delete("/{network_id}", status_code=status.HTTP_204_NO_CONTENT)
 def desativar_network(
