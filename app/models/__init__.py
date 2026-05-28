@@ -20,6 +20,8 @@ from app.models.crm import (
     Equipe,
     EquipeMembro,
     Evento,
+    FollowUp,
+    LeadOriginEvent,
     MessageJob,
     MemoriaIA,
     Mensagem,
@@ -56,6 +58,8 @@ __all__ = [
     "Permissao",
     "Midia",
     "Evento",
+    "FollowUp",
+    "LeadOriginEvent",
     "MessageJob",
     "MemoriaIA",
 ]

@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.canal_entrada import CanalEntrada
+from app.services.lead_origin import extract_lead_origin, has_lead_origin
 from app.services.redis_pub import publish_whatsapp_event
 from app.services.whatsapp_normalizer import normalize_message_event, payload_message
 
@@ -164,6 +165,19 @@ def process_evolution_message(
         media_status="pending" if normalized.media.is_media and not from_me else None,
     )
 
+    if has_lead_origin(lead_origem):
+        _record_lead_origin_event(
+            db,
+            workspace_id=workspace_id,
+            canal_id=canal_id,
+            contato_id=str(contato_id),
+            conversa_id=str(conversa_id),
+            mensagem_id=str(mensagem_id) if mensagem_id else None,
+            raw_event_id=raw_event_id_str,
+            lead_origin=lead_origem,
+            raw_payload=data,
+        )
+
     db.commit()
     logger.info("[webhook-process] COMMIT OK conversa_id=%s", conversa_id)
 
@@ -244,67 +258,6 @@ def record_assignment_event(
     )
 
 
-def extract_lead_origin(data: dict[str, Any], message: dict[str, Any], msg_text: str) -> dict[str, Any]:
-    origin: dict[str, Any] = {
-        "campanha_origem": None,
-        "utm_source": None,
-        "utm_medium": None,
-        "utm_campaign": None,
-        "meta_ad_id": None,
-        "meta_ctwa_clid": None,
-        "meta_headline": None,
-        "meta_body": None,
-        "meta_source_url": None,
-        "meta_media_type": None,
-        "meta_image_url": None,
-        "meta_referral_json": None,
-    }
-    referral = None
-    for path in ("referral", "message.referral", "context.referral", "data.referral"):
-        ptr: Any = data
-        for part in path.split("."):
-            if isinstance(ptr, dict):
-                ptr = ptr.get(part)
-            else:
-                ptr = None
-                break
-        if ptr:
-            referral = ptr
-            break
-    if not referral and isinstance(message, dict):
-        referral = message.get("referral")
-    if isinstance(referral, dict):
-        origin["meta_ad_id"] = referral.get("source_id")
-        origin["meta_ctwa_clid"] = referral.get("ctwa_clid")
-        origin["meta_headline"] = referral.get("headline")
-        origin["meta_body"] = referral.get("body")
-        origin["meta_source_url"] = referral.get("source_url")
-        origin["meta_media_type"] = referral.get("media_type")
-        origin["meta_image_url"] = referral.get("image_url")
-        origin["meta_referral_json"] = json.dumps(referral)
-        origin["utm_source"] = "meta_ads"
-        origin["utm_medium"] = "cpc"
-        origin["campanha_origem"] = referral.get("headline") or referral.get("source_id") or "Meta Ads"
-        return origin
-
-    patterns = [
-        (r"(?i)vim?\s+(?:pela\s+)?campanha[:\s]+([^\n]+?)(?:\s*$|\s+\n)", "campanha"),
-        (r"(?i)campanha[:\s]+([^\n]+?)(?:\s*$|\s+\n)", "campanha"),
-        (r"(?i)vi\s+(?:no|pelo)\s+(?:anúncio|ad|link)\s+([^\n]+?)(?:\s*$|\s+\n)", "anuncio"),
-        (r"(?i)origem[:\s]+([^\n]+?)(?:\s*$|\s+\n)", "origem"),
-    ]
-    for pattern, kind in patterns:
-        match = re.search(pattern, msg_text)
-        if match:
-            value = match.group(1).strip()
-            origin["utm_source"] = "whatsapp"
-            origin["utm_medium"] = "cpc" if kind == "anuncio" else "organic"
-            origin["utm_campaign"] = value
-            origin["campanha_origem"] = value
-            return origin
-    return origin
-
-
 def _find_existing_message(
     db: Session,
     *,
@@ -347,6 +300,64 @@ def _find_existing_message(
         {"workspace_id": workspace_id, "canal_id": canal_id, "message_hash": message_hash},
     ).mappings().first()
     return dict(row) if row else None
+
+
+def _record_lead_origin_event(
+    db: Session,
+    *,
+    workspace_id: str,
+    canal_id: str,
+    contato_id: str,
+    conversa_id: str,
+    mensagem_id: str | None,
+    raw_event_id: str | None,
+    lead_origin: dict[str, Any],
+    raw_payload: dict[str, Any],
+) -> None:
+    row = db.execute(
+        text("""
+            INSERT INTO public.crm_lead_origin_events (
+                workspace_id, canal_id, contato_id, conversa_id, mensagem_id, raw_event_id,
+                source, medium, campaign, origin_label, meta_ad_id, meta_ctwa_clid,
+                meta_headline, meta_source_url, referral_json, raw_payload, created_at
+            )
+            VALUES (
+                CAST(:workspace_id AS uuid), CAST(:canal_id AS uuid), CAST(:contato_id AS uuid), CAST(:conversa_id AS uuid),
+                CAST(:mensagem_id AS uuid), CAST(:raw_event_id AS uuid),
+                :source, :medium, :campaign, :origin_label, :meta_ad_id, :meta_ctwa_clid,
+                :meta_headline, :meta_source_url, CAST(:referral_json AS jsonb), CAST(:raw_payload AS jsonb), NOW()
+            )
+            RETURNING id
+        """),
+        {
+            "workspace_id": workspace_id,
+            "canal_id": canal_id,
+            "contato_id": contato_id,
+            "conversa_id": conversa_id,
+            "mensagem_id": mensagem_id,
+            "raw_event_id": raw_event_id,
+            "source": lead_origin.get("source") or lead_origin.get("utm_source"),
+            "medium": lead_origin.get("utm_medium"),
+            "campaign": lead_origin.get("utm_campaign"),
+            "origin_label": lead_origin.get("campanha_origem"),
+            "meta_ad_id": lead_origin.get("meta_ad_id"),
+            "meta_ctwa_clid": lead_origin.get("meta_ctwa_clid"),
+            "meta_headline": lead_origin.get("meta_headline"),
+            "meta_source_url": lead_origin.get("meta_source_url"),
+            "referral_json": lead_origin.get("meta_referral_json"),
+            "raw_payload": json.dumps(raw_payload, default=str),
+        },
+    ).fetchone()
+    if row:
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_contatos
+                SET last_origin_event_id = :event_id,
+                    updated_at = NOW()
+                WHERE id = CAST(:contato_id AS uuid)
+            """),
+            {"event_id": str(row[0]), "contato_id": contato_id},
+        )
 
 
 def _resolve_lid_contact(
@@ -536,6 +547,8 @@ def _upsert_conversation(
                 SET ultima_mensagem = :msg,
                     ultima_direcao = :dir,
                     ultima_msg_at = :ts,
+                    last_inbound_at = CASE WHEN :dir = 'entrada' THEN :ts ELSE last_inbound_at END,
+                    last_outbound_at = CASE WHEN :dir = 'saida' THEN :ts ELSE last_outbound_at END,
                     is_group = COALESCE(:is_group, is_group),
                     nao_lidas = nao_lidas + CASE WHEN :dir = 'entrada' THEN 1 ELSE 0 END,
                     updated_at = NOW()
@@ -549,10 +562,13 @@ def _upsert_conversation(
         text("""
             INSERT INTO public.crm_whatsapp_conversas
                 (workspace_id, canal_id, contato_id, instance, remote_jid, is_group, group_name, status,
-                 nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
+                 nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, last_inbound_at, last_outbound_at, created_at, updated_at)
             VALUES
                 (CAST(:ws AS uuid), CAST(:canal AS uuid), CAST(:ct AS uuid), :inst, :jid, :is_group, :group_name, 'nova',
-                 CASE WHEN :dir = 'entrada' THEN 1 ELSE 0 END, :msg, :dir, :ts, NOW(), NOW())
+                 CASE WHEN :dir = 'entrada' THEN 1 ELSE 0 END, :msg, :dir, :ts,
+                 CASE WHEN :dir = 'entrada' THEN :ts ELSE NULL END,
+                 CASE WHEN :dir = 'saida' THEN :ts ELSE NULL END,
+                 NOW(), NOW())
             RETURNING id
         """),
         {

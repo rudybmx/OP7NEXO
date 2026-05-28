@@ -41,6 +41,9 @@ class ContatoOut(BaseModel):
     instagram: str | None
     facebook: str | None
     primeira_conversa_at: datetime | None
+    lead_status: str | None
+    lead_score: int | None
+    followup_due_at: datetime | None
 
     # UTM / tracking
     campanha_origem: str | None
@@ -86,6 +89,9 @@ class ContatoIn(BaseModel):
     utm_source: str | None = None
     utm_medium: str | None = None
     utm_campaign: str | None = None
+    lead_status: str | None = None
+    lead_score: int | None = None
+    followup_due_at: datetime | None = None
 
 
 class ContatoUpdate(BaseModel):
@@ -116,6 +122,9 @@ class ContatoUpdate(BaseModel):
     meta_source_url: str | None = None
     meta_media_type: str | None = None
     meta_image_url: str | None = None
+    lead_status: str | None = None
+    lead_score: int | None = None
+    followup_due_at: datetime | None = None
 
 
 def _get_contato_or_404(
@@ -158,6 +167,9 @@ def _contato_out(c: Contato, conversation_count: int = 0) -> ContatoOut:
         instagram=c.instagram,
         facebook=c.facebook,
         primeira_conversa_at=c.primeira_conversa_at,
+        lead_status=getattr(c, "lead_status", None),
+        lead_score=getattr(c, "lead_score", None),
+        followup_due_at=getattr(c, "followup_due_at", None),
         campanha_origem=c.campanha_origem,
         utm_source=c.utm_source,
         utm_medium=c.utm_medium,
@@ -285,6 +297,9 @@ def criar_contato(
         utm_source=data.utm_source,
         utm_medium=data.utm_medium,
         utm_campaign=data.utm_campaign,
+        lead_status=data.lead_status or "novo",
+        lead_score=data.lead_score,
+        followup_due_at=data.followup_due_at,
     )
     db.add(c)
     db.commit()

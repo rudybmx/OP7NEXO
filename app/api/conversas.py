@@ -54,6 +54,10 @@ class ConversaOut(BaseModel):
     contato_utm_source: str | None
     contato_utm_medium: str | None
     contato_primeira_conversa_at: datetime | None
+    lead_status: str | None
+    followup_due_at: datetime | None
+    last_inbound_at: datetime | None
+    last_outbound_at: datetime | None
     ativo: bool
     criado_em: datetime
     atualizado_em: datetime
@@ -79,6 +83,8 @@ class ConversaUpdate(BaseModel):
     resumo_ia: str | None = None
     proximas_acoes_ia: list | None = None
     contexto_ia: dict | None = None
+    lead_status: str | None = None
+    followup_due_at: datetime | None = None
 
 
 class AssumirIn(BaseModel):
@@ -167,6 +173,10 @@ def _conversa_out(c: Conversa) -> ConversaOut:
         contato_utm_source=c.contato.utm_source if c.contato else None,
         contato_utm_medium=c.contato.utm_medium if c.contato else None,
         contato_primeira_conversa_at=c.contato.primeira_conversa_at if c.contato else None,
+        lead_status=getattr(c, "lead_status", None),
+        followup_due_at=getattr(c, "followup_due_at", None),
+        last_inbound_at=getattr(c, "last_inbound_at", None),
+        last_outbound_at=getattr(c, "last_outbound_at", None),
         ativo=c.ativo,
         criado_em=c.criado_em,
         atualizado_em=c.atualizado_em,
@@ -464,6 +474,14 @@ def atualizar_conversa(
         c.proximas_acoes_ia = data.proximas_acoes_ia
     if data.contexto_ia is not None:
         c.contexto_ia = data.contexto_ia
+    if data.lead_status is not None:
+        c.lead_status = data.lead_status
+        if c.contato:
+            c.contato.lead_status = data.lead_status
+    if data.followup_due_at is not None:
+        c.followup_due_at = data.followup_due_at
+        if c.contato:
+            c.contato.followup_due_at = data.followup_due_at
 
     if data.responsavel_id is not None and data.responsavel_id != old_responsavel_id:
         record_assignment_event(

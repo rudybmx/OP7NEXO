@@ -77,6 +77,10 @@ class Contato(Base):
     primeira_conversa_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    lead_status: Mapped[str] = mapped_column(String(32), default="novo", nullable=False)
+    lead_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    followup_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_origin_event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     # UTM / tracking
     campanha_origem: Mapped[str | None] = mapped_column(String(100), nullable=True)

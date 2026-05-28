@@ -96,6 +96,10 @@ class Conversa(Base):
     closed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    lead_status: Mapped[str] = mapped_column(String(32), default="novo", nullable=False)
+    followup_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolution_time: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )  # segundos

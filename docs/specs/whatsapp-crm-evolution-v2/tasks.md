@@ -44,11 +44,11 @@
 
 ## 5. Lead E Follow-Up
 
-- [ ] Criar `crm_lead_origin_events`.
-- [ ] Migrar extração de referral/UTM para serviço testável.
-- [ ] Criar `crm_followups`.
-- [ ] Criar endpoints CRUD mínimos de follow-up.
-- [ ] Atualizar conversa/contato com `lead_status` e `followup_due_at`.
+- [x] Criar `crm_lead_origin_events`.
+- [x] Migrar extração de referral/UTM para serviço testável.
+- [x] Criar `crm_followups`.
+- [x] Criar endpoints CRUD mínimos de follow-up.
+- [x] Atualizar conversa/contato com `lead_status` e `followup_due_at`.
 
 ## 6. Frontend
 

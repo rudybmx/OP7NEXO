@@ -3,6 +3,8 @@ from app.models.crm.contato import Contato
 from app.models.crm.conversa import Conversa
 from app.models.crm.equipe import Equipe, EquipeMembro, Permissao
 from app.models.crm.evento import Evento
+from app.models.crm.followup import FollowUp
+from app.models.crm.lead_origin_event import LeadOriginEvent
 from app.models.crm.mensagem import Mensagem
 from app.models.crm.message_job import MessageJob
 from app.models.crm.memoria_ia import MemoriaIA
@@ -18,6 +20,8 @@ __all__ = [
     "Permissao",
     "Midia",
     "Evento",
+    "FollowUp",
+    "LeadOriginEvent",
     "MessageJob",
     "MemoriaIA",
 ]
