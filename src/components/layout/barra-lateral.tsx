@@ -849,24 +849,49 @@ export function BarraLateral() {
         {canSwitchWorkspace && workspacesAtivos.length > 1 ? (
           <div style={{ width: isCollapsed ? 40 : "100%" }}>
             {isCollapsed ? (
-              <div
-                title={workspaceAtualItem?.workspace_nome ?? "Workspace"}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 8,
-                  background: W06,
-                  border: `1px solid ${W08}`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: W70,
-                }}
-              >
-                {(workspaceAtualItem?.workspace_nome ?? "W").charAt(0).toUpperCase()}
+              <div style={{ position: "relative", width: 40, height: 40 }}>
+                <div
+                  title={workspaceAtualItem?.workspace_nome ?? "Workspace"}
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 8,
+                    background: W06,
+                    border: `1px solid ${W08}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    pointerEvents: "none",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: W70,
+                  }}
+                >
+                  {(workspaceAtualItem?.workspace_nome ?? "W").charAt(0).toUpperCase()}
+                </div>
+                <select
+                  aria-label="Selecionar workspace"
+                  title={workspaceAtualItem?.workspace_nome ?? "Workspace"}
+                  value={workspaceAtual ?? ""}
+                  onChange={(e) => {
+                    setWorkspaceAtual(e.target.value)
+                    window.location.reload()
+                  }}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: 40,
+                    height: 40,
+                    opacity: 0,
+                    cursor: "pointer",
+                  }}
+                >
+                  {workspacesAtivos.map((w) => (
+                    <option key={w.workspace_id} value={w.workspace_id}>
+                      {w.workspace_nome ?? w.workspace_id}
+                    </option>
+                  ))}
+                </select>
               </div>
             ) : (
               <select
