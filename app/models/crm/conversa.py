@@ -5,10 +5,10 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -130,7 +130,13 @@ class Conversa(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint(
-            "instance", "remote_jid", name="uq_conversas_instance_remote_jid"
+        Index(
+            "uq_crm_open_conversation_per_channel",
+            "workspace_id",
+            "canal_id",
+            "instance",
+            "remote_jid",
+            unique=True,
+            postgresql_where=(ativo.is_(True) & (status != "resolvido")),
         ),
     )

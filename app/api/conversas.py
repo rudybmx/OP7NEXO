@@ -11,6 +11,7 @@ from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_aces
 from app.models.canal_entrada import CanalEntrada
 from app.models.crm import Contato, Conversa
 from app.models.user import RoleUsuario, User
+from app.services.whatsapp_crm_persistence import record_assignment_event
 
 router = APIRouter(prefix="/conversas", tags=["conversas"])
 
@@ -443,6 +444,8 @@ def atualizar_conversa(
             c.closed_at = datetime.utcnow()
             if c.first_response_at:
                 c.resolution_time = int((c.closed_at - c.first_response_at).total_seconds())
+    old_responsavel_id = c.responsavel_id
+    old_equipe_id = c.equipe_id
     if data.responsavel_id is not None:
         c.responsavel_id = data.responsavel_id
     if data.equipe_id is not None:
@@ -461,6 +464,37 @@ def atualizar_conversa(
         c.proximas_acoes_ia = data.proximas_acoes_ia
     if data.contexto_ia is not None:
         c.contexto_ia = data.contexto_ia
+
+    if data.responsavel_id is not None and data.responsavel_id != old_responsavel_id:
+        record_assignment_event(
+            db,
+            workspace_id=c.workspace_id,
+            canal_id=c.canal_id,
+            conversa_id=c.id,
+            contato_id=c.contato_id,
+            action="assign",
+            from_responsavel_id=old_responsavel_id,
+            to_responsavel_id=data.responsavel_id,
+            from_equipe_id=old_equipe_id,
+            to_equipe_id=c.equipe_id,
+            actor_user_id=usuario.id,
+            payload={"source": "conversa.update"},
+        )
+    if data.equipe_id is not None and data.equipe_id != old_equipe_id:
+        record_assignment_event(
+            db,
+            workspace_id=c.workspace_id,
+            canal_id=c.canal_id,
+            conversa_id=c.id,
+            contato_id=c.contato_id,
+            action="transfer",
+            from_responsavel_id=old_responsavel_id,
+            to_responsavel_id=c.responsavel_id,
+            from_equipe_id=old_equipe_id,
+            to_equipe_id=data.equipe_id,
+            actor_user_id=usuario.id,
+            payload={"source": "conversa.update"},
+        )
 
     db.commit()
     db.refresh(c)
@@ -493,10 +527,27 @@ def assumir_conversa(
     c = _get_conversa_or_404(conversa_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
 
+    old_responsavel_id = c.responsavel_id
+    old_equipe_id = c.equipe_id
     c.responsavel_id = data.responsavel_id
     c.status = "em_atendimento"
     if c.assigned_at is None:
         c.assigned_at = datetime.utcnow()
+    if data.responsavel_id != old_responsavel_id:
+        record_assignment_event(
+            db,
+            workspace_id=c.workspace_id,
+            canal_id=c.canal_id,
+            conversa_id=c.id,
+            contato_id=c.contato_id,
+            action="assume",
+            from_responsavel_id=old_responsavel_id,
+            to_responsavel_id=data.responsavel_id,
+            from_equipe_id=old_equipe_id,
+            to_equipe_id=c.equipe_id,
+            actor_user_id=usuario.id,
+            payload={"source": "conversa.assumir"},
+        )
     db.commit()
     db.refresh(c)
     return _conversa_out(c)
@@ -532,10 +583,29 @@ def transferir_conversa(
     c = _get_conversa_or_404(conversa_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
 
+    old_responsavel_id = c.responsavel_id
+    old_equipe_id = c.equipe_id
     if data.responsavel_id is not None:
         c.responsavel_id = data.responsavel_id
     if data.equipe_id is not None:
         c.equipe_id = data.equipe_id
+    if (data.responsavel_id is not None and data.responsavel_id != old_responsavel_id) or (
+        data.equipe_id is not None and data.equipe_id != old_equipe_id
+    ):
+        record_assignment_event(
+            db,
+            workspace_id=c.workspace_id,
+            canal_id=c.canal_id,
+            conversa_id=c.id,
+            contato_id=c.contato_id,
+            action="transfer",
+            from_responsavel_id=old_responsavel_id,
+            to_responsavel_id=c.responsavel_id,
+            from_equipe_id=old_equipe_id,
+            to_equipe_id=c.equipe_id,
+            actor_user_id=usuario.id,
+            payload={"source": "conversa.transferir"},
+        )
     db.commit()
     db.refresh(c)
     return _conversa_out(c)

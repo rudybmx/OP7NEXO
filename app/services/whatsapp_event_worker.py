@@ -109,6 +109,7 @@ def _process_job(job_id: str) -> str:
                 event_norm=event_type,
                 instance_data=instance_data,
                 media_mode="inline",
+                raw_event_id=str(job["event_id"]),
             )
             _mark_done(db, job_id, str(job["event_id"]), status="done")
             return "processed"

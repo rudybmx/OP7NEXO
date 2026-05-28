@@ -5,10 +5,10 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -37,6 +37,16 @@ class Mensagem(Base):
         ForeignKey("crm_whatsapp_conversas.id", ondelete="CASCADE"),
         nullable=False,
     )
+    canal_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("canais_entrada.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    raw_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("crm_whatsapp_eventos.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     contato_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("crm_whatsapp_contatos.id", ondelete="SET NULL"),
@@ -45,6 +55,7 @@ class Mensagem(Base):
     evolution_msg_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )
+    message_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     instance: Mapped[str | None] = mapped_column(String(100), nullable=True)
     remote_jid: Mapped[str | None] = mapped_column(String(50), nullable=True)
     direcao: Mapped[str] = mapped_column(
@@ -89,6 +100,9 @@ class Mensagem(Base):
         DateTime(timezone=True), nullable=True
     )
     failed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    atualizado_em: Mapped[datetime] = mapped_column(
+        "updated_at", DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -108,9 +122,21 @@ class Mensagem(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_crm_msg_workspace_canal_provider_id",
+            "workspace_id",
+            "canal_id",
             "instance",
             "evolution_msg_id",
-            name="uq_mensagens_instance_evolution_msg_id",
+            unique=True,
+            postgresql_where=((evolution_msg_id.is_not(None)) & (evolution_msg_id != "")),
+        ),
+        Index(
+            "uq_crm_msg_workspace_canal_hash",
+            "workspace_id",
+            "canal_id",
+            "message_hash",
+            unique=True,
+            postgresql_where=((message_hash.is_not(None)) & (message_hash != "")),
         ),
     )

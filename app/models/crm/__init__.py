@@ -1,3 +1,4 @@
+from app.models.crm.assignment import ConversationAssignment
 from app.models.crm.contato import Contato
 from app.models.crm.conversa import Conversa
 from app.models.crm.equipe import Equipe, EquipeMembro, Permissao
@@ -9,6 +10,7 @@ from app.models.crm.midia import Midia
 
 __all__ = [
     "Contato",
+    "ConversationAssignment",
     "Conversa",
     "Mensagem",
     "Equipe",

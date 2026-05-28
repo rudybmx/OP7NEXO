@@ -30,6 +30,7 @@ from app.models.workspace import Workspace
 from app.services import evolution as evo_service
 from app.services.object_storage import download_and_put, put_bytes, public_url
 from app.services.redis_pub import publish_whatsapp_event
+from app.services.whatsapp_crm_persistence import process_evolution_message
 from app.services.whatsapp_event_queue import enqueue_evolution_event
 from app.services.whatsapp_normalizer import (
     normalize_connection_event,
@@ -1589,6 +1590,7 @@ def _processar_evento_evolution(
     *,
     media_mode: str = "inline",
     background_tasks: BackgroundTasks | None = None,
+    raw_event_id: str | None = None,
 ) -> None:
     connection_events = {"CONNECTION_UPDATE", "CONNECTED", "LOGGEDOUT", "LOGGED_OUT", "DISCONNECTED", "QRCODE", "QR_CODE"}
     message_events = {"MESSAGE", "MESSAGES_UPSERT", "MESSAGE_UPSERT", "MESSAGE_RECEIVED"}
@@ -1620,7 +1622,7 @@ def _processar_evento_evolution(
     if event_norm in message_events:
         logger.info("[webhook-evolution] processando evento de mensagem")
         try:
-            resultado = _processar_mensagem_evolution(db, canal, instance_data)
+            resultado = _processar_mensagem_evolution(db, canal, instance_data, raw_event_id=raw_event_id)
             if resultado and resultado.get("is_media"):
                 media_kwargs = {
                     "instance_name": canal.evolution_instance_id or "opcl",
@@ -2192,6 +2194,16 @@ def _processar_mensagem_evolution(db: Session, canal: CanalEntrada, data: dict) 
         "media_mime_type": media_payload.get("mimetype"),
         "media_filename": media_payload.get("filename"),
     }
+
+
+def _processar_mensagem_evolution(
+    db: Session,
+    canal: CanalEntrada,
+    data: dict,
+    *,
+    raw_event_id: str | None = None,
+) -> dict | None:
+    return process_evolution_message(db, canal, data, raw_event_id=raw_event_id)
 
 
 def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict, event: str = "") -> None:

@@ -27,11 +27,11 @@
 
 ## 3. Persistência CRM
 
-- [ ] Extrair processamento de contato/conversa/mensagem para serviço dedicado.
-- [ ] Garantir `workspace_id` e `canal_id` em todas as escritas.
-- [ ] Implementar idempotência por mensagem e evento.
-- [ ] Corrigir reabertura criando nova conversa quando última estiver `resolvido`.
-- [ ] Criar histórico normalizado de atribuição/transferência.
+- [x] Extrair processamento de contato/conversa/mensagem para serviço dedicado.
+- [x] Garantir `workspace_id` e `canal_id` em todas as escritas.
+- [x] Implementar idempotência por mensagem e evento.
+- [x] Corrigir reabertura criando nova conversa quando última estiver `resolvido`.
+- [x] Criar histórico normalizado de atribuição/transferência.
 
 ## 4. Mídia
 

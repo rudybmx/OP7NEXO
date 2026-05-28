@@ -15,6 +15,7 @@ from app.models.canal_entrada import CanalEntrada
 from app.models.meta_token import MetaToken
 from app.models.crm import (
     Contato,
+    ConversationAssignment,
     Conversa,
     Equipe,
     EquipeMembro,
@@ -47,6 +48,7 @@ __all__ = [
     "CanalEntrada",
     "MetaToken",
     "Contato",
+    "ConversationAssignment",
     "Conversa",
     "Mensagem",
     "Equipe",

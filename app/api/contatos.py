@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
-from app.models.crm import Contato
+from app.models.crm import Contato, Conversa
 from app.models.user import User
+from app.services.whatsapp_crm_persistence import record_assignment_event
 
 router = APIRouter(prefix="/contatos", tags=["contatos"])
 
@@ -348,9 +349,33 @@ def atribuir_contato(
     c = _get_contato_or_404(contato_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
 
+    old_responsavel_id = c.responsavel_id
     c.responsavel_id = responsavel_id
-    db.commit()
-    db.refresh(c)
+    active_conversations = (
+        db.query(Conversa)
+        .filter(
+            Conversa.contato_id == contato_id,
+            Conversa.status.notin_(("resolvido", "arquivada")),
+            Conversa.ativo.is_(True),
+        )
+        .all()
+    )
+    for conversa in active_conversations:
+        if conversa.responsavel_id != responsavel_id:
+            record_assignment_event(
+                db,
+                workspace_id=conversa.workspace_id,
+                canal_id=conversa.canal_id,
+                conversa_id=conversa.id,
+                contato_id=conversa.contato_id,
+                action="assign",
+                from_responsavel_id=conversa.responsavel_id,
+                to_responsavel_id=responsavel_id,
+                from_equipe_id=conversa.equipe_id,
+                to_equipe_id=conversa.equipe_id,
+                actor_user_id=usuario.id,
+                payload={"source": "contato.atribuir", "previous_contact_responsavel_id": str(old_responsavel_id) if old_responsavel_id else None},
+            )
 
     # Propaga para conversas ativas (não resolvidas)
     from sqlalchemy import text
