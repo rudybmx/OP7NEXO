@@ -16,6 +16,53 @@ META = settings.EVOLUTION_API_URL.rstrip("/")
 API_KEY = settings.EVOLUTION_API_KEY
 HEADERS = {"apikey": API_KEY, "Content-Type": "application/json"}
 DEFAULT_SUBSCRIBE_EVENTS = ["ALL"]
+# === Retry / Circuit Breaker ===
+
+import time as _time
+import random as _random
+
+MAX_RETRIES = 3
+BASE_DELAY_SECONDS = 1.0
+MAX_DELAY_SECONDS = 30.0
+RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
+QR_CODE_RETRIES = 4
+QR_CODE_BASE_DELAY_SECONDS = 1.0
+QR_CODE_MAX_DELAY_SECONDS = 5.0
+QR_CODE_HTTP_TIMEOUT_SECONDS = 10
+
+
+def _should_retry(status_code: int) -> bool:
+    return status_code in RETRYABLE_STATUSES
+
+
+def _retry_with_backoff(func, *args, **kwargs):
+    last_exc = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            resp = func(*args, **kwargs)
+            if resp.status_code < 400:
+                return resp
+            if _should_retry(resp.status_code) and attempt < MAX_RETRIES:
+                delay = min(BASE_DELAY_SECONDS * (2 ** attempt) + _random.uniform(0, 1), MAX_DELAY_SECONDS)
+                logger.warning(
+                    "[evolution] retry %d/%d apos HTTP %s, aguardando %.1fs",
+                    attempt + 1, MAX_RETRIES, resp.status_code, delay,
+                )
+                _time.sleep(delay)
+                continue
+            return resp
+        except Exception as exc:
+            last_exc = exc
+            if attempt < MAX_RETRIES:
+                delay = min(BASE_DELAY_SECONDS * (2 ** attempt) + _random.uniform(0, 1), MAX_DELAY_SECONDS)
+                logger.warning(
+                    "[evolution] retry %d/%d apos excecao %s, aguardando %.1fs",
+                    attempt + 1, MAX_RETRIES, type(exc).__name__, delay,
+                )
+                _time.sleep(delay)
+                continue
+            raise
+    raise last_exc
 
 
 class EvolutionError(Exception):
@@ -209,7 +256,10 @@ def _normalize_connection(payload: Any, fallback_name: str | None = None) -> dic
 def _normalize_qrcode(payload: Any) -> dict[str, Any]:
     data = _unwrap_payload(payload)
     if not isinstance(data, dict):
-        data = {}
+        if isinstance(data, str):
+            data = {"qrcode": data}
+        else:
+            data = {}
 
     qrcode = (
         data.get("qrcode")
@@ -229,6 +279,33 @@ def _normalize_qrcode(payload: Any) -> dict[str, Any]:
         "raw": data,
     }
     return normalized
+
+
+def _fetch_qrcode_once(instance_name: str, instance_id: str | None = None, instance_token: str | None = None) -> dict[str, Any]:
+    with httpx.Client(timeout=QR_CODE_HTTP_TIMEOUT_SECONDS) as client:
+        resp = client.get(
+            f"{META}/instance/qr",
+            headers=_headers(instance_id, instance_token),
+        )
+        if resp.status_code < 400:
+            try:
+                payload = resp.json()
+            except Exception:
+                payload = resp.text
+            return _normalize_qrcode(payload)
+        legacy_resp = client.get(
+            f"{META}/instance/connect/{instance_name}",
+            headers=_headers(None, instance_token),
+        )
+        if legacy_resp.status_code < 400:
+            try:
+                payload = legacy_resp.json()
+            except Exception:
+                payload = legacy_resp.text
+            return _normalize_qrcode(payload)
+        if legacy_resp.status_code not in {404, 204}:
+            _handle_error(legacy_resp, "obter_qr_code")
+        return {"base64": None, "qrcode": {}, "code": None, "raw": {"status": "NOT_READY"}}
 
 
 def _normalize_contact_entry(entry: dict[str, Any]) -> dict[str, Any]:
@@ -344,14 +421,15 @@ def _is_duplicate_instance_error(resp: httpx.Response) -> bool:
 
 
 def listar_instancias() -> list[dict[str, Any]]:
-    """Lista instâncias conhecidas pela Evolution."""
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(f"{META}/instance/all", headers=HEADERS)
-        if resp.status_code == 404:
-            return []
-        _handle_error(resp, "listar_instancias")
-        return _normalize_instance_list(resp.json())
-
+    """Lista instancias conhecidas pela Evolution."""
+    def _call():
+        with httpx.Client(timeout=30) as client:
+            return client.get(f"{META}/instance/all", headers=HEADERS)
+    resp = _retry_with_backoff(_call)
+    if resp.status_code == 404:
+        return []
+    _handle_error(resp, "listar_instancias")
+    return _normalize_instance_list(resp.json())
 
 def obter_instancia(instance_name: str, instance_id: str | None = None) -> dict[str, Any] | None:
     """Busca uma instância pelo nome ou ID."""
@@ -511,26 +589,71 @@ def estado_conexao(instance_name: str, instance_id: str | None = None, instance_
             f"{META}/instance/connectionState/{instance_name}",
             headers=_headers(None, instance_token),
         )
-        _handle_error(legacy_resp, "estado_conexao")
-        return _normalize_connection(legacy_resp.json(), fallback_name=instance_name)
+        if legacy_resp.status_code < 400:
+            return _normalize_connection(legacy_resp.json(), fallback_name=instance_name)
+
+    instance = obter_instancia(instance_name, instance_id=instance_id)
+    if instance:
+        status = str(instance.get("status") or "").lower()
+        connected = instance.get("connected")
+        logged_in = instance.get("loggedIn")
+        if status in {"open", "connected"}:
+            state = "open"
+        elif status in {"connecting", "qrcode", "qr_code", "pairing"}:
+            state = "connecting"
+        elif status in {"close", "closed", "disconnected", "loggedout", "logged_out", "logout"}:
+            state = "close"
+        else:
+            state = _instance_status_label(connected, logged_in, fallback=status or "close")
+        return {
+            "state": state,
+            "instance": {
+                "state": state,
+                "connected": connected,
+                "loggedIn": logged_in,
+                "name": instance.get("instance_name") or instance.get("name") or instance_name,
+                "jid": instance.get("jid") or instance.get("number") or instance.get("phone"),
+                "raw": instance.get("raw") or instance,
+            },
+            "connected": connected,
+            "loggedIn": logged_in,
+            "name": instance.get("instance_name") or instance.get("name") or instance_name,
+            "jid": instance.get("jid") or instance.get("number") or instance.get("phone"),
+            "raw": instance.get("raw") or instance,
+        }
+
+    _handle_error(legacy_resp, "estado_conexao")
+    return _normalize_connection(legacy_resp.json(), fallback_name=instance_name)
 
 
-def obter_qr_code(instance_name: str, instance_id: str | None = None, instance_token: str | None = None) -> dict[str, Any]:
+def obter_qr_code(
+    instance_name: str,
+    instance_id: str | None = None,
+    instance_token: str | None = None,
+    *,
+    retries: int = QR_CODE_RETRIES,
+) -> dict[str, Any]:
     """Solicita o QR code para conexão."""
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(
-            f"{META}/instance/qr",
-            headers=_headers(instance_id, instance_token),
-        )
-        if resp.status_code < 400:
-            return _normalize_qrcode(resp.json())
+    attempts = max(1, int(retries))
+    delay = QR_CODE_BASE_DELAY_SECONDS
+    last_result: dict[str, Any] = {"base64": None, "qrcode": {}, "code": None, "raw": {}}
 
-        legacy_resp = client.get(
-            f"{META}/instance/connect/{instance_name}",
-            headers=_headers(None, instance_token),
-        )
-        _handle_error(legacy_resp, "obter_qr_code")
-        return _normalize_qrcode(legacy_resp.json())
+    for attempt in range(attempts):
+        result = _fetch_qrcode_once(instance_name, instance_id=instance_id, instance_token=instance_token)
+        if result.get("base64"):
+            return result
+        last_result = result
+        if attempt < attempts - 1:
+            logger.info(
+                "[evolution] QR ainda indisponível para %s (tentativa %d/%d)",
+                instance_name,
+                attempt + 1,
+                attempts,
+            )
+            _time.sleep(delay)
+            delay = min(delay * 1.5, QR_CODE_MAX_DELAY_SECONDS)
+
+    return last_result
 
 
 def _connect_instance(

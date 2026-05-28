@@ -2,9 +2,9 @@
 
 ## 0. Auditoria
 
-- [ ] Rodar `python -m py_compile app/api/canais.py`.
-- [ ] Rodar `pytest tests/test_canais_evolution.py`.
-- [ ] Corrigir erros de sintaxe/processamento encontrados no webhook atual.
+- [x] Rodar `python -m py_compile app/api/canais.py`.
+- [x] Rodar `pytest tests/test_canais_evolution.py`.
+- [x] Corrigir erros de sintaxe/processamento encontrados no webhook atual.
 - [ ] Capturar um payload real da Evolution Go do número conectado e salvar como fixture de teste anonimizada.
 
 ## 1. Backend/Fila
