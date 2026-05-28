@@ -40,18 +40,19 @@ def process_next_whatsapp_jobs(limit: int = 20) -> dict[str, int]:
         if not job_ids:
             return {"processed": 0, "failed": 0, "skipped": 0}
 
-        db.execute(
-            text("""
-                UPDATE public.crm_message_jobs
-                SET status = 'running',
-                    locked_at = NOW(),
-                    locked_by = :worker,
-                    attempts = attempts + 1,
-                    updated_at = NOW()
-                WHERE id = ANY(:job_ids)
-            """),
-            {"worker": WORKER_ID, "job_ids": job_ids},
-        )
+        for job_id in job_ids:
+            db.execute(
+                text("""
+                    UPDATE public.crm_message_jobs
+                    SET status = 'running',
+                        locked_at = NOW(),
+                        locked_by = :worker,
+                        attempts = attempts + 1,
+                        updated_at = NOW()
+                    WHERE id = :job_id
+                """),
+                {"worker": WORKER_ID, "job_id": job_id},
+            )
         db.commit()
 
     for job_id in job_ids:
