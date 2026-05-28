@@ -887,7 +887,7 @@ export function BarraLateral() {
                   }}
                 >
                   {workspacesAtivos.map((w) => (
-                    <option key={w.workspace_id} value={w.workspace_id}>
+                    <option key={w.workspace_id} value={w.workspace_id} style={{ color: "#111827", background: "#ffffff" }}>
                       {w.workspace_nome ?? w.workspace_id}
                     </option>
                   ))}
