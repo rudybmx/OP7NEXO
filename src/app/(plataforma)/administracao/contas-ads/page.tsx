@@ -38,6 +38,7 @@ interface AdsAccount {
   token?: string | null
   status: 'ativo' | 'expirado' | 'erro'
   ativo: boolean
+  sync_paused: boolean
   sincronizado_em?: string | null
   periodo_sync_inicio?: string | null
   agrupamento?: string | null
@@ -70,6 +71,12 @@ interface SyncJobAPI {
   erro: string | null
   created_at: string
   updated_at: string
+}
+
+interface SyncStartAPI {
+  job_id: string | null
+  status: 'pending' | 'running' | 'skipped'
+  reason?: string | null
 }
 
 interface SyncSchedulerJobAPI {
@@ -458,8 +465,16 @@ export default function ContasAdsPage() {
 
   async function handleSync(conta: AdsAccount) {
     if (syncJobs[conta.id]) return
+    if (conta.sync_paused) {
+      toast.warning('Sync pausado. Despause a conta para tentar novamente.')
+      return
+    }
     try {
-      const data = await api.post<{ job_id: string; status: string }>(`/meta/sync/${conta.id}`)
+      const data = await api.post<SyncStartAPI>(`/meta/sync/${conta.id}`)
+      if (data.status === 'skipped') {
+        toast.warning(data.reason ? `Sync pausado: ${data.reason}` : 'Sync pausado')
+        return
+      }
       const now = new Date().toISOString()
       atualizarSyncJobs(prev => ({
         ...prev,
@@ -678,6 +693,17 @@ export default function ContasAdsPage() {
             {job.etapa ?? 'iniciando...'} {job.progresso}%{semHeartbeat ? ' • sem atualização recente' : ''}
           </span>
         </div>
+      )
+    }
+    if (c.sync_paused) {
+      return (
+        <span
+          title="Sync pausado. Despausar a conta antes de tentar novamente."
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-coral)', cursor: 'help' }}
+        >
+          <XCircle size={13} />
+          Pausado
+        </span>
       )
     }
     return (
