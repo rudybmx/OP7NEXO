@@ -31,6 +31,17 @@ from app.services import evolution as evo_service
 from app.services.object_storage import download_and_put, put_bytes, public_url
 from app.services.redis_pub import publish_whatsapp_event
 from app.services.whatsapp_event_queue import enqueue_evolution_event
+from app.services.whatsapp_normalizer import (
+    normalize_connection_event,
+    normalize_event_type as normalize_whatsapp_event_type,
+    normalize_media_payload,
+    normalize_message_event,
+    normalize_message_type,
+    normalize_receipt_event,
+    payload_info,
+    payload_message,
+    payload_root,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["canais"])
@@ -277,178 +288,42 @@ def _persistir_evolution_meta(
 
 
 def _normalizar_evento_evolution(event: str) -> str:
-    return str(event or "").upper().replace(".", "_").replace("-", "_").strip()
+    return normalize_whatsapp_event_type(event)
 
 
 def _evolution_payload_raiz(payload: dict | None) -> dict:
-    if isinstance(payload, dict):
-        data = payload.get("data")
-        if isinstance(data, dict):
-            return data
-        return payload
-    return {}
+    return payload_root(payload)
 
 
 def _evolution_info(payload: dict | None) -> dict:
-    raiz = _evolution_payload_raiz(payload)
-    if isinstance(raiz, dict):
-        info = raiz.get("Info")
-        return info if isinstance(info, dict) else {}
-    return {}
+    return payload_info(payload)
 
 
 def _evolution_message(payload: dict | None) -> dict:
-    raiz = _evolution_payload_raiz(payload)
-    if isinstance(raiz, dict):
-        for chave in ("Message", "message"):
-            message = raiz.get(chave)
-            if isinstance(message, dict):
-                return message
-    return {}
+    return payload_message(payload)
 
 
 def _evolution_message_type(payload: dict | None, fallback: str = "conversation") -> str:
-    info = _evolution_info(payload)
-    message = _evolution_message(payload)
-
-    for key in (
-        "conversation",
-        "extendedTextMessage",
-        "imageMessage",
-        "videoMessage",
-        "audioMessage",
-        "documentMessage",
-        "stickerMessage",
-        "ptvMessage",
-    ):
-        if key in message:
-            return key if key != "conversation" else "conversation"
-
-    raw_type = str(info.get("Type") or info.get("type") or info.get("MediaType") or info.get("mediaType") or fallback or "").strip().lower()
-    mapping = {
-        "text": "conversation",
-        "conversation": "conversation",
-        "extendedtextmessage": "extendedTextMessage",
-        "extendedtext": "extendedTextMessage",
-        "media": "media",
-        "image": "imageMessage",
-        "imagemessage": "imageMessage",
-        "video": "videoMessage",
-        "videomessage": "videoMessage",
-        "audio": "audioMessage",
-        "audiomessage": "audioMessage",
-        "document": "documentMessage",
-        "documentmessage": "documentMessage",
-        "sticker": "stickerMessage",
-        "stickermessage": "stickerMessage",
-        "ptv": "ptvMessage",
-        "ptvmessage": "ptvMessage",
-    }
-    if raw_type in mapping:
-        return mapping[raw_type]
-    if raw_type.endswith("message"):
-        return raw_type
-    return fallback or "conversation"
+    return normalize_message_type(payload, fallback=fallback)
 
 
 def _evolution_media_payload(payload: dict | None) -> dict:
-    info = _evolution_info(payload)
-    message = _evolution_message(payload)
-    raiz = _evolution_payload_raiz(payload)
-    candidates = [message, raiz, info]
-
-    def _pick(*keys):
-        for candidate in candidates:
-            if isinstance(candidate, dict):
-                for key in keys:
-                    value = candidate.get(key)
-                    if value not in (None, ""):
-                        return value
-        # Se nao achou nos candidatos diretos, buscar dentro de subcampos de midia
-        if isinstance(message, dict):
-            for media_key in ("imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage", "ptvMessage"):
-                media = message.get(media_key)
-                if isinstance(media, dict):
-                    for key in keys:
-                        value = media.get(key)
-                        if value not in (None, ""):
-                            return value
-        return None
-
+    media = normalize_media_payload(payload)
     return {
-        "base64": _pick("base64", "Base64", "data", "mediaBase64"),
-        "url": _pick("mediaUrl", "mediaURL", "url", "Url", "downloadUrl", "downloadURL"),
-        "mimetype": _pick("mimetype", "mimeType", "mime_type", "contentType") or "application/octet-stream",
-        "filename": _pick("fileName", "filename", "name", "file_name"),
-        "caption": _pick("caption", "Caption", "text", "body"),
+        "base64": media.base64,
+        "url": media.url,
+        "mimetype": media.mimetype,
+        "filename": media.filename,
+        "caption": media.caption,
     }
 
 
 def _evolution_text_and_mentions(payload: dict | None, canal: CanalEntrada) -> tuple[str, bool]:
-    info = _evolution_info(payload)
-    message = _evolution_message(payload)
-
-    msg_text = ""
-    is_mentioned = False
-    if isinstance(message, dict):
-        for key in ("conversation", "text", "body", "caption", "message", "content", "messageText"):
-            value = message.get(key)
-            if isinstance(value, str) and value.strip():
-                msg_text = value.strip()
-                break
-
-        if not msg_text:
-            ext = message.get("extendedTextMessage", {})
-            if isinstance(ext, dict):
-                msg_text = ext.get("text", "") or ""
-                ctx_info = ext.get("contextInfo", {})
-                if isinstance(ctx_info, dict):
-                    mentioned = ctx_info.get("mentionedJid", [])
-                    if isinstance(mentioned, list) and len(mentioned) > 0:
-                        canal_numero = str(canal.numero_telefone or "").replace("+", "").replace("-", "").replace(" ", "")
-                        for mj in mentioned:
-                            mj_clean = str(mj).split("@")[0].replace("+", "").replace("-", "").replace(" ", "")
-                            if canal_numero and (canal_numero in mj_clean or mj_clean in canal_numero):
-                                is_mentioned = True
-                                logger.info("[webhook-process] MENTION detected: %s", mj)
-                                break
-
-        if not msg_text:
-            for media_type in ("imageMessage", "videoMessage", "documentMessage", "audioMessage", "stickerMessage", "ptvMessage"):
-                media = message.get(media_type, {})
-                if isinstance(media, dict):
-                    msg_text = media.get("caption", "") or media.get("text", "")
-                    if msg_text:
-                        break
-
-    if not msg_text and isinstance(info, dict):
-        msg_text = info.get("Caption", "") or info.get("Text", "") or info.get("caption", "") or info.get("text", "")
-
-    if not msg_text:
-        media_payload = _evolution_media_payload(payload)
-        if media_payload.get("base64") or media_payload.get("url"):
-            msg_text = "[mídia]"
-
-    if not msg_text:
-        msg_text = "[mídia]"
-
-    if not is_mentioned and isinstance(message, dict):
-        for context_key in ("contextInfo", "ContextInfo"):
-            ctx_info = message.get(context_key)
-            if isinstance(ctx_info, dict):
-                mentioned = ctx_info.get("mentionedJid", [])
-                if isinstance(mentioned, list) and len(mentioned) > 0:
-                    canal_numero = str(canal.numero_telefone or "").replace("+", "").replace("-", "").replace(" ", "")
-                    for mj in mentioned:
-                        mj_clean = str(mj).split("@")[0].replace("+", "").replace("-", "").replace(" ", "")
-                        if canal_numero and (canal_numero in mj_clean or mj_clean in canal_numero):
-                            is_mentioned = True
-                            logger.info("[webhook-process] MENTION detected: %s", mj)
-                            break
-            if is_mentioned:
-                break
-
-    return msg_text, is_mentioned
+    normalized = normalize_message_event(payload, instance=getattr(canal, "evolution_instance_id", None))
+    is_mentioned = normalized.is_channel_mentioned(getattr(canal, "numero_telefone", None))
+    if is_mentioned:
+        logger.info("[webhook-process] MENTION detected: %s", normalized.mentioned_jids)
+    return normalized.text, is_mentioned
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────
@@ -1720,34 +1595,13 @@ def _processar_evento_evolution(
     receipt_events = {"RECEIPT", "READ_RECEIPT", "READRECEIPT", "MESSAGES_UPDATE", "MESSAGE_STATUS"}
 
     if event_norm in connection_events:
-        connection_source = instance_data.get("Info") if isinstance(instance_data.get("Info"), dict) else instance_data
-        state_value = ""
-        if isinstance(connection_source, dict):
-            state_value = str(connection_source.get("state") or connection_source.get("State") or connection_source.get("status") or connection_source.get("Status") or "").lower()
-            if state_value in {"connected"}:
-                state_value = "open"
-            elif state_value in {"disconnected", "loggedout", "logged_out", "logout", "closed", "close"}:
-                state_value = "close"
-            elif state_value in {"qrcode", "qr_code", "pairing"}:
-                state_value = "connecting"
-            if not state_value and connection_source.get("Connected") is True:
-                state_value = "open"
-            if not state_value and connection_source.get("LoggedIn") is True:
-                state_value = "connecting"
-
-        if event_norm == "CONNECTED":
-            state_value = "open"
-        elif event_norm in {"LOGGEDOUT", "LOGGED_OUT", "DISCONNECTED"}:
-            state_value = "close"
-        elif event_norm in {"QRCODE", "QR_CODE"} and not state_value:
-            state_value = "connecting"
-
-        if state_value == "open":
+        connection = normalize_connection_event(instance_data, event_norm, instance=canal.evolution_instance_id)
+        if connection.state == "connected":
             canal.status = "ativo"
             canal.connection_status = "connected"
             from datetime import datetime, timezone
             canal.conectado_em = datetime.now(timezone.utc)
-            numero = _extrair_numero_evolution(instance_data)
+            numero = connection.number or _extrair_numero_evolution(instance_data)
             if numero:
                 canal.numero_telefone = numero
             db.commit()
@@ -1755,10 +1609,10 @@ def _processar_evento_evolution(
                 _configurar_webhook_evolution(canal, db)
             except evo_service.EvolutionError as exc:
                 logger.error("[canais] falha ao reconfigurar webhook Evolution: %s", exc)
-        elif state_value == "connecting":
+        elif connection.state == "connecting":
             canal.connection_status = "connecting"
             db.commit()
-        elif state_value == "close":
+        elif connection.state == "disconnected":
             canal.status = "inativo"
             canal.connection_status = "disconnected"
             db.commit()
@@ -1862,42 +1716,23 @@ def _processar_mensagem_evolution(db: Session, canal: CanalEntrada, data: dict) 
     from datetime import datetime, timezone
     from sqlalchemy import text
 
+    normalized = normalize_message_event(data, instance=canal.evolution_instance_id or "opcl")
     info = _evolution_info(data)
-    key = data.get("key", {}) if isinstance(data, dict) else {}
     message = _evolution_message(data) or data.get("message", {})
-    if info:
-        remote_jid = info.get("Chat") or info.get("chat") or info.get("RemoteJid") or info.get("jid") or ""
-        participant_jid = info.get("SenderAlt") or info.get("Sender") or info.get("sender") or ""
-        from_me = bool(info.get("IsFromMe", False))
-        evolution_msg_id = info.get("ID") or info.get("Id") or data.get("id", "")
-        push_name = info.get("PushName") or data.get("pushName", "")
-        message_type = _evolution_message_type(data, fallback=str(data.get("messageType", "conversation")))
-        timestamp_raw = info.get("Timestamp") or data.get("timestamp") or data.get("messageTimestamp", 0)
-    else:
-        remote_jid = key.get("remoteJid", "")
-        participant_jid = key.get("participant", "")
-        from_me = key.get("fromMe", False)
-        evolution_msg_id = key.get("id", "")
-        push_name = data.get("pushName", "")
-        message_type = _evolution_message_type(data, fallback=data.get("messageType", "conversation"))
-        timestamp_raw = data.get("messageTimestamp", 0)
-
-    if isinstance(timestamp_raw, str):
-        if timestamp_raw.isdigit():
-            timestamp_raw = int(timestamp_raw)
-        else:
-            try:
-                timestamp_raw = int(datetime.fromisoformat(timestamp_raw.replace("Z", "+00:00")).timestamp())
-            except ValueError:
-                timestamp_raw = 0
-    recebida_em = datetime.fromtimestamp(timestamp_raw, tz=timezone.utc) if timestamp_raw else datetime.now(timezone.utc)
+    remote_jid = normalized.remote_jid
+    participant_jid = normalized.participant_jid
+    from_me = normalized.from_me
+    evolution_msg_id = normalized.evolution_msg_id
+    push_name = normalized.push_name
+    message_type = normalized.message_type
+    recebida_em = normalized.received_at
     instance = canal.evolution_instance_id or "opcl"
-    media_payload = _evolution_media_payload(data)
+    media_payload = normalized.media.model_dump()
 
     # Detecta se é mensagem de grupo
-    is_group = bool(info.get("IsGroup")) or "@g.us" in remote_jid
+    is_group = normalized.is_group
     # Em grupos, o remetente real é o participant, não o remote_jid
-    sender_jid = participant_jid if (is_group and participant_jid) else remote_jid
+    sender_jid = normalized.sender_jid
     sender_name = push_name
 
     logger.info(
@@ -1972,7 +1807,8 @@ def _processar_mensagem_evolution(db: Session, canal: CanalEntrada, data: dict) 
                 return origem
         return origem
 
-    msg_text, is_mentioned = _evolution_text_and_mentions(data, canal)
+    msg_text = normalized.text
+    is_mentioned = normalized.is_channel_mentioned(canal.numero_telefone)
 
     # Extrair UTM / origem da mensagem (após texto extraído)
     lead_origem = _extrair_origem_lead(data, msg_text)
@@ -1987,8 +1823,8 @@ def _processar_mensagem_evolution(db: Session, canal: CanalEntrada, data: dict) 
     workspace_id = str(canal.workspace_id)
 
     # Extrai número real do payload (senderPn) se disponível — presente em mensagens LID
-    sender_pn = data.get("senderPn", "") or info.get("SenderPn", "") or info.get("SenderPN", "") or key.get("senderPn", "") or ""
-    is_lid = "@lid" in remote_jid
+    sender_pn = normalized.sender_pn
+    is_lid = normalized.is_lid
     numero_evo = sender_pn if sender_pn else (remote_jid if "@s.whatsapp.net" in remote_jid else "")
 
     # Para JIDs LID com senderPn, tenta resolver para conversa/contato existente pelo telefone
@@ -2363,71 +2199,16 @@ def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict, eve
     from datetime import datetime, timezone
     from sqlalchemy import text
 
-    info = _evolution_info(data)
-    key = data.get("key", {}) if isinstance(data, dict) else {}
     event_norm = _normalizar_evento_evolution(event)
+    receipt = normalize_receipt_event(data, event_norm, instance=canal.evolution_instance_id or "opcl")
 
-    raw_status = data.get("status") or data.get("Status") or data.get("receiptStatus") or data.get("ReceiptStatus") or data.get("state") or data.get("State")
-    status_type = ""
-    if isinstance(raw_status, dict):
-        status_type = str(raw_status.get("status") or raw_status.get("Status") or raw_status.get("state") or raw_status.get("State") or "").lower()
-    elif isinstance(raw_status, str):
-        status_type = raw_status.lower()
-
-    if not status_type:
-        if event_norm in {"READ_RECEIPT", "READRECEIPT"}:
-            status_type = "read"
-        elif event_norm in {"RECEIPT", "MESSAGES_UPDATE", "MESSAGE_STATUS"}:
-            status_type = "delivered"
-        elif event_norm == "FAILED":
-            status_type = "failed"
-
-    message_ids: list[str] = []
-
-    def _append_message_id(value: object) -> None:
-        if isinstance(value, dict):
-            candidate = value.get("id") or value.get("ID") or value.get("messageId") or value.get("messageID")
-            if candidate:
-                message_ids.append(str(candidate))
-        elif isinstance(value, str) and value:
-            message_ids.append(value)
-        elif value not in (None, ""):
-            message_ids.append(str(value))
-
-    _append_message_id(key.get("id"))
-    _append_message_id(data.get("id"))
-    _append_message_id(data.get("ID"))
-    _append_message_id(info.get("ID") if isinstance(info, dict) else None)
-    _append_message_id(info.get("Id") if isinstance(info, dict) else None)
-
-    for field in ("MessageIDs", "messageIds", "messageIDs", "messagesIds", "messagesIDs", "ids", "Ids"):
-        value = data.get(field)
-        if isinstance(value, list):
-            for item in value:
-                _append_message_id(item)
-        else:
-            _append_message_id(value)
-
-    remote_jid = ""
-    if isinstance(info, dict):
-        remote_jid = info.get("Chat") or info.get("chat") or info.get("RemoteJid") or info.get("jid") or ""
-    if not remote_jid:
-        remote_jid = key.get("remoteJid", "") or data.get("remoteJid", "")
-
-    if not message_ids or not status_type:
+    if not receipt.message_ids or not receipt.status:
         logger.info("[webhook-status] ABORTANDO: evolution_msg_id ou status vazio")
         return
 
-    status_map = {
-        "sent": "sent",
-        "delivered": "delivered",
-        "read": "read",
-        "failed": "failed",
-        "pending": "pending",
-        "received": "delivered",
-        "seen": "read",
-    }
-    wa_status = status_map.get(status_type, status_type)
+    message_ids = receipt.message_ids
+    wa_status = receipt.status
+    remote_jid = receipt.remote_jid
     instance = canal.evolution_instance_id or "opcl"
     timestamp = datetime.now(timezone.utc)
 

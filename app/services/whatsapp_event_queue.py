@@ -11,6 +11,11 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.canal_entrada import CanalEntrada
+from app.services.whatsapp_normalizer import (
+    normalize_event_type,
+    normalize_message_event,
+    normalize_receipt_event,
+)
 
 log = logging.getLogger(__name__)
 
@@ -34,53 +39,23 @@ SUPPORTED_EVENT_TYPES = {
 }
 
 
-def normalize_event_type(event: str | None) -> str:
-    return str(event or "").upper().replace(".", "_").replace("-", "_").strip()
+def extract_event_identifiers(payload: dict[str, Any] | None, event_type: str | None = None) -> dict[str, str | None]:
+    event_type = normalize_event_type(event_type or (payload.get("event") if isinstance(payload, dict) else None))
+    if event_type in {"RECEIPT", "READ_RECEIPT", "READRECEIPT", "MESSAGES_UPDATE", "MESSAGE_STATUS"}:
+        receipt = normalize_receipt_event(payload, event_type)
+        evolution_msg_id = receipt.message_ids[0] if receipt.message_ids else None
+        return {
+            "remote_jid": receipt.remote_jid or None,
+            "evolution_msg_id": evolution_msg_id,
+            "instance": receipt.instance,
+        }
 
-
-def payload_root(payload: dict[str, Any] | None) -> dict[str, Any]:
-    if isinstance(payload, dict):
-        data = payload.get("data")
-        if isinstance(data, dict):
-            return data
-        return payload
-    return {}
-
-
-def payload_info(payload: dict[str, Any] | None) -> dict[str, Any]:
-    root = payload_root(payload)
-    info = root.get("Info")
-    return info if isinstance(info, dict) else {}
-
-
-def extract_event_identifiers(payload: dict[str, Any] | None) -> dict[str, str | None]:
-    root = payload_root(payload)
-    info = payload_info(payload)
-    key = root.get("key") if isinstance(root.get("key"), dict) else {}
-
-    remote_jid = (
-        info.get("Chat")
-        or info.get("chat")
-        or info.get("RemoteJid")
-        or info.get("jid")
-        or key.get("remoteJid")
-        or root.get("remoteJid")
-    )
-    evolution_msg_id = (
-        info.get("ID")
-        or info.get("Id")
-        or key.get("id")
-        or root.get("id")
-        or root.get("ID")
-    )
-    instance = None
-    if isinstance(payload, dict):
-        instance = payload.get("instanceName") or payload.get("instance") or payload.get("instance_id")
+    message = normalize_message_event(payload, event_type)
 
     return {
-        "remote_jid": str(remote_jid) if remote_jid else None,
-        "evolution_msg_id": str(evolution_msg_id) if evolution_msg_id else None,
-        "instance": str(instance) if instance else None,
+        "remote_jid": message.remote_jid or None,
+        "evolution_msg_id": message.evolution_msg_id or None,
+        "instance": message.instance,
     }
 
 
@@ -96,7 +71,7 @@ def build_event_hash(
     event_type: str,
     payload: dict[str, Any],
 ) -> str:
-    ids = extract_event_identifiers(payload)
+    ids = extract_event_identifiers(payload, event_type)
     msg_id = ids.get("evolution_msg_id")
     remote_jid = ids.get("remote_jid")
     if msg_id:
@@ -113,7 +88,7 @@ def enqueue_evolution_event(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     event_type = normalize_event_type(event)
-    identifiers = extract_event_identifiers(payload)
+    identifiers = extract_event_identifiers(payload, event_type)
     instance = canal.evolution_instance_id or identifiers.get("instance") or "opcl"
     event_hash = build_event_hash(
         workspace_id=canal.workspace_id,

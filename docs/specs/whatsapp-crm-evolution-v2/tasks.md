@@ -19,11 +19,11 @@
 
 ## 2. Normalização
 
-- [ ] Criar DTOs Pydantic para mensagem, status, conexão e mídia normalizados.
-- [ ] Criar `whatsapp_normalizer.py`.
-- [ ] Cobrir payloads `Message`, `MESSAGES_UPSERT`, `Receipt`, `MESSAGES_UPDATE`, `Connected`, `QRCode`, `LoggedOut`.
-- [ ] Cobrir grupo com `participant_jid` e menção.
-- [ ] Cobrir LID + `senderPn`.
+- [x] Criar DTOs Pydantic para mensagem, status, conexão e mídia normalizados.
+- [x] Criar `whatsapp_normalizer.py`.
+- [x] Cobrir payloads `Message`, `MESSAGES_UPSERT`, `Receipt`, `MESSAGES_UPDATE`, `Connected`, `QRCode`, `LoggedOut`.
+- [x] Cobrir grupo com `participant_jid` e menção.
+- [x] Cobrir LID + `senderPn`.
 
 ## 3. Persistência CRM
 
