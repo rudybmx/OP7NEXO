@@ -85,7 +85,13 @@ export interface CriativoTop {
   utmMedium?: string | null
   utmContent?: string | null
   utmTerm?: string | null
-  carouselItems?: Array<{ picture?: string; image_url_hq?: string; video_id?: string; link?: string }>
+  carouselItems?: Array<{
+    card_index?: number | null
+    picture?: string | null
+    image_url_hq?: string | null
+    video_id?: string | null
+    link?: string | null
+  }>
   leads: number
   ctr: number
   cpl: number

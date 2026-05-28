@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
+import { SWR_OPTS } from '@/lib/swr'
 import { ordenarPlataformasResumo, type PlataformaResumo } from '@/lib/plataformas-meta'
 import type { CodigoVeiculacao } from '@/lib/veiculacao'
 import type {
@@ -264,22 +265,25 @@ function buildKey(params: {
   campaignsReady: boolean
   filtros: FiltrosAnuncios
   page: number
+  syncVersion?: string | null
 }) {
-  const { wsId, dataInicio, dataFim, contaIds, campaignIds, campaignsReady, filtros, page } = params
+  const { wsId, dataInicio, dataFim, contaIds, campaignIds, campaignsReady, filtros, page, syncVersion } = params
   if (!wsId) return null
   if (!campaignsReady) return null
   if (campaignIds.length === 0) return null
 
-  const contaIdsParam = contaIds.length ? `&conta_ids=${contaIds.join(',')}` : ''
-  const normalizedCampaignIds = [...campaignIds].filter(Boolean).sort()
+  const normalizedContaIds = Array.from(new Set(contaIds)).sort()
+  const contaIdsParam = normalizedContaIds.length ? `&conta_ids=${normalizedContaIds.join(',')}` : ''
+  const normalizedCampaignIds = Array.from(new Set(campaignIds.filter(Boolean))).sort()
   const campaignIdsParam = normalizedCampaignIds.length ? `&campaign_ids=${normalizedCampaignIds.join(',')}` : ''
   const platformParam = filtros.plataforma !== 'todas' ? `&platform_filter=${filtros.plataforma}` : ''
   const statusParam = filtros.status !== 'todos' ? `&status_filter=${filtros.status}` : ''
   const tipoParam = filtros.tipo !== 'todos' ? `&tipo=${filtros.tipo}` : ''
   const sortParam = `&ordenar_por=${filtros.ordenarPor}`
   const resultadoParam = `&resultado=${filtros.resultado ?? 'performance'}`
+  const syncParam = syncVersion ? `&sync_version=${encodeURIComponent(syncVersion)}` : ''
 
-  return `/meta/insights/anuncios-performance?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}${campaignIdsParam}${platformParam}${statusParam}${tipoParam}${sortParam}${resultadoParam}&page=${page}&limit=${LIMIT_PADRAO}`
+  return `/meta/insights/anuncios-performance?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}${campaignIdsParam}${platformParam}${statusParam}${tipoParam}${sortParam}${resultadoParam}${syncParam}&page=${page}&limit=${LIMIT_PADRAO}`
 }
 
 export function useMetaAnuncios(
@@ -291,6 +295,7 @@ export function useMetaAnuncios(
   campaignIds: string[] = [],
   campaignsReady = true,
   page = 1,
+  syncVersion: string | null = null,
 ) {
   const { workspaceAtivo } = useWorkspace()
   const wsId = (workspaceId ?? workspaceAtivo) ?? undefined
@@ -304,12 +309,13 @@ export function useMetaAnuncios(
     campaignsReady,
     filtros,
     page,
+    syncVersion,
   })
 
   const { data, error, isLoading, isValidating } = useSWR<AnunciosPerformanceResponseApi>(
     queryKey,
     () => api.get<AnunciosPerformanceResponseApi>(queryKey!),
-    { revalidateOnFocus: false }
+    SWR_OPTS,
   )
 
   const mappedResponse = useMemo(() => (data ? mapResponseApi(data) : null), [data])
@@ -321,9 +327,10 @@ export function useMetaAnuncios(
       wsId ?? '',
       dataInicio,
       dataFim,
-      contaIds.join(','),
-      [...campaignIds].filter(Boolean).sort().join(','),
+      Array.from(new Set(contaIds)).sort().join(','),
+      Array.from(new Set(campaignIds.filter(Boolean))).sort().join(','),
       campaignsReady ? '1' : '0',
+      syncVersion ?? '',
       filtros.status,
       filtros.plataforma,
       filtros.tipo,
@@ -335,6 +342,7 @@ export function useMetaAnuncios(
     contaIds,
     campaignIds,
     campaignsReady,
+    syncVersion,
     filtros.status,
     filtros.plataforma,
     filtros.tipo,

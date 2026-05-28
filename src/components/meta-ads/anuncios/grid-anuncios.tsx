@@ -34,14 +34,15 @@ function corHook(v: number | null | undefined) {
 }
 
 function mapAnuncioToCardData(a: AnuncioPerformance): CardCriativoData {
+  const carouselItems = a.carouselItems ?? []
   return {
     id: a.id,
     nome: a.nome,
-    tipo: a.creativeType,
+    tipo: carouselItems.length > 0 && a.creativeType !== 'VIDEO' ? 'CAROUSEL' : a.creativeType,
     thumbnailUrl: a.imageUrlHq ?? a.thumbnailUrl ?? undefined,
     imageUrlHq: a.imageUrlHq ?? a.thumbnailUrl ?? undefined,
     linkAnuncio: a.linkAnuncio ?? a.permalinkUrl ?? undefined,
-    carouselItems: a.carouselItems ?? [],
+    carouselItems,
     leads: a.leads,
     ctr: a.ctr,
     cpl: a.cpl,

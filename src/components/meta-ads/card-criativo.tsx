@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ImageIcon, Video, Layers, Play, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 import { proxyImagem } from '@/lib/imagem-proxy'
 import { formatarNumero, formatarMoeda, formatarPorcentagem } from '@/lib/formatar'
+import { useResilientImageSource } from '@/components/meta-ads/carousel-media'
 
 export interface CardCriativoData {
   id: string
@@ -12,7 +13,13 @@ export interface CardCriativoData {
   thumbnailUrl?: string
   imageUrlHq?: string
   linkAnuncio?: string
-  carouselItems?: Array<{ picture?: string; image_url_hq?: string; video_id?: string; link?: string }>
+  carouselItems?: Array<{
+    card_index?: number | null
+    picture?: string | null
+    image_url_hq?: string | null
+    video_id?: string | null
+    link?: string | null
+  }>
   leads: number
   ctr: number
   cpl: number
@@ -56,22 +63,19 @@ export function CardCriativo({
   badgeTopLeft,
 }: Props) {
   const [carouselIdx, setCarouselIdx] = useState(0)
-  const config = TIPO_CONFIG[data.tipo] ?? TIPO_CONFIG.IMAGE
-  const IconComp = config.Icon
-
   const items = data.carouselItems ?? []
   const carouselLen = items.length
-  const firstItemWithImage = items.find(item => item.image_url_hq || item.picture) ?? null
+  const isCarousel = data.tipo === 'CAROUSEL' || carouselLen > 0
+  const config = TIPO_CONFIG[isCarousel ? 'CAROUSEL' : data.tipo] ?? TIPO_CONFIG.IMAGE
+  const IconComp = config.Icon
 
-  const imgSrc =
-    data.tipo === 'CAROUSEL' && carouselLen > 0
-      ? (items[carouselIdx]?.image_url_hq
-        || items[carouselIdx]?.picture
-        || firstItemWithImage?.image_url_hq
-        || firstItemWithImage?.picture
-        || data.imageUrlHq
-        || data.thumbnailUrl)
-      : data.imageUrlHq ?? data.thumbnailUrl
+  const imageState = useResilientImageSource(
+    isCarousel
+      ? [items[carouselIdx]?.image_url_hq, items[carouselIdx]?.picture]
+      : [data.imageUrlHq, data.thumbnailUrl],
+    `${data.id}:${isCarousel ? carouselIdx : 'single'}`,
+  )
+  const imgSrc = imageState.src ? (proxyImagem(imageState.src) ?? imageState.src) : null
 
   const prevSlide = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -124,11 +128,12 @@ export function CardCriativo({
           {/* Imagem */}
           {imgSrc ? (
             <img
-              src={proxyImagem(imgSrc)}
+              src={imgSrc}
               alt={data.nome}
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }}
               referrerPolicy="no-referrer"
               loading="lazy"
+              onError={imageState.onError}
             />
           ) : (
             <IconComp style={{ width: 32, height: 32, color: 'var(--ws-text-3, #8892b0)', opacity: 0.5 }} />
@@ -152,7 +157,7 @@ export function CardCriativo({
           )}
 
           {/* Controles carousel */}
-          {data.tipo === 'CAROUSEL' && carouselLen > 1 && (
+          {isCarousel && carouselLen > 1 && (
             <>
               <button
                 onClick={prevSlide}

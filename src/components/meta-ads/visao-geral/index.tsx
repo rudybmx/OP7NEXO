@@ -17,6 +17,7 @@ interface VisaoGeralProps {
   financeiro: FinanceiroMetaAds | null
   onAbrirFinanceiro: () => void
   onSelecionarConta: (contaId: string) => void
+  syncVersion?: string | null
 }
 
 export function VisaoGeral({
@@ -25,10 +26,12 @@ export function VisaoGeral({
   financeiro,
   onAbrirFinanceiro,
   onSelecionarConta,
+  syncVersion = null,
 }: VisaoGeralProps) {
-  const { data, isLoading, error } = useMetaInsights(filtros, workspaceId)
+  const { data, isLoading, error } = useMetaInsights(filtros, workspaceId, syncVersion)
+  const temDados = Boolean(data)
 
-  if (isLoading) {
+  if (isLoading && !temDados) {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-5 gap-3">
@@ -42,10 +45,10 @@ export function VisaoGeral({
     )
   }
 
-  if (error) {
+  if (error && !temDados) {
     return (
-      <div className="p-8 text-center text-muted-foreground">
-        Erro ao carregar dados: {error.message}
+      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+        Erro ao carregar dados: {error.message || 'não foi possível conectar à API de relatórios.'}
       </div>
     )
   }
@@ -54,6 +57,11 @@ export function VisaoGeral({
 
   return (
     <div className="space-y-[16px]">
+      {error && temDados && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Alguns dados não puderam ser atualizados agora. A tela continua com o último conjunto válido.
+        </div>
+      )}
       <CartoesKpi
         contas={data.contas}
         leadsPorCanal={data.leadsPorCanal}
@@ -74,9 +82,9 @@ export function VisaoGeral({
         <GraficoDonutInvestimento contas={data.contas} />
       </div>
 
-      <TopCriativos criativos={data.topCriativos} filtros={filtros} workspaceId={workspaceId} />
+      <TopCriativos criativos={data.topCriativos} filtros={filtros} workspaceId={workspaceId} syncVersion={syncVersion} />
 
-      <TabelaContas contas={data.contas} />
+      <TabelaContas contas={data.contas} financeiro={financeiro} />
     </div>
   )
 }

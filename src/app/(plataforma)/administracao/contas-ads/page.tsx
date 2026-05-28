@@ -2,14 +2,16 @@
 
 import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Plus, Search, X, CreditCard, RefreshCw, Check, CheckCircle2, XCircle, Clock3, ChevronLeft } from 'lucide-react'
+import { Loader2, Plus, Search, X, CreditCard, RefreshCw, Check, CheckCircle2, XCircle, Clock3, ChevronLeft, PauseCircle, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { WSTable, WSTableActions, WSTableShell } from '@/components/ui/ws-table'
 import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
 import { useAuth } from '@/hooks/use-auth'
 import { Progress } from '@/components/ui/progress'
+import { MetaSyncHistorySheet } from '@/components/meta-ads/sync-history-sheet'
 import api from '@/lib/api-client'
 
 interface MetaToken {
@@ -31,13 +33,18 @@ interface AdsAccount {
   id: string
   workspace_id: string
   workspace_nome: string
+  workspace_acessos?: Workspace[]
   plataforma: 'meta' | 'google' | 'linkedin' | 'tiktok'
   account_id: string
-  nome: string
+  account_name?: string | null
+  nome?: string | null
+  meta_account_name?: string | null
   bm_id?: string | null
+  config?: Record<string, unknown> | null
   token?: string | null
   status: 'ativo' | 'expirado' | 'erro'
   ativo: boolean
+  sync_paused?: boolean
   sincronizado_em?: string | null
   periodo_sync_inicio?: string | null
   agrupamento?: string | null
@@ -52,18 +59,24 @@ interface MetaContaAPI {
 
 interface SyncJobState {
   jobId: string
-  status: 'pending' | 'running' | 'done' | 'error'
+  status: 'pending' | 'running' | 'done' | 'error' | 'skipped'
   progresso: number
   etapa: string | null
   erro: string | null
   createdAt?: string | null
   updatedAt?: string | null
+  modoSync?: string | null
+  janelaInicio?: string | null
+  janelaFim?: string | null
 }
 
 interface SyncJobAPI {
   id: string
   ads_account_id: string
-  status: 'pending' | 'running' | 'done' | 'error'
+  status: 'pending' | 'running' | 'done' | 'error' | 'skipped'
+  modo_sync: string
+  janela_inicio: string | null
+  janela_fim: string | null
   etapa_atual: string | null
   progresso: number
   totais: Record<string, number> | null
@@ -125,6 +138,14 @@ function formatarPeriodo(iso: string): string {
   return `desde ${dia}/${mes}/${ano}`
 }
 
+function nomeExibicaoConta(conta: Pick<AdsAccount, 'account_name' | 'nome' | 'account_id'>): string {
+  return (conta.account_name || conta.nome || conta.account_id || '').trim() || conta.account_id
+}
+
+function nomeOriginalContaMeta(conta?: Pick<AdsAccount, 'meta_account_name' | 'account_name' | 'nome' | 'account_id'> | null): string {
+  return (conta?.meta_account_name || conta?.account_name || conta?.nome || conta?.account_id || '').trim() || 'Não disponível'
+}
+
 const META_ACCOUNT_STATUS: Record<number, { label: string; color: string }> = {
   1: { label: 'Ativa', color: 'var(--ws-green)' },
   2: { label: 'Desativada', color: 'var(--ws-text-3)' },
@@ -183,6 +204,9 @@ function syncJobFromApi(job: SyncJobAPI): SyncJobState {
     erro: job.erro,
     createdAt: job.created_at,
     updatedAt: job.updated_at,
+    modoSync: job.modo_sync,
+    janelaInicio: job.janela_inicio,
+    janelaFim: job.janela_fim,
   }
 }
 
@@ -230,6 +254,8 @@ function formatarTooltipSyncJob(job: SyncJobState): string {
     `Status: ${job.status}`,
     `Progresso: ${job.progresso}%`,
   ]
+  if (job.modoSync) partes.push(`Modo: ${job.modoSync}`)
+  if (job.janelaInicio || job.janelaFim) partes.push(`Janela: ${job.janelaInicio || '—'} → ${job.janelaFim || '—'}`)
   if (job.etapa) partes.push(`Etapa: ${job.etapa}`)
   if (job.createdAt) partes.push(`Iniciado: ${formatarDataHora(job.createdAt)}`)
   if (job.updatedAt) partes.push(`Atualizado: ${formatarDataHora(job.updatedAt)}`)
@@ -303,8 +329,13 @@ export default function ContasAdsPage() {
 
   // Estado edição de agrupamento
   const [editandoConta, setEditandoConta] = useState<AdsAccount | null>(null)
+  const [editNomeExibicao, setEditNomeExibicao] = useState('')
+  const [editWorkspaceIds, setEditWorkspaceIds] = useState<string[]>([])
+  const [editSyncPaused, setEditSyncPaused] = useState(false)
   const [agrupamentoEdit, setAgrupamentoEdit] = useState('')
+  const [workspaceBuscaEdit, setWorkspaceBuscaEdit] = useState('')
   const [salvandoEdit, setSalvandoEdit] = useState(false)
+  const [historicoContaId, setHistoricoContaId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!authLoading && user && user.role !== 'platform_admin') router.push('/')
@@ -423,6 +454,9 @@ export default function ContasAdsPage() {
               erro: data.erro,
               createdAt: data.created_at,
               updatedAt: data.updated_at,
+              modoSync: data.modo_sync,
+              janelaInicio: data.janela_inicio,
+              janelaFim: data.janela_fim,
             },
           }))
 
@@ -435,7 +469,7 @@ export default function ContasAdsPage() {
             agendarRemocaoSyncJob(contaId, 3000)
           }
 
-          if (data.status === 'error') {
+          if (data.status === 'error' || data.status === 'skipped') {
             agendarRemocaoSyncJob(contaId, 5000)
           }
         } catch (err: any) {
@@ -459,12 +493,17 @@ export default function ContasAdsPage() {
   async function handleSync(conta: AdsAccount) {
     if (syncJobs[conta.id]) return
     try {
-      const data = await api.post<{ job_id: string; status: string }>(`/meta/sync/${conta.id}`)
+      const data = await api.post<{ job_id: string | null; status: string; reason?: string }>(`/meta/sync/${conta.id}`)
+      if (!data.job_id) {
+        toast.info('Sync iniciado sem job retornado pela API')
+        return
+      }
+      const jobId = data.job_id
       const now = new Date().toISOString()
       atualizarSyncJobs(prev => ({
         ...prev,
         [conta.id]: {
-          jobId: data.job_id,
+          jobId,
           status: (data.status as SyncJobState['status']) || 'pending',
           progresso: 0,
           etapa: null,
@@ -473,6 +512,11 @@ export default function ContasAdsPage() {
           updatedAt: now,
         },
       }))
+      if (data.status === 'skipped') {
+        toast.info(data.reason || 'Sync pausado para esta conta')
+        agendarRemocaoSyncJob(conta.id, 5000)
+        return
+      }
       if (data.status === 'running') {
         toast.info('Sincronização já estava em andamento')
       } else {
@@ -575,9 +619,9 @@ export default function ContasAdsPage() {
       const criada = await api.post<AdsAccount>(`/workspaces/${form.workspace_id}/ads-accounts`, {
         plataforma: form.plataforma,
         account_id: form.account_id.trim(),
-        nome: form.nome.trim(),
+        account_name: form.nome.trim(),
         bm_id: form.bm_id.trim() || null,
-        token: form.token.trim() || null,
+        token_acesso: form.token.trim() || null,
         agrupamento: form.agrupamento || null,
       })
       setContas(prev => [criada, ...prev])
@@ -605,23 +649,50 @@ export default function ContasAdsPage() {
     setTokenSelecionadoId('')
   }
 
-  async function salvarAgrupamento() {
+  function abrirEdicaoConta(conta: AdsAccount) {
+    setEditandoConta(conta)
+    setEditNomeExibicao(nomeExibicaoConta(conta))
+    setAgrupamentoEdit(conta.agrupamento || '')
+    setEditSyncPaused(!!conta.sync_paused)
+    setEditWorkspaceIds(Array.from(new Set([
+      conta.workspace_id,
+      ...(conta.workspace_acessos || []).map(ws => ws.id),
+    ])))
+    setWorkspaceBuscaEdit('')
+  }
+
+  function fecharEdicaoConta() {
+    setEditandoConta(null)
+    setEditNomeExibicao('')
+    setEditWorkspaceIds([])
+    setEditSyncPaused(false)
+    setAgrupamentoEdit('')
+    setWorkspaceBuscaEdit('')
+  }
+
+  async function salvarEdicaoConta() {
     if (!editandoConta) return
+    if (!editNomeExibicao.trim()) {
+      toast.error('Nome de exibição é obrigatório')
+      return
+    }
     setSalvandoEdit(true)
     try {
-      await api.put(`/ads-accounts/${editandoConta.id}`, {
+      const workspaceIdsAcesso = Array.from(new Set(editWorkspaceIds))
+      const updated = await api.put<AdsAccount>(`/ads-accounts/${editandoConta.id}`, {
         plataforma: editandoConta.plataforma,
         account_id: editandoConta.account_id,
-        account_name: editandoConta.nome,
+        account_name: editNomeExibicao.trim(),
         agrupamento: agrupamentoEdit || null,
         status: editandoConta.status,
-        config: {},
+        sync_paused: editSyncPaused,
+        workspace_ids_acesso: workspaceIdsAcesso,
       })
       setContas(prev => prev.map(c =>
-        c.id === editandoConta.id ? { ...c, agrupamento: agrupamentoEdit || null } : c
+        c.id === editandoConta.id ? updated : c
       ))
-      setEditandoConta(null)
-      toast.success('Agrupamento atualizado!')
+      fecharEdicaoConta()
+      toast.success('Conta atualizada com sucesso')
     } catch (err: any) {
       toast.error(err.message || 'Erro ao atualizar')
     } finally {
@@ -631,10 +702,12 @@ export default function ContasAdsPage() {
 
   const filtradas = contas.filter(c => {
     const t = busca.toLowerCase()
+    const nomesAcesso = (c.workspace_acessos || []).map(ws => ws.nome.toLowerCase()).join(' ')
     const matchBusca =
-      c.nome.toLowerCase().includes(t) ||
+      nomeExibicaoConta(c).toLowerCase().includes(t) ||
       c.account_id.toLowerCase().includes(t) ||
-      (c.workspace_nome?.toLowerCase() || '').includes(t)
+      (c.workspace_nome?.toLowerCase() || '').includes(t) ||
+      nomesAcesso.includes(t)
     const matchPlat = filtroPlataforma === 'todas' || c.plataforma === filtroPlataforma
     return matchBusca && matchPlat
   })
@@ -665,6 +738,17 @@ export default function ContasAdsPage() {
         </span>
       )
     }
+    if (job?.status === 'skipped') {
+      return (
+        <span
+          title={jobTooltip}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: '#b7791f', cursor: 'help' }}
+        >
+          <PauseCircle size={13} />
+          Pulado
+        </span>
+      )
+    }
     if (job?.status === 'pending' || job?.status === 'running') {
       const semHeartbeat = jobSemHeartbeatRecente(job)
       return (
@@ -678,6 +762,17 @@ export default function ContasAdsPage() {
             {job.etapa ?? 'iniciando...'} {job.progresso}%{semHeartbeat ? ' • sem atualização recente' : ''}
           </span>
         </div>
+      )
+    }
+    if (c.sync_paused) {
+      return (
+        <span
+          title="Sync automático pausado nesta conta"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-text-3)' }}
+        >
+          <PauseCircle size={13} />
+          Pausado
+        </span>
       )
     }
     return (
@@ -709,6 +804,8 @@ export default function ContasAdsPage() {
   const isMeta = form.plataforma === 'meta'
   const selectedToken = metaTokens.find(x => x.token === tokenSelecionadoId) ?? null
   const schedulerJob = syncScheduler?.jobs?.[0] ?? null
+  const contaHistorico = historicoContaId ? contas.find(c => c.id === historicoContaId) ?? null : null
+  const historicoSyncAtivo = historicoContaId ? isSyncJobAtivo(syncJobs[historicoContaId]) : false
   const schedulerStatusLabel = syncScheduler?.running ? 'Ativo' : 'Parado'
   const schedulerStatusColor = syncScheduler?.running ? 'var(--ws-green)' : 'var(--ws-coral)'
   const schedulerStatusBg = syncScheduler?.running ? 'rgba(15,168,86,0.12)' : 'rgba(255,92,141,0.12)'
@@ -950,10 +1047,17 @@ export default function ContasAdsPage() {
                       </code>
                     </td>
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13, color: 'var(--ws-text-1)', fontWeight: 500 }}>
-                      {c.nome}
+                      {nomeExibicaoConta(c)}
                     </td>
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-2)' }}>
-                      {c.workspace_nome || '—'}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span>{c.workspace_nome || '—'}</span>
+                        {(c.workspace_acessos?.length || 0) > 0 && (
+                          <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>
+                            +{c.workspace_acessos?.length} acesso{(c.workspace_acessos?.length || 0) !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-3)' }}>
                       {c.periodo_sync_inicio ? formatarPeriodo(c.periodo_sync_inicio) : '—'}
@@ -985,10 +1089,32 @@ export default function ContasAdsPage() {
                             fontSize: 12, color: 'var(--ws-text-2)',
                             cursor: 'pointer',
                           }}
-                          onClick={() => { setEditandoConta(c); setAgrupamentoEdit(c.agrupamento || '') }}
+                          onClick={() => abrirEdicaoConta(c)}
                         >
                           Editar
                         </button>
+                        {c.plataforma === 'meta' && (
+                          <button
+                            type="button"
+                            title="Ver histórico de sync"
+                            aria-label="Ver histórico de sync"
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid rgba(62,91,255,0.25)',
+                              borderRadius: 6,
+                              width: 30,
+                              height: 30,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'var(--ws-blue)',
+                              cursor: 'pointer',
+                            }}
+                            onClick={() => setHistoricoContaId(c.id)}
+                          >
+                            <Info size={13} />
+                          </button>
+                        )}
                         {renderSyncCell(c)}
                         <button
                           style={{
@@ -1564,39 +1690,179 @@ export default function ContasAdsPage() {
         </SheetContent>
       </Sheet>
 
-      <Sheet open={!!editandoConta} onOpenChange={open => !open && setEditandoConta(null)}>
-        <SheetContent side="right" style={{ width: 400, ...wsSheetCreamStyle, padding: 0, display: 'flex', flexDirection: 'column' }}>
+      <Sheet open={!!editandoConta} onOpenChange={open => !open && fecharEdicaoConta()}>
+        <SheetContent side="right" style={{ width: 'min(92vw, 760px)', ...wsSheetCreamStyle, padding: 0, display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '24px 28px 20px', borderBottom: '1px solid var(--ws-glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--ws-text-1)' }}>Editar Conta</h2>
-              <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0' }}>{editandoConta?.nome}</p>
+              <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0' }}>
+                {editandoConta ? nomeExibicaoConta(editandoConta) : ''}
+              </p>
             </div>
-            <button onClick={() => setEditandoConta(null)} style={{ ...wsSheetCreamCloseButtonStyle, borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--ws-text-2)' }}>
+            <button onClick={fecharEdicaoConta} style={{ ...wsSheetCreamCloseButtonStyle, borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--ws-text-2)' }}>
               <X size={16} />
             </button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
-            <div>
-              <label style={labelStyle}>Agrupamento <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
-              <input
-                type="text"
-                placeholder="ex: Franquias SP, Zona Sul"
-                value={agrupamentoEdit}
-                onChange={e => setAgrupamentoEdit(e.target.value)}
-                style={inputStyle}
-              />
-              <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>Agrupa contas para filtros no dashboard</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div>
+                <label style={labelStyle}>Nome de exibição *</label>
+                <input
+                  type="text"
+                  placeholder="Nome amigável para a conta"
+                  value={editNomeExibicao}
+                  onChange={e => setEditNomeExibicao(e.target.value)}
+                  style={inputStyle}
+                />
+                {editandoConta?.plataforma === 'meta' && (
+                  <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>
+                    Nome original da conta Meta: <strong style={{ color: 'var(--ws-text-2)' }}>{nomeOriginalContaMeta(editandoConta)}</strong>
+                  </p>
+                )}
+                <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 4 }}>
+                  Esse nome aparece na plataforma e nas listas do dashboard
+                </p>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Clientes com acesso</label>
+                <p style={{ fontSize: 12, color: 'var(--ws-text-3)', margin: '0 0 10px', lineHeight: 1.5 }}>
+                  O cliente dono continua sempre liberado. Marque os demais clientes que também podem usar esta conta.
+                </p>
+                <input
+                  type="text"
+                  placeholder="Buscar cliente..."
+                  value={workspaceBuscaEdit}
+                  onChange={e => setWorkspaceBuscaEdit(e.target.value)}
+                  style={{ ...inputStyle, marginBottom: 10 }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 280, overflowY: 'auto' }}>
+                  {workspaces
+                    .filter(w => !workspaceBuscaEdit.trim() || w.nome.toLowerCase().includes(workspaceBuscaEdit.toLowerCase()))
+                    .map(ws => {
+                      const isOwner = editandoConta?.workspace_id === ws.id
+                      const selected = editWorkspaceIds.includes(ws.id)
+                      return (
+                        <button
+                          key={ws.id}
+                          type="button"
+                          disabled={isOwner}
+                          onClick={() => {
+                            if (isOwner) return
+                            setEditWorkspaceIds(prev =>
+                              prev.includes(ws.id)
+                                ? prev.filter(id => id !== ws.id)
+                                : [...prev, ws.id]
+                            )
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            background: selected ? 'rgba(62,91,255,0.06)' : wsSheetCreamTokens.surface,
+                            border: selected ? '1px solid rgba(62,91,255,0.35)' : `1px solid ${wsSheetCreamTokens.border}`,
+                            cursor: isOwner ? 'not-allowed' : 'pointer',
+                            textAlign: 'left',
+                            width: '100%',
+                            opacity: isOwner ? 0.95 : 1,
+                          }}
+                        >
+                          <div style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: 4,
+                            flexShrink: 0,
+                            background: selected ? '#3E5BFF' : wsSheetCreamTokens.checkboxUncheckedBg,
+                            border: selected ? '1px solid #3E5BFF' : `1px solid ${wsSheetCreamTokens.checkboxUncheckedBorder}`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}>
+                            {selected && <Check size={11} color="white" />}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ws-text-1)' }}>{ws.nome}</span>
+                              {isOwner && (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  padding: '2px 8px',
+                                  borderRadius: 999,
+                                  background: 'rgba(62,91,255,0.10)',
+                                  color: 'var(--ws-blue)',
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                }}>
+                                  Dono
+                                </span>
+                              )}
+                            </div>
+                            <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>
+                              {selected ? 'Tem acesso' : 'Sem acesso'}
+                            </span>
+                          </div>
+                        </button>
+                      )
+                    })}
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>
+                  {Math.max(editWorkspaceIds.length - 1, 0)} acesso{Math.max(editWorkspaceIds.length - 1, 0) !== 1 ? 's' : ''} adicional{Math.max(editWorkspaceIds.length - 1, 0) !== 1 ? 'ais' : ''} além do cliente dono
+                </p>
+              </div>
+
+              {editandoConta?.plataforma === 'meta' && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 16,
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  background: 'rgba(62,91,255,0.04)',
+                  border: '1px solid rgba(62,91,255,0.18)',
+                }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>Pausar sync</div>
+                    <p style={{ fontSize: 12, color: 'var(--ws-text-3)', margin: '4px 0 0', lineHeight: 1.5 }}>
+                      A conta continua ativa e visível, mas não entra no scheduler nem inicia sync manual.
+                    </p>
+                  </div>
+                  <Switch checked={editSyncPaused} onCheckedChange={setEditSyncPaused} />
+                </div>
+              )}
+
+              <div>
+                <label style={labelStyle}>Agrupamento <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
+                <input
+                  type="text"
+                  placeholder="ex: Franquias SP, Zona Sul"
+                  value={agrupamentoEdit}
+                  onChange={e => setAgrupamentoEdit(e.target.value)}
+                  style={inputStyle}
+                />
+                <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>Agrupa contas para filtros no dashboard</p>
+              </div>
             </div>
           </div>
           <div style={{ padding: '20px 28px', borderTop: '1px solid var(--ws-glass-border)', display: 'flex', gap: 12 }}>
-            <button onClick={() => setEditandoConta(null)} style={{ flex: 1, height: 42, borderRadius: 10, background: 'transparent', border: '1px solid var(--ws-glass-border)', fontSize: 14, fontWeight: 500, color: 'var(--ws-text-2)', cursor: 'pointer' }}>Cancelar</button>
-            <button onClick={salvarAgrupamento} disabled={salvandoEdit} style={{ flex: 2, height: 42, borderRadius: 10, background: salvandoEdit ? 'rgba(62,91,255,0.5)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)', border: 'none', fontSize: 14, fontWeight: 600, color: 'white', cursor: salvandoEdit ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <button onClick={fecharEdicaoConta} style={{ flex: 1, height: 42, borderRadius: 10, background: 'transparent', border: '1px solid var(--ws-glass-border)', fontSize: 14, fontWeight: 500, color: 'var(--ws-text-2)', cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={salvarEdicaoConta} disabled={salvandoEdit} style={{ flex: 2, height: 42, borderRadius: 10, background: salvandoEdit ? 'rgba(62,91,255,0.5)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)', border: 'none', fontSize: 14, fontWeight: 600, color: 'white', cursor: salvandoEdit ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               {salvandoEdit ? <Loader2 size={16} className="animate-spin" /> : null}
-              {salvandoEdit ? 'Salvando...' : 'Salvar'}
+              {salvandoEdit ? 'Salvando...' : 'Salvar alterações'}
             </button>
           </div>
         </SheetContent>
       </Sheet>
+
+      <MetaSyncHistorySheet
+        open={!!historicoContaId}
+        onOpenChange={open => !open && setHistoricoContaId(null)}
+        conta={contaHistorico}
+        syncAtivo={historicoSyncAtivo}
+      />
 
       {/* Confirm Toggle Modal */}
       {confirmToggle && (
@@ -1616,11 +1882,11 @@ export default function ContasAdsPage() {
             <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '0 0 6px', lineHeight: 1.6 }}>
               {confirmToggle.ativo
                 ? 'Deseja desativar esta conta? Ela não aparecerá mais nos relatórios.'
-                : `Deseja reativar "${confirmToggle.nome}"?`}
+                : `Deseja reativar "${nomeExibicaoConta(confirmToggle)}"?`}
             </p>
             {confirmToggle.ativo && (
               <p style={{ fontSize: 12, color: 'var(--ws-text-3)', margin: '0 0 20px' }}>
-                <strong style={{ color: 'var(--ws-text-2)' }}>{confirmToggle.nome}</strong>
+                <strong style={{ color: 'var(--ws-text-2)' }}>{nomeExibicaoConta(confirmToggle)}</strong>
               </p>
             )}
             <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>

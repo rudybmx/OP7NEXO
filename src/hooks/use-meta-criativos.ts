@@ -4,6 +4,7 @@ import useSWR from 'swr'
 import api from '@/lib/api-client'
 import { Criativo, FiltrosCriativos, TipoCriativo, StatusCriativo } from '@/types/meta-ads-criativos'
 import { useWorkspace } from '@/lib/workspace-context'
+import { SWR_OPTS } from '@/lib/swr'
 
 interface CriativoRow {
   creative_id: string
@@ -57,6 +58,8 @@ interface CatalogoCriativoRow {
     card_index: number
     image_url_hq?: string | null
     picture?: string | null
+    link?: string | null
+    video_id?: string | null
   }>
 }
 
@@ -70,11 +73,13 @@ function scoreToStatus(score: number, diasAtivo: number): StatusCriativo {
 function mapCriativo(row: CriativoRow, cat?: CatalogoCriativoRow): Criativo {
   const score = row.score ?? 0
   const diasAtivo = row.dias_ativo ?? 0
+  const carouselCards = cat?.carousel_cards ?? []
+  const tipoBase = (((cat?.tipo_criativo || row.tipo_criativo || 'IMAGE').toUpperCase()) as TipoCriativo)
   return {
     id:            row.creative_id,
     baseCreativeId: row.creative_id,
     nome:          cat?.nome || row.creative_id,
-    tipo:          (((cat?.tipo_criativo || row.tipo_criativo || 'IMAGE').toUpperCase()) as TipoCriativo),
+    tipo:          carouselCards.length > 0 && tipoBase !== 'VIDEO' ? 'CAROUSEL' : tipoBase,
     status:        scoreToStatus(score, diasAtivo),
     corFundo:      '#f0f0f0',
     thumbnailUrl:  cat?.image_url_hq ?? cat?.thumbnail_url ?? row.image_url_hq ?? row.thumbnail_url ?? undefined,
@@ -87,7 +92,7 @@ function mapCriativo(row: CriativoRow, cat?: CatalogoCriativoRow): Criativo {
     utmMedium:     cat?.utm_medium ?? undefined,
     utmContent:    cat?.utm_content ?? undefined,
     utmTerm:       cat?.utm_term ?? undefined,
-    carouselCards: cat?.carousel_cards ?? [],
+    carouselCards,
     diasAtivo,
     campanhas:     row.total_campanhas,
     campanhasDetalhe: [],
@@ -125,12 +130,14 @@ export function useMetaCriativos(
   dataFim: string,
   contaIds: string[] = [],
   workspaceId: string | null = null,
+  syncVersion: string | null = null,
 ) {
   const { workspaceAtivo } = useWorkspace()
   const wsId = (workspaceId ?? workspaceAtivo) ?? undefined
 
-  const contaIdsParam = contaIds.length
-    ? `&conta_ids=${contaIds.join(',')}`
+  const normalizedContaIds = Array.from(new Set(contaIds)).sort()
+  const contaIdsParam = normalizedContaIds.length
+    ? `&conta_ids=${normalizedContaIds.join(',')}`
     : ''
   const campParam = filtros.campaign_id && filtros.campaign_id !== 'todas'
     ? `&campaign_id=${filtros.campaign_id}`
@@ -138,23 +145,24 @@ export function useMetaCriativos(
   const adsetParam = filtros.adset_id && filtros.adset_id !== 'todos'
     ? `&adset_id=${filtros.adset_id}`
     : ''
+  const syncParam = syncVersion ? `&sync_version=${encodeURIComponent(syncVersion)}` : ''
 
   const key = wsId
-    ? `/meta/insights/criativos?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}${campParam}${adsetParam}`
+    ? `/meta/insights/criativos?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}${campParam}${adsetParam}${syncParam}`
     : null
   const catalogKey = wsId
-    ? `/meta/catalogo/criativos?workspace_id=${wsId}&limit=5000${campParam}`
+    ? `/meta/catalogo/criativos?workspace_id=${wsId}&limit=5000${campParam}${syncParam}`
     : null
 
   const { data: rows, isLoading, error } = useSWR(
     key,
     () => api.get<CriativoRow[]>(key!),
-    { revalidateOnFocus: false }
+    SWR_OPTS,
   )
   const { data: catalogRows } = useSWR(
     catalogKey,
     () => api.get<CatalogoCriativoRow[]>(catalogKey!),
-    { revalidateOnFocus: false }
+    SWR_OPTS,
   )
 
   const catMap = new Map((catalogRows ?? []).map((c) => [c.creative_id, c] as const))

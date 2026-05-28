@@ -3,41 +3,46 @@
 import useSWR from 'swr'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
+import { SWR_OPTS } from '@/lib/swr'
 import type { FiltrosMeta, MetaInsightsVisaoGeral, ContaAnuncio, DadosDiarios, CriativoTop, LeadsByPlatform } from '@/types/meta-ads'
 import { calcularScore } from '@/components/meta-ads/anuncios/score-anuncio'
 
-function buildParams(wsId: string, filtros: FiltrosMeta): string {
+function buildParams(wsId: string, filtros: FiltrosMeta, syncVersion?: string | null): string {
   const p = new URLSearchParams({
     workspace_id: wsId,
     data_inicio: filtros.dataInicio,
     data_fim: filtros.dataFim,
   })
-  if (filtros.contaIds.length > 0) {
-    p.set('conta_ids', filtros.contaIds.join(','))
+  const contaIds = Array.from(new Set(filtros.contaIds)).sort()
+  if (contaIds.length > 0) {
+    p.set('conta_ids', contaIds.join(','))
+  }
+  if (syncVersion) {
+    p.set('sync_version', syncVersion)
   }
   return p.toString()
 }
 
-export function useMetaInsights(filtros: FiltrosMeta, workspaceId: string | null) {
+export function useMetaInsights(filtros: FiltrosMeta, workspaceId: string | null, syncVersion: string | null = null) {
   const { workspaceAtivo } = useWorkspace()
   const wsId = (workspaceId ?? workspaceAtivo) ?? undefined
-  const params = wsId ? buildParams(wsId, filtros) : null
+  const params = wsId ? buildParams(wsId, filtros, syncVersion) : null
 
   const { data: raw, isLoading, error } = useSWR(
     params ? `/meta/insights/visao-geral?${params}` : null,
     () => api.get<any>(`/meta/insights/visao-geral?${params}`),
-    { revalidateOnFocus: false }
+    SWR_OPTS,
   )
 
   const { data: iaRaw } = useSWR(
     wsId
-      ? `/meta/insights/ia?workspace_id=${wsId}&data_inicio=${filtros.dataInicio}&data_fim=${filtros.dataFim}`
+      ? `/meta/insights/ia?workspace_id=${wsId}&data_inicio=${filtros.dataInicio}&data_fim=${filtros.dataFim}${syncVersion ? `&sync_version=${encodeURIComponent(syncVersion)}` : ''}`
       : null,
     () =>
       api.get<any[]>(
-        `/meta/insights/ia?workspace_id=${wsId}&data_inicio=${filtros.dataInicio}&data_fim=${filtros.dataFim}`
+        `/meta/insights/ia?workspace_id=${wsId}&data_inicio=${filtros.dataInicio}&data_fim=${filtros.dataFim}${syncVersion ? `&sync_version=${encodeURIComponent(syncVersion)}` : ''}`
       ),
-    { revalidateOnFocus: false }
+    SWR_OPTS,
   )
 
   const iaData = (iaRaw ?? []).map((item: any, i: number) => {

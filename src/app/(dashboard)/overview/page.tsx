@@ -14,8 +14,8 @@ import {
 } from 'recharts'
 
 export default function OverviewPage() {
-  const { kpis, financeiro, isLoading, error } = useMetaOverview()
-  const { dados: dadosGrafico, isLoading: loadingGrafico } = useMetaGrafico()
+  const { kpis, financeiro, isLoading, error, hasData } = useMetaOverview()
+  const { dados: dadosGrafico, isLoading: loadingGrafico, error: errorGrafico, hasData: hasDadosGrafico } = useMetaGrafico()
 
   // Formatters
   const currency = (val: number) => 
@@ -34,7 +34,7 @@ export default function OverviewPage() {
     }).format(val) + '%'
 
   // Error State
-  if (error) {
+  if (error && !hasData) {
     return (
       <div className="p-6">
         <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 p-4 rounded-xl text-red-700 dark:text-red-400">
@@ -46,7 +46,7 @@ export default function OverviewPage() {
   }
 
   // Loading State (Skeleton)
-  if (isLoading) {
+  if (isLoading && !hasData) {
     return (
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -78,6 +78,12 @@ export default function OverviewPage() {
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Visão Geral</h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">Performance consolidada da conta Meta Ads</p>
       </header>
+
+      {error && hasData && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+          Alguns dados não puderam ser atualizados agora. A página continua mostrando o último conjunto válido.
+        </div>
+      )}
 
       {/* Grid de KPIs - 2 col mobile, 4 desktop */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -169,7 +175,11 @@ export default function OverviewPage() {
       <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm p-6 border border-zinc-100 dark:border-zinc-800">
         <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6">Performance do Mês</h2>
         
-        {loadingGrafico ? (
+        {errorGrafico && !hasDadosGrafico ? (
+          <div className="rounded-lg border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/20 p-4 text-sm text-red-700 dark:text-red-300">
+            Não foi possível carregar o gráfico neste momento.
+          </div>
+        ) : loadingGrafico && !hasDadosGrafico ? (
           <div className="h-[300px] w-full bg-zinc-50 dark:bg-zinc-800/50 animate-pulse rounded-lg" />
         ) : (
           <div className="h-[300px] w-full">

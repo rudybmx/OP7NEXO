@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
+import { SWR_OPTS } from '@/lib/swr'
 
 interface MetaOverview {
   kpis: {
@@ -24,6 +25,7 @@ interface MetaOverview {
   }
   isLoading: boolean
   error: any
+  hasData: boolean
 }
 
 function mesAtual(): { inicio: string; fim: string } {
@@ -45,7 +47,7 @@ export function useMetaOverview(): MetaOverview {
       api.get<any>(
         `/meta/insights/visao-geral?workspace_id=${wsId}&data_inicio=${inicio}&data_fim=${fim}`
       ),
-    { revalidateOnFocus: false }
+    SWR_OPTS,
   )
 
   const kpis = raw?.kpis ?? {
@@ -70,5 +72,6 @@ export function useMetaOverview(): MetaOverview {
     financeiro: { saldo: totalSaldo, limite: 0, formaPagamento: '-', nomeBm: '-' },
     isLoading: !wsId || isLoading,
     error,
+    hasData: raw != null,
   }
 }

@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Image as ImageIcon,
   Layers3,
@@ -24,6 +26,7 @@ import {
   YAxis,
 } from 'recharts'
 import { ChartSurface } from '@/components/meta-ads/chart-surface'
+import { normalizeCarouselItems, useResilientImageSource, type CarouselMediaItem } from '@/components/meta-ads/carousel-media'
 import { formatarMoeda, formatarNumero } from '@/lib/formatar'
 import { proxyImagem } from '@/lib/imagem-proxy'
 
@@ -77,8 +80,9 @@ export interface AdCreativeModalOverviewData {
   id: string
   name: string
   status: 'Ativo' | 'Pausado' | 'Desativado'
-  assetType: 'IMAGE' | 'VIDEO'
+  assetType: 'IMAGE' | 'VIDEO' | 'CAROUSEL'
   imageUrl: string
+  carouselItems?: CarouselMediaItem[]
   metaUrl?: string
 
   period: string
@@ -127,6 +131,11 @@ function escapeXml(value: string) {
 
 export function makeFallbackPoster(name: string, assetType: AdCreativeModalOverviewData['assetType']) {
   const isVideo = assetType === 'VIDEO'
+  const label = assetType === 'VIDEO'
+    ? 'VÍDEO'
+    : assetType === 'CAROUSEL'
+      ? 'CARROSSEL'
+      : 'IMAGEM'
   const accentA = isVideo ? 'rgba(122,90,248,1)' : 'rgba(62,91,255,1)'
   const accentB = isVideo ? 'rgba(255,92,141,1)' : 'rgba(122,90,248,1)'
   const soft = isVideo ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.16)'
@@ -147,7 +156,7 @@ export function makeFallbackPoster(name: string, assetType: AdCreativeModalOverv
       <circle cx="780" cy="252" r="210" fill="rgba(255,255,255,0.10)" />
       <circle cx="756" cy="1216" r="248" fill="rgba(255,255,255,0.08)" />
       <rect x="74" y="118" width="124" height="34" rx="17" fill="rgba(255,255,255,0.18)" />
-      <text x="92" y="141" fill="white" font-size="18" font-weight="700" letter-spacing="2">${isVideo ? 'VÍDEO' : 'IMAGEM'}</text>
+      <text x="92" y="141" fill="white" font-size="18" font-weight="700" letter-spacing="2">${label}</text>
       <text x="72" y="236" fill="white" font-size="76" font-weight="700" letter-spacing="-2">${escapeXml(name)}</text>
       <text x="72" y="300" fill="rgba(255,255,255,0.84)" font-size="28" font-weight="500">${isVideo ? 'Prévia de vídeo' : 'Prévia de imagem'}</text>
       <rect x="72" y="358" width="330" height="14" rx="7" fill="rgba(255,255,255,0.36)" />
@@ -214,21 +223,33 @@ function statusVisual(status: AdCreativeModalOverviewData['status']) {
 }
 
 function assetVisual(assetType: AdCreativeModalOverviewData['assetType']) {
-  return assetType === 'VIDEO'
-    ? {
-        bg: 'var(--ws-purple-soft)',
-        border: 'rgba(122,90,248,0.22)',
-        color: 'var(--ws-purple)',
-        label: 'Vídeo',
-        icon: <Video size={12} />,
-      }
-    : {
-        bg: 'var(--ws-blue-soft)',
-        border: 'rgba(62,91,255,0.22)',
-        color: 'var(--ws-blue)',
-        label: 'Imagem',
-        icon: <ImageIcon size={12} />,
-      }
+  if (assetType === 'VIDEO') {
+    return {
+      bg: 'var(--ws-purple-soft)',
+      border: 'rgba(122,90,248,0.22)',
+      color: 'var(--ws-purple)',
+      label: 'Vídeo',
+      icon: <Video size={12} />,
+    }
+  }
+
+  if (assetType === 'CAROUSEL') {
+    return {
+      bg: 'var(--ws-gold-soft)',
+      border: 'rgba(242,101,34,0.24)',
+      color: 'var(--ws-gold)',
+      label: 'Carrossel',
+      icon: <Layers3 size={12} />,
+    }
+  }
+
+  return {
+    bg: 'var(--ws-blue-soft)',
+    border: 'rgba(62,91,255,0.22)',
+    color: 'var(--ws-blue)',
+    label: 'Imagem',
+    icon: <ImageIcon size={12} />,
+  }
 }
 
 function scoreVisual(score: number) {
@@ -1024,12 +1045,24 @@ function MetricBlock({
 
 export function AdCreativeModalOverview({ data }: { data: AdCreativeModalOverviewData }) {
   const statusBadge = statusVisual(data.status)
-  const assetBadge = assetVisual(data.assetType)
+  const carouselItems = normalizeCarouselItems(data.carouselItems)
+  const isCarousel = (data.assetType === 'CAROUSEL' || carouselItems.length > 0) && carouselItems.length > 0
+  const assetBadge = assetVisual(isCarousel ? 'CAROUSEL' : data.assetType)
   const scoreBadge = scoreVisual(data.scoreIA)
   const previewFallback = makeFallbackPoster(data.name, data.assetType)
-  const [previewSrc, setPreviewSrc] = useState(
-    data.imageUrl.startsWith('/mock/') ? previewFallback : proxyImagem(data.imageUrl) ?? data.imageUrl,
+  const [carouselIdx, setCarouselIdx] = useState(0)
+  const currentItem = isCarousel ? carouselItems[carouselIdx] ?? null : null
+  const imageState = useResilientImageSource(
+    isCarousel
+      ? [currentItem?.image_url_hq, currentItem?.picture, previewFallback]
+      : [data.imageUrl, previewFallback],
+    `${data.id}:${isCarousel ? carouselIdx : 'single'}`,
   )
+  const previewSrc = imageState.src ? (proxyImagem(imageState.src) ?? imageState.src) : null
+
+  useEffect(() => {
+    setCarouselIdx(0)
+  }, [data.id, carouselItems.length, data.imageUrl])
 
   return (
     <section
@@ -1183,19 +1216,34 @@ export function AdCreativeModalOverview({ data }: { data: AdCreativeModalOvervie
                 background: 'linear-gradient(180deg, rgba(14,20,42,0.06), rgba(14,20,42,0.12))',
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previewSrc}
-                alt={data.name}
-                onError={() => setPreviewSrc(previewFallback)}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'contain',
-                  display: 'block',
-                }}
-                referrerPolicy="no-referrer"
-              />
+              {previewSrc ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={previewSrc}
+                  alt={data.name}
+                  onError={imageState.onError}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    display: 'block',
+                  }}
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--ws-text-3)',
+                  }}
+                >
+                  <ImageIcon size={28} />
+                </div>
+              )}
 
               <div
                 style={{
@@ -1240,6 +1288,85 @@ export function AdCreativeModalOverview({ data }: { data: AdCreativeModalOvervie
                     <Play size={28} fill="currentColor" color="var(--ws-blue)" />
                   </div>
                 </div>
+              ) : null}
+
+              {isCarousel && carouselItems.length > 1 ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Imagem anterior"
+                    onClick={() => setCarouselIdx((index) => (index - 1 + carouselItems.length) % carouselItems.length)}
+                    style={{
+                      position: 'absolute',
+                      left: 8,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: 28,
+                      height: 28,
+                      background: 'rgba(255,255,255,.88)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 12px rgba(14,20,42,0.18)',
+                    }}
+                  >
+                    <ChevronLeft size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Próxima imagem"
+                    onClick={() => setCarouselIdx((index) => (index + 1) % carouselItems.length)}
+                    style={{
+                      position: 'absolute',
+                      right: 8,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: 28,
+                      height: 28,
+                      background: 'rgba(255,255,255,.88)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 12px rgba(14,20,42,0.18)',
+                    }}
+                  >
+                    <ChevronRight size={15} />
+                  </button>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      bottom: 10,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    {carouselItems.map((_, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        aria-label={`Ir para a imagem ${index + 1}`}
+                        onClick={() => setCarouselIdx(index)}
+                        style={{
+                          width: index === carouselIdx ? 12 : 6,
+                          height: 6,
+                          borderRadius: 4,
+                          border: 'none',
+                          background: index === carouselIdx ? '#fff' : 'rgba(255,255,255,.58)',
+                          cursor: 'pointer',
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
               ) : null}
 
             </div>

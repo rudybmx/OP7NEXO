@@ -21,6 +21,7 @@ interface Props {
   dataInicio: string
   dataFim: string
   contaIds?: string[]
+  syncVersion?: string | null
 }
 
 export function ModalCriativoDs({
@@ -32,6 +33,7 @@ export function ModalCriativoDs({
   dataInicio,
   dataFim,
   contaIds = [],
+  syncVersion = null,
 }: Props) {
   const lookupId = anuncio?.id ?? criativo?.id ?? null
   const canLoad = aberto && Boolean(lookupId) && Boolean(workspaceId) && Boolean(dataInicio) && Boolean(dataFim)
@@ -42,6 +44,7 @@ export function ModalCriativoDs({
     dataInicio,
     dataFim,
     contaIds,
+    syncVersion,
     enabled: canLoad,
   })
   const data = mapDetailCampaignData(detail)

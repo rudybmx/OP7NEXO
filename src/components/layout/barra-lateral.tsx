@@ -430,6 +430,93 @@ export function BarraLateral() {
             }
             if (grupoFlyup) break
           }
+
+          // Flyup especial para workspace (mobile)
+          if (flyupAberto === '__workspace__') {
+            if (!canSwitchWorkspace || workspacesAtivos.length <= 1) return null
+            return (
+              <div style={{
+                position: 'fixed',
+                bottom: 68, left: 0, right: 0,
+                zIndex: 99,
+                display: 'flex',
+                justifyContent: 'center',
+                padding: '0 16px',
+              }}>
+                <div style={{
+                  background: 'rgba(20,28,56,0.97)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 16,
+                  padding: 12,
+                  minWidth: 200,
+                  maxWidth: 320,
+                  width: '100%',
+                  boxShadow: '0 -8px 32px rgba(0,0,0,0.40)',
+                  backdropFilter: 'blur(24px)',
+                  WebkitBackdropFilter: 'blur(24px)',
+                }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600,
+                    color: 'rgba(255,255,255,0.90)',
+                    padding: '0 8px 8px',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                    marginBottom: 8,
+                  }}>
+                    Workspace
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {workspacesAtivos.map((w) => (
+                      <div key={w.workspace_id}
+                        onClick={() => {
+                          setWorkspaceAtual(w.workspace_id)
+                          setFlyupAberto(null)
+                          window.location.reload()
+                        }}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          fontSize: 13,
+                          cursor: 'pointer',
+                          color: w.workspace_id === workspaceAtual ? '#ffffff' : 'rgba(255,255,255,0.60)',
+                          background: w.workspace_id === workspaceAtual ? 'rgba(62,91,255,0.12)' : 'transparent',
+                          fontWeight: w.workspace_id === workspaceAtual ? 500 : 400,
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          transition: 'all 150ms ease',
+                        }}
+                      >
+                        {w.workspace_id === workspaceAtual && (
+                          <div style={{
+                            width: 6, height: 6, borderRadius: '50%',
+                            background: '#3E5BFF',
+                            boxShadow: '0 0 6px rgba(62,91,255,0.8)',
+                            flexShrink: 0,
+                          }} />
+                        )}
+                        <div style={{
+                          width: 24, height: 24, borderRadius: 6,
+                          background: 'rgba(62,91,255,0.15)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 10, fontWeight: 700, color: '#fff',
+                          flexShrink: 0,
+                        }}>
+                          {(w.workspace_nome ?? 'W').charAt(0).toUpperCase()}
+                        </div>
+                        <span style={{ flex: 1 }}>{w.workspace_nome ?? w.workspace_id}</span>
+                        {w.workspace_id === workspaceAtual && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 600,
+                            color: 'rgba(62,91,255,0.70)',
+                          }}>
+                            Atual
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )
+          }
           if (!grupoFlyup) return null
           return (
             <div style={{
@@ -566,6 +653,50 @@ export function BarraLateral() {
               )
             })
           )}
+
+          {/* Workspace Selector Mobile */}
+          {canSwitchWorkspace && workspacesAtivos.length > 1 ? (
+            <div
+              onClick={() => setFlyupAberto((prev) => (prev === '__workspace__' ? null : '__workspace__'))}
+              onMouseEnter={() => setHoveredBottomItem('__workspace__')}
+              onMouseLeave={() => setHoveredBottomItem(null)}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 60,
+                padding: '8px 4px',
+                gap: 4,
+                cursor: 'pointer',
+                flex: '0 0 auto',
+              }}
+            >
+              <div style={{
+                width: 36, height: 36,
+                borderRadius: 10,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: hoveredBottomItem === '__workspace__'
+                  ? 'rgba(255,255,255,0.06)'
+                  : 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.10)',
+                transition: 'all 150ms ease',
+                fontSize: 11, fontWeight: 700, color: '#fff',
+              }}>
+                {(workspaceAtualItem?.workspace_nome ?? 'W').charAt(0).toUpperCase()}
+              </div>
+              <span style={{
+                fontSize: 9, fontWeight: 400,
+                color: 'rgba(255,255,255,0.45)',
+                whiteSpace: 'nowrap',
+                letterSpacing: '0.02em',
+              }}>
+                {(workspaceAtualItem?.workspace_nome ?? 'Workspace').length > 6
+                  ? (workspaceAtualItem?.workspace_nome ?? 'Workspace').slice(0, 6) + '..'
+                  : (workspaceAtualItem?.workspace_nome ?? 'Workspace')}
+              </span>
+            </div>
+          ) : null}
 
           {/* AI Chat */}
           <div

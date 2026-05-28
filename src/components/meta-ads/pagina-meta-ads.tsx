@@ -9,7 +9,7 @@ import { AbaAnuncios } from '@/components/meta-ads/anuncios'
 import { AbaCriativos } from '@/components/meta-ads/criativos'
 import { AbaVideos } from '@/components/meta-ads/videos'
 import { AbaPublicos } from '@/components/meta-ads/publicos'
-import type { FiltrosMeta as FiltrosMetaTipo } from '@/types/meta-ads'
+import type { FiltrosMeta as FiltrosMetaTipo, TipoComparativo } from '@/types/meta-ads'
 import type { FiltrosCampanhas } from '@/types/meta-ads-campanhas'
 import { useMetaCampanhas } from '@/hooks/use-meta-campanhas'
 import { useMetaFinanceiro } from '@/hooks/use-meta-financeiro'
@@ -18,6 +18,9 @@ import { siMeta } from 'simple-icons'
 import { useWorkspace } from '@/lib/workspace-context'
 
 import { LayoutDashboard, Megaphone, Image, Users, Clapperboard, Wallet } from 'lucide-react'
+
+const META_FILTROS_SESSION_KEY = 'op7-nexo-meta-filtros'
+const COMPARATIVOS_VALIDOS: TipoComparativo[] = ['periodo_anterior', 'mes_anterior', 'ano_anterior', 'nenhum']
 
 const ABAS_CONFIG = [
   { id: 'Visão geral', icon: LayoutDashboard },
@@ -30,20 +33,97 @@ const ABAS_CONFIG = [
 
 type Aba = (typeof ABAS_CONFIG)[number]['id'] | 'Criativos'
 
-function periodoPadraoAtual() {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
+function getPeriodoPadraoAtual(referenceDate = new Date()) {
+  const y = referenceDate.getFullYear()
+  const m = String(referenceDate.getMonth() + 1).padStart(2, '0')
+  const d = String(referenceDate.getDate()).padStart(2, '0')
   return {
     inicio: `${y}-${m}-01`,
     fim: `${y}-${m}-${d}`,
   }
 }
 
-function periodoSalvoEhRecente(dataFim?: string | null) {
-  if (!dataFim) return false
-  return dataFim >= periodoPadraoAtual().inicio
+function isIsoDateString(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+function clampIsoDate(value: unknown, min: string, max: string) {
+  if (!isIsoDateString(value)) return null
+  if (value < min) return min
+  if (value > max) return max
+  return value
+}
+
+function isTipoComparativo(value: unknown): value is TipoComparativo {
+  return typeof value === 'string' && COMPARATIVOS_VALIDOS.includes(value as TipoComparativo)
+}
+
+function lerFiltrosPersistidos(periodoPadrao = getPeriodoPadraoAtual()): Pick<FiltrosMetaTipo, 'dataInicio' | 'dataFim' | 'comparativo'> {
+  const fallback: Pick<FiltrosMetaTipo, 'dataInicio' | 'dataFim' | 'comparativo'> = {
+    dataInicio: periodoPadrao.inicio,
+    dataFim: periodoPadrao.fim,
+    comparativo: 'periodo_anterior',
+  }
+
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+
+  try {
+    const saved = sessionStorage.getItem(META_FILTROS_SESSION_KEY)
+    if (!saved) {
+      return fallback
+    }
+
+    const parsed = JSON.parse(saved) as unknown
+    if (!parsed || typeof parsed !== 'object') {
+      return fallback
+    }
+
+    const persisted = parsed as Record<string, unknown>
+    const comparativo = isTipoComparativo(persisted.comparativo) ? persisted.comparativo : fallback.comparativo
+    if (!isIsoDateString(persisted.dataInicio) || !isIsoDateString(persisted.dataFim)) {
+      return {
+        ...fallback,
+        comparativo,
+      }
+    }
+
+    if (persisted.dataFim < periodoPadrao.inicio || persisted.dataInicio > periodoPadrao.fim) {
+      return {
+        ...fallback,
+        comparativo,
+      }
+    }
+
+    const dataInicio = clampIsoDate(persisted.dataInicio, periodoPadrao.inicio, periodoPadrao.fim)
+    const dataFim = clampIsoDate(persisted.dataFim, periodoPadrao.inicio, periodoPadrao.fim)
+
+    if (!dataInicio || !dataFim || dataInicio > dataFim) {
+      return {
+        ...fallback,
+        comparativo,
+      }
+    }
+
+    return {
+      dataInicio,
+      dataFim,
+      comparativo,
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function salvarFiltrosPersistidos(filtros: Pick<FiltrosMetaTipo, 'dataInicio' | 'dataFim' | 'comparativo'>) {
+  if (typeof window === 'undefined') return
+
+  try {
+    sessionStorage.setItem(META_FILTROS_SESSION_KEY, JSON.stringify(filtros))
+  } catch {
+    // Ignora falhas de storage para não bloquear a navegação do dashboard.
+  }
 }
 
 export function PaginaMetaAds() {
@@ -59,37 +139,30 @@ export function PaginaMetaAds() {
     plataformas: ['facebook', 'instagram', 'whatsapp'],
   })
   const [filtros, setFiltros] = useState<FiltrosMetaTipo>(() => {
-    const periodoPadrao = periodoPadraoAtual()
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('op7-nexo-meta-filtros')
-        const filtrosSalvos = saved ? JSON.parse(saved) : null
-        const usarSalvo = periodoSalvoEhRecente(filtrosSalvos?.dataFim)
-        return {
-          agrupamento: null,
-          contaIds: [],
-          dataInicio: usarSalvo ? filtrosSalvos?.dataInicio ?? periodoPadrao.inicio : periodoPadrao.inicio,
-          dataFim: usarSalvo ? filtrosSalvos?.dataFim ?? periodoPadrao.fim : periodoPadrao.fim,
-          comparativo: filtrosSalvos?.comparativo ?? 'periodo_anterior',
-        }
-      } catch {
-      }
-    }
+    const periodoPadrao = getPeriodoPadraoAtual()
+    const filtrosPersistidos = lerFiltrosPersistidos(periodoPadrao)
     return {
       agrupamento: null,
       contaIds: [],
-      dataInicio: periodoPadrao.inicio,
-      dataFim: periodoPadrao.fim,
-      comparativo: 'periodo_anterior',
+      ...filtrosPersistidos,
     }
   })
+  const [syncVersion, setSyncVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    salvarFiltrosPersistidos({
+      dataInicio: filtros.dataInicio,
+      dataFim: filtros.dataFim,
+      comparativo: filtros.comparativo,
+    })
+  }, [filtros.dataInicio, filtros.dataFim, filtros.comparativo])
 
   const {
     campanhas,
     resumo,
     insightsIA,
     isLoading: campanhasLoading,
-  } = useMetaCampanhas(filtrosCampanhas, filtros.dataInicio, filtros.dataFim, filtros.contaIds, wsId ?? null)
+  } = useMetaCampanhas(filtrosCampanhas, filtros.dataInicio, filtros.dataFim, filtros.contaIds, wsId ?? null, syncVersion)
   const {
     data: financeiro,
   } = useMetaFinanceiro(filtros.contaIds, wsId ?? null)
@@ -127,16 +200,6 @@ export function PaginaMetaAds() {
 
   const handleFiltrosChange = (novosFiltros: FiltrosMetaTipo) => {
     setFiltros(novosFiltros)
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('op7-nexo-meta-filtros', JSON.stringify({
-          dataInicio: novosFiltros.dataInicio,
-          dataFim: novosFiltros.dataFim,
-          comparativo: novosFiltros.comparativo,
-        }))
-      } catch {
-      }
-    }
   }
 
   const handleSelecionarConta = (contaId: string) => {
@@ -157,7 +220,12 @@ export function PaginaMetaAds() {
 
   return (
     <div className="p-6 md:p-8" style={{ position: 'relative', minHeight: '100vh' }}>
-      <FiltrosMeta workspaceId={wsId ?? null} filtros={filtros} onChange={handleFiltrosChange} />
+      <FiltrosMeta
+        workspaceId={wsId ?? null}
+        filtros={filtros}
+        onChange={handleFiltrosChange}
+        onSyncVersionChange={setSyncVersion}
+      />
 
       <BreadcrumbMobile
         plataforma="Meta Ads"
@@ -222,6 +290,7 @@ export function PaginaMetaAds() {
           financeiro={financeiro}
           onAbrirFinanceiro={handleAbrirFinanceiro}
           onSelecionarConta={handleSelecionarConta}
+          syncVersion={syncVersion}
         />
       )}
       {abaAtiva === 'Financeiro' && (
@@ -242,6 +311,7 @@ export function PaginaMetaAds() {
           dataInicio={filtros.dataInicio}
           dataFim={filtros.dataFim}
           contaIds={filtros.contaIds}
+          syncVersion={syncVersion}
           isLoading={campanhasLoading}
           campanhaAtivaId={campanhaAtivaId}
           onSelecionarCampanha={setCampanhaSelecionadaId}
@@ -255,9 +325,18 @@ export function PaginaMetaAds() {
           contaIds={filtros.contaIds}
           campaignIds={campanhaIdsVisiveis}
           campaignsReady={!campanhasLoading}
+          syncVersion={syncVersion}
         />
       )}
-      {abaAtiva === 'Criativos' && <AbaCriativos workspaceId={wsId ?? null} dataInicio={filtros.dataInicio} dataFim={filtros.dataFim} contaIds={filtros.contaIds} />}
+      {abaAtiva === 'Criativos' && (
+        <AbaCriativos
+          workspaceId={wsId ?? null}
+          dataInicio={filtros.dataInicio}
+          dataFim={filtros.dataFim}
+          contaIds={filtros.contaIds}
+          syncVersion={syncVersion}
+        />
+      )}
       {abaAtiva === 'Vídeos' && <AbaVideos workspaceId={wsId ?? null} dataInicio={filtros.dataInicio} dataFim={filtros.dataFim} contaIds={filtros.contaIds} />}
       {abaAtiva === 'Públicos' && <AbaPublicos workspaceId={wsId ?? null} dataInicio={filtros.dataInicio} dataFim={filtros.dataFim} contaIds={filtros.contaIds} />}
     </div>

@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import type { ContaAnuncio } from '@/types/meta-ads'
+import type { FinanceiroMetaAds } from '@/types/meta-ads-financeiro'
 import { formatarMoeda, formatarNumeroCompacto, formatarPorcentagem } from '@/lib/formatar'
+import { getSaldoDisplay } from '../financeiro/saldo-display'
 
 type ChaveOrdenacao = 'nome' | 'investimento' | 'leads' | 'cpl' | 'cpc' | 'cpm' | 'ctr' | 'impressoes' | 'frequencia' | 'saldo'
 type DirecaoOrdenacao = 'asc' | 'desc'
@@ -24,6 +26,7 @@ function IconeOrdenacao({ coluna, chaveOrdenacao, direcao }: { coluna: ChaveOrde
 
 interface TabelaContasProps {
   contas: ContaAnuncio[]
+  financeiro?: FinanceiroMetaAds | null
 }
 
 const COLUNAS: { chave: ChaveOrdenacao; label: string }[] = [
@@ -39,7 +42,7 @@ const COLUNAS: { chave: ChaveOrdenacao; label: string }[] = [
   { chave: 'saldo', label: 'Saldo' },
 ]
 
-export function TabelaContas({ contas }: TabelaContasProps) {
+export function TabelaContas({ contas, financeiro }: TabelaContasProps) {
   const [chaveOrdenacao, setChaveOrdenacao] = useState<ChaveOrdenacao>('investimento')
   const [direcaoOrdenacao, setDirecaoOrdenacao] = useState<DirecaoOrdenacao>('desc')
 
@@ -61,6 +64,22 @@ export function TabelaContas({ contas }: TabelaContasProps) {
     return direcaoOrdenacao === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number)
   })
 
+  const financeiroContas = financeiro?.accounts ?? []
+
+  const contasOrdenadasComSaldo = contasOrdenadas.map((conta) => {
+    const contaId = conta.metaAccountId ?? conta.id
+    const contaFinanceira = financeiroContas.find((item) => (
+      item.accountId === contaId
+      || item.id === contaId
+      || item.id === conta.id
+    ))
+
+    return {
+      conta,
+      saldoExibido: contaFinanceira ? getSaldoDisplay(contaFinanceira).amount : conta.saldo,
+    }
+  })
+
   const contasAtivas = contas.filter((c) => c.status === 'ACTIVE' || c.investimento > 0)
 
   const totais = {
@@ -74,7 +93,7 @@ export function TabelaContas({ contas }: TabelaContasProps) {
     frequencia: contasAtivas.reduce((s, c) => s + c.alcance, 0) > 0
       ? contasAtivas.reduce((s, c) => s + c.impressoes, 0) / contasAtivas.reduce((s, c) => s + c.alcance, 0)
       : 0,
-    saldo: contas.reduce((s, c) => s + c.saldo, 0),
+    saldo: contasOrdenadasComSaldo.reduce((s, row) => s + row.saldoExibido, 0),
   }
 
   const totalCliques = contasAtivas.reduce((s, c) => s + (c.investimento / Math.max(c.cpc, 0.01)), 0)
@@ -84,7 +103,7 @@ export function TabelaContas({ contas }: TabelaContasProps) {
     ? (contasAtivas.reduce((s, c) => s + c.ctr * c.alcance, 0) / contasAtivas.reduce((s, c) => s + c.alcance, 0))
     : 0
 
-  const formatarCelula = (conta: ContaAnuncio, chave: ChaveOrdenacao) => {
+  const formatarCelula = (conta: ContaAnuncio, chave: ChaveOrdenacao, saldoExibido: number) => {
     switch (chave) {
       case 'nome':
         return (
@@ -112,9 +131,9 @@ export function TabelaContas({ contas }: TabelaContasProps) {
       case 'frequencia':
         return <span>{conta.frequencia.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
       case 'saldo': {
-        const pctSaldo = conta.saldoInicial > 0 ? (conta.saldo / conta.saldoInicial) * 100 : 0
+        const pctSaldo = conta.saldoInicial > 0 ? (saldoExibido / conta.saldoInicial) * 100 : 0
         const cor = pctSaldo <= 15 ? '#FF5C8D' : '#0E142A'
-        return <span style={{ color: cor, fontWeight: pctSaldo <= 15 ? 600 : 400 }}>{formatarMoeda(conta.saldo)}</span>
+        return <span style={{ color: cor, fontWeight: pctSaldo <= 15 ? 600 : 400 }}>{formatarMoeda(saldoExibido)}</span>
       }
       default:
         return null
@@ -172,7 +191,7 @@ export function TabelaContas({ contas }: TabelaContasProps) {
             </tr>
           </thead>
           <tbody>
-            {contasOrdenadas.map((conta) => (
+            {contasOrdenadasComSaldo.map(({ conta, saldoExibido }) => (
               <tr
                 key={conta.id}
                 className="group transition-colors"
@@ -198,7 +217,7 @@ export function TabelaContas({ contas }: TabelaContasProps) {
                 </td>
                 {COLUNAS.map((col) => (
                   <td key={col.chave} style={{ padding: '10px 16px', fontSize: '13px', color: '#0E142A' }}>
-                    {formatarCelula(conta, col.chave)}
+                    {formatarCelula(conta, col.chave, saldoExibido)}
                   </td>
                 ))}
               </tr>

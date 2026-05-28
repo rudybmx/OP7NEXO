@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
+import { SWR_OPTS } from '@/lib/swr'
 
 interface MetaGraficoData {
   data: string
@@ -16,6 +17,7 @@ interface UseMetaGraficoReturn {
   dados: MetaGraficoData[]
   isLoading: boolean
   error: any
+  hasData: boolean
 }
 
 function mesAtual(): { inicio: string; fim: string } {
@@ -37,7 +39,7 @@ export function useMetaGrafico(): UseMetaGraficoReturn {
       api.get<any>(
         `/meta/insights/visao-geral?workspace_id=${wsId}&data_inicio=${inicio}&data_fim=${fim}`
       ),
-    { revalidateOnFocus: false }
+    SWR_OPTS,
   )
 
   const dados: MetaGraficoData[] = (raw?.dados_diarios ?? []).map((d: any) => ({
@@ -48,5 +50,5 @@ export function useMetaGrafico(): UseMetaGraficoReturn {
     cliques: d.clicks ?? 0,
   }))
 
-  return { dados, isLoading: !wsId || isLoading, error }
+  return { dados, isLoading: !wsId || isLoading, error, hasData: raw != null }
 }

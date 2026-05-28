@@ -7,6 +7,7 @@ import { formatarMoeda, formatarNumero, formatarPorcentagem } from '@/lib/format
 import { makeFallbackPoster, type AdCreativeModalOverviewData } from '@/components/design-system/ad-creative-modal-overview'
 import { type AdCreativeModalCampaignData, type CreativeComparativo } from '@/components/design-system/ad-creative-modal-campaign'
 import { type AdCreativeModalAdsData, type DiagnosticSignal, type FunnelDiagnostic, type TrackingField, type AdDistribution } from '@/components/design-system/ad-creative-modal-ads'
+import { normalizeCarouselItems, type CarouselMediaItem } from '@/components/meta-ads/carousel-media'
 
 export type DetailLookupType = 'ad' | 'creative'
 
@@ -111,6 +112,7 @@ export interface AdCreativeDetailApi extends DetailTrackingApi {
   comparativo: DetailComparativoApi[]
   distribution: DetailDistributionApi[]
   video_metrics?: DetailVideoMetricsApi | null
+  carousel_items?: CarouselMediaItem[] | null
   period_rank: number
   period_total: number
 }
@@ -122,6 +124,7 @@ export interface DetailQueryArgs {
   dataInicio: string
   dataFim: string
   contaIds?: string[]
+  syncVersion?: string | null
   enabled?: boolean
 }
 
@@ -132,6 +135,7 @@ function buildDetailUrl({
   dataInicio,
   dataFim,
   contaIds = [],
+  syncVersion,
 }: Omit<DetailQueryArgs, 'enabled'>): { endpoint: string; legacyEndpoint: string } | null {
   if (!workspaceId || !lookupId) return null
   const params = new URLSearchParams({
@@ -143,6 +147,9 @@ function buildDetailUrl({
   })
   if (contaIds.length > 0) {
     params.set('conta_ids', contaIds.join(','))
+  }
+  if (syncVersion) {
+    params.set('sync_version', syncVersion)
   }
   const query = params.toString()
   return {
@@ -165,6 +172,12 @@ function normalizeStatus(status?: string | null): 'Ativo' | 'Pausado' | 'Desativ
 
 function normalizeAssetType(value?: string | null): 'IMAGE' | 'VIDEO' {
   return (value ?? '').toUpperCase() === 'VIDEO' ? 'VIDEO' : 'IMAGE'
+}
+
+function normalizeCreativeAssetType(value?: string | null): 'IMAGE' | 'VIDEO' | 'CAROUSEL' {
+  const raw = (value ?? '').trim().toUpperCase()
+  if (raw === 'VIDEO' || raw === 'CAROUSEL') return raw
+  return 'IMAGE'
 }
 
 function pickImageUrl(data: Pick<AdCreativeDetailApi, 'image_url_hq' | 'thumbnail_url' | 'name' | 'creative_type'>): string {
@@ -348,7 +361,13 @@ function mapDistribution(items: DetailDistributionApi[]): AdDistribution[] {
 }
 
 function mapDetailToOverview(data: AdCreativeDetailApi): AdCreativeModalOverviewData {
-  const assetType = normalizeAssetType(data.creative_type)
+  const carouselItems = normalizeCarouselItems(data.carousel_items)
+  const normalizedAssetType = normalizeCreativeAssetType(data.creative_type)
+  const assetType = normalizedAssetType === 'VIDEO'
+    ? 'VIDEO'
+    : (normalizedAssetType === 'CAROUSEL' || carouselItems.length > 0)
+      ? 'CAROUSEL'
+      : 'IMAGE'
   const videoMetrics = assetType === 'VIDEO' ? buildVideoMetrics(data) : undefined
 
   return {
@@ -357,6 +376,7 @@ function mapDetailToOverview(data: AdCreativeDetailApi): AdCreativeModalOverview
     status: normalizeStatus(data.status),
     assetType,
     imageUrl: pickImageUrl(data),
+    carouselItems,
     metaUrl: data.meta_url ?? data.destination_url ?? undefined,
     period: data.period.label,
     rankInPeriod: data.period_rank || 1,
@@ -421,7 +441,13 @@ function mapDetailToCampaign(data: AdCreativeDetailApi): AdCreativeModalCampaign
 }
 
 function mapDetailToAds(data: AdCreativeDetailApi): AdCreativeModalAdsData {
-  const assetType = normalizeAssetType(data.creative_type)
+  const carouselItems = normalizeCarouselItems(data.carousel_items)
+  const normalizedAssetType = normalizeCreativeAssetType(data.creative_type)
+  const assetType = normalizedAssetType === 'VIDEO'
+    ? 'VIDEO'
+    : (normalizedAssetType === 'CAROUSEL' || carouselItems.length > 0)
+      ? 'CAROUSEL'
+      : 'IMAGE'
   const videoMetrics = assetType === 'VIDEO' ? buildVideoMetrics(data) : undefined
   const tracking = buildTrackingFields(data)
 
@@ -432,6 +458,7 @@ function mapDetailToAds(data: AdCreativeDetailApi): AdCreativeModalAdsData {
     status: normalizeStatus(data.status),
     assetType,
     imageUrl: pickImageUrl(data),
+    carouselItems,
     metaUrl: data.meta_url ?? undefined,
     diasRodando: data.dias_ativo,
     campanha: {
@@ -463,10 +490,11 @@ export function useAdCreativeDetail(args: DetailQueryArgs) {
     dataInicio,
     dataFim,
     contaIds = [],
+    syncVersion,
     enabled = true,
   } = args
   const endpoints = enabled
-    ? buildDetailUrl({ workspaceId, lookupId, lookupType, dataInicio, dataFim, contaIds })
+    ? buildDetailUrl({ workspaceId, lookupId, lookupType, dataInicio, dataFim, contaIds, syncVersion })
     : null
   const endpoint = endpoints?.endpoint ?? null
 

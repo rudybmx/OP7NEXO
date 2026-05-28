@@ -13,6 +13,7 @@ import {
 import type { AnuncioPerformance, OrdenacaoAnuncio } from '@/types/meta-ads-anuncios'
 import { formatarMoeda, formatarNumero, formatarPorcentagem } from '@/lib/formatar'
 import { proxyImagem } from '@/lib/imagem-proxy'
+import { useResilientImageSource } from '@/components/meta-ads/carousel-media'
 import { configPlataformaCampanha, ordenarPlataformasResumo } from '@/lib/plataformas-meta'
 import { configVeiculacao } from '@/lib/veiculacao'
 import { PaginacaoAnuncios } from './paginacao-anuncios'
@@ -153,15 +154,6 @@ export function sortAnuncios(anuncios: AnuncioPerformance[], ordenarPor: Ordenac
 
     return asc ? diff : -diff
   })
-}
-
-function getPreviewMedia(anuncio: AnuncioPerformance) {
-  const items = Array.isArray(anuncio.carouselItems) ? anuncio.carouselItems : []
-  if (items.length > 0) {
-    const itemComImagem = items.find(item => item.image_url_hq || item.picture)
-    return itemComImagem?.image_url_hq || itemComImagem?.picture || anuncio.imageUrlHq || anuncio.thumbnailUrl || null
-  }
-  return anuncio.imageUrlHq ?? anuncio.thumbnailUrl ?? null
 }
 
 function PlatformPills({ anuncio }: { anuncio: AnuncioPerformance }) {
@@ -309,9 +301,16 @@ function RowAnuncio({
   onAbrirAnuncio: (id: string) => void
 }) {
   const statusCfg = configVeiculacao(anuncio.veiculacao)
-  const mediaSrc = getPreviewMedia(anuncio)
   const isVideo = anuncio.creativeType === 'VIDEO'
-  const isCarousel = anuncio.creativeType === 'CAROUSEL'
+  const carouselItems = Array.isArray(anuncio.carouselItems) ? anuncio.carouselItems : []
+  const isCarousel = anuncio.creativeType === 'CAROUSEL' || carouselItems.length > 0
+  const imageState = useResilientImageSource(
+    isCarousel
+      ? [carouselItems[0]?.image_url_hq, carouselItems[0]?.picture, anuncio.imageUrlHq, anuncio.thumbnailUrl]
+      : [anuncio.imageUrlHq, anuncio.thumbnailUrl],
+    `${anuncio.id}:${carouselItems.length}`,
+  )
+  const mediaSrc = imageState.src ? (proxyImagem(imageState.src) ?? imageState.src) : null
   const hookRate = anuncio.hookRate ?? null
   const acoesIcon = ['ATIVO', 'APRENDIZADO', 'APRENDIZADO_LIMITADO'].includes(anuncio.veiculacao) ? Pause : Play
   const AcoesIcon = acoesIcon
@@ -334,7 +333,7 @@ function RowAnuncio({
             e.stopPropagation()
             onAbrirAnuncio(anuncio.id)
           }}
-          title={isCarousel ? `${anuncio.carouselItems?.length ?? 0} itens` : anuncio.nome}
+          title={isCarousel ? `${carouselItems.length} itens` : anuncio.nome}
           style={{
             position: 'relative',
             width: 52,
@@ -352,17 +351,18 @@ function RowAnuncio({
         >
           {mediaSrc ? (
             <img
-              src={proxyImagem(mediaSrc)}
+              src={mediaSrc}
               alt={anuncio.nome}
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               referrerPolicy="no-referrer"
               loading="lazy"
+              onError={imageState.onError}
             />
           ) : (
             <span style={{ color: 'var(--ws-text-3)', opacity: 0.7 }}>
-              {anuncio.creativeType === 'VIDEO' ? (
-                <Video size={16} />
-              ) : isCarousel ? (
+                {anuncio.creativeType === 'VIDEO' ? (
+                  <Video size={16} />
+                ) : isCarousel ? (
                 <Layers size={16} />
               ) : (
                 <ImageIcon size={16} />

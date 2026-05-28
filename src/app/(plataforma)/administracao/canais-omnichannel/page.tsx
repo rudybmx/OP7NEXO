@@ -275,17 +275,47 @@ export default function CanaisOmnichannelPage() {
 
   async function conectarEvolution() {
     if (!canalEditando || canalEditando.tipo !== 'whatsapp_evolution') return
+    if (pollingId) {
+      clearInterval(pollingId)
+      setPollingId(null)
+    }
     setConectando(true)
     setQrCode(null)
     try {
       const resp = await api.post<{ qr_code: string | null; connection_status: string; message: string }>(`/canais/${canalEditando.id}/conectar`)
-      if (resp.qr_code) {
-        setQrCode(resp.qr_code)
-        // Polling de status direto na Evolution (fallback pro webhook)
+      const marcarConectando = () => {
+        if (!canalEditando) return
+        const atualizado = { ...canalEditando, connection_status: 'connecting' }
+        setCanais(prev => prev.map(c => c.id === atualizado.id ? atualizado : c))
+        setCanalEditando(atualizado)
+      }
+
+      const iniciarPolling = () => {
+        if (pollingId) {
+          clearInterval(pollingId)
+          setPollingId(null)
+        }
+
+        let tentativas = 0
+        let emAndamento = false
         const id = setInterval(async () => {
+          if (emAndamento) return
+          emAndamento = true
+          tentativas += 1
           try {
-            const status = await api.get<{ connection_status: string; evolution_state: string; numero_telefone: string | null; conectado_em: string | null }>(`/canais/${canalEditando.id}/status-evolution`)
-            if (status.connection_status === 'connected') {
+            const status = await api.get<{
+              connection_status: string
+              evolution_state: string
+              qr_code?: string | null
+              numero_telefone: string | null
+              conectado_em: string | null
+            }>(`/canais/${canalEditando.id}/status-evolution`)
+
+            if (status.qr_code) {
+              setQrCode(status.qr_code)
+            }
+
+            if (status.connection_status === 'connected' || status.evolution_state === 'open') {
               const canalAtualizado = await api.get<Canal>(`/canais/${canalEditando.id}`)
               setCanais(prev => prev.map(c => c.id === canalAtualizado.id ? canalAtualizado : c))
               setCanalEditando(canalAtualizado)
@@ -294,19 +324,45 @@ export default function CanaisOmnichannelPage() {
               clearInterval(id)
               setPollingId(null)
               toast.success('WhatsApp conectado!')
+              return
+            }
+
+            if (tentativas >= 20) {
+              clearInterval(id)
+              setPollingId(null)
+              setConectando(false)
+              toast.error('Não foi possível confirmar a conexão. Tente novamente.')
             }
           } catch {
-            // ignore polling errors
+            if (tentativas >= 20) {
+              clearInterval(id)
+              setPollingId(null)
+              setConectando(false)
+              toast.error('Não foi possível confirmar a conexão. Tente novamente.')
+            }
+          } finally {
+            emAndamento = false
           }
         }, 3000)
         setPollingId(id)
-      } else if (resp.connection_status === 'connected') {
+      }
+
+      if (resp.connection_status === 'connected') {
+        const canalAtualizado = await api.get<Canal>(`/canais/${canalEditando.id}`)
+        setCanais(prev => prev.map(c => c.id === canalAtualizado.id ? canalAtualizado : c))
+        setCanalEditando(canalAtualizado)
         setConectando(false)
         toast.success('Já está conectado')
-      } else {
-        setConectando(false)
-        toast.info(resp.message)
+        return
       }
+
+      marcarConectando()
+
+      if (resp.qr_code) {
+        setQrCode(resp.qr_code)
+      }
+
+      iniciarPolling()
     } catch (err: any) {
       toast.error(err.message || 'Erro ao conectar')
       setConectando(false)
@@ -974,6 +1030,24 @@ export default function CanaisOmnichannelPage() {
                   </div>
 
                   {/* QR Code */}
+                  {conectando && !qrCode && (
+                    <div style={{
+                      textAlign: 'center',
+                      marginBottom: 12,
+                      padding: '28px 16px',
+                      borderRadius: 10,
+                      border: '1px dashed var(--ws-glass-border)',
+                      background: 'rgba(255,255,255,0.03)',
+                    }}>
+                      <Loader2 size={22} className="animate-spin" style={{ color: '#25D366', margin: '0 auto 10px' }} />
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)', margin: 0 }}>
+                        Gerando QR code...
+                      </p>
+                      <p style={{ fontSize: 11, color: 'var(--ws-text-3)', margin: '6px 0 0' }}>
+                        A Evolution pode levar alguns segundos para liberar o código.
+                      </p>
+                    </div>
+                  )}
                   {qrCode && (
                     <div style={{ textAlign: 'center', marginBottom: 12 }}>
                       <img

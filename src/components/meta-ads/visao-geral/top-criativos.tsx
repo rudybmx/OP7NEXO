@@ -10,6 +10,7 @@ interface TopCriativosProps {
   criativos: CriativoTop[]
   filtros?: { dataInicio: string; dataFim: string; contaIds: string[] }
   workspaceId?: string | null
+  syncVersion?: string | null
 }
 
 const TOTAL_SLOTS = 5
@@ -22,7 +23,7 @@ const TOP_CRIATIVOS_DIAGRAM = `
   </div>
 `
 
-export function TopCriativos({ criativos, filtros, workspaceId }: TopCriativosProps) {
+export function TopCriativos({ criativos, filtros, workspaceId, syncVersion = null }: TopCriativosProps) {
   const [criativoSelecionado, setCriativoSelecionado] = useState<CriativoTop | null>(null)
   const vagas = TOTAL_SLOTS - criativos.length
 
@@ -34,6 +35,7 @@ export function TopCriativos({ criativos, filtros, workspaceId }: TopCriativosPr
         onFechar={() => setCriativoSelecionado(null)}
         filtros={filtros}
         workspaceId={workspaceId}
+        syncVersion={syncVersion}
       />
       <div style={{
       background: 'var(--ws-glass-bg, rgba(255,255,255,0.72))',
@@ -66,7 +68,7 @@ export function TopCriativos({ criativos, filtros, workspaceId }: TopCriativosPr
             data={{
               id: cr.id,
               nome: cr.nome,
-              tipo: cr.tipo,
+              tipo: (cr.carouselItems?.length ?? 0) > 0 && cr.tipo !== 'VIDEO' ? 'CAROUSEL' : cr.tipo,
               thumbnailUrl: cr.thumbnailUrl,
               imageUrlHq: cr.imageUrlHq,
               linkAnuncio: cr.linkAnuncio,

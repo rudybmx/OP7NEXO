@@ -19,4 +19,5 @@ export const SWR_OPTS: SWRConfiguration = {
   revalidateOnFocus:     false,
   revalidateOnReconnect: false,
   dedupingInterval:      300_000,  // 5 min
+  keepPreviousData:      true,
 }

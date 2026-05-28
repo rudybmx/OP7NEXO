@@ -109,18 +109,22 @@ Account
 
 ---
 
-## CANAIS — WhatsApp (Evolution API)
+## CANAIS — WhatsApp (Evolution Go)
 
 ### Base URL
 `https://evo.op7franquia.com.br`
 
-### Fluxo de conexão
-1. Criar instância na Evolution API
-2. GET `/instance/connect/{instance_name}` → retorna QR Code
-3. Polling a cada 30s até status = connected
-4. Exibir QR Code no Drawer do canal
+### Stack atual
+- Evolution Go `evoapicloud/evolution-go:v0.7.1`
+- Redis `evolution-redis:7.4`
 
----
+### Fluxo de conexão
+1. Criar instância na Evolution Go com `name` e `token`
+2. Persistir `instance_name`, `instance_id` e `instance_token` em `config.evolution`
+3. Chamar `POST /instance/connect` com `webhookUrl`, `subscribe: ["ALL"]` e `immediate: true`
+4. Ler QR Code em `GET /instance/qr` e estado em `GET /instance/status`
+5. Exibir QR Code no drawer do canal e manter polling até `connected`
+6. O backend normaliza eventos novos e antigos antes de publicar em `whatsapp:events`
 
 ## PADRÕES FRONT-END
 
@@ -216,12 +220,12 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 ### ✅ Implementado (2026-05-13) — Realtime + Webhook
 - Polling a cada 4s na página de atendimento (fallback imediato)
 - SSE `/api/whatsapp/stream` conectado na página com indicador visual "ao vivo"
-- API Python (`app/api/canais.py`): webhook `/webhook/evolution/{token}` processa `messages.upsert`
+- API Python (`app/api/canais.py`): webhook `/webhook/evolution/{token}` processa eventos `Message`, `Receipt`, `Connected`, `LoggedOut` e `QRCode`
 - API Python: salva contato, conversa e mensagem no banco; publica evento no Redis
-- Regra implementada: conversa `resolvido` + nova msg de entrada → cria **NOVA** conversa (não reabre)
+- Regra implementada: conversa `resolvido` + nova msg de entrada -> cria **NOVA** conversa (não reabre)
 - Serviço `app/services/redis_pub.py` na API Python para publicar eventos no canal `whatsapp:events`
 - Dependência `redis==5.2.1` adicionada à API Python
-- **Bugfix crítico**: evento da Evolution chega como `messages.upsert` (com ponto), mas código comparava com `MESSAGES_UPSERT` (underscore). Corrigido com `.upper().replace(".", "_")` em ambos os endpoints (`/webhook/evolution/{token}` e `/webhook/evolution/test`).
+- **Bugfix crítico**: normalização de eventos Evolution Go/legado com `.upper().replace(".", "_")` antes do roteamento interno
 
 ### ✅ Implementado (2026-05-15) — Grupos WhatsApp e @mentions
 - Migration 033: `is_group`, `group_name` em `crm_whatsapp_conversas`; `participant_jid`, `participant_name`, `is_mentioned` em `crm_whatsapp_mensagens`

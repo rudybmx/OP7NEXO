@@ -30,8 +30,11 @@ function criativoParaTop(c: Criativo): CriativoTop {
     utmContent: c.utmContent ?? undefined,
     utmTerm: c.utmTerm ?? undefined,
     carouselItems: c.carouselCards?.map(card => ({
+      card_index: card.card_index,
       picture: card.picture ?? undefined,
       image_url_hq: card.image_url_hq ?? undefined,
+      video_id: card.video_id ?? undefined,
+      link: card.link ?? undefined,
     })),
     leads: c.leads,
     ctr: c.ctr,
@@ -43,9 +46,15 @@ function criativoParaTop(c: Criativo): CriativoTop {
   }
 }
 
-interface Props { workspaceId: string | null; dataInicio: string; dataFim: string; contaIds?: string[] }
+interface Props {
+  workspaceId: string | null
+  dataInicio: string
+  dataFim: string
+  contaIds?: string[]
+  syncVersion?: string | null
+}
 
-export function AbaCriativos({ workspaceId, dataInicio, dataFim, contaIds = [] }: Props) {
+export function AbaCriativos({ workspaceId, dataInicio, dataFim, contaIds = [], syncVersion = null }: Props) {
   const [filtros, setFiltros] = useState<FiltrosCriativosType>({
     tipo: 'todos',
     status: 'todos',
@@ -57,7 +66,7 @@ export function AbaCriativos({ workspaceId, dataInicio, dataFim, contaIds = [] }
   const [criativoSelecionado, setCriativoSelecionado] = useState<CriativoTop | null>(null)
   const [criativoPreviewId, setCriativoPreviewId] = useState<string | null>(null)
 
-  const { criativos } = useMetaCriativos(filtros, dataInicio, dataFim, contaIds, workspaceId)
+  const { criativos } = useMetaCriativos(filtros, dataInicio, dataFim, contaIds, workspaceId, syncVersion)
   const insights = useInsightsCriativos(criativos)
 
   const criativoPreview = criativos.find(c => c.id === criativoPreviewId) ?? null
@@ -161,6 +170,7 @@ export function AbaCriativos({ workspaceId, dataInicio, dataFim, contaIds = [] }
         onFechar={() => setCriativoSelecionado(null)}
         filtros={{ dataInicio, dataFim, contaIds }}
         workspaceId={workspaceId}
+        syncVersion={syncVersion}
       />
     </div>
   )

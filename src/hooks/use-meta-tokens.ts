@@ -9,6 +9,10 @@ export interface MetaToken {
   token: string
   valido_ate: string | null
   ativo: boolean
+  last_checked_at: string | null
+  last_check_status: string | null
+  last_check_http_status: number | null
+  last_check_error: string | null
   created_at: string
   updated_at: string
 }

@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   ExternalLink,
+  ChevronLeft,
+  ChevronRight,
   Image as ImageIcon,
   Layers3,
   Link2,
@@ -14,6 +16,7 @@ import {
 } from 'lucide-react'
 import { formatarMoeda, formatarNumero, formatarPorcentagem } from '@/lib/formatar'
 import { proxyImagem } from '@/lib/imagem-proxy'
+import { normalizeCarouselItems, useResilientImageSource, type CarouselMediaItem } from '@/components/meta-ads/carousel-media'
 import {
   InsightPanel,
   VideoMetricsPanel,
@@ -69,8 +72,9 @@ export interface AdCreativeModalAdsData {
   adId: string
   name: string
   status: 'Ativo' | 'Pausado' | 'Desativado'
-  assetType: 'IMAGE' | 'VIDEO'
+  assetType: 'IMAGE' | 'VIDEO' | 'CAROUSEL'
   imageUrl: string
+  carouselItems?: CarouselMediaItem[]
   metaUrl?: string
   diasRodando: number
 
@@ -122,21 +126,33 @@ function statusVisual(status: AdCreativeModalAdsData['status']) {
 }
 
 function assetVisual(assetType: AdCreativeModalAdsData['assetType']) {
-  return assetType === 'VIDEO'
-    ? {
-        bg: 'var(--ws-purple-soft)',
-        border: 'rgba(122,90,248,0.22)',
-        color: 'var(--ws-purple)',
-        label: 'Vídeo',
-        icon: <Video size={12} />,
-      }
-    : {
-        bg: 'var(--ws-blue-soft)',
-        border: 'rgba(62,91,255,0.22)',
-        color: 'var(--ws-blue)',
-        label: 'Imagem',
-        icon: <ImageIcon size={12} />,
-      }
+  if (assetType === 'VIDEO') {
+    return {
+      bg: 'var(--ws-purple-soft)',
+      border: 'rgba(122,90,248,0.22)',
+      color: 'var(--ws-purple)',
+      label: 'Vídeo',
+      icon: <Video size={12} />,
+    }
+  }
+
+  if (assetType === 'CAROUSEL') {
+    return {
+      bg: 'var(--ws-gold-soft)',
+      border: 'rgba(242,101,34,0.24)',
+      color: 'var(--ws-gold)',
+      label: 'Carrossel',
+      icon: <Layers3 size={12} />,
+    }
+  }
+
+  return {
+    bg: 'var(--ws-blue-soft)',
+    border: 'rgba(62,91,255,0.22)',
+    color: 'var(--ws-blue)',
+    label: 'Imagem',
+    icon: <ImageIcon size={12} />,
+  }
 }
 
 function diagnosticVisual(status: DiagnosticStatus) {
@@ -722,15 +738,27 @@ function buildCampaignLink(url?: string, children?: ReactNode) {
 
 export function AdCreativeModalAds({ data }: { data: AdCreativeModalAdsData }) {
   const statusBadge = statusVisual(data.status)
-  const assetBadge = assetVisual(data.assetType)
+  const carouselItems = normalizeCarouselItems(data.carouselItems)
+  const isCarousel = (data.assetType === 'CAROUSEL' || carouselItems.length > 0) && carouselItems.length > 0
+  const assetBadge = assetVisual(isCarousel ? 'CAROUSEL' : data.assetType)
   const diagnosticStatus = data.signals.length ? resolveDiagnosticStatus(data.signals) : data.diagnosticStatus
   const diagnosticBadge = diagnosticVisual(diagnosticStatus)
   const daysBadge = daysRunningVisual(data.diasRodando)
   const trackingBadge = trackingCoverageVisual(data.trackingScore.configured, data.trackingScore.total)
   const previewFallback = makeFallbackPoster(data.name, data.assetType)
-  const [previewSrc, setPreviewSrc] = useState(
-    data.imageUrl.startsWith('/mock/') ? previewFallback : proxyImagem(data.imageUrl) ?? data.imageUrl,
+  const [carouselIdx, setCarouselIdx] = useState(0)
+  const currentItem = isCarousel ? carouselItems[carouselIdx] ?? null : null
+  const imageState = useResilientImageSource(
+    isCarousel
+      ? [currentItem?.image_url_hq, currentItem?.picture, previewFallback]
+      : [data.imageUrl, previewFallback],
+    `${data.id}:${isCarousel ? carouselIdx : 'single'}`,
   )
+  const previewSrc = imageState.src ? (proxyImagem(imageState.src) ?? imageState.src) : null
+
+  useEffect(() => {
+    setCarouselIdx(0)
+  }, [data.id, carouselItems.length, data.imageUrl])
 
   const funnelCtrStatus = resolveFunnelStatus('CTR', data.funnel.ctr)
   const funnelCvrStatus = resolveFunnelStatus('CVR', data.funnel.cvr)
@@ -913,19 +941,34 @@ export function AdCreativeModalAds({ data }: { data: AdCreativeModalAdsData }) {
                 background: 'linear-gradient(180deg, rgba(14,20,42,0.06), rgba(14,20,42,0.12))',
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previewSrc}
-                alt={data.name}
-                onError={() => setPreviewSrc(previewFallback)}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'contain',
-                  display: 'block',
-                }}
-                referrerPolicy="no-referrer"
-              />
+              {previewSrc ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={previewSrc}
+                  alt={data.name}
+                  onError={imageState.onError}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    display: 'block',
+                  }}
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--ws-text-3)',
+                  }}
+                >
+                  <ImageIcon size={28} />
+                </div>
+              )}
 
               <div
                 style={{
@@ -970,6 +1013,85 @@ export function AdCreativeModalAds({ data }: { data: AdCreativeModalAdsData }) {
                     <Play size={28} fill="currentColor" color="var(--ws-blue)" />
                   </div>
                 </div>
+              ) : null}
+
+              {isCarousel && carouselItems.length > 1 ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Imagem anterior"
+                    onClick={() => setCarouselIdx((index) => (index - 1 + carouselItems.length) % carouselItems.length)}
+                    style={{
+                      position: 'absolute',
+                      left: 8,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: 28,
+                      height: 28,
+                      background: 'rgba(255,255,255,.88)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 12px rgba(14,20,42,0.18)',
+                    }}
+                  >
+                    <ChevronLeft size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Próxima imagem"
+                    onClick={() => setCarouselIdx((index) => (index + 1) % carouselItems.length)}
+                    style={{
+                      position: 'absolute',
+                      right: 8,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: 28,
+                      height: 28,
+                      background: 'rgba(255,255,255,.88)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 12px rgba(14,20,42,0.18)',
+                    }}
+                  >
+                    <ChevronRight size={15} />
+                  </button>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      bottom: 10,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    {carouselItems.map((_, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        aria-label={`Ir para a imagem ${index + 1}`}
+                        onClick={() => setCarouselIdx(index)}
+                        style={{
+                          width: index === carouselIdx ? 12 : 6,
+                          height: 6,
+                          borderRadius: 4,
+                          border: 'none',
+                          background: index === carouselIdx ? '#fff' : 'rgba(255,255,255,.58)',
+                          cursor: 'pointer',
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
               ) : null}
             </div>
           </div>

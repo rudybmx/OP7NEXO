@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
+import { SWR_OPTS } from '@/lib/swr'
 import type {
   FinanceiroConta,
   FinanceiroMetaAds,
@@ -174,7 +175,7 @@ export function useMetaFinanceiro(contaIds: string[] = [], workspaceId: string |
   const { data: raw, isLoading, error, mutate } = useSWR<FinanceiroApiResponse>(
     key,
     () => api.get<FinanceiroApiResponse>(key!),
-    { revalidateOnFocus: false }
+    SWR_OPTS,
   )
 
   const data: FinanceiroMetaAds | null = raw

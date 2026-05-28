@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
+import { SWR_OPTS } from '@/lib/swr'
 import { configVeiculacao } from '@/lib/veiculacao'
 import { configPlataformaCampanha, normalizarPlataformaCampanha, ordenarPlataformasResumo } from '@/lib/plataformas-meta'
 import { configObjetivoCampanha, mapObjetivoCampanha } from '@/lib/objetivos-meta'
@@ -352,33 +353,36 @@ export function useMetaCampanhas(
   dataInicio: string,
   dataFim: string,
   contaIds: string[] = [],
-  workspaceId: string | null = null
+  workspaceId: string | null = null,
+  syncVersion: string | null = null,
 ) {
   const { workspaceAtivo } = useWorkspace()
   const wsId = (workspaceId ?? workspaceAtivo) ?? undefined
 
-  const contaIdsParam = contaIds.length
-    ? `&conta_ids=${contaIds.join(',')}`
+  const normalizedContaIds = Array.from(new Set(contaIds)).sort()
+  const contaIdsParam = normalizedContaIds.length
+    ? `&conta_ids=${normalizedContaIds.join(',')}`
     : ''
   const veiculacaoParam = filtros.veiculacao && filtros.veiculacao !== 'todos'
     ? `&veiculacao=${filtros.veiculacao}`
     : ''
   const resultadoParam = `&resultado=${filtros.resultado ?? 'performance'}`
+  const syncParam = syncVersion ? `&sync_version=${encodeURIComponent(syncVersion)}` : ''
 
   const hierarquiaKey = wsId
-    ? `/meta/catalogo/gerenciador?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}${veiculacaoParam}${resultadoParam}`
+    ? `/meta/catalogo/gerenciador?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}${veiculacaoParam}${resultadoParam}${syncParam}`
     : null
 
   const { data: rawHierarquia, isLoading, error } = useSWR(
     hierarquiaKey,
     () => api.get<RawCampanha[]>(hierarquiaKey!),
-    { revalidateOnFocus: false }
+    SWR_OPTS,
   )
 
   const { data: iaRaw } = useSWR(
-    wsId ? `/meta/insights/ia?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}` : null,
-    () => api.get<RawInsightIA[]>(`/meta/insights/ia?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}`),
-    { revalidateOnFocus: false }
+    wsId ? `/meta/insights/ia?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${syncParam}` : null,
+    () => api.get<RawInsightIA[]>(`/meta/insights/ia?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${syncParam}`),
+    SWR_OPTS,
   )
 
   const insightsIA = (iaRaw ?? []).map((item, i: number) => {

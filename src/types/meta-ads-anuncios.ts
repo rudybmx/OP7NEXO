@@ -59,7 +59,13 @@ export interface AnuncioPerformance {
   imageUrlHq?: string | null
   permalinkUrl?: string | null
   linkAnuncio?: string | null
-  carouselItems?: Array<{ picture?: string; image_url_hq?: string; video_id?: string; link?: string }>
+  carouselItems?: Array<{
+    card_index?: number | null
+    picture?: string | null
+    image_url_hq?: string | null
+    video_id?: string | null
+    link?: string | null
+  }>
 
   status: StatusAnuncioBase
   veiculacao: CodigoVeiculacao

@@ -17,6 +17,7 @@ interface Props {
   dataInicio: string
   dataFim: string
   contaIds: string[]
+  syncVersion?: string | null
   isLoading?: boolean
   campanhaAtivaId?: string | null
   onSelecionarCampanha?: (campanhaId: string) => void
@@ -32,6 +33,7 @@ export function AbaCampanhas({
   dataInicio,
   dataFim,
   contaIds,
+  syncVersion = null,
   isLoading,
   campanhaAtivaId,
   onSelecionarCampanha,
@@ -61,6 +63,7 @@ export function AbaCampanhas({
           dataInicio={dataInicio}
           dataFim={dataFim}
           contaIds={contaIds}
+          syncVersion={syncVersion}
         />
       )}
     </div>

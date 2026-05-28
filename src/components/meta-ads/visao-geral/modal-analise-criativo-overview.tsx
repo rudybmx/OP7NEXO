@@ -18,9 +18,10 @@ interface Props {
   onFechar: () => void
   filtros?: { dataInicio: string; dataFim: string; contaIds: string[] }
   workspaceId?: string | null
+  syncVersion?: string | null
 }
 
-export function ModalAnaliseCriativoOverview({ criativo, aberto, onFechar, filtros, workspaceId }: Props) {
+export function ModalAnaliseCriativoOverview({ criativo, aberto, onFechar, filtros, workspaceId, syncVersion = null }: Props) {
   const lookupId = criativo?.id ?? null
   const canLoad = aberto && Boolean(lookupId) && Boolean(workspaceId) && Boolean(filtros?.dataInicio) && Boolean(filtros?.dataFim)
   const { detail, error, isLoading } = useAdCreativeDetail({
@@ -30,6 +31,7 @@ export function ModalAnaliseCriativoOverview({ criativo, aberto, onFechar, filtr
     dataInicio: filtros?.dataInicio ?? '',
     dataFim: filtros?.dataFim ?? '',
     contaIds: filtros?.contaIds ?? [],
+    syncVersion,
     enabled: canLoad,
   })
   const data = mapDetailOverviewData(detail)

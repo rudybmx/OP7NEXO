@@ -17,6 +17,7 @@ interface Props {
   contaIds?: string[]
   campaignIds: string[]
   campaignsReady?: boolean
+  syncVersion?: string | null
 }
 
 function VisualizacaoToggle({
@@ -82,6 +83,7 @@ export function AbaAnuncios({
   contaIds = [],
   campaignIds,
   campaignsReady = true,
+  syncVersion = null,
 }: Props) {
   const [modoVisualizacao, setModoVisualizacao] = useState<VisualizacaoAnuncios>('linhas')
   const [pagina, setPagina] = useState(1)
@@ -111,6 +113,7 @@ export function AbaAnuncios({
     campaignIds,
     campaignsReady,
     pagina,
+    syncVersion,
   )
 
   const anuncioAberto = anuncios.find(a => a.id === anuncioAbertoId) ?? null
@@ -268,6 +271,7 @@ export function AbaAnuncios({
         dataInicio={dataInicio}
         dataFim={dataFim}
         contaIds={contaIds}
+        syncVersion={syncVersion}
       />
     </div>
   )

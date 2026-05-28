@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Plus, KeyRound, X } from 'lucide-react'
+import { Clock3, Loader2, Plus, RefreshCw, TriangleAlert, KeyRound, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { WSTable, WSTableActions, WSTableShell } from '@/components/ui/ws-table'
@@ -35,18 +35,161 @@ const labelStyle: React.CSSProperties = {
   letterSpacing: '0.04em',
 }
 
+const SAO_PAULO_TIME_ZONE = 'America/Sao_Paulo'
+
 function mascarar(token: string): string {
   if (token.length <= 12) return token.slice(0, 4) + '••••'
   return token.slice(0, 8) + '••••••••' + token.slice(-4)
 }
 
+function formatDateKeyInTimeZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const year = parts.find(part => part.type === 'year')?.value ?? '0000'
+  const month = parts.find(part => part.type === 'month')?.value ?? '00'
+  const day = parts.find(part => part.type === 'day')?.value ?? '00'
+  return `${year}-${month}-${day}`
+}
+
+function parseDateKeyAsUtcMidday(dateKey: string): number {
+  return new Date(`${dateKey}T12:00:00Z`).getTime()
+}
+
+function formatDateTimeInSaoPaulo(isoDateTime: string | null): string {
+  if (!isoDateTime) return '—'
+  return new Date(isoDateTime).toLocaleString('pt-BR', {
+    timeZone: SAO_PAULO_TIME_ZONE,
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function truncarTexto(texto: string, max = 72): string {
+  if (texto.length <= max) return texto
+  return `${texto.slice(0, max - 1)}…`
+}
+
+function resumirNomes(tokens: MetaToken[], limite = 3): string {
+  const nomes = tokens.map(t => t.nome)
+  if (nomes.length <= limite) return nomes.join(', ')
+  return `${nomes.slice(0, limite).join(', ')} +${nomes.length - limite}`
+}
+
 function statusToken(t: MetaToken): { label: string; bg: string; color: string } {
   if (!t.ativo) return { label: 'Inativo', bg: 'rgba(255,92,141,0.12)', color: 'var(--ws-coral)' }
   if (t.valido_ate) {
-    const dias = Math.ceil((new Date(t.valido_ate).getTime() - Date.now()) / 86_400_000)
+    const hoje = formatDateKeyInTimeZone(new Date(), SAO_PAULO_TIME_ZONE)
+    const dias = Math.round((parseDateKeyAsUtcMidday(t.valido_ate) - parseDateKeyAsUtcMidday(hoje)) / 86_400_000)
+    if (dias < 0) return { label: 'Expirado', bg: 'rgba(255,92,141,0.12)', color: 'var(--ws-coral)' }
     if (dias <= 30) return { label: 'Expirando', bg: 'rgba(201,168,76,0.15)', color: '#c9a84c' }
   }
   return { label: 'Ativo', bg: 'rgba(15,168,86,0.12)', color: 'var(--ws-green)' }
+}
+
+function isCheckedToday(t: MetaToken, todayKey: string): boolean {
+  if (!t.last_checked_at) return false
+  return formatDateKeyInTimeZone(new Date(t.last_checked_at), SAO_PAULO_TIME_ZONE) === todayKey
+}
+
+function getHealthBadge(t: MetaToken, todayKey: string): { label: string; detail: string; bg: string; color: string } {
+  if (!t.ativo) {
+    return {
+      label: 'Inativo',
+      detail: 'Token desativado',
+      bg: 'rgba(255,255,255,0.08)',
+      color: 'var(--ws-text-3)',
+    }
+  }
+
+  const checkedToday = isCheckedToday(t, todayKey)
+  if (!checkedToday) {
+    return {
+      label: 'Sem verificação hoje',
+      detail: t.last_checked_at
+        ? `Última: ${formatDateTimeInSaoPaulo(t.last_checked_at)}`
+        : 'Aguardando primeira checagem',
+      bg: 'rgba(201,168,76,0.15)',
+      color: '#c9a84c',
+    }
+  }
+
+  switch (t.last_check_status) {
+    case 'ok':
+      return {
+        label: 'OK',
+        detail: `Verificado: ${formatDateTimeInSaoPaulo(t.last_checked_at)}`,
+        bg: 'rgba(15,168,86,0.12)',
+        color: 'var(--ws-green)',
+      }
+    case 'expired':
+      return {
+        label: 'Expirado',
+        detail: t.last_check_error ? truncarTexto(t.last_check_error) : 'Token expirado',
+        bg: 'rgba(255,92,141,0.12)',
+        color: 'var(--ws-coral)',
+      }
+    case 'permission_error':
+      return {
+        label: 'Permissão',
+        detail: t.last_check_error ? truncarTexto(t.last_check_error) : 'Falha de permissão',
+        bg: 'rgba(255,92,141,0.12)',
+        color: 'var(--ws-coral)',
+      }
+    case 'invalid':
+      return {
+        label: 'Inválido',
+        detail: t.last_check_error ? truncarTexto(t.last_check_error) : 'Token inválido',
+        bg: 'rgba(255,92,141,0.12)',
+        color: 'var(--ws-coral)',
+      }
+    case 'network_error':
+      return {
+        label: 'Falha de rede',
+        detail: t.last_check_error ? truncarTexto(t.last_check_error) : 'Sem resposta da Meta',
+        bg: 'rgba(201,168,76,0.15)',
+        color: '#c9a84c',
+      }
+    default:
+      return {
+        label: 'Desconhecido',
+        detail: t.last_check_error ? truncarTexto(t.last_check_error) : 'Último resultado indisponível',
+        bg: 'rgba(148,163,184,0.14)',
+        color: 'var(--ws-text-3)',
+      }
+  }
+}
+
+function buildTokenBanner(tokens: MetaToken[], todayKey: string) {
+  const ativos = tokens.filter(t => t.ativo)
+  if (ativos.length === 0) return null
+
+  const semChecagemHoje = ativos.filter(t => !isCheckedToday(t, todayKey))
+  if (semChecagemHoje.length > 0) {
+    return {
+      tone: 'warning' as const,
+      title: 'Última verificação indisponível',
+      description: `A checagem diária das 07:00 ainda não concluiu ou falhou. Tokens sem validação de hoje: ${resumirNomes(semChecagemHoje)}.`,
+      tokens: semChecagemHoje,
+    }
+  }
+
+  const comErroHoje = ativos.filter(t => t.last_check_status && t.last_check_status !== 'ok')
+  if (comErroHoje.length > 0) {
+    return {
+      tone: 'error' as const,
+      title: 'Token com problema detectado',
+      description: `A última verificação encontrou falha em ${comErroHoje.length} token(s): ${resumirNomes(comErroHoje)}.`,
+      tokens: comErroHoje,
+    }
+  }
+
+  return null
 }
 
 function emptyForm() {
@@ -72,6 +215,9 @@ export default function GestaoTokensPage() {
   useEffect(() => {
     if (user?.role === 'platform_admin') carregar(mostrarInativos)
   }, [user, mostrarInativos, carregar])
+
+  const todayKey = formatDateKeyInTimeZone(new Date(), SAO_PAULO_TIME_ZONE)
+  const banner = buildTokenBanner(tokens, todayKey)
 
   function abrirNovo() {
     setEditando(null)
@@ -167,6 +313,71 @@ export default function GestaoTokensPage() {
         </button>
       </div>
 
+      {banner && (
+        <div
+          style={{
+            marginBottom: 20,
+            padding: '16px 18px',
+            borderRadius: 14,
+            border: banner.tone === 'error' ? '1px solid rgba(255,92,141,0.25)' : '1px solid rgba(201,168,76,0.28)',
+            background: banner.tone === 'error' ? 'rgba(255,92,141,0.08)' : 'rgba(201,168,76,0.08)',
+            boxShadow: '0 8px 24px rgba(14,20,42,0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 0 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: banner.tone === 'error' ? 'rgba(255,92,141,0.12)' : 'rgba(201,168,76,0.16)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  color: banner.tone === 'error' ? 'var(--ws-coral)' : '#c9a84c',
+                }}
+              >
+                <TriangleAlert size={18} />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ws-text-3)' }}>
+                  Alerta de tokens
+                </div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--ws-text-1)', marginTop: 4 }}>
+                  {banner.title}
+                </div>
+                <div style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--ws-text-2)', marginTop: 4 }}>
+                  {banner.description}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => carregar(mostrarInativos)}
+              style={{
+                height: 36,
+                padding: '0 14px',
+                borderRadius: 10,
+                border: '1px solid rgba(148,163,184,0.24)',
+                background: 'rgba(255,255,255,0.35)',
+                color: 'var(--ws-text-2)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexShrink: 0,
+              }}
+            >
+              <RefreshCw size={14} />
+              Atualizar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Filtros */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button
@@ -199,10 +410,10 @@ export default function GestaoTokensPage() {
             </p>
           </div>
         ) : (
-          <WSTable minWidth={650}>
+          <WSTable minWidth={940}>
             <thead>
               <tr>
-                {['Nome', 'Token', 'Validade', 'Status', 'Ações'].map(h => (
+                {['Nome', 'Token', 'Validade', 'Status', 'Conexão', 'Ações'].map(h => (
                   <th key={h} style={{
                     padding: '8px 14px', fontSize: 10, fontWeight: 600,
                     color: 'var(--ws-text-3)', textAlign: 'left',
@@ -218,6 +429,7 @@ export default function GestaoTokensPage() {
             <tbody>
               {tokens.map(t => {
                 const status = statusToken(t)
+                const health = getHealthBadge(t, todayKey)
                 return (
                   <tr
                     key={t.id}
@@ -235,7 +447,9 @@ export default function GestaoTokensPage() {
                     </td>
                     <td style={{ padding: '9px 14px', fontSize: 13, color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>
                       {t.valido_ate
-                        ? new Date(t.valido_ate + 'T00:00:00').toLocaleDateString('pt-BR')
+                        ? new Date(`${t.valido_ate}T12:00:00Z`).toLocaleDateString('pt-BR', {
+                            timeZone: SAO_PAULO_TIME_ZONE,
+                          })
                         : <span style={{ color: 'var(--ws-text-3)' }}>—</span>}
                     </td>
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
@@ -248,6 +462,33 @@ export default function GestaoTokensPage() {
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: status.color, flexShrink: 0 }} />
                         {status.label}
                       </span>
+                    </td>
+                    <td style={{ padding: '9px 14px', minWidth: 220 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '3px 10px', borderRadius: 6,
+                          background: health.bg, color: health.color,
+                          fontSize: 12, fontWeight: 600,
+                          width: 'fit-content',
+                          maxWidth: '100%',
+                        }} title={health.detail}>
+                          <Clock3 size={11} />
+                          {health.label}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--ws-text-3)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                          title={health.detail}
+                        >
+                          {health.detail}
+                        </span>
+                      </div>
                     </td>
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
                       <WSTableActions>

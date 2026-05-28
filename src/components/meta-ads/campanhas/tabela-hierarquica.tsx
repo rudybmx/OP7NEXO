@@ -34,6 +34,7 @@ interface Props {
   dataInicio: string
   dataFim: string
   contaIds: string[]
+  syncVersion?: string | null
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -589,6 +590,7 @@ export function TabelaHierarquica({
   dataInicio,
   dataFim,
   contaIds,
+  syncVersion = null,
 }: Props) {
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set(['c1']))
   const [expandidosCj, setExpandidosCj] = useState<Set<string>>(new Set())
@@ -813,6 +815,7 @@ export function TabelaHierarquica({
         dataInicio={dataInicio}
         dataFim={dataFim}
         contaIds={contaIds}
+        syncVersion={syncVersion}
       />
     </>
   )

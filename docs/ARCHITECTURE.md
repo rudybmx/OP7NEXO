@@ -24,13 +24,15 @@ src/
 ├── app/
 │   ├── (auth)/                         # Layout sem sidebar
 │   │   └── login/page.tsx              # Página de login
-│   ├── (plataforma)/                   # Layout autenticado (sidebar + chat)
-│   │   ├── layout.tsx                  # BarraLateral + PainelChat + ProvedorLayout
-│   │   ├── page.tsx                    # Dashboard principal
-│   │   ├── administracao/
-│   │   │   ├── contas-ads/page.tsx     # Gerenciamento de contas de anúncios
-│   │   │   ├── canais-omnichannel/     # Canais de comunicação
-│   │   │   ├── empresas/               # Gestão de empresas
+   │   ├── (plataforma)/                   # Layout autenticado (sidebar + chat)
+   │   │   ├── layout.tsx                  # BarraLateral + PainelChat + ProvedorLayout
+   │   │   ├── page.tsx                    # Dashboard principal
+   │   │   ├── admin/
+   │   │   │   └── tokens/page.tsx         # Gestão de tokens Meta + banner de health
+   │   │   ├── administracao/
+   │   │   │   ├── contas-ads/page.tsx     # Gerenciamento de contas de anúncios
+   │   │   │   ├── canais-omnichannel/     # Canais de comunicação
+   │   │   │   ├── empresas/               # Gestão de empresas
 │   │   │   └── usuarios/               # Gestão de usuários
 │   │   ├── marketing/
 │   │   │   ├── campanhas/

@@ -85,6 +85,143 @@ function accountLabel(conta?: FinanceiroConta | null) {
   return conta.accountName || conta.label || conta.accountId
 }
 
+function isPixFunding(conta?: FinanceiroConta | null) {
+  const brand = (conta?.fundingSourceBrand ?? '').toUpperCase()
+  const texto = [
+    conta?.fundingSourceDisplay,
+    conta?.fundingTypeLabel,
+    conta?.fundingType,
+    brand,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase()
+
+  return conta?.isPrepayAccount === true || texto.includes('PIX') || texto.includes('PRE')
+}
+
+function compactFundingIcon(conta?: FinanceiroConta | null) {
+  if (isPixFunding(conta)) {
+    return <SiPix size={12} style={{ color: 'var(--ws-green)' }} />
+  }
+
+  return <CreditCard size={11} style={{ color: 'var(--ws-blue)' }} />
+}
+
+function SaldoContaBreakdownList({
+  rows,
+  currency,
+  dense = false,
+}: {
+  rows: Array<{
+    conta: FinanceiroConta
+    amount: number
+    label: string
+  }>
+  currency?: string | null
+  dense?: boolean
+}) {
+  if (rows.length === 0) return null
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gap: dense ? 6 : 8,
+        maxHeight: dense ? 280 : 'none',
+        overflowY: dense ? 'auto' : 'visible',
+      }}
+    >
+      {rows.map(({ conta, amount, label }) => (
+        <div
+          key={conta.id}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            padding: dense ? '8px 10px' : '10px 12px',
+            borderRadius: 'var(--ws-radius-md)',
+            border: '1px solid var(--ws-divider)',
+            background: 'rgba(255,255,255,0.34)',
+            minWidth: 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <div
+              style={{
+                width: dense ? 20 : 22,
+                height: dense ? 20 : 22,
+                borderRadius: 8,
+                background: isPixFunding(conta) ? 'rgba(15,168,86,0.12)' : 'rgba(62,91,255,0.10)',
+                color: isPixFunding(conta) ? 'var(--ws-green)' : 'var(--ws-blue)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              {compactFundingIcon(conta)}
+            </div>
+
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: dense ? 11 : 12,
+                  fontWeight: 600,
+                  color: 'var(--ws-text-1)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {accountLabel(conta)}
+              </div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: 'var(--ws-text-3)',
+                  marginTop: 2,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {formatAccountId(conta.accountId)}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ textAlign: 'right', minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: dense ? 11 : 12,
+                fontWeight: 600,
+                color: 'var(--ws-text-1)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {formatCurrency(amount, currency ?? conta.currency)}
+            </div>
+            <div
+              style={{
+                fontSize: 9,
+                color: 'var(--ws-text-3)',
+                marginTop: 2,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {label}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function AccountSwitchChip({
   conta,
   selecionada,
@@ -149,20 +286,6 @@ export function SaldoFinanceiroCard({
   onCtaClick,
   onSelecionarConta,
 }: SaldoFinanceiroCardProps) {
-  if (!financeiro) return null
-
-  const resumo = financeiro.summary
-  const selected = financeiro.selectedAccount
-  const contaBase = selected ?? financeiro.accounts[0] ?? null
-  const saldoPresentation = getSaldoDisplay(contaBase)
-  const saldoDetails = getSaldoDisplayDetails(contaBase)
-  const stateTone = toneState(resumo.alertState)
-  const gaugeValue = resumo.alertRatio == null ? 0 : Math.max(0, Math.min(100, resumo.alertRatio * 100))
-  const selectedAccountCount = financeiro.accounts.length
-  const hasSelectionRequired = financeiro.selectionRequired || financeiro.selectionState !== 'ready'
-  const showAccountList = !compact && selectedAccountCount > 1 && typeof onSelecionarConta === 'function'
-  const canAutoSelectOne = compact && hasSelectionRequired && selectedAccountCount === 1 && typeof onSelecionarConta === 'function'
-  const compactButtonLabel = ctaLabel ?? 'Abrir financeiro'
   const hoverCloseTimer = useRef<number | null>(null)
   const [hovered, setHovered] = useState(false)
 
@@ -174,6 +297,45 @@ export function SaldoFinanceiroCard({
     }
   }, [])
 
+  if (!financeiro) return null
+
+  const resumo = financeiro.summary
+  const selected = financeiro.selectedAccount
+  const contaBase = selected ?? financeiro.accounts[0] ?? null
+  const contaRows = financeiro.accounts.map((conta) => ({
+    conta,
+    presentation: getSaldoDisplay(conta),
+  }))
+  const isMultiSelection = selected == null && contaRows.length > 1 && financeiro.selectionState === 'multiple'
+  const aggregateCurrency = contaRows.find((row) => row.conta.currency)?.conta.currency ?? resumo.currency
+  const aggregateAmount = contaRows.reduce((sum, row) => sum + row.presentation.amount, 0)
+  const aggregateLabel = 'Saldo total'
+  const aggregateNote = `${contaRows.length} conta${contaRows.length === 1 ? '' : 's'} no filtro`
+  const saldoPresentation = isMultiSelection
+    ? {
+        label: aggregateLabel,
+        amount: aggregateAmount,
+        note: aggregateNote,
+      }
+    : getSaldoDisplay(contaBase)
+  const saldoDetails = isMultiSelection ? [] : getSaldoDisplayDetails(contaBase)
+  const stateTone = isMultiSelection
+    ? {
+        accent: 'var(--ws-blue)',
+        accentSoft: 'var(--ws-blue-soft)',
+        border: 'rgba(62,91,255,0.24)',
+        bg: 'rgba(62,91,255,0.08)',
+        label: 'Contas filtradas',
+      }
+    : toneState(resumo.alertState)
+  const gaugeValue = resumo.alertRatio == null ? 0 : Math.max(0, Math.min(100, resumo.alertRatio * 100))
+  const selectedAccountCount = financeiro.accounts.length
+  const hasSelectionRequired = financeiro.selectionRequired || financeiro.selectionState !== 'ready'
+  const showSelectionList = !compact && !isMultiSelection && selectedAccountCount > 1 && typeof onSelecionarConta === 'function'
+  const showMultiBreakdown = !compact && isMultiSelection
+  const canAutoSelectOne = compact && hasSelectionRequired && selectedAccountCount === 1 && typeof onSelecionarConta === 'function'
+  const compactButtonLabel = ctaLabel ?? 'Abrir financeiro'
+
   const buttonLabel = canAutoSelectOne
     ? 'Selecionar conta'
     : ctaLabel
@@ -181,6 +343,12 @@ export function SaldoFinanceiroCard({
   const buttonAction = canAutoSelectOne
     ? () => onSelecionarConta?.(financeiro.accounts[0].id)
     : onCtaClick
+
+  const breakdownRows = contaRows.map((row) => ({
+    conta: row.conta,
+    amount: row.presentation.amount,
+    label: row.presentation.label,
+  }))
 
   const openHover = () => {
     if (hoverCloseTimer.current) {
@@ -255,14 +423,26 @@ export function SaldoFinanceiroCard({
                   fontWeight: 700,
                   letterSpacing: '-0.03em',
                   lineHeight: 1.04,
-                  color: hasSelectionRequired && !selected
-                    ? 'var(--ws-text-1)'
-                    : stateTone.accent,
+                  color: isMultiSelection || selected
+                    ? stateTone.accent
+                    : 'var(--ws-text-1)',
                   wordBreak: 'break-word',
                 }}>
-                  {hasSelectionRequired && !selected
+                  {hasSelectionRequired && !selected && !isMultiSelection
                     ? 'Selecione uma conta'
-                    : formatCurrency(saldoPresentation.amount, resumo.currency)}
+                    : formatCurrency(saldoPresentation.amount, aggregateCurrency)}
+                </div>
+                <div style={{
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: 'var(--ws-text-2)',
+                  lineHeight: 1.45,
+                }}>
+                  {isMultiSelection
+                    ? aggregateNote
+                    : hasSelectionRequired && !selected
+                      ? financeiro.selectionMessage
+                      : saldoPresentation.note}
                 </div>
               </div>
             </div>
@@ -337,16 +517,18 @@ export function SaldoFinanceiroCard({
                   color: stateTone.accent,
                   lineHeight: 1.35,
                 }}>
-                  {resumo.alertState === 'critical'
-                    ? 'Crítico'
-                    : resumo.alertState === 'warning'
-                      ? 'Atenção'
-                      : resumo.alertState === 'ok'
-                        ? 'Saudável'
-                        : 'Sem cálculo'}
+                  {isMultiSelection
+                    ? aggregateLabel
+                    : resumo.alertState === 'critical'
+                      ? 'Crítico'
+                      : resumo.alertState === 'warning'
+                        ? 'Atenção'
+                        : resumo.alertState === 'ok'
+                          ? 'Saudável'
+                          : 'Sem cálculo'}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--ws-text-2)', marginTop: 3, lineHeight: 1.45 }}>
-                  {resumo.alertMessage}
+                  {isMultiSelection ? aggregateNote : resumo.alertMessage}
                 </div>
               </div>
 
@@ -361,36 +543,40 @@ export function SaldoFinanceiroCard({
                 justifyContent: 'center',
                 flexShrink: 0,
               }}>
-                {fundingIcon(contaBase)}
+                {isMultiSelection ? <Wallet size={18} /> : fundingIcon(contaBase)}
               </div>
             </div>
 
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {saldoDetails.map((item) => (
-                    <div
-                      key={item.label}
+            {isMultiSelection ? (
+              <SaldoContaBreakdownList rows={breakdownRows} currency={aggregateCurrency} dense />
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                {saldoDetails.map((item) => (
+                  <div
+                    key={item.label}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      borderTop: '1px solid var(--ws-divider)',
+                      paddingTop: 8,
+                    }}
+                  >
+                    <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>{item.label}</span>
+                    <span
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        gap: 12,
-                        borderTop: '1px solid var(--ws-divider)',
-                        paddingTop: 8,
+                        fontSize: 11,
+                        color: 'var(--ws-text-1)',
+                        textAlign: 'right',
+                        fontWeight: 500,
                       }}
                     >
-                      <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>{item.label}</span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: 'var(--ws-text-1)',
-                          textAlign: 'right',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {item.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                      {item.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </PopoverContent>
       </Popover>
@@ -401,8 +587,8 @@ export function SaldoFinanceiroCard({
     <div
       className="group relative"
       style={{
-        background: hasSelectionRequired ? 'rgba(255,92,141,0.06)' : 'var(--ws-glass-bg)',
-        border: `1px solid ${hasSelectionRequired ? 'rgba(255,92,141,0.26)' : 'var(--ws-glass-border)'}`,
+        background: isMultiSelection ? 'var(--ws-glass-bg)' : hasSelectionRequired ? 'rgba(255,92,141,0.06)' : 'var(--ws-glass-bg)',
+        border: `1px solid ${isMultiSelection ? 'var(--ws-glass-border)' : hasSelectionRequired ? 'rgba(255,92,141,0.26)' : 'var(--ws-glass-border)'}`,
         borderRadius: 'var(--ws-radius-lg)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
@@ -447,19 +633,19 @@ export function SaldoFinanceiroCard({
             gap: 6,
           }}>
             <span>{saldoPresentation.label}</span>
-            {resumo.alertState === 'critical' && <AlertTriangle size={11} />}
+            {!isMultiSelection && resumo.alertState === 'critical' && <AlertTriangle size={11} />}
           </div>
           <div style={{
             fontSize: compact ? 26 : 32,
             fontWeight: 700,
             letterSpacing: '-0.03em',
             lineHeight: 1.05,
-            color: 'var(--ws-text-1)',
+            color: isMultiSelection ? stateTone.accent : 'var(--ws-text-1)',
             marginTop: 6,
           }}>
-            {hasSelectionRequired && !selected
+            {hasSelectionRequired && !selected && !isMultiSelection
               ? 'Selecione uma conta'
-              : formatCurrency(saldoPresentation.amount, resumo.currency)}
+              : formatCurrency(saldoPresentation.amount, aggregateCurrency)}
           </div>
           <div style={{
             marginTop: 6,
@@ -468,14 +654,16 @@ export function SaldoFinanceiroCard({
             lineHeight: 1.45,
             minHeight: 18,
           }}>
-            {hasSelectionRequired && !selected
+            {hasSelectionRequired && !selected && !isMultiSelection
               ? financeiro.selectionMessage
+              : isMultiSelection
+                ? aggregateNote
               : saldoPresentation.note}
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          {!hasSelectionRequired && selected && resumo.alertState !== 'indisponivel' && (
+          {!isMultiSelection && !hasSelectionRequired && selected && resumo.alertState !== 'indisponivel' && (
             <MiniGauge
               value={gaugeValue}
               size={compact ? 44 : 54}
@@ -542,39 +730,51 @@ export function SaldoFinanceiroCard({
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}>
-                    {fundingIcon(contaBase)}
+                    {isMultiSelection ? <Wallet size={18} /> : fundingIcon(contaBase)}
                   </div>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ws-text-1)' }}>
-                      {hasSelectionRequired && !selected ? 'Selecione uma conta' : accountLabel(contaBase)}
+                      {hasSelectionRequired && !selected && !isMultiSelection
+                        ? 'Selecione uma conta'
+                        : isMultiSelection
+                          ? aggregateLabel
+                          : accountLabel(contaBase)}
                     </div>
                     <div style={{ fontSize: 10, color: 'var(--ws-text-3)', marginTop: 2 }}>
-                      {contaBase?.accountId ? formatAccountId(contaBase.accountId) : financeiro.selectionMessage}
+                      {isMultiSelection
+                        ? aggregateNote
+                        : contaBase?.accountId
+                          ? formatAccountId(contaBase.accountId)
+                          : financeiro.selectionMessage}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {saldoDetails.map((item) => (
-                    <div key={item.label} style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      gap: 12,
-                      borderTop: '1px solid var(--ws-divider)',
-                      paddingTop: 8,
-                    }}>
-                      <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>{item.label}</span>
-                      <span style={{
-                        fontSize: 11,
-                        color: 'var(--ws-text-1)',
-                        textAlign: 'right',
-                        fontWeight: 500,
+                {isMultiSelection ? (
+                  <SaldoContaBreakdownList rows={breakdownRows} currency={aggregateCurrency} dense />
+                ) : (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {saldoDetails.map((item) => (
+                      <div key={item.label} style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        borderTop: '1px solid var(--ws-divider)',
+                        paddingTop: 8,
                       }}>
-                        {item.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                        <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>{item.label}</span>
+                        <span style={{
+                          fontSize: 11,
+                          color: 'var(--ws-text-1)',
+                          textAlign: 'right',
+                          fontWeight: 500,
+                        }}>
+                          {item.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {buttonLabel && buttonAction && (
                   <button
@@ -648,7 +848,7 @@ export function SaldoFinanceiroCard({
         )}
       </div>
 
-      {!hasSelectionRequired && selected && (
+      {!isMultiSelection && !hasSelectionRequired && selected && (
         <>
           <div style={{
             height: 4,
@@ -716,7 +916,28 @@ export function SaldoFinanceiroCard({
         </>
       )}
 
-      {showAccountList && (
+      {showMultiBreakdown && (
+        <div style={{
+          border: '1px solid var(--ws-divider)',
+          borderRadius: 'var(--ws-radius-md)',
+          background: 'rgba(255,255,255,0.30)',
+          padding: 10,
+          marginTop: 2,
+        }}>
+          <div style={{
+            fontSize: 10,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: 'var(--ws-text-3)',
+            marginBottom: 8,
+          }}>
+            Contas no filtro
+          </div>
+          <SaldoContaBreakdownList rows={breakdownRows} currency={aggregateCurrency} />
+        </div>
+      )}
+
+      {showSelectionList && (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
@@ -734,7 +955,7 @@ export function SaldoFinanceiroCard({
         </div>
       )}
 
-      {compact && hasSelectionRequired && !selected && (
+      {compact && hasSelectionRequired && !selected && !isMultiSelection && (
         <div style={{
           display: 'flex',
           alignItems: 'center',

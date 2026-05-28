@@ -37,7 +37,13 @@ export interface Criativo {
   utmMedium?: string | null
   utmContent?: string | null
   utmTerm?: string | null
-  carouselCards?: Array<{ card_index: number; image_url_hq?: string | null; picture?: string | null }>
+  carouselCards?: Array<{
+    card_index: number
+    image_url_hq?: string | null
+    picture?: string | null
+    video_id?: string | null
+    link?: string | null
+  }>
   currentCarouselIndex?: number
   diasAtivo: number
   campanhas: number

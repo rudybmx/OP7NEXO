@@ -46,14 +46,28 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     () => api.get<WorkspaceItem[]>('/me/workspaces'),
     { revalidateOnFocus: false },
   )
-  const workspacesAtivos = useMemo(() => workspaces.filter((w) => w.ativo), [workspaces])
+
+  const workspacesNormalizados = useMemo(
+    () => workspaces.map((w) => ({ ...w, ativo: w.ativo ?? true, padrao: w.padrao ?? false })),
+    [workspaces],
+  )
+
+  const workspacesAtivos = useMemo(
+    () => workspacesNormalizados.filter((w) => w.ativo),
+    [workspacesNormalizados],
+  )
   const workspaceFixo = useMemo(
     () => workspacesAtivos.find((w) => w.padrao) ?? workspacesAtivos[0] ?? null,
     [workspacesAtivos],
   )
   const canSwitchWorkspace = useMemo(
-    () => canSwitchByRole || (user?.role === 'network_viewer' && workspacesAtivos.length > 1),
-    [canSwitchByRole, user?.role, workspacesAtivos.length],
+    () => {
+      if (workspacesAtivos.length <= 1) return false
+      // Se a API já retornou múltiplos workspaces autorizados, permitimos alternar.
+      // A autorização real continua sendo do backend por workspace.
+      return true
+    },
+    [workspacesAtivos.length],
   )
   const workspacesVisiveis = useMemo(
     () => (canSwitchWorkspace ? workspacesAtivos : workspaceFixo ? [workspaceFixo] : []),
