@@ -9,10 +9,16 @@ services:
       - traefik-public
     labels:
       - traefik.enable=true
+      # Production
       - traefik.http.routers.op7nexo-api.rule=Host(`api.op7franquia.com.br`)
       - traefik.http.routers.op7nexo-api.entrypoints=websecure
       - traefik.http.routers.op7nexo-api.tls.certresolver=letsencrypt
       - traefik.http.routers.op7nexo-api.service=op7nexo-api
+      # Sandbox
+      - traefik.http.routers.op7nexo-api-sandbox.rule=Host(`api-sandbox.op7franquia.com.br`)
+      - traefik.http.routers.op7nexo-api-sandbox.entrypoints=websecure
+      - traefik.http.routers.op7nexo-api-sandbox.tls.certresolver=letsencrypt
+      - traefik.http.routers.op7nexo-api-sandbox.service=op7nexo-api
       - traefik.http.services.op7nexo-api.loadbalancer.server.port=8000
       - traefik.http.services.op7nexo-api.loadbalancer.passHostHeader=true
 

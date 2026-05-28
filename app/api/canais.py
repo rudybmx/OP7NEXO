@@ -232,6 +232,32 @@ def _evolution_meta(canal: CanalEntrada) -> tuple[str, str | None, str | None]:
     return instance_name, instance_id, instance_token
 
 
+def _extrair_qr_code_evolution(payload: object) -> str | None:
+    if isinstance(payload, str):
+        valor = payload.strip()
+        return valor or None
+    if isinstance(payload, dict):
+        for chave in ("base64", "qrcode", "qrCode", "code"):
+            valor = payload.get(chave)
+            if isinstance(valor, str):
+                valor = valor.strip()
+                if valor:
+                    return valor
+            if isinstance(valor, dict):
+                nested = valor.get("base64") or valor.get("qrcode") or valor.get("code")
+                if isinstance(nested, str):
+                    nested = nested.strip()
+                    if nested:
+                        return nested
+        for chave in ("data", "response"):
+            nested = payload.get(chave)
+            if nested is not None:
+                valor = _extrair_qr_code_evolution(nested)
+                if valor:
+                    return valor
+    return None
+
+
 def _persistir_evolution_meta(
     canal: CanalEntrada,
     db: Session,
@@ -337,6 +363,15 @@ def _evolution_media_payload(payload: dict | None) -> dict:
                     value = candidate.get(key)
                     if value not in (None, ""):
                         return value
+        # Se nao achou nos candidatos diretos, buscar dentro de subcampos de midia
+        if isinstance(message, dict):
+            for media_key in ("imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage", "ptvMessage"):
+                media = message.get(media_key)
+                if isinstance(media, dict):
+                    for key in keys:
+                        value = media.get(key)
+                        if value not in (None, ""):
+                            return value
         return None
 
     return {
@@ -595,7 +630,7 @@ def conectar_canal(
     webhook_url = f"{webhook_base}/webhook/evolution/{c.webhook_token}"
 
     try:
-        evo_service.conectar_instancia(
+        connect_data = evo_service.conectar_instancia(
             instance_name,
             webhook_url,
             instance_id=instance_id,
@@ -603,32 +638,37 @@ def conectar_canal(
             subscribe=["ALL"],
             immediate=True,
         )
-        qr_data = evo_service.obter_qr_code(instance_name, instance_id=instance_id, instance_token=instance_token)
-        qr_code = None
-        if isinstance(qr_data, dict):
-            qr_code = qr_data.get("base64") or qr_data.get("qrcode", {}).get("base64")
+        state = evo_service.estado_conexao(instance_name, instance_id=instance_id, instance_token=instance_token)
+        conn_state = state.get("state") or state.get("instance", {}).get("state", "close")
+        if conn_state == "open":
+            c.status = "ativo"
+            c.connection_status = "connected"
+            numero = _extrair_numero_evolution(state)
+            if numero:
+                c.numero_telefone = numero
+            db.commit()
+            _configurar_webhook_evolution(c, db)
+            return ConectarOut(
+                qr_code=None,
+                connection_status="connected",
+                message="Instância já está conectada",
+            )
+
+        qr_code = _extrair_qr_code_evolution(connect_data)
         if not qr_code:
-            state = evo_service.estado_conexao(instance_name, instance_id=instance_id, instance_token=instance_token)
-            conn_state = state.get("state") or state.get("instance", {}).get("state", "close")
-            if conn_state == "open":
-                c.status = "ativo"
-                c.connection_status = "connected"
-                numero = _extrair_numero_evolution(state)
-                if numero:
-                    c.numero_telefone = numero
-                db.commit()
-                _configurar_webhook_evolution(c, db)
-                return ConectarOut(
-                    qr_code=None,
-                    connection_status="connected",
-                    message="Instância já está conectada",
-                )
+            qr_data = evo_service.obter_qr_code(
+                instance_name,
+                instance_id=instance_id,
+                instance_token=instance_token,
+                retries=4,
+            )
+            qr_code = _extrair_qr_code_evolution(qr_data)
         c.connection_status = "connecting"
         db.commit()
         return ConectarOut(
             qr_code=qr_code,
             connection_status="connecting",
-            message="Escaneie o QR code com seu WhatsApp",
+            message="Escaneie o QR code com seu WhatsApp" if qr_code else "Aguardando geração do QR code pela Evolution",
         )
     except evo_service.EvolutionError as exc:
         # Verificar se já está conectado
@@ -674,6 +714,7 @@ def status_evolution(
     try:
         state_data = evo_service.estado_conexao(instance_name, instance_id=instance_id, instance_token=instance_token)
         conn_state = str(state_data.get("state") or state_data.get("instance", {}).get("state", "close")).lower()
+        qr_code = None
 
         if conn_state == "open":
             c.status = "ativo"
@@ -696,12 +737,20 @@ def status_evolution(
             c.connection_status = "disconnected"
             db.commit()
 
+        if conn_state != "open":
+            try:
+                qr_data = evo_service.obter_qr_code(instance_name, instance_id=instance_id, instance_token=instance_token, retries=1)
+                qr_code = _extrair_qr_code_evolution(qr_data)
+            except evo_service.EvolutionError:
+                qr_code = None
+
         db.refresh(c)
         return {
             "connection_status": c.connection_status,
             "evolution_state": conn_state,
             "numero_telefone": c.numero_telefone,
             "conectado_em": c.conectado_em.isoformat() if c.conectado_em else None,
+            "qr_code": qr_code,
         }
     except evo_service.EvolutionError as exc:
         return {
