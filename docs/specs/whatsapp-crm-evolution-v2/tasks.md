@@ -63,9 +63,9 @@
 
 ## 7. Vetorização Futura
 
-- [ ] Criar view `vw_crm_whatsapp_vector_documents`.
-- [ ] Adicionar teste SQL básico da view.
-- [ ] Documentar contrato para pipeline de embeddings.
+- [x] Criar view `vw_crm_whatsapp_vector_documents`.
+- [x] Adicionar teste SQL básico da view.
+- [x] Documentar contrato para pipeline de embeddings.
 
 ## 8. Validação
 

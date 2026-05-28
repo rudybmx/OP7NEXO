@@ -216,6 +216,11 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - API responde com campos `is_group`, `group_name` (conversa) e `participant_jid`, `participant_name`, `is_mentioned` (mensagem)
 - Frontend exibe ícone 👥 + nome do grupo na inbox, nome do participant no chat, e badge @mention
 
+### ✅ Implementado (2026-05-28) — CRM View Vetorial
+- Migrations 045/046 criam e saneiam `vw_crm_whatsapp_vector_documents` para pipeline futuro de embeddings.
+- A view expõe mensagens textuais/legendas e resumos de conversa por `workspace_id` + `embedding_status`, sem payload bruto.
+- `crm_whatsapp_mensagens.embedding_status` passa a ter default SQL `'pendente'`.
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Filtro campaign_id + adset_id em Criativos
 2. Sync automático ao cadastrar conta

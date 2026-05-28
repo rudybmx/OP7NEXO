@@ -137,3 +137,9 @@ UI/labels em português do Brasil. Código, nomes técnicos e APIs em inglês qu
 ## Open Questions
 
 - Nenhuma pergunta bloqueante para especificação. A implementação deve usar o workspace padrão `5cbc61b9-66bd-4de2-8272-39fff5c9dcc3` como piloto e descobrir o canal ativo pelo banco.
+
+## Contrato De Vetorização
+
+`vw_crm_whatsapp_vector_documents` é a fonte estável para o pipeline futuro de embeddings. A view retorna apenas texto normalizado em `content_text` e metadados operacionais em `metadata_json`; não expõe payload bruto da Evolution nem blobs de mídia. Mensagens sem texto/legenda ficam fora até haver transcrição.
+
+Consumidores devem filtrar por `workspace_id` e `embedding_status`. `document_type='message'` referencia `mensagem_id`; `document_type='conversation_summary'` representa `resumo_ia` da conversa e usa `mensagem_id = NULL`. `source_hash` muda quando a origem textual muda e deve ser usado para idempotência/reprocessamento.

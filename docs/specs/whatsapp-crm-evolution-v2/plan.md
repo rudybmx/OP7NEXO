@@ -133,6 +133,16 @@ Decisão: usar PostgreSQL como fila agora para evitar dependência operacional n
 3. Marcar mensagens `embedding_status='pendente'` por padrão.
 4. Contrato futuro: pipeline de embeddings lê a view por `workspace_id` e `embedding_status`.
 
+### Contrato Entregue
+
+`vw_crm_whatsapp_vector_documents` expõe documentos elegíveis para embeddings sem payload bruto:
+- uma linha por mensagem textual ou mídia com legenda;
+- uma linha por resumo de conversa (`resumo_ia`) quando existir;
+- filtros obrigatórios para consumidores: `workspace_id` e `embedding_status`;
+- campos: `workspace_id`, `canal_id`, `conversa_id`, `contato_id`, `mensagem_id`, `document_type`, `occurred_at`, `content_text`, `metadata_json`, `embedding_status`, `source_hash`.
+
+O pipeline futuro deve buscar lotes com `WHERE workspace_id = :workspace_id AND embedding_status = 'pendente'`, gerar embedding usando `content_text`, persistir o vetor em store dedicada e atualizar o status da origem (`crm_whatsapp_mensagens.embedding_status` para mensagens; `contexto_ia.embedding_status` para resumos).
+
 ## Testes
 
 - Unitários para normalizer Evolution Go e legado.
