@@ -56,9 +56,6 @@ class Midia(Base):
     caption: Mapped[str | None] = mapped_column(Text, nullable=True)
     storage_status: Mapped[str] = mapped_column(String(32), default="ready", nullable=False)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    duration: Mapped[int | None] = mapped_column(
-        Integer, nullable=True
-    )  # segundos
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
