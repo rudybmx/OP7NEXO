@@ -236,6 +236,7 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Composer envia texto, imagem/documento e áudio gravado via upload `/canais/{canal_id}/upload-midia` + envio Evolution.
 - Chat renderiza mídia inline, checks de status (`pending/sent/delivered/read/played/failed`), participante e menção em grupos.
 - Painel do contato exibe lead/follow-up e permite criar ou marcar follow-up como feito via `/crm/followups`.
+- BFF de WhatsApp valida acesso de workspace em `GET /me/workspaces` da API Python.
 
 ### ⏳ Em andamento / Próximas tarefas
 1. **Testar end-to-end**: enviar mensagem real pelo WhatsApp e confirmar que aparece no front (bugfix de evento deployado)

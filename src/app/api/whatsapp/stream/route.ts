@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   const cookieToken = request.cookies.get('ws-session')?.value
   const tokenToForward = authHeader || (cookieToken ? `Bearer ${cookieToken}` : '')
 
-  const allowedResponse = await fetch(`${API_BASE_URL}/users/me/workspaces`, {
+  const allowedResponse = await fetch(`${API_BASE_URL}/me/workspaces`, {
     headers: { Authorization: tokenToForward },
     cache: 'no-store',
   })

@@ -28,7 +28,7 @@ export async function resolveWhatsappWorkspaceAccess(request: NextRequest): Prom
   if (!user) return unauthorized()
 
   const tokenToForward = getTokenToForward(request)
-  const response = await fetch(`${API_BASE_URL}/users/me/workspaces`, {
+  const response = await fetch(`${API_BASE_URL}/me/workspaces`, {
     headers: { Authorization: tokenToForward },
     cache: 'no-store',
   })
