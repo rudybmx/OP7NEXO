@@ -33,6 +33,12 @@ class _FakeHttpxClient:
             raise AssertionError("Nenhuma resposta fake restante para httpx.Client.get")
         return self._responses.pop(0)
 
+    def post(self, url, headers=None, json=None):
+        self._calls.append((url, headers, json))
+        if not self._responses:
+            raise AssertionError("Nenhuma resposta fake restante para httpx.Client.post")
+        return self._responses.pop(0)
+
 
 class _FakeDb:
     def __init__(self):
@@ -198,6 +204,77 @@ class CanaisEvolutionTests(unittest.TestCase):
             instance_token="instance-token-1",
             retries=1,
         )
+
+    def test_enviar_mensagem_texto_usa_instance_token_como_apikey_sem_fallback_legacy(self):
+        responses = [_FakeResponse(200, {"message": "success"})]
+        calls = []
+
+        class _ClientFactory:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self_inner):
+                return _FakeHttpxClient(responses, calls)
+
+            def __exit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("app.services.evolution.httpx.Client", _ClientFactory):
+            result = evo_service.enviar_mensagem_texto(
+                "instance-name",
+                "554391673791",
+                "teste",
+                instance_id="instance-id-1",
+                instance_token="instance-token-1",
+            )
+
+        self.assertEqual(result["message"], "success")
+        self.assertEqual(len(calls), 1)
+        url, headers, body = calls[0]
+        self.assertTrue(url.endswith("/send/text"))
+        self.assertEqual(headers["apikey"], "instance-token-1")
+        self.assertEqual(headers["instanceId"], "instance-id-1")
+        self.assertEqual(headers["instanceToken"], "instance-token-1")
+        self.assertEqual(body["number"], "554391673791")
+
+    def test_enviar_mensagem_midia_e_template_usam_instance_token_como_apikey(self):
+        responses = [
+            _FakeResponse(200, {"media": "ok"}),
+            _FakeResponse(200, {"template": "ok"}),
+        ]
+        calls = []
+
+        class _ClientFactory:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self_inner):
+                return _FakeHttpxClient(responses, calls)
+
+            def __exit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("app.services.evolution.httpx.Client", _ClientFactory):
+            media = evo_service.enviar_mensagem_midia(
+                "instance-name",
+                "554391673791",
+                "image",
+                "https://example.com/image.png",
+                instance_id="instance-id-1",
+                instance_token="instance-token-1",
+            )
+            template = evo_service.enviar_template_hsm(
+                "instance-name",
+                "554391673791",
+                "hello",
+                instance_id="instance-id-1",
+                instance_token="instance-token-1",
+            )
+
+        self.assertEqual(media["media"], "ok")
+        self.assertEqual(template["template"], "ok")
+        self.assertEqual(calls[0][1]["apikey"], "instance-token-1")
+        self.assertEqual(calls[1][1]["apikey"], "instance-token-1")
 
 
 if __name__ == "__main__":

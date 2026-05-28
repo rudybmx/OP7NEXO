@@ -108,6 +108,13 @@ def _headers(instance_id: str | None = None, instance_token: str | None = None) 
     return headers
 
 
+def _send_headers(instance_id: str | None = None, instance_token: str | None = None) -> dict[str, str]:
+    headers = _headers(instance_id, instance_token)
+    if instance_token:
+        headers["apikey"] = str(instance_token)
+    return headers
+
+
 def _unwrap_payload(payload: Any) -> Any:
     if isinstance(payload, dict):
         for key in ("data", "response"):
@@ -809,19 +816,11 @@ def enviar_mensagem_texto(
     with httpx.Client(timeout=60) as client:
         resp = client.post(
             f"{META}/send/text",
-            headers=_headers(instance_id, instance_token),
+            headers=_send_headers(instance_id, instance_token),
             json=body,
         )
-        if resp.status_code < 400:
-            return _json_or_text(resp)
-
-        legacy_resp = client.post(
-            f"{META}/message/sendText/{instance_name}",
-            headers=_headers(None, instance_token),
-            json={"number": numero, "text": texto},
-        )
-        _handle_error(legacy_resp, "enviar_mensagem_texto")
-        return _json_or_text(legacy_resp)
+        _handle_error(resp, "enviar_mensagem_texto")
+        return _json_or_text(resp)
 
 
 def enviar_mensagem_midia(
@@ -849,7 +848,7 @@ def enviar_mensagem_midia(
     with httpx.Client(timeout=120) as client:
         resp = client.post(
             f"{META}/send/media",
-            headers=_headers(instance_id, instance_token),
+            headers=_send_headers(instance_id, instance_token),
             json=body,
         )
         if resp.status_code < 400:
@@ -896,7 +895,7 @@ def enviar_template_hsm(
     with httpx.Client(timeout=60) as client:
         resp = client.post(
             f"{META}/message/sendTemplate/{instance_name}",
-            headers=_headers(instance_id, instance_token),
+            headers=_send_headers(instance_id, instance_token),
             json=body,
         )
         _handle_error(resp, f"enviar_template_hsm {template_name}")

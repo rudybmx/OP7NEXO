@@ -225,6 +225,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Backfill de produção vinculou conversas/mensagens/eventos antigos ao canal `rudy_zap` (`workspace_id=9647ad83-20c6-416a-a5f1-527aee1e48ce`).
 - Migration 047 torna `workspace_id` e `canal_id` NOT NULL em `crm_whatsapp_conversas`, `crm_whatsapp_mensagens` e `crm_whatsapp_eventos`.
 
+### ✅ Implementado (2026-05-28) — Evolution Go Auth de Envio
+- Endpoints de envio Evolution Go (`/send/text`, `/send/media`, template) usam `instance_token` como `apikey`.
+- Fallback legado `/message/sendText/{instance}` removido porque a Evolution Go 0.7.1 retorna 404.
+
 ### ✅ Implementado (2026-05-28) — Workspaces do Usuário
 - `GET /me/workspaces` serializa `ativo`, `criado_em` e `padrao` em cada workspace para o seletor do frontend.
 
