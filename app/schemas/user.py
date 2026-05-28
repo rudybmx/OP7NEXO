@@ -1,10 +1,13 @@
 from pydantic import BaseModel, EmailStr
 
+from app.models.user import RoleUsuario
+
 
 class UsuarioIn(BaseModel):
     nome: str
     email: EmailStr
-    role: str = "company_agent"
+    senha: str
+    role: RoleUsuario = RoleUsuario.company_agent
     workspace_id: str | None = None
     ativo: bool = True
 
@@ -12,7 +15,8 @@ class UsuarioIn(BaseModel):
 class UsuarioAtualizarIn(BaseModel):
     nome: str | None = None
     email: EmailStr | None = None
-    role: str | None = None
+    senha: str | None = None
+    role: RoleUsuario | None = None
     ativo: bool | None = None
 
 
@@ -22,10 +26,10 @@ class AcessoIn(BaseModel):
 
 class WorkspaceAcessoIn(BaseModel):
     workspace_id: str
+    role: str = "viewer"
 
 
 class WorkspaceRoleIn(BaseModel):
-    workspace_id: str
     role: str
 
 
@@ -57,5 +61,6 @@ class UsuarioAdminOut(BaseModel):
     role: str
     ativo: bool
     workspace_id: str | None = None
+    workspace_nome: str | None = None
 
     model_config = {"from_attributes": True}

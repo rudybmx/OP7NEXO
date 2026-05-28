@@ -80,6 +80,13 @@ def _usuario_admin_out(u: User, workspace_id: uuid.UUID | None, workspace_nome: 
         ativo=u.ativo,
     )
 
+def _workspace_access_role_for_user(role: RoleUsuario) -> str:
+    if role in (RoleUsuario.platform_admin, RoleUsuario.network_admin, RoleUsuario.company_admin):
+        return "admin"
+    if role == RoleUsuario.network_viewer:
+        return "viewer"
+    return "editor"
+
 def _criar_usuario_admin(payload: UsuarioIn, db: Session) -> UsuarioAdminOut:
     nome = payload.nome.strip()
     email = str(payload.email).strip().lower()
@@ -98,9 +105,22 @@ def _criar_usuario_admin(payload: UsuarioIn, db: Session) -> UsuarioAdminOut:
         email=email,
         senha_hash=hash_senha(payload.senha),
         role=payload.role,
+        ativo=payload.ativo,
         workspace_id=workspace.id if workspace else None,
     )
     db.add(novo)
+    db.flush()
+
+    if workspace:
+        db.add(
+            UserWorkspaceAccess(
+                user_id=novo.id,
+                workspace_id=workspace.id,
+                role=_workspace_access_role_for_user(payload.role),
+                ativo=True,
+            )
+        )
+
     db.commit()
     db.refresh(novo)
     return _usuario_admin_out(novo, novo.workspace_id, workspace.nome if workspace else None)
