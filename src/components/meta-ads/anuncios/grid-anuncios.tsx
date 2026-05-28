@@ -4,6 +4,7 @@ import { memo } from 'react'
 import { Video } from 'lucide-react'
 import type { AnuncioPerformance } from '@/types/meta-ads-anuncios'
 import { CardCriativo, type CardCriativoData } from '@/components/meta-ads/card-criativo'
+import { resolveCreativeType } from '@/components/meta-ads/carousel-media'
 import { configPlataformaCampanha } from '@/lib/plataformas-meta'
 import { configVeiculacao } from '@/lib/veiculacao'
 import { formatarMoeda, formatarNumero, formatarPorcentagem } from '@/lib/formatar'
@@ -37,7 +38,7 @@ function mapAnuncioToCardData(a: AnuncioPerformance): CardCriativoData {
   return {
     id: a.id,
     nome: a.nome,
-    tipo: a.creativeType,
+    tipo: resolveCreativeType(a.creativeType, a.carouselItems ?? []),
     thumbnailUrl: a.imageUrlHq ?? a.thumbnailUrl ?? undefined,
     imageUrlHq: a.imageUrlHq ?? a.thumbnailUrl ?? undefined,
     linkAnuncio: a.linkAnuncio ?? a.permalinkUrl ?? undefined,

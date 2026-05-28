@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { InfoTooltip } from '@/components/ui/info-tooltip'
 import type { CriativoTop } from '@/types/meta-ads'
 import { CardCriativo } from '@/components/meta-ads/card-criativo'
+import { resolveCreativeType } from '@/components/meta-ads/carousel-media'
 import { ModalAnaliseCriativoOverview } from './modal-analise-criativo-overview'
 
 interface TopCriativosProps {
@@ -66,7 +67,7 @@ export function TopCriativos({ criativos, filtros, workspaceId }: TopCriativosPr
             data={{
               id: cr.id,
               nome: cr.nome,
-              tipo: cr.tipo,
+              tipo: resolveCreativeType(cr.tipo, cr.carouselItems ?? []),
               thumbnailUrl: cr.thumbnailUrl,
               imageUrlHq: cr.imageUrlHq,
               linkAnuncio: cr.linkAnuncio,

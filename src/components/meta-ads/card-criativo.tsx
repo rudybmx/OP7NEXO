@@ -4,6 +4,13 @@ import { useState } from 'react'
 import { ImageIcon, Video, Layers, Play, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 import { proxyImagem } from '@/lib/imagem-proxy'
 import { formatarNumero, formatarMoeda, formatarPorcentagem } from '@/lib/formatar'
+import {
+  buildCarouselImageCandidates,
+  normalizeCarouselItems,
+  resolveCreativeType,
+  useResilientImageSource,
+  type CarouselMediaItem,
+} from '@/components/meta-ads/carousel-media'
 
 export interface CardCriativoData {
   id: string
@@ -12,7 +19,7 @@ export interface CardCriativoData {
   thumbnailUrl?: string
   imageUrlHq?: string
   linkAnuncio?: string
-  carouselItems?: Array<{ picture?: string; image_url_hq?: string; video_id?: string; link?: string }>
+  carouselItems?: CarouselMediaItem[]
   leads: number
   ctr: number
   cpl: number
@@ -22,12 +29,6 @@ const TIPO_CONFIG: Record<string, { bg: string; Icon: typeof ImageIcon; label: s
   IMAGE:    { bg: '#e6f1fb', Icon: ImageIcon, label: 'Imagem' },
   VIDEO:    { bg: '#eaf3de', Icon: Video,     label: 'Vídeo' },
   CAROUSEL: { bg: '#faeeda', Icon: Layers,    label: 'Carrossel' },
-}
-
-function corCpl(v: number) {
-  if (v <= 1) return '#3b6d11'
-  if (v <= 5) return '#854f0b'
-  return '#a32d2d'
 }
 
 interface Props {
@@ -43,10 +44,54 @@ interface Props {
   badgeTopLeft?: React.ReactNode
 }
 
+interface MediaPreviewProps {
+  alt: string
+  sources: Array<string | null | undefined>
+  isVideo: boolean
+  IconComp: typeof ImageIcon
+}
+
+function MediaPreview({ alt, sources, isVideo, IconComp }: MediaPreviewProps) {
+  const imageState = useResilientImageSource(sources)
+  const imgSrc = imageState.src ? (proxyImagem(imageState.src) ?? imageState.src) : null
+
+  return (
+    <>
+      {imgSrc ? (
+        <img
+          src={imgSrc}
+          alt={alt}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }}
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          onError={imageState.onError}
+        />
+      ) : (
+        <IconComp style={{ width: 32, height: 32, color: 'var(--ws-text-3, #8892b0)', opacity: 0.5 }} />
+      )}
+
+      {isVideo && imgSrc && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.18)',
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.88)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Play size={16} style={{ color: '#0E142A', marginLeft: 2 }} />
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 export function CardCriativo({
   data,
   onClick,
-  onAbrirPreview,
   rank,
   badgeStatus,
   mostrarFooter = true,
@@ -56,22 +101,19 @@ export function CardCriativo({
   badgeTopLeft,
 }: Props) {
   const [carouselIdx, setCarouselIdx] = useState(0)
-  const config = TIPO_CONFIG[data.tipo] ?? TIPO_CONFIG.IMAGE
-  const IconComp = config.Icon
-
-  const items = data.carouselItems ?? []
+  const items = normalizeCarouselItems(data.carouselItems)
   const carouselLen = items.length
-  const firstItemWithImage = items.find(item => item.image_url_hq || item.picture) ?? null
-
-  const imgSrc =
-    data.tipo === 'CAROUSEL' && carouselLen > 0
-      ? (items[carouselIdx]?.image_url_hq
-        || items[carouselIdx]?.picture
-        || firstItemWithImage?.image_url_hq
-        || firstItemWithImage?.picture
-        || data.imageUrlHq
-        || data.thumbnailUrl)
-      : data.imageUrlHq ?? data.thumbnailUrl
+  const resolvedType = resolveCreativeType(data.tipo, items)
+  const isCarousel = resolvedType === 'CAROUSEL'
+  const config = TIPO_CONFIG[resolvedType] ?? TIPO_CONFIG.IMAGE
+  const IconComp = config.Icon
+  const mediaSources = isCarousel
+    ? buildCarouselImageCandidates(items, carouselIdx, [data.imageUrlHq, data.thumbnailUrl])
+    : [data.imageUrlHq, data.thumbnailUrl]
+  const mediaSignature = isCarousel
+    ? items.map((item) => `${item.card_index ?? ''}:${item.image_url_hq ?? ''}:${item.picture ?? ''}`).join('|')
+    : `${data.imageUrlHq ?? ''}:${data.thumbnailUrl ?? ''}`
+  const mediaKey = `${data.id}:${isCarousel ? carouselIdx : 'single'}:${mediaSignature}`
 
   const prevSlide = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -85,7 +127,7 @@ export function CardCriativo({
     setCarouselIdx((i) => (i + 1) % carouselLen)
   }
 
-  const isVideo = data.tipo === 'VIDEO'
+  const isVideo = resolvedType === 'VIDEO'
 
   return (
     <div
@@ -121,38 +163,16 @@ export function CardCriativo({
           alignItems: 'center',
           justifyContent: 'center',
         }}>
-          {/* Imagem */}
-          {imgSrc ? (
-            <img
-              src={proxyImagem(imgSrc)}
-              alt={data.nome}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }}
-              referrerPolicy="no-referrer"
-              loading="lazy"
-            />
-          ) : (
-            <IconComp style={{ width: 32, height: 32, color: 'var(--ws-text-3, #8892b0)', opacity: 0.5 }} />
-          )}
-
-          {/* Overlay play para vídeo */}
-          {isVideo && imgSrc && (
-            <div style={{
-              position: 'absolute', inset: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(0,0,0,0.18)',
-            }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: '50%',
-                background: 'rgba(255,255,255,0.88)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Play size={16} style={{ color: '#0E142A', marginLeft: 2 }} />
-              </div>
-            </div>
-          )}
+          <MediaPreview
+            key={mediaKey}
+            alt={data.nome}
+            sources={mediaSources}
+            isVideo={isVideo}
+            IconComp={IconComp}
+          />
 
           {/* Controles carousel */}
-          {data.tipo === 'CAROUSEL' && carouselLen > 1 && (
+          {isCarousel && carouselLen > 1 && (
             <>
               <button
                 onClick={prevSlide}
