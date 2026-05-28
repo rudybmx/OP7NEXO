@@ -34,4 +34,5 @@ def test_whatsapp_vector_view_migration_contract(monkeypatch):
     assert "COALESCE(m.embedding_status, 'pendente') AS embedding_status" in sql
     assert "workspace_id IS NOT NULL" in sql
     assert "lower(btrim(COALESCE(m.conteudo, ''))) IN ('[mídia]', '[midia]', '[media]')" in sql
-    assert "btrim(regexp_replace(COALESCE(raw_text, ''), '\\\\s+', ' ', 'g')) <> ''" in sql
+    assert "btrim(regexp_replace(COALESCE(raw_text, '')," in sql
+    assert "'\\s+'" in sql

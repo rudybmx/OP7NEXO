@@ -221,6 +221,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - A view expõe mensagens textuais/legendas e resumos de conversa por `workspace_id` + `embedding_status`, sem payload bruto.
 - `crm_whatsapp_mensagens.embedding_status` passa a ter default SQL `'pendente'`.
 
+### ✅ Implementado (2026-05-28) — CRM WhatsApp Canal Obrigatório
+- Backfill de produção vinculou conversas/mensagens/eventos antigos ao canal `rudy_zap` (`workspace_id=9647ad83-20c6-416a-a5f1-527aee1e48ce`).
+- Migration 047 torna `workspace_id` e `canal_id` NOT NULL em `crm_whatsapp_conversas`, `crm_whatsapp_mensagens` e `crm_whatsapp_eventos`.
+
 ### ✅ Implementado (2026-05-28) — Workspaces do Usuário
 - `GET /me/workspaces` serializa `ativo`, `criado_em` e `padrao` em cada workspace para o seletor do frontend.
 
