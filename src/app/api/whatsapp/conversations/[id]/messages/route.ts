@@ -16,10 +16,26 @@ interface BackendMensagemRow {
   recebida_em?: string | null
   criado_em?: string | null
   wa_status?: string | null
+  delivered_at?: string | null
+  read_at?: string | null
+  failed_reason?: string | null
+  media_status?: string | null
+  media_error?: string | null
   message_type?: string | null
   participant_jid?: string | null
   participant_name?: string | null
   is_mentioned?: boolean | null
+  midias?: Array<{
+    id: string
+    tipo?: string | null
+    url?: string | null
+    minio_path?: string | null
+    mimetype?: string | null
+    filename?: string | null
+    caption?: string | null
+    storage_status?: string | null
+    duration_seconds?: number | null
+  }>
 }
 
 interface MensagemRespostaRow {
@@ -32,7 +48,24 @@ interface MensagemRespostaRow {
   recebidaEm: string | null
   criadaEm: string | null
   waStatus: string | null
+  deliveredAt: string | null
+  readAt: string | null
+  failedReason: string | null
   messageType: string | null
+  mediaUrl: string | null
+  mediaStatus: string | null
+  mediaError: string | null
+  midias: Array<{
+    id: string
+    tipo: string
+    url: string | null
+    minioPath: string | null
+    mimetype: string | null
+    filename: string | null
+    caption: string | null
+    storageStatus: string | null
+    durationSeconds: number | null
+  }>
   participantJid: string | null
   participantName: string | null
   isMentioned: boolean
@@ -88,21 +121,43 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const data = await response.json()
     const backendMensagens: BackendMensagemRow[] = Array.isArray(data) ? data : []
 
-    const messages: MensagemRespostaRow[] = backendMensagens.reverse().map((row) => ({
-      id: row.id,
-      direcao: row.direcao,
-      conteudo: row.conteudo,
-      remetenteNome: row.remetente_nome,
-      remetenteTipo: row.remetente_tipo,
-      enviadaEm: row.enviada_em,
-      recebidaEm: row.recebida_em,
-      criadaEm: row.criado_em,
-      waStatus: row.wa_status,
-      messageType: row.message_type,
-      participantJid: row.participant_jid || null,
-      participantName: row.participant_name || null,
-      isMentioned: row.is_mentioned || false,
-    }))
+    const messages: MensagemRespostaRow[] = backendMensagens.reverse().map((row) => {
+      const midias = (row.midias || []).map(media => ({
+        id: media.id,
+        tipo: media.tipo || 'document',
+        url: media.minio_path
+          ? `/api/whatsapp/media/file?path=${encodeURIComponent(media.minio_path)}`
+          : media.url || null,
+        minioPath: media.minio_path || null,
+        mimetype: media.mimetype || null,
+        filename: media.filename || null,
+        caption: media.caption || null,
+        storageStatus: media.storage_status || null,
+        durationSeconds: media.duration_seconds || null,
+      }))
+      return {
+        id: row.id,
+        direcao: row.direcao,
+        conteudo: row.conteudo ?? null,
+        remetenteNome: row.remetente_nome ?? null,
+        remetenteTipo: row.remetente_tipo ?? null,
+        enviadaEm: row.enviada_em ?? null,
+        recebidaEm: row.recebida_em ?? null,
+        criadaEm: row.criado_em ?? null,
+        waStatus: row.wa_status ?? null,
+        deliveredAt: row.delivered_at || null,
+        readAt: row.read_at || null,
+        failedReason: row.failed_reason || null,
+        messageType: row.message_type ?? null,
+        mediaUrl: midias[0]?.url || null,
+        mediaStatus: row.media_status || null,
+        mediaError: row.media_error || null,
+        midias,
+        participantJid: row.participant_jid || null,
+        participantName: row.participant_name || null,
+        isMentioned: row.is_mentioned || false,
+      }
+    })
 
     // Debug: log se há mensagens com conteúdo vazio
     const vazias = messages.filter((m) => !m.conteudo || m.conteudo === '')

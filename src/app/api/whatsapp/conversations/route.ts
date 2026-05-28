@@ -8,6 +8,8 @@ export const dynamic = 'force-dynamic'
 
 interface BackendConversaRow {
   id: string
+  workspace_id?: string
+  canal_id?: string | null
   instance?: string | null
   remote_jid: string
   status: string
@@ -33,6 +35,10 @@ interface BackendConversaRow {
   equipe_id?: string | null
   equipe_nome?: string | null
   responsavel_id?: string | null
+  lead_status?: string | null
+  followup_due_at?: string | null
+  last_inbound_at?: string | null
+  last_outbound_at?: string | null
 }
 
 function iso(value: Date | string | null | undefined) {
@@ -57,6 +63,7 @@ export async function GET(request: NextRequest) {
     const instance = url.searchParams.get('instance')
     const workspaceIdParam = normalizeWorkspaceId(url.searchParams.get('workspace_id'))
     const filtro = url.searchParams.get('filtro')
+    const canalIdParam = url.searchParams.get('canal_id')
     const equipeIdParam = url.searchParams.get('equipe_id')
 
     if (!workspaceIdParam) {
@@ -77,7 +84,11 @@ export async function GET(request: NextRequest) {
     backendUrl.searchParams.set('limit', String(limit))
     backendUrl.searchParams.set('workspace_id', workspaceIdParam)
     if (instance) backendUrl.searchParams.set('instance', instance)
-    if (filtro) backendUrl.searchParams.set('status', filtro)
+    if (filtro === 'novas') backendUrl.searchParams.set('status', 'nova')
+    else if (filtro === 'resgate') backendUrl.searchParams.set('status', 'resgate')
+    else if (filtro === 'resolvidas') backendUrl.searchParams.set('status', 'resolvido')
+    else if (filtro === 'minhas') backendUrl.searchParams.set('responsavel_id', access.user.id)
+    else if (filtro && !['todas', 'grupos', 'equipe'].includes(filtro)) backendUrl.searchParams.set('status', filtro)
     if (equipeIdParam) backendUrl.searchParams.set('equipe_id', equipeIdParam)
 
     const response = await fetch(backendUrl.toString(), {
@@ -97,8 +108,37 @@ export async function GET(request: NextRequest) {
     const backendConversas: BackendConversaRow[] = Array.isArray(data) ? data : []
 
       // Transforma resposta do backend para formato do frontend
-    const conversations = backendConversas.map((row) => ({
+    const filteredRows = backendConversas.filter(row => {
+      if (canalIdParam && row.canal_id !== canalIdParam) return false
+      if (filtro === 'grupos' && !row.is_group) return false
+      if (filtro === 'equipe' && (!row.equipe_id || row.responsavel_id === access.user.id)) return false
+      return true
+    })
+
+    const channelIds = [...new Set(filteredRows.map(row => row.canal_id).filter(Boolean) as string[])]
+    const channelById = new Map<string, { nome?: string | null; numero_telefone?: string | null }>()
+    if (channelIds.length > 0) {
+      const channelsResponse = await fetch(`${API_BASE_URL}/workspaces/${workspaceIdParam}/canais`, {
+        headers: { Authorization: access.tokenToForward },
+        cache: 'no-store',
+      })
+      if (channelsResponse.ok) {
+        const channels = await channelsResponse.json().catch(() => [])
+        if (Array.isArray(channels)) {
+          for (const channel of channels) {
+            if (channel?.id) channelById.set(channel.id, channel)
+          }
+        }
+      }
+    }
+
+    const conversations = filteredRows.map((row) => {
+      const channel = row.canal_id ? channelById.get(row.canal_id) : null
+      const hasOverdueFollowup = row.followup_due_at ? new Date(row.followup_due_at).getTime() < Date.now() : false
+      return {
       id: row.id,
+      workspaceId: row.workspace_id || workspaceIdParam,
+      canalId: row.canal_id || null,
       instance: row.instance,
       remoteJid: row.remote_jid,
       status: row.status,
@@ -109,8 +149,19 @@ export async function GET(request: NextRequest) {
       agente: row.agente || 'Op7 Nexo',
       campanha: row.campanha,
       canal: 'whatsapp',
+      canalNome: channel?.nome || null,
+      canalNumero: channel?.numero_telefone || null,
       tags: ['WhatsApp', 'Evolution'],
       responsavelId: row.responsavel_id,
+      leadStatus: row.lead_status || null,
+      followupDueAt: iso(row.followup_due_at),
+      lastInboundAt: iso(row.last_inbound_at),
+      lastOutboundAt: iso(row.last_outbound_at),
+      badges: {
+        mentioned: false,
+        hasMedia: false,
+        overdueFollowup: hasOverdueFollowup,
+      },
       isGroup: row.is_group || false,
       groupName: row.group_name || null,
       groupAvatarUrl: row.group_avatar_url || null,
@@ -134,7 +185,7 @@ export async function GET(request: NextRequest) {
         ? { id: row.equipe_id, nome: row.equipe_nome, membrosCount: 0 }
         : null,
       mensagens: [], // mensagens são carregadas sob demanda no painel de chat
-    }))
+    }})
 
     return NextResponse.json(
       {

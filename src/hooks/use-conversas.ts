@@ -33,6 +33,10 @@ export interface MensagemApi {
   conteudo: string
   messageType?: string | null
   mediaUrl?: string | null
+  mediaStatus?: string | null
+  waStatus?: 'pending' | 'sent' | 'delivered' | 'read' | 'played' | 'failed' | string | null
+  failedReason?: string | null
+  midias?: MensagemMidiaApi[]
   remetenteNome: string | null
   remetenteTipo: 'contato' | 'agente' | 'ia' | 'sistema'
   enviadaEm: string | null
@@ -48,8 +52,22 @@ export interface MensagemApi {
   quotedMessageType?: string | null
 }
 
+export interface MensagemMidiaApi {
+  id: string
+  tipo: string
+  url: string | null
+  minioPath?: string | null
+  mimetype?: string | null
+  filename?: string | null
+  caption?: string | null
+  storageStatus?: string | null
+  durationSeconds?: number | null
+}
+
 export interface ConversaApi {
   id: string
+  workspaceId?: string
+  canalId?: string | null
   instance: string
   remoteJid: string
   status: StatusConversa
@@ -60,8 +78,19 @@ export interface ConversaApi {
   agente: string
   campanha?: string | null
   canal: string
+  canalNome?: string | null
+  canalNumero?: string | null
   tags: string[]
   responsavelId?: string | null
+  leadStatus?: string | null
+  followupDueAt?: string | null
+  lastInboundAt?: string | null
+  lastOutboundAt?: string | null
+  badges?: {
+    mentioned?: boolean
+    hasMedia?: boolean
+    overdueFollowup?: boolean
+  }
   isGroup?: boolean
   groupName?: string | null
   groupAvatarUrl?: string | null
@@ -84,7 +113,8 @@ export function useConversas(
   filtro?: string,
   equipeId?: string,
   workspaceId?: string,
-  enabled = true
+  enabled = true,
+  canalId?: string
 ): UseConversasReturn {
   const [conversas, setConversas] = useState<ConversaApi[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -119,6 +149,7 @@ export function useConversas(
       if (filtro) params.set('filtro', filtro)
       if (equipeId) params.set('equipe_id', equipeId)
       if (workspaceId) params.set('workspace_id', workspaceId)
+      if (canalId) params.set('canal_id', canalId)
 
       const res = await fetch(`/api/whatsapp/conversations?${params.toString()}`, {
         signal: controller.signal,
@@ -150,7 +181,7 @@ export function useConversas(
       setIsLoading(false)
       setIsLoadingMore(false)
     }
-  }, [enabled, filtro, equipeId, workspaceId])
+  }, [enabled, filtro, equipeId, workspaceId, canalId])
 
   useEffect(() => {
     let cancelled = false

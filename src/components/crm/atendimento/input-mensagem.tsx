@@ -1,12 +1,13 @@
 'use client'
 
-import { Send, Smile, Paperclip, Mic } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Send, Smile, Paperclip, Mic, X, Square } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 
 interface InputMensagemProps {
   valor: string
   onChange: (v: string) => void
-  onEnviar: () => void
+  onEnviar: (options?: { file?: File | Blob | null; filename?: string; tipo?: 'image' | 'audio' | 'video' | 'document'; caption?: string | null }) => void
   isEnviando: boolean
   conversa: ConversaApi
   onAssumir: () => void
@@ -15,6 +16,51 @@ interface InputMensagemProps {
 
 export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa, onAssumir, erro }: InputMensagemProps) {
   const isBloqueado = !conversa.responsavelId && conversa.status === 'nova'
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const [arquivo, setArquivo] = useState<File | null>(null)
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
+  const [gravando, setGravando] = useState(false)
+
+  const tipoArquivo = arquivo
+    ? arquivo.type.startsWith('image/') ? 'image' : arquivo.type.startsWith('video/') ? 'video' : arquivo.type.startsWith('audio/') ? 'audio' : 'document'
+    : undefined
+  const temAnexo = Boolean(arquivo || audioBlob)
+
+  async function toggleGravacao() {
+    if (isBloqueado || isEnviando) return
+    if (gravando) {
+      mediaRecorderRef.current?.stop()
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia) return
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    audioChunksRef.current = []
+    const recorder = new MediaRecorder(stream)
+    mediaRecorderRef.current = recorder
+    recorder.ondataavailable = event => {
+      if (event.data.size > 0) audioChunksRef.current.push(event.data)
+    }
+    recorder.onstop = () => {
+      setAudioBlob(new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' }))
+      setGravando(false)
+      stream.getTracks().forEach(track => track.stop())
+    }
+    setArquivo(null)
+    setAudioBlob(null)
+    setGravando(true)
+    recorder.start()
+  }
+
+  function enviarAtual() {
+    const file = audioBlob || arquivo
+    const filename = audioBlob ? `audio-${Date.now()}.webm` : arquivo?.name
+    const tipo = audioBlob ? 'audio' : tipoArquivo
+    onEnviar(file ? { file, filename, tipo, caption: valor.trim() || null } : undefined)
+    setArquivo(null)
+    setAudioBlob(null)
+  }
 
   return (
     <div style={{
@@ -54,8 +100,50 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
         </div>
       )}
 
+      {temAnexo && (
+        <div style={{
+          marginBottom: 10,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          padding: '8px 10px',
+          borderRadius: 10,
+          border: '1px solid var(--ws-glass-border)',
+          background: 'rgba(255,255,255,0.04)',
+          color: 'var(--ws-text-2)',
+          fontSize: 12,
+        }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {audioBlob ? 'Áudio gravado pronto para envio' : arquivo?.name}
+          </span>
+          <button
+            onClick={() => {
+              setArquivo(null)
+              setAudioBlob(null)
+            }}
+            style={iconBtnStyle}
+            title="Remover anexo"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Input */}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*,audio/*,application/pdf,text/plain,text/csv,.doc,.docx,.xls,.xlsx"
+          style={{ display: 'none' }}
+          onChange={event => {
+            const nextFile = event.target.files?.[0] || null
+            setArquivo(nextFile)
+            setAudioBlob(null)
+            event.currentTarget.value = ''
+          }}
+        />
         <div style={{
           flex: 1,
           minWidth: 0,
@@ -69,8 +157,10 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
         }}>
           <div style={{ display: 'flex', gap: 8, paddingBottom: 6 }}>
             <button style={iconBtnStyle} disabled={isBloqueado}><Smile size={18} /></button>
-            <button style={iconBtnStyle} disabled={isBloqueado}><Paperclip size={18} /></button>
-            <button style={iconBtnStyle} disabled={isBloqueado}><Mic size={18} /></button>
+            <button style={iconBtnStyle} disabled={isBloqueado || isEnviando} onClick={() => fileInputRef.current?.click()} title="Anexar arquivo"><Paperclip size={18} /></button>
+            <button style={{ ...iconBtnStyle, color: gravando ? '#a32d2d' : iconBtnStyle.color }} disabled={isBloqueado || isEnviando} onClick={toggleGravacao} title={gravando ? 'Parar gravação' : 'Gravar áudio'}>
+              {gravando ? <Square size={18} /> : <Mic size={18} />}
+            </button>
           </div>
 
           {isBloqueado ? (
@@ -96,7 +186,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
-                  onEnviar()
+                  enviarAtual()
                 }
               }}
               placeholder="Digite uma mensagem..."
@@ -120,13 +210,13 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
         </div>
 
         <button
-          onClick={onEnviar}
-          disabled={isEnviando || !valor.trim() || isBloqueado}
+          onClick={enviarAtual}
+          disabled={isEnviando || (!valor.trim() && !temAnexo) || isBloqueado}
           style={{
             width: 40,
             height: 40,
             borderRadius: '50%',
-            background: isEnviando || !valor.trim() || isBloqueado
+            background: isEnviando || (!valor.trim() && !temAnexo) || isBloqueado
               ? 'rgba(62,91,255,0.45)'
               : 'linear-gradient(135deg, var(--ws-blue) 0%, var(--ws-purple) 100%)',
             border: 'none',

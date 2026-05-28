@@ -11,12 +11,12 @@ export async function POST(request: NextRequest) {
     if (access instanceof Response) return access
 
     const payload = await request.json()
-    const { conversa_id, number, text } = payload
+    const { conversa_id, number, text, tipo, media_url, caption, canal_id } = payload
     const workspaceIdBody = normalizeWorkspaceId(typeof payload?.workspace_id === 'string' ? payload.workspace_id : null)
 
-    if ((!conversa_id && !number) || !text) {
+    if ((!conversa_id && !number) || (!text && !media_url)) {
       return NextResponse.json(
-        { error: 'Informe conversa_id ou number, e text' },
+        { error: 'Informe conversa_id ou number, e text ou media_url' },
         { status: 400 }
       )
     }
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         )
       }
-      canalId = conversa.canal_id
+      canalId = canal_id || conversa.canal_id
 
       // Legado: algumas conversas antigas podem carregar "opcl" ou instance nula.
       if (!canalId) {
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
           LIMIT 1
         `
 
-      canalId = canalRows[0]?.canal_id ?? null
+      canalId = canal_id || canalRows[0]?.canal_id || null
       if (!canalId) {
         return NextResponse.json(
           { error: 'Nenhum canal WhatsApp ativo encontrado para este workspace.' },
@@ -129,11 +129,13 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
         'Authorization': access.tokenToForward,
       },
-      body: JSON.stringify(
-        conversa_id
-          ? { conversa_id, texto: text }
-          : { numero: conversaNumber, texto: text }
-      ),
+      body: JSON.stringify({
+        ...(conversa_id ? { conversa_id } : { numero: conversaNumber }),
+        texto: text,
+        tipo: tipo || (media_url ? 'document' : 'texto'),
+        media_url: media_url || null,
+        caption: caption || null,
+      }),
       cache: 'no-store',
     })
 

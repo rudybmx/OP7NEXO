@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { ArrowRightLeft, Check, User } from 'lucide-react'
+import { ArrowRightLeft, Check, CheckCheck, Clock, FileText, PlayCircle, AlertCircle, User } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { CardRastreamento } from './card-rastreamento'
 
@@ -37,6 +37,77 @@ function agruparMensagensPorData(mensagens: MensagemApi[]) {
     }
     return grupos
   }, [])
+}
+
+function statusIcon(status?: string | null) {
+  if (status === 'failed') return <AlertCircle size={12} color="#ffb4b4" />
+  if (status === 'read' || status === 'played') return <CheckCheck size={13} color="#00F5FF" />
+  if (status === 'delivered') return <CheckCheck size={13} />
+  if (status === 'sent' || status === 'enviada') return <Check size={12} />
+  return <Clock size={12} />
+}
+
+function renderMidia(msg: MensagemApi, isEntrada: boolean) {
+  const midias = msg.midias?.length
+    ? msg.midias
+    : msg.mediaUrl ? [{ id: `${msg.id}-media`, tipo: msg.messageType || 'document', url: msg.mediaUrl }] : []
+
+  if (midias.length === 0) return null
+
+  return (
+    <div style={{ display: 'grid', gap: 8, marginBottom: msg.conteudo ? 8 : 0 }}>
+      {midias.map(media => {
+        const tipo = (media.tipo || msg.messageType || '').toLowerCase()
+        const url = media.url
+        if (!url) {
+          return (
+            <div key={media.id} style={{ fontSize: 12, color: isEntrada ? '#64748b' : 'rgba(255,255,255,0.78)' }}>
+              Mídia em processamento
+            </div>
+          )
+        }
+        if (tipo.includes('image') || tipo.includes('imagem')) {
+          return (
+            <a key={media.id} href={url} target="_blank" rel="noopener noreferrer">
+              <img
+                src={url}
+                alt={media.caption || media.filename || 'Imagem da conversa'}
+                style={{ display: 'block', maxWidth: 260, maxHeight: 260, borderRadius: 10, objectFit: 'cover' }}
+              />
+            </a>
+          )
+        }
+        if (tipo.includes('audio')) {
+          return <audio key={media.id} controls src={url} style={{ width: 250, maxWidth: '100%' }} />
+        }
+        if (tipo.includes('video')) {
+          return <video key={media.id} controls src={url} style={{ display: 'block', width: 260, maxWidth: '100%', borderRadius: 10 }} />
+        }
+        return (
+          <a
+            key={media.id}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              color: isEntrada ? '#3E5BFF' : '#ffffff',
+              textDecoration: 'none',
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            {tipo.includes('sticker') ? <PlayCircle size={16} /> : <FileText size={16} />}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {media.filename || 'Documento'}
+            </span>
+          </a>
+        )
+      })}
+    </div>
+  )
 }
 
 export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, onResolver, mensagensEndRef }: PainelChatProps) {
@@ -179,6 +250,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
             {grupo.mensagens.map(msg => {
               const isEntrada = msg.direcao === 'entrada'
               const isIA = msg.remetenteTipo === 'ia'
+              const participantLabel = msg.participantName || msg.remetenteNome || 'Contato'
               return (
                 <div
                   key={msg.id}
@@ -199,9 +271,9 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
                     gap: 4,
                     justifyContent: isEntrada ? 'flex-start' : 'flex-end',
                   }}>
-                    {isIA && '🤖'}
+                    {isIA && 'IA'}
                     {isEntrada
-                      ? (msg.participantName || msg.remetenteNome || 'Contato')
+                      ? (conversa.isGroup ? participantLabel : (msg.remetenteNome || 'Contato'))
                       : (isIA ? 'IA Agente' : 'Atendente')}
                   </div>
                   <div style={{
@@ -222,22 +294,25 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
                         @mention
                       </div>
                     )}
+                    {renderMidia(msg, isEntrada)}
                     {msg.conteudo}
-                    {msg.mediaUrl && (
-                      <div style={{ marginTop: 8 }}>
-                        <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" style={{ color: isEntrada ? '#3E5BFF' : '#ffffff', fontSize: 12 }}>
-                          📎 Ver mídia
-                        </a>
-                      </div>
-                    )}
                     <div style={{
                       fontSize: 9,
                       color: isEntrada ? '#64748b' : 'rgba(255,255,255,0.7)',
-                      textAlign: 'right',
                       marginTop: 4,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-end',
+                      gap: 4,
                     }}>
-                      {msg.recebidaEm ? new Date(msg.recebidaEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                      <span>{(msg.recebidaEm || msg.enviadaEm || msg.criadaEm) ? new Date(msg.recebidaEm || msg.enviadaEm || msg.criadaEm || '').toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                      {!isEntrada && statusIcon(msg.waStatus)}
                     </div>
+                    {msg.failedReason && (
+                      <div style={{ fontSize: 10, color: isEntrada ? '#a32d2d' : '#ffb4b4', marginTop: 4 }}>
+                        {msg.failedReason}
+                      </div>
+                    )}
                   </div>
                 </div>
               )

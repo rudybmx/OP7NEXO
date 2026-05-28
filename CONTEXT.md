@@ -231,6 +231,12 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - API responde com campos `is_group`, `group_name` (conversa) e `participant_jid`, `participant_name`, `is_mentioned` (mensagem)
 - Frontend exibe ícone 👥 + nome do grupo na inbox, nome do participant no chat, e badge @mention com destaque dourado
 
+### ✅ Implementado (2026-05-28) — WhatsApp Web + CRM Fase 5
+- `/crm/atendimento/conversas` carrega canais/números do workspace e filtra a inbox por canal.
+- Composer envia texto, imagem/documento e áudio gravado via upload `/canais/{canal_id}/upload-midia` + envio Evolution.
+- Chat renderiza mídia inline, checks de status (`pending/sent/delivered/read/played/failed`), participante e menção em grupos.
+- Painel do contato exibe lead/follow-up e permite criar ou marcar follow-up como feito via `/crm/followups`.
+
 ### ⏳ Em andamento / Próximas tarefas
 1. **Testar end-to-end**: enviar mensagem real pelo WhatsApp e confirmar que aparece no front (bugfix de evento deployado)
 2. Filtro campaign_id + adset_id em Criativos

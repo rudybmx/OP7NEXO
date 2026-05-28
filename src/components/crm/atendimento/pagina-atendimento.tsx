@@ -12,6 +12,7 @@ import { useResolverConversa } from '@/hooks/use-resolver-conversa'
 import { useAgentesDisponiveis } from '@/hooks/use-agentes-disponiveis'
 import { useEquipes } from '@/hooks/use-equipes'
 import { useIniciarConversa } from '@/hooks/use-iniciar-conversa'
+import { useWhatsappCanais } from '@/hooks/use-whatsapp-canais'
 import { PainelInbox } from './painel-inbox'
 import { PainelChat } from './painel-chat'
 import { PainelContato } from './painel-contato'
@@ -34,12 +35,16 @@ export function PaginaAtendimento() {
   const [mostrarModalIniciar, setMostrarModalIniciar] = useState(false)
   const [textoMensagem, setTextoMensagem] = useState('')
   const [aoVivo, setAoVivo] = useState(false)
+  const [canalSelecionadoId, setCanalSelecionadoId] = useState<string>('todos')
+
+  const { canais } = useWhatsappCanais(workspaceAtual, workspaceResolvido)
 
   const { conversas, isLoading, error, refetch } = useConversas(
     filtroAtivo === 'todas' ? undefined : filtroAtivo,
     undefined,
     workspaceAtual ?? undefined,
-    workspaceResolvido
+    workspaceResolvido,
+    canalSelecionadoId === 'todos' ? undefined : canalSelecionadoId
   )
   const { equipes } = useEquipes(workspaceAtual ?? undefined, workspaceResolvido)
   const { agentes } = useAgentesDisponiveis(workspaceAtual ?? undefined, workspaceResolvido)
@@ -67,6 +72,7 @@ export function PaginaAtendimento() {
       setMostrarModalResolver(false)
       setMostrarModalIniciar(false)
       setTextoMensagem('')
+      setCanalSelecionadoId('todos')
     })
     return () => {
       cancelled = true
@@ -178,26 +184,32 @@ export function PaginaAtendimento() {
     }
   }, [conversaAtivaId, assumir, refetch, refetchMensagens])
 
-  const handleEnviar = useCallback(async () => {
+  const handleEnviar = useCallback(async (options?: { file?: File | Blob | null; filename?: string; tipo?: 'image' | 'audio' | 'video' | 'document'; caption?: string | null }) => {
     const conteudo = textoMensagem.trim()
-    if (!conteudo || !conversaAtiva) return
+    if ((!conteudo && !options?.file) || !conversaAtiva) return
     const telefone = conversaAtiva.contato.remoteJid || conversaAtiva.contato.telefone
     const agora = new Date().toISOString()
     const idOtimista = `optimistic-${Date.now()}`
+    const tipoMensagem = options?.tipo || (options?.file ? 'document' : undefined)
     addMensagemLocal({
       id: idOtimista,
       direcao: 'saida',
-      conteudo,
+      conteudo: conteudo || options?.caption || '[mídia]',
       remetenteNome: 'Você',
       remetenteTipo: 'agente',
       enviadaEm: agora,
       recebidaEm: null,
       criadaEm: agora,
-      messageType: 'conversation',
+      messageType: tipoMensagem || 'conversation',
       mediaUrl: null,
+      waStatus: 'pending',
+      mediaStatus: options?.file ? 'pending' : null,
     })
     setTextoMensagem('')
-    const ok = await enviar(conversaAtiva.id, telefone, conteudo, workspaceAtual ?? undefined)
+    const ok = await enviar(conversaAtiva.id, telefone, conteudo, workspaceAtual ?? undefined, {
+      canalId: conversaAtiva.canalId || (canalSelecionadoId === 'todos' ? undefined : canalSelecionadoId),
+      ...options,
+    })
     if (ok) {
       refetchMensagens()
       refetch()
@@ -205,7 +217,7 @@ export function PaginaAtendimento() {
       removerMensagemLocal(idOtimista)
       setTextoMensagem(conteudo)
     }
-  }, [textoMensagem, conversaAtiva, enviar, refetchMensagens, refetch, addMensagemLocal, removerMensagemLocal, workspaceAtual])
+  }, [textoMensagem, conversaAtiva, enviar, refetchMensagens, refetch, addMensagemLocal, removerMensagemLocal, workspaceAtual, canalSelecionadoId])
 
   const handleTransferir = useCallback(async (novoResponsavelId: string, novaEquipeId?: string) => {
     if (!conversaAtivaId) return
@@ -297,6 +309,9 @@ export function PaginaAtendimento() {
           onBuscaChange={setBusca}
           onRefetch={refetch}
           onIniciarConversa={() => setMostrarModalIniciar(true)}
+          canais={canais}
+          canalSelecionadoId={canalSelecionadoId}
+          onCanalChange={setCanalSelecionadoId}
         />
       </div>
 
@@ -356,7 +371,7 @@ export function PaginaAtendimento() {
       }}>
         {conversaAtiva && (
           <div style={{ minWidth: 300, height: '100%', minHeight: 0 }}>
-            <PainelContato conversa={conversaAtiva} />
+            <PainelContato conversa={conversaAtiva} workspaceId={workspaceAtual ?? undefined} onAtualizar={refetch} />
           </div>
         )}
       </div>

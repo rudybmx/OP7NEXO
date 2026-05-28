@@ -19,6 +19,10 @@ function getTokenToForward(request: NextRequest) {
   return authHeader || (cookieToken ? `Bearer ${cookieToken}` : '')
 }
 
+function isString(value: string | null | undefined): value is string {
+  return Boolean(value)
+}
+
 export async function resolveWhatsappWorkspaceAccess(request: NextRequest): Promise<WhatsappWorkspaceAccess | Response> {
   const user = await getUserFromRequest(request)
   if (!user) return unauthorized()
@@ -40,7 +44,7 @@ export async function resolveWhatsappWorkspaceAccess(request: NextRequest): Prom
   const allowedWorkspaceIds = new Set(
     (Array.isArray(allowedData) ? allowedData as WorkspaceAccessRow[] : [])
       .map((row) => row.workspace_id)
-      .filter(Boolean)
+      .filter(isString)
   )
 
   return {

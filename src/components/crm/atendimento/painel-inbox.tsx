@@ -1,7 +1,8 @@
 'use client'
 
-import { Search, RefreshCw, MessageCircle } from 'lucide-react'
+import { Search, RefreshCw, MessageCircle, AtSign, Paperclip } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
+import type { WhatsappCanal } from '@/hooks/use-whatsapp-canais'
 
 interface PainelInboxProps {
   conversas: ConversaApi[]
@@ -11,8 +12,11 @@ interface PainelInboxProps {
   isLoading: boolean
   error: string | null
   aoVivo?: boolean
+  canais?: WhatsappCanal[]
+  canalSelecionadoId?: string
   onSelectConversa: (id: string) => void
   onFiltroChange: (filtro: string) => void
+  onCanalChange?: (canalId: string) => void
   onBuscaChange: (busca: string) => void
   onRefetch: () => void
   onIniciarConversa?: () => void
@@ -26,17 +30,21 @@ export function PainelInbox({
   isLoading,
   error,
   aoVivo,
+  canais = [],
+  canalSelecionadoId = 'todos',
   onSelectConversa,
   onFiltroChange,
+  onCanalChange,
   onBuscaChange,
   onRefetch,
   onIniciarConversa,
 }: PainelInboxProps) {
   const filtros = [
     { id: 'todas', label: 'Todas' },
-    { id: 'novos', label: 'Novos' },
-    { id: 'meus', label: 'Meus' },
-    { id: 'outros', label: 'Outros' },
+    { id: 'novas', label: 'Novas' },
+    { id: 'minhas', label: 'Minhas' },
+    { id: 'equipe', label: 'Equipe' },
+    { id: 'grupos', label: 'Grupos' },
     { id: 'resgate', label: 'Resgate' },
     { id: 'resolvidos', label: 'Resolvidos' },
   ]
@@ -130,6 +138,33 @@ export function PainelInbox({
           />
         </div>
 
+        {/* Canal */}
+        {onCanalChange && canais.length > 0 && (
+          <select
+            value={canalSelecionadoId}
+            onChange={e => onCanalChange(e.target.value)}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              marginBottom: 12,
+              padding: '8px 10px',
+              borderRadius: 8,
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid var(--ws-glass-border)',
+              color: 'var(--ws-text-1)',
+              fontSize: 12,
+              outline: 'none',
+            }}
+          >
+            <option value="todos">Todos os números</option>
+            {canais.map(canal => (
+              <option key={canal.id} value={canal.id}>
+                {canal.nome}{canal.numero_telefone ? ` · ${canal.numero_telefone}` : ''}
+              </option>
+            ))}
+          </select>
+        )}
+
         {/* Abas */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {filtros.map(f => (
@@ -212,8 +247,8 @@ export function PainelInbox({
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {conversa.isGroup ? `👥 ${conversa.groupName || conversa.contato.nome}` : conversa.contato.nome}
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {conversa.isGroup ? `Grupo · ${conversa.groupName || conversa.contato.nome}` : conversa.contato.nome}
                   </span>
                   <span style={{ fontSize: 10, color: 'var(--ws-text-3)', flexShrink: 0 }}>
                     {conversa.ultimaMensagemAt ? new Date(conversa.ultimaMensagemAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}
@@ -227,6 +262,8 @@ export function PainelInbox({
                   whiteSpace: 'nowrap',
                   fontWeight: conversa.naoLidas > 0 ? 600 : 400,
                 }}>
+                  {conversa.badges?.mentioned && <AtSign size={11} style={{ display: 'inline', marginRight: 4, color: '#c9a84c', verticalAlign: '-1px' }} />}
+                  {conversa.badges?.hasMedia && <Paperclip size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />}
                   {conversa.ultimaMensagem}
                 </div>
               </div>
@@ -261,6 +298,32 @@ export function PainelInbox({
               }}>
                 WhatsApp
               </span>
+              {conversa.canalNome && (
+                <span style={{
+                  fontSize: 9,
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: 'rgba(62,91,255,0.10)',
+                  color: 'var(--ws-blue)',
+                  border: '1px solid rgba(62,91,255,0.18)',
+                  fontWeight: 700,
+                }}>
+                  {conversa.canalNome}
+                </span>
+              )}
+              {conversa.badges?.overdueFollowup && (
+                <span style={{
+                  fontSize: 9,
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: 'rgba(163,45,45,0.10)',
+                  color: '#a32d2d',
+                  border: '1px solid rgba(163,45,45,0.20)',
+                  fontWeight: 700,
+                }}>
+                  Follow-up vencido
+                </span>
+              )}
               <span style={{
                 fontSize: 9,
                 padding: '1px 6px',
