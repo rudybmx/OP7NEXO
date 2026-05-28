@@ -107,10 +107,13 @@ Item:
     {
       "id": "uuid",
       "tipo": "image",
-      "url_publica": "https://...",
+      "url": "https://...",
+      "minio_path": "whatsapp/workspace/conversa/mensagem.jpg",
       "mimetype": "image/jpeg",
       "filename": "foto.jpg",
       "tamanho": 123456,
+      "storage_status": "ready",
+      "sha256": "hex",
       "duration_seconds": null
     }
   ],
@@ -148,25 +151,25 @@ Resposta:
 }
 ```
 
-### `POST /whatsapp/media/upload`
+### `POST /canais/{canal_id}/upload-midia`
 
 Multipart:
 
-- `workspace_id`
-- `canal_id`
-- `conversa_id`
-- `file`
-- `tipo`: `image|audio|video|document`
+- `arquivo`
+- `conversa_id` opcional
 
 Resposta:
 
 ```json
 {
+  "ok": true,
   "media_url": "https://...",
   "minio_path": "whatsapp/workspace/conversa/file",
   "mimetype": "audio/ogg",
   "filename": "audio.ogg",
-  "tamanho": 12345
+  "tamanho": 12345,
+  "sha256": "hex",
+  "tipo": "audio"
 }
 ```
 

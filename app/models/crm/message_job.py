@@ -20,8 +20,11 @@ class MessageJob(Base):
     canal_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("canais_entrada.id", ondelete="SET NULL"), nullable=True
     )
-    raw_event_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("crm_whatsapp_eventos.id", ondelete="CASCADE"), nullable=False
+    raw_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("crm_whatsapp_eventos.id", ondelete="CASCADE"), nullable=True
+    )
+    related_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("crm_whatsapp_mensagens.id", ondelete="CASCADE"), nullable=True
     )
     job_type: Mapped[str] = mapped_column(String(32), default="webhook_event", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)

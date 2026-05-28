@@ -161,6 +161,7 @@ def process_evolution_message(
         message_type=message_type,
         payload=data,
         received_at=recebida_em,
+        media_status="pending" if normalized.media.is_media and not from_me else None,
     )
 
     db.commit()
@@ -593,6 +594,7 @@ def _upsert_message(
     message_type: str,
     payload: dict[str, Any],
     received_at: Any,
+    media_status: str | None,
 ) -> Any | None:
     if from_me:
         if evolution_msg_id:
@@ -655,14 +657,14 @@ def _upsert_message(
                 workspace_id, canal_id, raw_event_id, conversa_id, contato_id,
                 evolution_msg_id, message_hash, instance, remote_jid, direcao,
                 from_me, remetente_tipo, remetente_nome, conteudo, message_type,
-                status, payload, recebida_em, participant_jid, participant_name,
+                status, payload, recebida_em, media_status, participant_jid, participant_name,
                 is_mentioned, created_at, updated_at
             )
             VALUES (
                 CAST(:ws AS uuid), CAST(:canal AS uuid), CAST(:raw_event_id AS uuid), CAST(:cid AS uuid), CAST(:ct AS uuid),
                 :evid, :message_hash, :inst, :jid, :direction,
                 :from_me, :remetente_tipo, :rn, :msg, :mt,
-                :status, CAST(:payload AS jsonb), :ts, :part_jid, :part_name,
+                :status, CAST(:payload AS jsonb), :ts, :media_status, :part_jid, :part_name,
                 :is_mentioned, NOW(), NOW()
             )
             ON CONFLICT DO NOTHING
@@ -687,6 +689,7 @@ def _upsert_message(
             "status": status_value,
             "payload": json.dumps(payload),
             "ts": received_at,
+            "media_status": media_status,
             "part_jid": participant_jid if is_group else None,
             "part_name": sender_name if is_group else None,
             "is_mentioned": is_mentioned,

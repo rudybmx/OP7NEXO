@@ -35,12 +35,12 @@
 
 ## 4. Mídia
 
-- [ ] Criar serviço de mídia WhatsApp para download/upload MinIO.
-- [ ] Registrar inbound com `media_status='pending'`.
-- [ ] Criar job de download inbound.
-- [ ] Criar endpoint de upload outbound.
-- [ ] Enviar mídia pela Evolution usando `sendMedia`.
-- [ ] Expor mídia no contrato de mensagens.
+- [x] Criar serviço de mídia WhatsApp para download/upload MinIO.
+- [x] Registrar inbound com `media_status='pending'`.
+- [x] Criar job de download inbound.
+- [x] Criar endpoint de upload outbound.
+- [x] Enviar mídia pela Evolution usando `sendMedia`.
+- [x] Expor mídia no contrato de mensagens.
 
 ## 5. Lead E Follow-Up
 

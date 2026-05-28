@@ -38,9 +38,12 @@ class MensagemOut(BaseModel):
     delivered_at: datetime | None
     read_at: datetime | None
     failed_reason: str | None
+    media_status: str | None = None
+    media_error: str | None = None
     participant_jid: str | None
     participant_name: str | None
     is_mentioned: bool
+    midias: list[dict] = []
     ativo: bool
     criado_em: datetime
     atualizado_em: datetime | None = None
@@ -96,9 +99,27 @@ def _mensagem_out(m: Mensagem) -> MensagemOut:
         delivered_at=m.delivered_at,
         read_at=m.read_at,
         failed_reason=m.failed_reason,
+        media_status=getattr(m, "media_status", None),
+        media_error=getattr(m, "media_error", None),
         participant_jid=m.participant_jid,
         participant_name=m.participant_name,
         is_mentioned=m.is_mentioned,
+        midias=[
+            {
+                "id": str(media.id),
+                "tipo": media.tipo,
+                "url": media.url_publica,
+                "minio_path": media.minio_path,
+                "mimetype": media.mimetype,
+                "tamanho": media.tamanho,
+                "filename": getattr(media, "filename", None),
+                "caption": getattr(media, "caption", None),
+                "storage_status": getattr(media, "storage_status", None),
+                "sha256": getattr(media, "sha256", None),
+            }
+            for media in (m.midias or [])
+            if media.ativo
+        ],
         ativo=m.ativo,
         criado_em=m.criado_em,
         atualizado_em=getattr(m, 'atualizado_em', None),

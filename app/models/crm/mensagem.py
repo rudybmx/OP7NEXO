@@ -100,6 +100,8 @@ class Mensagem(Base):
         DateTime(timezone=True), nullable=True
     )
     failed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    media_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    media_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     atualizado_em: Mapped[datetime] = mapped_column(
         "updated_at", DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

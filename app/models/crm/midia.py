@@ -32,6 +32,16 @@ class Midia(Base):
         ForeignKey("crm_whatsapp_conversas.id", ondelete="CASCADE"),
         nullable=False,
     )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    canal_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("canais_entrada.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     mensagem_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("crm_whatsapp_mensagens.id", ondelete="SET NULL"),
@@ -44,13 +54,21 @@ class Midia(Base):
     tamanho: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     caption: Mapped[str | None] = mapped_column(Text, nullable=True)
+    storage_status: Mapped[str] = mapped_column(String(32), default="ready", nullable=False)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     duration: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )  # segundos
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    atualizado_em: Mapped[datetime] = mapped_column(
+        "updated_at", DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     conversa: Mapped["Conversa"] = relationship(

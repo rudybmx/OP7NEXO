@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy import create_engine, text
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -32,6 +32,7 @@ from app.services.object_storage import download_and_put, put_bytes, public_url
 from app.services.redis_pub import publish_whatsapp_event
 from app.services.whatsapp_crm_persistence import process_evolution_message
 from app.services.whatsapp_event_queue import enqueue_evolution_event
+from app.services.whatsapp_media import StoredMedia, enqueue_inbound_media_download, register_media_record, store_media_bytes
 from app.services.whatsapp_normalizer import (
     normalize_connection_event,
     normalize_event_type as normalize_whatsapp_event_type,
@@ -681,6 +682,50 @@ class EnviarMensagemOut(BaseModel):
     evolution_response: dict | None
 
 
+class UploadMidiaOut(BaseModel):
+    ok: bool
+    media_url: str
+    minio_path: str
+    mimetype: str
+    filename: str
+    tamanho: int
+    sha256: str
+    tipo: str
+
+
+@router.post("/canais/{canal_id}/upload-midia", response_model=UploadMidiaOut)
+async def upload_midia_canal(
+    canal_id: uuid.UUID,
+    arquivo: UploadFile = File(...),
+    conversa_id: str | None = Form(None),
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_usuario_atual),
+):
+    c = _get_canal_or_404(canal_id, db)
+    _exigir_admin_canal(usuario, c, db)
+    content = await arquivo.read()
+    mimetype = arquivo.content_type or mimetypes.guess_type(arquivo.filename or "")[0] or "application/octet-stream"
+    mensagem_id = str(uuid.uuid4())
+    stored = store_media_bytes(
+        workspace_id=str(c.workspace_id),
+        conversa_id=conversa_id or "outbound",
+        mensagem_id=mensagem_id,
+        content=content,
+        mimetype=mimetype,
+        filename=arquivo.filename,
+    )
+    return UploadMidiaOut(
+        ok=True,
+        media_url=stored.url,
+        minio_path=stored.object_key,
+        mimetype=stored.mimetype,
+        filename=stored.filename,
+        tamanho=stored.size,
+        sha256=stored.sha256,
+        tipo=stored.media_type,
+    )
+
+
 def _enviar_mensagem_meta_cloud(
     canal: CanalEntrada,
     payload: EnviarMensagemIn,
@@ -1095,12 +1140,13 @@ def enviar_mensagem_canal(
         new_conv = db.execute(
             text("""
                 INSERT INTO public.crm_whatsapp_conversas
-                (workspace_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
-                VALUES (:ws, :ct, :inst, :jid, 'em_atendimento', 0, :msg, 'saida', NOW(), NOW(), NOW())
+                (workspace_id, canal_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
+                VALUES (:ws, :canal, :ct, :inst, :jid, 'em_atendimento', 0, :msg, 'saida', NOW(), NOW(), NOW())
                 RETURNING id
             """),
             {
                 "ws": str(c.workspace_id),
+                "canal": str(c.id),
                 "ct": str(contato_id),
                 "inst": instance,
                 "jid": numero_jid,
@@ -1128,11 +1174,13 @@ def enviar_mensagem_canal(
     msg_result = db.execute(
         text("""
             INSERT INTO public.crm_whatsapp_mensagens
-            (conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, status, recebida_em, created_at)
-            VALUES (:cid, :ct, :evid, :inst, :jid, 'saida', true, 'agente', :rn, :msg, :mt, 'enviada', NOW(), NOW())
+            (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, status, media_status, recebida_em, created_at, updated_at)
+            VALUES (:ws, :canal, :cid, :ct, :evid, :inst, :jid, 'saida', true, 'agente', :rn, :msg, :mt, 'enviada', :media_status, NOW(), NOW(), NOW())
             RETURNING id
         """),
         {
+            "ws": str(c.workspace_id),
+            "canal": str(c.id),
             "cid": str(conversa_id),
             "ct": str(contato_id),
             "evid": evo_msg_id,
@@ -1141,9 +1189,31 @@ def enviar_mensagem_canal(
             "rn": usuario.nome or usuario.email or "agente",
             "msg": msg_conteudo,
             "mt": msg_tipo,
+            "media_status": "ready" if payload.media_url and payload.tipo != "texto" else None,
         },
     )
     mensagem_id = msg_result.scalar()
+    if payload.media_url and payload.tipo != "texto":
+        stored_like = StoredMedia(
+            bucket="whatsapp-media",
+            object_key=payload.media_url.split("/meta/storage/whatsapp-media/", 1)[1] if "/meta/storage/whatsapp-media/" in payload.media_url else payload.media_url,
+            url=payload.media_url,
+            mimetype="application/octet-stream",
+            size=0,
+            sha256="",
+            filename=payload.caption or str(mensagem_id),
+            media_type=payload.tipo,
+        )
+        register_media_record(
+            db,
+            workspace_id=str(c.workspace_id),
+            canal_id=str(c.id),
+            conversa_id=str(conversa_id),
+            mensagem_id=str(mensagem_id),
+            stored=stored_like,
+            caption=payload.caption or payload.texto,
+            storage_status="ready",
+        )
     db.commit()
 
     # 4. Publica no Redis para realtime
@@ -1624,21 +1694,22 @@ def _processar_evento_evolution(
         try:
             resultado = _processar_mensagem_evolution(db, canal, instance_data, raw_event_id=raw_event_id)
             if resultado and resultado.get("is_media"):
-                media_kwargs = {
-                    "instance_name": canal.evolution_instance_id or "opcl",
-                    "evolution_msg_id": resultado.get("evolution_msg_id", ""),
-                    "mensagem_db_id": resultado.get("mensagem_id", ""),
-                    "conversa_db_id": resultado.get("conversa_id", ""),
-                    "message_type_raw": resultado.get("message_type", ""),
-                    "media_base64": resultado.get("media_base64"),
-                    "media_url": resultado.get("media_url"),
-                    "media_mime_type": resultado.get("media_mime_type"),
-                    "media_filename": resultado.get("media_filename"),
-                }
-                if media_mode == "background" and background_tasks is not None:
-                    background_tasks.add_task(_baixar_e_salvar_midia, **media_kwargs)
-                else:
-                    _baixar_e_salvar_midia(**media_kwargs)
+                enqueue_inbound_media_download(
+                    db,
+                    workspace_id=resultado.get("workspace_id", ""),
+                    canal_id=str(canal.id),
+                    raw_event_id=raw_event_id,
+                    mensagem_id=resultado.get("mensagem_id", ""),
+                    conversa_id=resultado.get("conversa_id", ""),
+                    instance_name=canal.evolution_instance_id or "opcl",
+                    evolution_msg_id=resultado.get("evolution_msg_id", ""),
+                    message_type_raw=resultado.get("message_type", ""),
+                    media_base64=resultado.get("media_base64"),
+                    media_url=resultado.get("media_url"),
+                    media_mime_type=resultado.get("media_mime_type"),
+                    media_filename=resultado.get("media_filename"),
+                )
+                db.commit()
             if resultado:
                 instance_name = canal.evolution_instance_id or "opcl"
                 ws_id = resultado.get("workspace_id", "")

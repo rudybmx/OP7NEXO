@@ -75,10 +75,11 @@ def _process_job(job_id: str) -> str:
             text("""
                 SELECT
                     j.id, j.attempts, j.max_attempts,
+                    j.workspace_id, j.canal_id, j.job_type, j.related_message_id, j.payload AS job_payload,
                     e.id AS event_id, e.event, e.event_type, e.payload,
                     c.id AS canal_id
                 FROM public.crm_message_jobs j
-                JOIN public.crm_whatsapp_eventos e ON e.id = j.raw_event_id
+                LEFT JOIN public.crm_whatsapp_eventos e ON e.id = j.raw_event_id
                 LEFT JOIN public.canais_entrada c ON c.id = j.canal_id
                 WHERE j.id = :job_id
             """),
@@ -88,10 +89,20 @@ def _process_job(job_id: str) -> str:
         if not job:
             return "skipped"
 
-        event_type = str(job["event_type"] or "").upper()
         try:
+            job_type = str(job["job_type"] or "webhook_event")
+            if job_type == "media_download":
+                from app.services.whatsapp_media import process_media_download_job
+
+                media_job = dict(job)
+                media_job["payload"] = media_job.get("job_payload") or {}
+                process_media_download_job(db, media_job)
+                _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
+                return "processed"
+
+            event_type = str(job["event_type"] or "").upper()
             if event_type not in SUPPORTED_EVENT_TYPES:
-                _mark_done(db, job_id, str(job["event_id"]), status="ignored")
+                _mark_done(db, job_id, str(job["event_id"] or ""), status="ignored")
                 return "skipped"
 
             canal = db.query(CanalEntrada).filter(CanalEntrada.id == job["canal_id"]).first()
@@ -111,13 +122,13 @@ def _process_job(job_id: str) -> str:
                 media_mode="inline",
                 raw_event_id=str(job["event_id"]),
             )
-            _mark_done(db, job_id, str(job["event_id"]), status="done")
+            _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
             return "processed"
         except Exception as exc:
             _mark_failed(
                 db,
                 job_id,
-                str(job["event_id"]),
+                str(job["event_id"] or ""),
                 attempts=int(job["attempts"] or 0),
                 max_attempts=int(job["max_attempts"] or 5),
                 error=str(exc),
@@ -139,16 +150,17 @@ def _mark_done(db, job_id: str, event_id: str, *, status: str) -> None:
         """),
         {"status": status, "job_id": job_id},
     )
-    db.execute(
-        text("""
-            UPDATE public.crm_whatsapp_eventos
-            SET processing_status = :status,
-                processed_at = NOW(),
-                error_message = NULL
-            WHERE id = :event_id
-        """),
-        {"status": status, "event_id": event_id},
-    )
+    if event_id:
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_eventos
+                SET processing_status = :status,
+                    processed_at = NOW(),
+                    error_message = NULL
+                WHERE id = :event_id
+            """),
+            {"status": status, "event_id": event_id},
+        )
     db.commit()
 
 
@@ -182,14 +194,15 @@ def _mark_failed(
             "job_id": job_id,
         },
     )
-    db.execute(
-        text("""
-            UPDATE public.crm_whatsapp_eventos
-            SET processing_status = :status,
-                retry_count = retry_count + 1,
-                error_message = :error
-            WHERE id = :event_id
-        """),
-        {"status": status, "error": error[:4000], "event_id": event_id},
-    )
+    if event_id:
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_eventos
+                SET processing_status = :status,
+                    retry_count = retry_count + 1,
+                    error_message = :error
+                WHERE id = :event_id
+            """),
+            {"status": status, "error": error[:4000], "event_id": event_id},
+        )
     db.commit()
