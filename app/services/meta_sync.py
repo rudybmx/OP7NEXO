@@ -432,12 +432,13 @@ def _extract_carousel_cards(creative: dict, adimage_map: dict[str, dict]) -> lis
         video_id = _safe_str(child.get("video_id"))
         adimg = adimage_map.get(image_hash) if image_hash else None
         image_url_hq = (
-            (adimg or {}).get("url")
+            (adimg or {}).get("permalink_url")
+            or (adimg or {}).get("url")
             or child.get("picture")
             or child.get("image_url")
             or creative.get("thumbnail_url")
         )
-        if adimg and adimg.get("url"):
+        if adimg and (adimg.get("permalink_url") or adimg.get("url")):
             source_type = "adimage"
         elif video_id:
             source_type = "video_thumb"
@@ -653,9 +654,19 @@ def _fetch_videos_by_ids(client: httpx.Client, token: str, video_ids: list[str],
             },
         )
         if resp.status_code != 200:
-            _levantar_se_meta_terminal(resp, "batch vídeos")
             err, _ = _meta_erro_payload(resp)
-            log.warning("Erro batch videos: %s", err.get("message", resp.text[:200]))
+            mensagem = str(err.get("message", resp.text[:200]))
+            code = int(err.get("code") or 0)
+            msg_norm = mensagem.lower()
+
+            # Falha de permissão no batch de vídeos não deve pausar a conta inteira.
+            # Degradamos com warning e seguimos o sync dos demais blocos.
+            if code in {10, 200} and "permission" in msg_norm:
+                log.warning("Permissao insuficiente em batch videos (degradado): %s", mensagem)
+                continue
+
+            _levantar_se_meta_terminal(resp, "batch vídeos")
+            log.warning("Erro batch videos: %s", mensagem)
             continue
         for vid, payload in resp.json().items():
             if isinstance(payload, dict):
@@ -871,6 +882,117 @@ def _guess_extension(content_type: str | None, url: str | None) -> str:
                 return raw_ext
     return ".jpg"
 
+
+
+def _persist_carousel_images_to_minio(
+    client: "httpx.Client",
+    carousel_items: list,
+    ads_account_uuid: str,
+    creative_id: str,
+    account_id: str = "",
+    token: str = "",
+) -> list:
+    """Baixa imagens dos cards do carrossel para o MinIO e atualiza image_url_hq."""
+    import mimetypes
+    from urllib.parse import urlparse
+
+    bucket = settings.MINIO_BUCKET_CRIATIVOS
+    if not settings.MINIO_ACCESS_KEY or not settings.MINIO_SECRET_KEY:
+        return carousel_items
+
+    updated = []
+    for card in carousel_items:
+        src_url = card.get("image_url_hq") or card.get("picture")
+        card_index = card.get("card_index", 0)
+        if not src_url:
+            updated.append(card)
+            continue
+
+        # Skip if already a MinIO URL
+        if "/meta/storage/" in src_url or "/meta/storage-assinado?" in src_url:
+            updated.append(card)
+            continue
+
+        try:
+            resp = client.get(
+                src_url,
+                follow_redirects=True,
+                timeout=15,
+                headers={
+                    "Referer": "https://www.facebook.com/",
+                    "User-Agent": "Mozilla/5.0",
+                },
+            )
+            if resp.status_code >= 400:
+                # Fallback: re-resolver image_hash na API Meta (URLs frescas)
+                image_hash = card.get("image_hash")
+                if image_hash and resp.status_code == 403 and account_id and token:
+                    try:
+                        import json as _json
+                        rr = client.get(
+                            f"{META_BASE}/{account_id}/adimages",
+                            params={
+                                "access_token": token,
+                                "hashes": _json.dumps([image_hash]),
+                                "fields": "hash,url,permalink_url",
+                            },
+                            timeout=15,
+                        )
+                        if rr.status_code == 200:
+                            data = rr.json().get("data", [])
+                            if data:
+                                fresh_url = data[0].get("permalink_url") or data[0].get("url")
+                                if fresh_url:
+                                    log.info(
+                                        "Card %s do carrossel %s: hash re-resolvido na API Meta",
+                                        card_index, creative_id,
+                                    )
+                                    resp2 = client.get(
+                                        fresh_url,
+                                        follow_redirects=True,
+                                        timeout=15,
+                                        headers={
+                                            "Referer": "https://www.facebook.com/",
+                                            "User-Agent": "Mozilla/5.0",
+                                        },
+                                    )
+                                    if resp2.status_code < 400:
+                                        resp = resp2
+                    except Exception as exc2:
+                        log.warning(
+                            "Fallback re-resolucao API Meta exception card %s: %s",
+                            card_index, exc2,
+                        )
+                if resp.status_code >= 400:
+                    log.warning(
+                        "Falha ao baixar card %s do carrossel (HTTP %s): %s",
+                        card_index, resp.status_code, creative_id,
+                    )
+                    updated.append(card)
+                    continue
+
+            content_type = resp.headers.get("content-type", "image/jpeg")
+            ext = _guess_extension(content_type, src_url)
+            object_name = (
+                "ads-accounts/" + ads_account_uuid +
+                "/criativos/" + creative_id +
+                "_card_" + str(card_index) + ext
+            )
+            put_bytes(bucket, object_name, resp.content, content_type)
+            new_url = public_url(bucket, object_name)
+            card["image_url_hq"] = new_url
+            card["hq_source"] = "carousel_minio"
+            log.info(
+                "Card %s do carrossel %s persistido no MinIO",
+                card_index, creative_id,
+            )
+        except Exception as exc:
+            log.warning(
+                "Falha ao persistir card %s do carrossel %s no MinIO: %s",
+                card_index, creative_id, exc,
+            )
+        updated.append(card)
+    return updated
 
 def _persist_hq_images_to_minio(
     client: httpx.Client,
@@ -1268,6 +1390,18 @@ def _janela_insights_para_conta(conta: AdsAccount, modo_sync: str) -> str:
     return json.dumps({"since": since.isoformat(), "until": hoje.isoformat()})
 
 
+def obter_motivo_sync_pulado(conta: AdsAccount) -> str | None:
+    if conta.sync_paused:
+        return "sync pausado"
+    if conta.status != "ativo":
+        return "conta inativa"
+    if not conta.bm_token:
+        return "sem token"
+    if conta.token_expira_em and conta.token_expira_em < datetime.now(tz=timezone.utc):
+        return "token expirado"
+    return None
+
+
 def _parse_meta_datetime(raw: Any) -> datetime | None:
     if not raw:
         return None
@@ -1599,6 +1733,12 @@ def _sync_catalog_anuncios_criativos_videos(
         carousel_items = _extract_carousel_cards(creative_enriquecido.get("raw_creative") or creative, adimage_map)
         if not carousel_items:
             carousel_items = creative_enriquecido.get("carousel_items") or []
+        if carousel_items:
+            carousel_items = _persist_carousel_images_to_minio(
+                client, carousel_items, str(conta.id),
+                creative_enriquecido.get("id") or creative_id or "",
+                account_id, token,
+            )
         video_id = creative_enriquecido.get("video_id") or creative.get("video_id")
         video_payload = video_map.get(str(video_id)) if video_id else {}
         video_thumbnail_url = None
@@ -2022,23 +2162,16 @@ def sincronizar_conta(
     ads_account_id: str,
     db: Session,
     on_progress=None,  # callable(etapa: str, progresso: int) | None
+    on_event=None,  # callable(tipo: str, mensagem: str, etapa: str | None = None, progresso: int | None = None, detalhes: dict | None = None) | None
     modo_sync: str = "recorrente",
 ) -> dict:
     conta: AdsAccount | None = db.get(AdsAccount, ads_account_id)
     if not conta:
         raise ValueError(f"AdsAccount {ads_account_id} não encontrada")
 
-    if conta.sync_paused:
-        return {"skipped": True, "reason": "sync pausado"}
-
-    if conta.status != "ativo":
-        return {"skipped": True, "reason": "conta inativa"}
-
-    if not conta.bm_token:
-        return {"skipped": True, "reason": "sem token"}
-
-    if conta.token_expira_em and conta.token_expira_em < datetime.now(tz=timezone.utc):
-        return {"skipped": True, "reason": "token expirado"}
+    motivo_skip = obter_motivo_sync_pulado(conta)
+    if motivo_skip:
+        return {"skipped": True, "reason": motivo_skip}
 
     def _progress(etapa: str, pct: int) -> None:
         if on_progress:
@@ -2090,6 +2223,16 @@ def sincronizar_conta(
         else:
             _levantar_se_meta_terminal(resp_saldo, f"saldo da conta {meta_account_id}")
             log.warning("Erro ao buscar saldo %s: %s", meta_account_id, resp_saldo.text[:200])
+            if on_event:
+                try:
+                    on_event(
+                        "warning",
+                        f"Erro ao buscar saldo {meta_account_id}",
+                        etapa="balance",
+                        detalhes={"response": resp_saldo.text[:200]},
+                    )
+                except Exception:
+                    pass
 
         try:
             resp_financeiro = client.get(
@@ -2135,8 +2278,28 @@ def sincronizar_conta(
                     meta_account_id,
                     resp_financeiro.text[:200],
                 )
+                if on_event:
+                    try:
+                        on_event(
+                            "warning",
+                            f"Dados financeiros opcionais não atualizados {meta_account_id}",
+                            etapa="balance",
+                            detalhes={"response": resp_financeiro.text[:200]},
+                        )
+                    except Exception:
+                        pass
         except Exception as exc:
             log.warning("Falha ao buscar dados financeiros opcionais %s: %s", meta_account_id, exc)
+            if on_event:
+                try:
+                    on_event(
+                        "warning",
+                        f"Falha ao buscar dados financeiros opcionais {meta_account_id}: {exc}",
+                        etapa="balance",
+                        detalhes={"exception": str(exc)},
+                    )
+                except Exception:
+                    pass
 
         db.commit()
         _progress("balance", 10)
@@ -2154,7 +2317,17 @@ def sincronizar_conta(
         _progress("campanhas", 55)
 
         _progress("anuncios", 57)
-        _sync_anuncios(client, db, meta_account_id, token, time_range, conta.id, totais, on_progress=_progress)
+        _sync_anuncios(
+            client,
+            db,
+            meta_account_id,
+            token,
+            time_range,
+            conta.id,
+            totais,
+            on_progress=_progress,
+            on_event=on_event,
+        )
         _progress("anuncios", 72)
 
         _progress("videos", 73)
@@ -2190,7 +2363,15 @@ def sincronizar_conta(
     conta.sincronizado_em = datetime.now(tz=timezone.utc)
     db.commit()
     log.info("Sync conta %s concluído: %s", meta_account_id, totais)
-    return {"ok": True, "conta": meta_account_id, "totais": totais}
+    range_data = json.loads(time_range)
+    return {
+        "ok": True,
+        "conta": meta_account_id,
+        "totais": totais,
+        "modo_sync": modo_sync,
+        "janela_inicio": range_data.get("since"),
+        "janela_fim": range_data.get("until"),
+    }
 
 
 # ── sync diários ───────────────────────────────────────────────────────────────
@@ -2432,6 +2613,7 @@ def _sync_anuncios(
     ads_account_uuid: Any,
     totais: dict,
     on_progress=None,
+    on_event=None,
 ) -> None:
     def _progress(etapa: str, pct: int) -> None:
         if on_progress:
@@ -2446,6 +2628,16 @@ def _sync_anuncios(
         except Exception:
             pass
         log.warning("Falha em %s: %s", stage, exc)
+        if on_event:
+            try:
+                on_event(
+                    "warning",
+                    f"Falha em {stage}: {exc}",
+                    etapa=stage,
+                    detalhes={"exception": str(exc)},
+                )
+            except Exception:
+                pass
 
     _progress("anuncios:insights", 57)
     rows = _paginar(
@@ -2642,6 +2834,11 @@ def _sync_anuncios(
         carousel_raw = _extract_carousel_cards(creative.get("raw_creative") or {}, adimage_map)
         if not carousel_raw:
             carousel_raw = creative.get("carousel_items") or []
+        if carousel_raw:
+            carousel_raw = _persist_carousel_images_to_minio(
+                client, carousel_raw, str(ads_account_uuid),
+                creative.get("id") or "",
+            )
         carousel_json = json.dumps(carousel_raw) if carousel_raw else None
         ad_status = ad_statuses.get(ad_id, "ACTIVE")
         campaign_id = r.get("campaign_id")

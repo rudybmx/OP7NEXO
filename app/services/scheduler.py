@@ -1,4 +1,4 @@
-"""APScheduler — roda sincronização Meta Ads 3x/dia."""
+"""APScheduler — roda sincronização Meta Ads 3x/dia e health daily de tokens."""
 import logging
 from datetime import datetime, timezone
 
@@ -7,7 +7,8 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.core.database import SessionLocal
 from app.models.ads_account import AdsAccount
-from app.services.meta_sync import MetaContaInacessivelError, sincronizar_conta
+from app.services.meta_token_health import checar_tokens_ativos
+from app.services.meta_sync_jobs import iniciar_sync_job
 
 log = logging.getLogger(__name__)
 
@@ -24,26 +25,23 @@ def _job_sync_todas_contas() -> None:
         ).all()
 
         for conta in contas:
-            if not conta.bm_token:
-                continue
-            if conta.token_expira_em and conta.token_expira_em < datetime.now(tz=timezone.utc):
-                log.warning("Token expirado — conta %s (%s)", conta.id, conta.account_id)
-                continue
             try:
-                resultado = sincronizar_conta(str(conta.id), db)
-                log.info("Conta %s: %s", conta.account_id, resultado)
-            except MetaContaInacessivelError as exc:
-                try:
-                    db.rollback()
-                except Exception:
-                    pass
-                conta.sync_paused = True
-                db.commit()
-                log.warning("Conta %s pausada após erro terminal no sync: %s", conta.account_id, exc)
+                job_id, _, status, reason = iniciar_sync_job(db, str(conta.id), modo_sync="recorrente", background=False)
+                if status == "skipped":
+                    log.info("Conta %s: job %s pulado (%s)", conta.account_id, job_id, reason or "sem motivo")
+                else:
+                    log.info("Conta %s: job %s finalizado com status %s", conta.account_id, job_id, status)
             except Exception as exc:
                 log.exception("Erro sync conta %s: %s", conta.account_id, exc)
 
     log.info("Scheduler: sync concluído")
+
+
+def _job_health_meta_tokens() -> None:
+    log.info("Scheduler: iniciando health de tokens Meta — %s", datetime.now(tz=timezone.utc).isoformat())
+    with SessionLocal() as db:
+        summary = checar_tokens_ativos(db)
+    log.info("Scheduler: health de tokens concluído — %s", summary)
 
 
 def iniciar_scheduler() -> None:
@@ -55,10 +53,23 @@ def iniciar_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=600,
     )
+    scheduler.add_job(
+        _job_health_meta_tokens,
+        CronTrigger(hour=7, minute=0, timezone="America/Sao_Paulo"),
+        id="meta_token_health",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
     scheduler.start()
-    job = scheduler.get_job("meta_sync")
-    next_run = job.next_run_time.isoformat() if job and job.next_run_time else "n/a"
-    log.info("Scheduler iniciado — jobs Meta Ads às 06h, 12h, 18h (Brasília); próximo=%s", next_run)
+    job_sync = scheduler.get_job("meta_sync")
+    job_health = scheduler.get_job("meta_token_health")
+    next_sync = job_sync.next_run_time.isoformat() if job_sync and job_sync.next_run_time else "n/a"
+    next_health = job_health.next_run_time.isoformat() if job_health and job_health.next_run_time else "n/a"
+    log.info(
+        "Scheduler iniciado — Meta Ads 06h/12h/18h e health 07h (Brasília); próximo_sync=%s; próximo_health=%s",
+        next_sync,
+        next_health,
+    )
 
 
 def parar_scheduler() -> None:

@@ -1,3 +1,4 @@
+import logging
 import json
 import time
 import uuid
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, listar_workspaces_autorizados, verificar_acesso_workspace
+from app.services.cache_utils import cache_get, cache_key, cache_prune, cache_set
 from app.services.ads_account_access import listar_ads_account_ids_acessiveis
 from app.api.meta_delivery import (
     resolver_veiculacao_anuncio,
@@ -32,9 +34,12 @@ from app.services.meta_tracking import extrair_tracking_info
 from app.models.user import User
 
 router = APIRouter(prefix="/meta/insights", tags=["meta_insights"])
+logger = logging.getLogger(__name__)
 
 _DETALHE_CACHE_TTL_SECONDS = 300
 _DETALHE_CACHE: dict[tuple[str, ...], tuple[float, dict]] = {}
+_RESPOSTA_CACHE_TTL_SECONDS = 120
+_RESPOSTA_CACHE: dict[tuple[str, ...], tuple[float, dict]] = {}
 
 
 def _conta_ids_da_query(workspace_id: str, conta_ids: list[str], db: Session, usuario: User | None = None) -> list[uuid.UUID]:
@@ -78,40 +83,39 @@ def _detalhe_cache_key(
     data_inicio: date,
     data_fim: date,
     conta_ids: list[str],
+    sync_version: str | None,
 ) -> tuple[str, ...]:
     contas = tuple(sorted({c.strip() for c in conta_ids if c and c.strip()}))
+    sync_marker = (sync_version or '').strip()
     return (
         workspace_id,
         lookup_type,
         lookup_id,
         str(data_inicio),
         str(data_fim),
+        sync_marker,
         *contas,
     )
 
 
 def _detalhe_cache_get(key: tuple[str, ...]) -> dict | None:
-    cached = _DETALHE_CACHE.get(key)
-    if not cached:
-        return None
-    expires_at, payload = cached
-    if expires_at <= time.monotonic():
-        _DETALHE_CACHE.pop(key, None)
-        return None
-    return payload
+    return cache_get(_DETALHE_CACHE, key)
 
 
 def _detalhe_cache_prune(now: float | None = None) -> None:
-    instante = now or time.monotonic()
-    expirados = [key for key, (expires_at, _) in _DETALHE_CACHE.items() if expires_at <= instante]
-    for key in expirados:
-        _DETALHE_CACHE.pop(key, None)
+    cache_prune(_DETALHE_CACHE, now)
 
 
 def _detalhe_cache_set(key: tuple[str, ...], payload: dict) -> None:
-    agora = time.monotonic()
-    _detalhe_cache_prune(agora)
-    _DETALHE_CACHE[key] = (agora + _DETALHE_CACHE_TTL_SECONDS, payload)
+    cache_set(_DETALHE_CACHE, key, payload, _DETALHE_CACHE_TTL_SECONDS)
+
+
+def _resposta_cache_get(key: tuple[str, ...]) -> dict | None:
+    return cache_get(_RESPOSTA_CACHE, key)
+
+
+def _resposta_cache_set(key: tuple[str, ...], payload: dict) -> None:
+    cache_set(_RESPOSTA_CACHE, key, payload, _RESPOSTA_CACHE_TTL_SECONDS)
 
 
 def _normalizar_status_modal(*values: str | None) -> str:
@@ -135,7 +139,10 @@ def _normalizar_status_modal(*values: str | None) -> str:
 
 
 def _tipo_modal(tipo_criativo: str | None) -> str:
-    return "VIDEO" if _normalizar_texto(tipo_criativo).upper() == "VIDEO" else "IMAGE"
+    tipo = _normalizar_texto(tipo_criativo).upper()
+    if tipo in {"VIDEO", "CAROUSEL"}:
+        return tipo
+    return "IMAGE"
 
 
 def _plataforma_modal(publisher_platform: str | None) -> str | None:
@@ -153,6 +160,26 @@ def _formato_periodo_modal(data_inicio: date, data_fim: date) -> str:
 
 def _safe_div(num: float, den: float) -> float:
     return round(num / den, 4) if den else 0.0
+
+
+def _executar_query_com_fallback(db: Session, stmt, params: dict, *, contexto: str, loader, default):
+    inicio = time.perf_counter()
+    try:
+        resultado = loader(db.execute(stmt, params))
+    except Exception:
+        logger.exception("Falha ao carregar %s", contexto)
+        return default
+
+    duracao_ms = (time.perf_counter() - inicio) * 1000
+    if duracao_ms >= 1000:
+        tamanho = None
+        try:
+            tamanho = len(resultado)  # type: ignore[arg-type]
+        except TypeError:
+            tamanho = None
+        detalhe_tamanho = f" rows={tamanho}" if tamanho is not None else ""
+        logger.info("Consulta lenta em %s: %.1f ms%s", contexto, duracao_ms, detalhe_tamanho)
+    return resultado
 
 
 def _tem_resultado_anuncio(*, result_count: int, leads: int = 0, usar_leads_como_fallback: bool = False) -> bool:
@@ -1138,6 +1165,8 @@ def anuncios_performance(
         tipo_criativo = str(creative_row.get("tipo_criativo") or row.get("tipo_criativo") or "IMAGE").upper()
         if tipo_criativo not in {"IMAGE", "VIDEO", "CAROUSEL"}:
             tipo_criativo = "IMAGE"
+        if tipo_criativo != "VIDEO" and carousel_items:
+            tipo_criativo = "CAROUSEL"
 
         plataforma_info = plataformas_por_campanha.get(campaign_id_row, {"codes": [], "resumo": []})
         plataformas_codes = plataforma_info.get("codes") or []
@@ -1357,22 +1386,67 @@ def visao_geral(
     data_inicio: date = Query(...),
     data_fim: date = Query(...),
     conta_ids: str | None = Query(None),
+    sync_version: str | None = Query(None),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
     ids_filtro = [c.strip() for c in conta_ids.split(",")] if conta_ids else []
     account_uuids = _conta_ids_da_query(workspace_id, ids_filtro, db, usuario)
+    cache_key_visao = cache_key(
+        "meta",
+        "visao-geral",
+        workspace_id,
+        str(data_inicio),
+        str(data_fim),
+        (sync_version or "").strip(),
+        *sorted(str(account_id) for account_id in account_uuids),
+    )
+    cached = _resposta_cache_get(cache_key_visao)
+    if cached is not None:
+        logger.info(
+            "meta.visao_geral cache_hit workspace=%s contas=%d",
+            workspace_id,
+            len(account_uuids),
+        )
+        return cached
 
-    if not account_uuids:
+    def _payload_vazio() -> dict:
         return {
-            "kpis": {"spend": 0.0, "leads": 0, "impressions": 0, "reach": 0, "clicks": 0,
-                     "ctr": 0.0, "cpc": 0.0, "cpm": 0.0, "cpl": 0.0, "frequencia": 0.0},
+            "kpis": {
+                "spend": 0.0,
+                "leads": 0,
+                "impressions": 0,
+                "reach": 0,
+                "clicks": 0,
+                "ctr": 0.0,
+                "cpc": 0.0,
+                "cpm": 0.0,
+                "cpl": 0.0,
+                "frequencia": 0.0,
+                "leads_whatsapp": 0,
+                "leads_instagram": 0,
+                "leads_messenger": 0,
+                "leads_formulario": 0,
+                "link_click": 0,
+                "leads_conversa_7d": 0,
+            },
             "contas": [],
             "dados_diarios": [],
+            "leads_por_canal": [],
+            "top_criativos": [],
             "periodo": {"inicio": str(data_inicio), "fim": str(data_fim)},
         }
 
-    kpi_row = db.execute(
+    if not account_uuids:
+        payload = _payload_vazio()
+        _resposta_cache_set(cache_key_visao, payload)
+        return payload
+
+    started_at = time.perf_counter()
+    payload = _payload_vazio()
+
+    kpi_row = _executar_query_com_fallback(
+        db,
         text(
             "SELECT "
             "  COALESCE(SUM(spend),0) AS spend, "
@@ -1391,7 +1465,10 @@ def visao_geral(
             "  AND data BETWEEN :ini AND :fim"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
-    ).fetchone()
+        contexto="visao_geral.kpis",
+        loader=lambda result: result.fetchone(),
+        default=(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    )
 
     spend = float(kpi_row[0])
     leads = int(kpi_row[1])
@@ -1418,7 +1495,8 @@ def visao_geral(
         "leads_conversa_7d": int(kpi_row[10]),
     }
 
-    conta_rows = db.execute(
+    conta_rows = _executar_query_com_fallback(
+        db,
         text(
             "SELECT "
             "  a.id::text, a.account_id, a.account_name, "
@@ -1441,7 +1519,10 @@ def visao_geral(
             "GROUP BY a.id, a.account_id, a.account_name, a.balance"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
-    ).fetchall()
+        contexto="visao_geral.contas",
+        loader=lambda result: result.fetchall(),
+        default=[],
+    )
 
     contas = []
     for r in conta_rows:
@@ -1469,7 +1550,8 @@ def visao_geral(
             "leads_conversa_7d": int(r[14]),
         })
 
-    diario_rows = db.execute(
+    diario_rows = _executar_query_com_fallback(
+        db,
         text(
             "SELECT data, "
             "  COALESCE(SUM(spend),0) AS spend, "
@@ -1482,7 +1564,10 @@ def visao_geral(
             "GROUP BY data ORDER BY data"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
-    ).fetchall()
+        contexto="visao_geral.diario",
+        loader=lambda result: result.fetchall(),
+        default=[],
+    )
 
     dados_diarios = [
         {"data": str(r[0]), "spend": float(r[1]), "leads": int(r[2]),
@@ -1490,7 +1575,8 @@ def visao_geral(
         for r in diario_rows
     ]
 
-    canal_rows = db.execute(
+    canal_rows = _executar_query_com_fallback(
+        db,
         text(
             "SELECT breakdown_value, "
             "  COALESCE(SUM(leads),0) AS leads, "
@@ -1503,7 +1589,10 @@ def visao_geral(
             "ORDER BY leads DESC"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
-    ).fetchall()
+        contexto="visao_geral.leads_por_canal",
+        loader=lambda result: result.fetchall(),
+        default=[],
+    )
 
     total_leads_canal = sum(int(r[1]) for r in canal_rows) or 1
     leads_por_canal = [
@@ -1516,7 +1605,8 @@ def visao_geral(
         for r in canal_rows
     ]
 
-    criativo_rows = db.execute(
+    criativo_rows = _executar_query_com_fallback(
+        db,
         text(
             "SELECT "
             "  COALESCE(NULLIF(a.creative_id, ''), cr.creative_id, a.ad_id) AS creative_id, "
@@ -1527,49 +1617,39 @@ def visao_geral(
             "  MAX(COALESCE(cr.link_anuncio, a.link_anuncio)) AS link_anuncio, "
             "  MAX(COALESCE(cr.carousel_items::text, a.carousel_items::text)) AS carousel_items, "
             "  (ARRAY_AGG(cr.raw_payload ORDER BY cr.last_seen_at DESC))[1] AS raw_payload, "
+            "  ARRAY_AGG(DISTINCT a.ad_id) AS ad_ids, "
             "  COALESCE(SUM(a.leads),0) AS leads, "
             "  COALESCE(SUM(a.spend),0) AS spend, "
             "  COALESCE(SUM(a.impressions),0) AS impressions, "
             "  COALESCE(SUM(a.clicks),0) AS clicks, "
             "  COALESCE(SUM(a.link_click),0) AS link_click, "
             "  COALESCE(AVG(a.cpm),0) AS cpm, "
-            "  COALESCE(AVG(a.frequencia),0) AS frequencia, "
-            "  vm.video_views, vm.thruplay, vm.video_p25, vm.video_p50, vm.video_p75, vm.video_p100, vm.video_3_sec "
+            "  COALESCE(AVG(a.frequencia),0) AS frequencia "
             "FROM meta_anuncios_insights a "
             "LEFT JOIN meta_creatives_catalog cr "
             "  ON cr.ads_account_id = a.ads_account_id "
             " AND (cr.creative_id = a.creative_id OR cr.ad_id = a.ad_id) "
-            "LEFT JOIN ("
-            "    SELECT "
-            "      COALESCE(ad.creative_id, cr.creative_id, ad.ad_id) AS creative_id, "
-            "      COALESCE(SUM(vm.video_views),0) AS video_views, "
-            "      COALESCE(SUM(vm.thruplay),0) AS thruplay, "
-            "      COALESCE(SUM(vm.video_p25),0) AS video_p25, "
-            "      COALESCE(SUM(vm.video_p50),0) AS video_p50, "
-            "      COALESCE(SUM(vm.video_p75),0) AS video_p75, "
-            "      COALESCE(SUM(vm.video_p100),0) AS video_p100, "
-            "      COALESCE(SUM(vm.video_3_sec),0) AS video_3_sec "
-            "    FROM meta_video_metrics_daily vm "
-            "    JOIN meta_ads_catalog ad ON ad.ad_id = vm.ad_id AND ad.ads_account_id = vm.ads_account_id "
-            "    LEFT JOIN meta_creatives_catalog cr "
-            "      ON cr.ads_account_id = ad.ads_account_id "
-            "     AND (cr.creative_id = ad.creative_id OR cr.ad_id = ad.ad_id) "
-            "    WHERE vm.ads_account_id = ANY(:ids) AND vm.data BETWEEN :ini AND :fim "
-            "    GROUP BY COALESCE(ad.creative_id, cr.creative_id, ad.ad_id) "
-            ") vm ON vm.creative_id = COALESCE(NULLIF(a.creative_id, ''), cr.creative_id, a.ad_id) "
             "WHERE a.ads_account_id = ANY(:ids) "
             "  AND a.data BETWEEN :ini AND :fim "
-            "GROUP BY COALESCE(NULLIF(a.creative_id, ''), cr.creative_id, a.ad_id), "
-            "         vm.video_views, vm.thruplay, vm.video_p25, vm.video_p50, vm.video_p75, vm.video_p100, vm.video_3_sec "
+            "GROUP BY COALESCE(NULLIF(a.creative_id, ''), cr.creative_id, a.ad_id) "
             "HAVING MAX(COALESCE(cr.thumbnail_url, a.thumbnail_url, cr.image_url_hq, a.image_url_hq)) IS NOT NULL "
             "ORDER BY leads DESC "
             "LIMIT 5"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
-    ).mappings().all()
+        contexto="visao_geral.top_criativos",
+        loader=lambda result: result.mappings().all(),
+        default=[],
+    )
 
     top_criativos = []
+    video_ad_ids: list[str] = []
     for r in criativo_rows:
+        ad_ids_raw = r.get("ad_ids") or []
+        ad_ids = [str(x) for x in ad_ids_raw if x]
+        if _normalizar_texto(r.get("tipo_criativo")) == "VIDEO":
+            video_ad_ids.extend(ad_ids)
+
         raw_payload = _parse_jsonb(r.get("raw_payload"))
         tracking_info = extrair_tracking_info(
             raw_payload if isinstance(raw_payload, dict) else {},
@@ -1584,26 +1664,20 @@ def visao_geral(
         cpm = float(r.get("cpm") or 0)
         freq = float(r.get("frequencia") or 0)
         carousel_raw = r.get("carousel_items")
-        video_metrics = None
-        if r.get("video_views") is not None:
-            video_metrics = {
-                "video_views": int(r.get("video_views") or 0),
-                "thruplay": int(r.get("thruplay") or 0),
-                "p25": int(r.get("video_p25") or 0),
-                "p50": int(r.get("video_p50") or 0),
-                "p75": int(r.get("video_p75") or 0),
-                "p100": int(r.get("video_p100") or 0),
-                "video_3_sec": int(r.get("video_3_sec") or 0),
-            }
         carousel_items = _parse_jsonb(carousel_raw)
         if not isinstance(carousel_items, list):
             carousel_items = []
+        tipo_criativo = str(r.get("tipo_criativo") or "IMAGE").upper()
+        if tipo_criativo not in {"IMAGE", "VIDEO", "CAROUSEL"}:
+            tipo_criativo = "IMAGE"
+        if tipo_criativo != "VIDEO" and carousel_items:
+            tipo_criativo = "CAROUSEL"
 
         top_criativos.append({
             "id": r.get("creative_id"),
             "nome": r.get("nome"),
             "thumbnail_url": r.get("image_url_hq") or r.get("thumbnail_url"),
-            "tipo": r.get("tipo_criativo") or "IMAGE",
+            "tipo": tipo_criativo,
             "image_url_hq": r.get("image_url_hq"),
             "link_anuncio": r.get("link_anuncio"),
             "headline": tracking_info.get("headline"),
@@ -1622,10 +1696,61 @@ def visao_geral(
             "link_click": link_click,
             "cpm": cpm,
             "frequencia": freq,
-            "video_metrics": video_metrics,
         })
 
-    return {
+    video_metrics_map: dict[str, dict] = {}
+    if video_ad_ids:
+        video_rows = _executar_query_com_fallback(
+            db,
+            text(
+                "SELECT ad_id, "
+                "  COALESCE(SUM(video_views),0) AS video_views, "
+                "  COALESCE(SUM(thruplay),0) AS thruplay, "
+                "  COALESCE(SUM(video_p25),0) AS video_p25, "
+                "  COALESCE(SUM(video_p50),0) AS video_p50, "
+                "  COALESCE(SUM(video_p75),0) AS video_p75, "
+                "  COALESCE(SUM(video_p100),0) AS video_p100, "
+                "  COALESCE(SUM(video_3_sec),0) AS video_3_sec "
+                "FROM meta_video_metrics_daily "
+                "WHERE ads_account_id = ANY(:ids) "
+                "  AND ad_id = ANY(:ad_ids) "
+                "  AND data BETWEEN :ini AND :fim "
+                "GROUP BY ad_id"
+            ),
+            {"ids": account_uuids, "ad_ids": sorted(set(video_ad_ids)), "ini": data_inicio, "fim": data_fim},
+            contexto="visao_geral.video_metrics",
+            loader=lambda result: result.mappings().all(),
+            default=[],
+        )
+        video_metrics_map = {str(r["ad_id"]): dict(r) for r in video_rows}
+
+    ad_ids_por_criativo = {
+        str(row.get("creative_id")): [str(ad_id) for ad_id in (row.get("ad_ids") or []) if ad_id]
+        for row in criativo_rows
+    }
+
+    for item in top_criativos:
+        if item["tipo"] != "VIDEO":
+            item["video_metrics"] = None
+            continue
+        source_ids = ad_ids_por_criativo.get(str(item["id"]), [])
+        if not source_ids:
+            item["video_metrics"] = None
+            continue
+        if not any(ad_id in video_metrics_map for ad_id in source_ids):
+            item["video_metrics"] = None
+            continue
+        item["video_metrics"] = {
+            "video_views": sum(int(video_metrics_map.get(ad_id, {}).get("video_views") or 0) for ad_id in source_ids),
+            "thruplay": sum(int(video_metrics_map.get(ad_id, {}).get("thruplay") or 0) for ad_id in source_ids),
+            "p25": sum(int(video_metrics_map.get(ad_id, {}).get("video_p25") or 0) for ad_id in source_ids),
+            "p50": sum(int(video_metrics_map.get(ad_id, {}).get("video_p50") or 0) for ad_id in source_ids),
+            "p75": sum(int(video_metrics_map.get(ad_id, {}).get("video_p75") or 0) for ad_id in source_ids),
+            "p100": sum(int(video_metrics_map.get(ad_id, {}).get("video_p100") or 0) for ad_id in source_ids),
+            "video_3_sec": sum(int(video_metrics_map.get(ad_id, {}).get("video_3_sec") or 0) for ad_id in source_ids),
+        }
+
+    payload = {
         "kpis": kpis,
         "contas": contas,
         "dados_diarios": dados_diarios,
@@ -1633,6 +1758,18 @@ def visao_geral(
         "top_criativos": top_criativos,
         "periodo": {"inicio": str(data_inicio), "fim": str(data_fim)},
     }
+    _resposta_cache_set(cache_key_visao, payload)
+    elapsed_ms = (time.perf_counter() - started_at) * 1000
+    logger.info(
+        "meta.visao_geral elapsed_ms=%.1f contas=%d contas_ret=%d diarios=%d canais=%d criativos=%d cache=false",
+        elapsed_ms,
+        len(account_uuids),
+        len(contas),
+        len(dados_diarios),
+        len(leads_por_canal),
+        len(top_criativos),
+    )
+    return payload
 
 
 @router.get("/campanhas-hierarquia")
@@ -1958,6 +2095,7 @@ def anuncio_detalhe(
     data_inicio: date | None = Query(None),
     data_fim: date | None = Query(None),
     conta_ids: str | None = Query(None),
+    sync_version: str | None = Query(None),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
@@ -1984,6 +2122,7 @@ def anuncio_detalhe(
         data_inicio=data_inicio,
         data_fim=data_fim,
         conta_ids=conta_ids_filtro,
+        sync_version=sync_version,
     )
     cached = _detalhe_cache_get(cache_key)
     if cached is not None:
@@ -2131,18 +2270,36 @@ def anuncio_detalhe(
         or first_row.get("tipo_criativo")
         or "IMAGE"
     )
+    carousel_items = _parse_jsonb(creative_meta_row.get("carousel_items"))
+    if not isinstance(carousel_items, list) or not carousel_items:
+        carousel_items = _parse_jsonb(first_row.get("carousel_items"))
+    if not isinstance(carousel_items, list):
+        carousel_items = []
+    if current_type != "VIDEO" and carousel_items:
+        current_type = "CAROUSEL"
+
+    first_carousel_media = None
+    for card in carousel_items:
+        if not isinstance(card, dict):
+            continue
+        candidate = card.get("image_url_hq") or card.get("picture")
+        if candidate:
+            first_carousel_media = candidate
+            break
 
     current_thumbnail = (
         creative_meta_row.get("image_url_hq")
         or creative_meta_row.get("thumbnail_url")
         or first_row.get("image_url_hq")
         or first_row.get("thumbnail_url")
+        or first_carousel_media
     )
     current_image_hq = (
         creative_meta_row.get("image_url_hq")
         or first_row.get("image_url_hq")
         or first_row.get("thumbnail_url")
         or creative_meta_row.get("thumbnail_url")
+        or first_carousel_media
     )
     current_meta_url = (
         creative_meta_row.get("link_anuncio")
@@ -2456,6 +2613,7 @@ def anuncio_detalhe(
         "creative_type": current_type,
         "thumbnail_url": current_thumbnail,
         "image_url_hq": current_image_hq,
+        "carousel_items": carousel_items,
         "meta_url": current_meta_url,
         "campaign_id": current_campaign_id,
         "campaign_name": current_campaign_name,
@@ -2501,6 +2659,7 @@ def anuncio_detalhe_por_ad_id(
     data_inicio: date | None = Query(None),
     data_fim: date | None = Query(None),
     conta_ids: str | None = Query(None),
+    sync_version: str | None = Query(None),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
@@ -2511,6 +2670,7 @@ def anuncio_detalhe_por_ad_id(
         data_inicio=data_inicio,
         data_fim=data_fim,
         conta_ids=conta_ids,
+        sync_version=sync_version,
         db=db,
         usuario=usuario,
     )

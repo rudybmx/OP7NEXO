@@ -1,4 +1,6 @@
+import logging
 import json
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -8,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, verificar_acesso_workspace
+from app.services.cache_utils import cache_get, cache_key, cache_set
 from app.models.user import User
 from app.services.ads_account_access import listar_ads_account_ids_acessiveis
 from app.api.meta_delivery import (
@@ -30,6 +33,9 @@ from app.api.meta_delivery import (
 from app.services.meta_tracking import extrair_tracking_info
 
 router = APIRouter(prefix="/meta/catalogo", tags=["meta_catalog"])
+logger = logging.getLogger(__name__)
+_GERENCIADOR_CACHE_TTL_SECONDS = 120
+_GERENCIADOR_CACHE: dict[tuple[str, ...], tuple[float, dict]] = {}
 
 
 def _contas_workspace(
@@ -61,6 +67,26 @@ def _conta_ids_da_query(workspace_id: str, conta_ids: list[str], db: Session) ->
 
 def _safe_div(num: float, den: float) -> float:
     return round(num / den, 4) if den else 0.0
+
+
+def _executar_query_com_fallback(db: Session, stmt, params: dict, *, contexto: str, loader, default):
+    inicio = time.perf_counter()
+    try:
+        resultado = loader(db.execute(stmt, params))
+    except Exception:
+        logger.exception("Falha ao carregar %s", contexto)
+        return default
+
+    duracao_ms = (time.perf_counter() - inicio) * 1000
+    if duracao_ms >= 1000:
+        tamanho = None
+        try:
+            tamanho = len(resultado)  # type: ignore[arg-type]
+        except TypeError:
+            tamanho = None
+        detalhe_tamanho = f" rows={tamanho}" if tamanho is not None else ""
+        logger.info("Consulta lenta em %s: %.1f ms%s", contexto, duracao_ms, detalhe_tamanho)
+    return resultado
 
 
 def _safe_float(valor) -> float:
@@ -267,6 +293,14 @@ def _agrupar_plataformas_campanha(
     return [item["codigo"] for item in resumo], resumo
 
 
+def _gerenciador_cache_get(key: tuple[str, ...]) -> dict | None:
+    return cache_get(_GERENCIADOR_CACHE, key)
+
+
+def _gerenciador_cache_set(key: tuple[str, ...], payload: dict) -> None:
+    cache_set(_GERENCIADOR_CACHE, key, payload, _GERENCIADOR_CACHE_TTL_SECONDS)
+
+
 @router.get("/gerenciador")
 def catalogo_gerenciador(
     workspace_id: str = Query(...),
@@ -277,6 +311,7 @@ def catalogo_gerenciador(
     status: str | None = Query(None),
     veiculacao: str | None = Query(None),
     resultado: str = Query("performance"),
+    sync_version: str | None = Query(None),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
@@ -286,10 +321,34 @@ def catalogo_gerenciador(
     else:
         ids_filtro = [c.strip() for c in conta_ids.split(",")] if conta_ids else []
         account_uuids = _conta_ids_da_query(workspace_id, ids_filtro, db)
+    cache_key_gerenciador = cache_key(
+        "meta",
+        "catalogo",
+        "gerenciador",
+        workspace_id,
+        data_inicio,
+        data_fim,
+        (status or "").strip().upper(),
+        (veiculacao or "").strip().upper(),
+        (resultado or "performance").strip().lower(),
+        (sync_version or "").strip(),
+        *sorted(str(account_id) for account_id in account_uuids),
+    )
+    cached = _gerenciador_cache_get(cache_key_gerenciador)
+    if cached is not None:
+        logger.info(
+            "meta.catalogo_gerenciador cache_hit workspace=%s contas=%d",
+            workspace_id,
+            len(account_uuids),
+        )
+        return cached
+
     if not account_uuids:
+        _gerenciador_cache_set(cache_key_gerenciador, [])
         return []
 
     only_performance = (resultado or "performance").lower() != "todos"
+    started_at = time.perf_counter()
 
     params: dict = {"ids": account_uuids, "ini": data_inicio, "fim": data_fim}
     status_filter = ""
@@ -297,7 +356,8 @@ def catalogo_gerenciador(
         status_filter = " AND c.effective_status = :status "
         params["status"] = status.upper()
 
-    camp_rows = db.execute(
+    camp_rows = _executar_query_com_fallback(
+        db,
         text(
             "SELECT c.campaign_id, c.nome, c.objetivo, c.effective_status AS status, "
             "c.daily_budget AS orcamento_diario, c.stop_time, c.lifetime_budget, c.spend_total, "
@@ -309,12 +369,21 @@ def catalogo_gerenciador(
             "ORDER BY c.last_seen_at DESC"
         ),
         params,
-    ).mappings().all()
+        contexto="catalogo_gerenciador.campanhas",
+        loader=lambda result: result.mappings().all(),
+        default=[],
+    )
     if not camp_rows:
+        _gerenciador_cache_set(cache_key_gerenciador, [])
+        logger.info(
+            "meta.catalogo_gerenciador elapsed_ms=%.1f campanhas=0 conjuntos=0 anuncios=0 cache=false",
+            (time.perf_counter() - started_at) * 1000,
+        )
         return []
 
     camp_ids = [r["campaign_id"] for r in camp_rows if r["campaign_id"]]
-    adset_rows = db.execute(
+    adset_rows = _executar_query_com_fallback(
+        db,
         text(
             "SELECT a.adset_id, a.campaign_id, a.nome AS adset_name, a.effective_status AS status, "
             "a.end_time, a.daily_budget AS orcamento_diario, a.lifetime_budget, a.spend_total, "
@@ -325,11 +394,15 @@ def catalogo_gerenciador(
             "WHERE a.ads_account_id = ANY(:ids) "
             "  AND a.campaign_id = ANY(:camp_ids) "
             "ORDER BY a.last_seen_at DESC"
-    ),
-    {"ids": account_uuids, "camp_ids": camp_ids},
-    ).mappings().all()
+        ),
+        {"ids": account_uuids, "camp_ids": camp_ids},
+        contexto="catalogo_gerenciador.conjuntos",
+        loader=lambda result: result.mappings().all(),
+        default=[],
+    )
 
-    placement_rows = db.execute(
+    placement_rows = _executar_query_com_fallback(
+        db,
         text(
             "SELECT campaign_id, breakdown_value, "
             "COALESCE(SUM(spend),0) AS spend, "
@@ -344,9 +417,13 @@ def catalogo_gerenciador(
             "GROUP BY campaign_id, breakdown_value"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim, "camp_ids": camp_ids},
-    ).mappings().all()
+        contexto="catalogo_gerenciador.placements",
+        loader=lambda result: result.mappings().all(),
+        default=[],
+    )
 
-    ad_rows = db.execute(
+    ad_rows = _executar_query_com_fallback(
+        db,
         text(
             "SELECT ad.ad_id, ad.adset_id, ad.campaign_id, ad.nome, ad.effective_status AS status, "
             "COALESCE(cr.tipo_criativo, 'IMAGE') AS tipo_criativo, "
@@ -360,9 +437,13 @@ def catalogo_gerenciador(
             "  AND ad.campaign_id = ANY(:camp_ids)"
         ),
         {"ids": account_uuids, "camp_ids": camp_ids},
-    ).mappings().all()
+        contexto="catalogo_gerenciador.anuncios",
+        loader=lambda result: result.mappings().all(),
+        default=[],
+    )
 
-    camp_metrics = db.execute(
+    camp_metrics = _executar_query_com_fallback(
+        db,
         text(
             "SELECT campaign_id, COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(leads),0) AS leads, "
             "COALESCE(SUM(impressions),0) AS impressions, COALESCE(SUM(reach),0) AS reach, "
@@ -372,10 +453,14 @@ def catalogo_gerenciador(
             "GROUP BY campaign_id"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
-    ).mappings().all()
+        contexto="catalogo_gerenciador.metricas_campanha",
+        loader=lambda result: result.mappings().all(),
+        default=[],
+    )
     camp_m = {r["campaign_id"]: r for r in camp_metrics}
 
-    adset_metrics = db.execute(
+    adset_metrics = _executar_query_com_fallback(
+        db,
         text(
             "SELECT adset_id, COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(leads),0) AS leads, "
             "COALESCE(SUM(impressions),0) AS impressions, COALESCE(SUM(reach),0) AS reach, "
@@ -385,7 +470,10 @@ def catalogo_gerenciador(
             "GROUP BY adset_id"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
-    ).mappings().all()
+        contexto="catalogo_gerenciador.metricas_conjunto",
+        loader=lambda result: result.mappings().all(),
+        default=[],
+    )
     adset_m = {r["adset_id"]: r for r in adset_metrics}
 
     campaign_budget_map: dict[str, float | None] = {}
@@ -426,7 +514,8 @@ def catalogo_gerenciador(
         campanha_rows = campaign_platform_rows_map.setdefault(campaign_id, [])
         campanha_rows.append(dict(row))
 
-    ad_metrics = db.execute(
+    ad_metrics = _executar_query_com_fallback(
+        db,
         text(
             "SELECT ad_id, COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(leads),0) AS leads, "
             "COALESCE(SUM(impressions),0) AS impressions, COALESCE(SUM(reach),0) AS reach, "
@@ -436,7 +525,10 @@ def catalogo_gerenciador(
             "GROUP BY ad_id"
         ),
         {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
-    ).mappings().all()
+        contexto="catalogo_gerenciador.metricas_anuncio",
+        loader=lambda result: result.mappings().all(),
+        default=[],
+    )
     ad_m = {r["ad_id"]: r for r in ad_metrics}
 
     campaign_objective_hints: dict[str, tuple[str | None, str | None]] = {}
@@ -687,7 +779,17 @@ def catalogo_gerenciador(
             "veiculacao_resumo": veiculacao_resumo,
             "conjuntos": conjuntos_visiveis,
         })
-    return out
+    payload = out
+    _gerenciador_cache_set(cache_key_gerenciador, payload)
+    elapsed_ms = (time.perf_counter() - started_at) * 1000
+    logger.info(
+        "meta.catalogo_gerenciador elapsed_ms=%.1f campanhas=%d conjuntos=%d anuncios=%d cache=false",
+        elapsed_ms,
+        len(out),
+        sum(len(campanha.get("conjuntos") or []) for campanha in out),
+        sum(len(conjunto.get("anuncios") or []) for campanha in out for conjunto in (campanha.get("conjuntos") or [])),
+    )
+    return payload
 
 
 @router.get("/campanhas")
@@ -838,7 +940,7 @@ def catalogo_criativos(
             "raw_payload, "
             "(SELECT COALESCE(jsonb_agg(jsonb_build_object("
             "'creative_id', cc.creative_id, 'card_index', cc.card_index, 'image_hash', cc.image_hash, "
-            "'video_id', cc.video_id, 'image_url_hq', cc.image_url_hq, 'source_type', cc.source_type, "
+            "'video_id', cc.video_id, 'image_url_hq', cc.image_url_hq, 'picture', COALESCE(cc.raw_payload->>'picture', cc.raw_payload->>'image_url'), 'source_type', cc.source_type, "
             "'link', cc.link, 'name', cc.name, 'description', cc.description"
             ") ORDER BY cc.card_index), '[]'::jsonb) "
             " FROM meta_creative_cards_catalog cc "

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_usuario_atual
+from app.core.deps import get_usuario_atual, verificar_acesso_workspace
 from app.models.ads_account import AdsAccount
 from app.models.user import User
 from app.services.ads_account_access import listar_ads_accounts_acessiveis
@@ -353,6 +353,8 @@ def financeiro_meta(
             "notes_state": "empty",
             "updated_at": None,
         }
+
+    verificar_acesso_workspace(_, workspace_uuid, db)
 
     conta_ids_filtro = _parse_conta_ids(conta_ids)
 

@@ -31,6 +31,10 @@ class MetaTokenOut(BaseModel):
     token: str
     valido_ate: str | None
     ativo: bool
+    last_checked_at: str | None
+    last_check_status: str | None
+    last_check_http_status: int | None
+    last_check_error: str | None
     created_at: str
     updated_at: str
 
@@ -44,6 +48,10 @@ def _out(t: MetaToken) -> MetaTokenOut:
         token=t.token,
         valido_ate=t.valido_ate.isoformat() if t.valido_ate else None,
         ativo=t.ativo,
+        last_checked_at=t.last_checked_at.isoformat() if t.last_checked_at else None,
+        last_check_status=t.last_check_status,
+        last_check_http_status=t.last_check_http_status,
+        last_check_error=t.last_check_error,
         created_at=t.created_at.isoformat(),
         updated_at=t.updated_at.isoformat(),
     )
@@ -99,7 +107,13 @@ def atualizar_token(
     if payload.nome is not None:
         t.nome = payload.nome
     if payload.token is not None:
+        token_alterado = payload.token != t.token
         t.token = payload.token
+        if token_alterado:
+            t.last_checked_at = None
+            t.last_check_status = None
+            t.last_check_http_status = None
+            t.last_check_error = None
     if payload.valido_ate is not None:
         t.valido_ate = date.fromisoformat(payload.valido_ate)
     if payload.ativo is not None:
