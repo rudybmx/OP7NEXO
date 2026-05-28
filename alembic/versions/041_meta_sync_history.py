@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "041_meta_sync_history"
-down_revision: Union[str, None] = "040_meta_tokens_health"
+down_revision: Union[str, None] = "040"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
