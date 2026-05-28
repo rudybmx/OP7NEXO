@@ -33,6 +33,9 @@ class WorkspaceAcessoOut(BaseModel):
     workspace_id: str
     workspace_nome: str
     role: str
+    ativo: bool
+    criado_em: str
+    padrao: bool
 
 
 class UsuarioOut(BaseModel):

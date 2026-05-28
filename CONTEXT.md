@@ -221,6 +221,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - A view expõe mensagens textuais/legendas e resumos de conversa por `workspace_id` + `embedding_status`, sem payload bruto.
 - `crm_whatsapp_mensagens.embedding_status` passa a ter default SQL `'pendente'`.
 
+### ✅ Implementado (2026-05-28) — Workspaces do Usuário
+- `GET /me/workspaces` serializa `ativo`, `criado_em` e `padrao` em cada workspace para o seletor do frontend.
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Filtro campaign_id + adset_id em Criativos
 2. Sync automático ao cadastrar conta
