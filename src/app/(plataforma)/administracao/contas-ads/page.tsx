@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Plus, Search, X, CreditCard, RefreshCw, Check, CheckCircle2, XCircle, Clock3, ChevronLeft } from 'lucide-react'
+import { Building2, Loader2, Plus, Search, X, CreditCard, RefreshCw, Check, CheckCircle2, XCircle, Clock3, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -10,6 +10,7 @@ import { WSTable, WSTableActions, WSTableShell } from '@/components/ui/ws-table'
 import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
 import { useAuth } from '@/hooks/use-auth'
 import { Progress } from '@/components/ui/progress'
+import { Switch } from '@/components/ui/switch'
 import api from '@/lib/api-client'
 
 interface MetaToken {
@@ -27,10 +28,16 @@ interface Workspace {
   nome: string
 }
 
+interface WorkspaceResumo {
+  id: string
+  nome: string
+}
+
 interface AdsAccount {
   id: string
   workspace_id: string
   workspace_nome: string
+  workspace_acessos?: WorkspaceResumo[]
   plataforma: 'meta' | 'google' | 'linkedin' | 'tiktok'
   account_id: string
   nome: string
@@ -89,6 +96,26 @@ interface SyncSchedulerJobAPI {
 interface SyncSchedulerAPI {
   running: boolean
   jobs: SyncSchedulerJobAPI[]
+}
+
+interface EditContaForm {
+  account_name: string
+  bm_id: string
+  token_acesso: string
+  agrupamento: string
+  sync_paused: boolean
+  workspace_ids_acesso: string[]
+}
+
+function emptyEditForm(): EditContaForm {
+  return {
+    account_name: '',
+    bm_id: '',
+    token_acesso: '',
+    agrupamento: '',
+    sync_paused: false,
+    workspace_ids_acesso: [],
+  }
 }
 
 type Plataforma = 'todas' | 'meta' | 'google' | 'linkedin' | 'tiktok'
@@ -310,7 +337,8 @@ export default function ContasAdsPage() {
 
   // Estado edição de agrupamento
   const [editandoConta, setEditandoConta] = useState<AdsAccount | null>(null)
-  const [agrupamentoEdit, setAgrupamentoEdit] = useState('')
+  const [editForm, setEditForm] = useState<EditContaForm>(emptyEditForm())
+  const [editWorkspaceBusca, setEditWorkspaceBusca] = useState('')
   const [salvandoEdit, setSalvandoEdit] = useState(false)
 
   useEffect(() => {
@@ -620,25 +648,61 @@ export default function ContasAdsPage() {
     setTokenSelecionadoId('')
   }
 
-  async function salvarAgrupamento() {
+  function abrirEdicaoConta(conta: AdsAccount) {
+    const workspaceIdsAcesso = (conta.workspace_acessos ?? [])
+      .map(ws => ws.id)
+      .filter(id => id !== conta.workspace_id)
+
+    setEditandoConta(conta)
+    setEditForm({
+      account_name: conta.nome || '',
+      bm_id: conta.bm_id || '',
+      token_acesso: '',
+      agrupamento: conta.agrupamento || '',
+      sync_paused: conta.sync_paused,
+      workspace_ids_acesso: workspaceIdsAcesso,
+    })
+    setEditWorkspaceBusca('')
+  }
+
+  function fecharEdicaoConta() {
+    setEditandoConta(null)
+    setEditForm(emptyEditForm())
+    setEditWorkspaceBusca('')
+  }
+
+  async function salvarEdicaoConta() {
     if (!editandoConta) return
+    if (!editForm.account_name.trim()) {
+      toast.error('Nome da conta é obrigatório')
+      return
+    }
     setSalvandoEdit(true)
     try {
-      await api.put(`/ads-accounts/${editandoConta.id}`, {
-        plataforma: editandoConta.plataforma,
-        account_id: editandoConta.account_id,
-        account_name: editandoConta.nome,
-        agrupamento: agrupamentoEdit || null,
-        status: editandoConta.status,
-        config: {},
-      })
-      setContas(prev => prev.map(c =>
-        c.id === editandoConta.id ? { ...c, agrupamento: agrupamentoEdit || null } : c
-      ))
-      setEditandoConta(null)
-      toast.success('Agrupamento atualizado!')
+      const tokenAcesso = editForm.token_acesso.trim()
+      const payload: {
+        account_name: string
+        bm_id: string | null
+        agrupamento: string | null
+        sync_paused: boolean
+        workspace_ids_acesso: string[]
+        token_acesso?: string
+      } = {
+        account_name: editForm.account_name.trim(),
+        bm_id: editForm.bm_id.trim() || null,
+        agrupamento: editForm.agrupamento.trim() || null,
+        sync_paused: editForm.sync_paused,
+        workspace_ids_acesso: editForm.workspace_ids_acesso.filter(id => id && id !== editandoConta.workspace_id),
+      }
+      if (tokenAcesso) {
+        payload.token_acesso = tokenAcesso
+      }
+      const atualizada = await api.put<AdsAccount>(`/ads-accounts/${editandoConta.id}`, payload)
+      setContas(prev => prev.map(c => (c.id === atualizada.id ? atualizada : c)))
+      fecharEdicaoConta()
+      toast.success('Conta atualizada com sucesso!')
     } catch (err: any) {
-      toast.error(err.message || 'Erro ao atualizar')
+      toast.error(err.message || 'Erro ao atualizar conta')
     } finally {
       setSalvandoEdit(false)
     }
@@ -738,6 +802,14 @@ export default function ContasAdsPage() {
   const schedulerStatusLabel = syncScheduler?.running ? 'Ativo' : 'Parado'
   const schedulerStatusColor = syncScheduler?.running ? 'var(--ws-green)' : 'var(--ws-coral)'
   const schedulerStatusBg = syncScheduler?.running ? 'rgba(15,168,86,0.12)' : 'rgba(255,92,141,0.12)'
+  const editWorkspaceTermo = editWorkspaceBusca.trim().toLowerCase()
+  const editWorkspaceOptions = editandoConta
+    ? workspaces.filter(ws =>
+        ws.id !== editandoConta.workspace_id &&
+        (!editWorkspaceTermo || ws.nome.toLowerCase().includes(editWorkspaceTermo)),
+      )
+    : []
+  const editPlatformBadge = editandoConta ? PLATFORM_BADGE[editandoConta.plataforma] : PLATFORM_BADGE.meta
 
   return (
     <div style={{ padding: '32px 24px', maxWidth: 1200, margin: '0 auto' }}>
@@ -1011,7 +1083,7 @@ export default function ContasAdsPage() {
                             fontSize: 12, color: 'var(--ws-text-2)',
                             cursor: 'pointer',
                           }}
-                          onClick={() => { setEditandoConta(c); setAgrupamentoEdit(c.agrupamento || '') }}
+                          onClick={() => abrirEdicaoConta(c)}
                         >
                           Editar
                         </button>
@@ -1590,35 +1662,409 @@ export default function ContasAdsPage() {
         </SheetContent>
       </Sheet>
 
-      <Sheet open={!!editandoConta} onOpenChange={open => !open && setEditandoConta(null)}>
-        <SheetContent side="right" style={{ width: 400, ...wsSheetCreamStyle, padding: 0, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '24px 28px 20px', borderBottom: '1px solid var(--ws-glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--ws-text-1)' }}>Editar Conta</h2>
-              <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0' }}>{editandoConta?.nome}</p>
+      <Sheet open={!!editandoConta} onOpenChange={open => !open && fecharEdicaoConta()}>
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          style={{
+            width: 'min(640px, 100vw)',
+            ...wsSheetCreamStyle,
+            padding: 0,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <SheetTitle className="sr-only">Editar Conta Ads</SheetTitle>
+          <SheetDescription className="sr-only">
+            Atualize os dados da conta, os clientes com acesso e a pausa de sincronização
+          </SheetDescription>
+          <div style={{
+            padding: '24px 28px 20px',
+            borderBottom: '1px solid var(--ws-glass-border)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 16,
+          }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--ws-text-1)' }}>
+                  Editar Conta
+                </h2>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '3px 8px',
+                  borderRadius: 999,
+                  background: editPlatformBadge.bg,
+                  color: editPlatformBadge.color,
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}>
+                  {editandoConta?.plataforma ?? 'meta'}
+                </span>
+                {editForm.sync_paused && (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '3px 8px',
+                    borderRadius: 999,
+                    background: 'rgba(255,92,141,0.12)',
+                    color: 'var(--ws-coral)',
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}>
+                    Pausada
+                  </span>
+                )}
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0', lineHeight: 1.5 }}>
+                {editandoConta?.nome}
+                {editandoConta?.account_id ? ` · ${editandoConta.account_id}` : ''}
+              </p>
             </div>
-            <button onClick={() => setEditandoConta(null)} style={{ ...wsSheetCreamCloseButtonStyle, borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--ws-text-2)' }}>
+            <button
+              onClick={fecharEdicaoConta}
+              style={{
+                ...wsSheetCreamCloseButtonStyle,
+                borderRadius: 8,
+                width: 32,
+                height: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: 'var(--ws-text-2)',
+                flexShrink: 0,
+              }}
+            >
               <X size={16} />
             </button>
           </div>
+
           <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
-            <div>
-              <label style={labelStyle}>Agrupamento <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
-              <input
-                type="text"
-                placeholder="ex: Franquias SP, Zona Sul"
-                value={agrupamentoEdit}
-                onChange={e => setAgrupamentoEdit(e.target.value)}
-                style={inputStyle}
-              />
-              <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>Agrupa contas para filtros no dashboard</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 10,
+                background: wsSheetCreamTokens.surface,
+                border: `1px solid ${wsSheetCreamTokens.border}`,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                gap: 12,
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={labelStyle}>Cliente principal</div>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    minWidth: 0,
+                  }}>
+                    <Building2 size={13} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
+                    <span style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: 'var(--ws-text-1)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {editandoConta?.workspace_nome || '—'}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={labelStyle}>Account ID</div>
+                  <code style={{
+                    display: 'block',
+                    fontSize: 12,
+                    color: 'var(--ws-text-2)',
+                    fontFamily: 'monospace',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {editandoConta?.account_id || '—'}
+                  </code>
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={labelStyle}>Acessos adicionais</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>
+                    {editForm.workspace_ids_acesso.length} selecionado{editForm.workspace_ids_acesso.length === 1 ? '' : 's'}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Nome da conta</label>
+                <input
+                  type="text"
+                  value={editForm.account_name}
+                  onChange={e => setEditForm(prev => ({ ...prev, account_name: e.target.value }))}
+                  placeholder="Nome interno da conta"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>BM ID <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
+                <input
+                  type="text"
+                  value={editForm.bm_id}
+                  onChange={e => setEditForm(prev => ({ ...prev, bm_id: e.target.value }))}
+                  placeholder="ID do Business Manager"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Agrupamento <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
+                <input
+                  type="text"
+                  placeholder="ex: Franquias SP, Zona Sul"
+                  value={editForm.agrupamento}
+                  onChange={e => setEditForm(prev => ({ ...prev, agrupamento: e.target.value }))}
+                  style={inputStyle}
+                />
+                <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>
+                  Agrupa contas para filtros no dashboard
+                </p>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Token de acesso <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
+                <input
+                  type="password"
+                  value={editForm.token_acesso}
+                  onChange={e => setEditForm(prev => ({ ...prev, token_acesso: e.target.value }))}
+                  placeholder="Deixe vazio para manter o token atual"
+                  style={inputStyle}
+                />
+                <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>
+                  Preencha apenas para substituir o token salvo.
+                </p>
+              </div>
+
+              <div style={{
+                padding: '14px 16px',
+                borderRadius: 12,
+                background: wsSheetCreamTokens.surface,
+                border: `1px solid ${wsSheetCreamTokens.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 16,
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>
+                    Pausar sincronização
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0', lineHeight: 1.5 }}>
+                    Enquanto pausada, a conta não entra no scheduler e o sync manual responde como pausado.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+                  <Switch
+                    checked={editForm.sync_paused}
+                    onCheckedChange={checked => setEditForm(prev => ({ ...prev, sync_paused: checked }))}
+                  />
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: editForm.sync_paused ? 'var(--ws-coral)' : 'var(--ws-green)',
+                  }}>
+                    {editForm.sync_paused ? 'Pausada' : 'Ativa'}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>Clientes com acesso adicional</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm(prev => ({
+                        ...prev,
+                        workspace_ids_acesso: workspaces
+                          .filter(ws => !editandoConta || ws.id !== editandoConta.workspace_id)
+                          .map(ws => ws.id),
+                      }))}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        fontSize: 11,
+                        color: 'var(--ws-blue)',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Selecionar todas
+                    </button>
+                    <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>·</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm(prev => ({ ...prev, workspace_ids_acesso: [] }))}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        fontSize: 11,
+                        color: 'var(--ws-text-3)',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Limpar seleção
+                    </button>
+                  </div>
+                </div>
+
+                {workspaces.length > 1 && (
+                  <input
+                    type="text"
+                    placeholder="Filtrar cliente..."
+                    value={editWorkspaceBusca}
+                    onChange={e => setEditWorkspaceBusca(e.target.value)}
+                    style={{ ...inputStyle, marginBottom: 10 }}
+                  />
+                )}
+
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  maxHeight: 240,
+                  overflowY: 'auto',
+                }}>
+                  {editWorkspaceOptions.length > 0 ? editWorkspaceOptions.map(ws => {
+                    const checked = editForm.workspace_ids_acesso.includes(ws.id)
+                    return (
+                      <button
+                        key={ws.id}
+                        type="button"
+                        onClick={() => setEditForm(prev => ({
+                          ...prev,
+                          workspace_ids_acesso: checked
+                            ? prev.workspace_ids_acesso.filter(id => id !== ws.id)
+                            : [...prev.workspace_ids_acesso, ws.id],
+                        }))}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          padding: '12px 14px',
+                          borderRadius: 10,
+                          background: checked ? 'rgba(62,91,255,0.08)' : 'rgba(15,23,42,0.02)',
+                          border: checked ? '1px solid rgba(62,91,255,0.28)' : `1px solid ${wsSheetCreamTokens.border}`,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          width: '100%',
+                          transition: 'all 0.15s',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <div style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: 4,
+                          flexShrink: 0,
+                          background: checked ? '#3E5BFF' : wsSheetCreamTokens.checkboxUncheckedBg,
+                          border: checked ? '1px solid #3E5BFF' : `1px solid ${wsSheetCreamTokens.checkboxUncheckedBorder}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}>
+                          {checked && <Check size={11} color="white" />}
+                        </div>
+                        <Building2 size={13} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ws-text-1)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {ws.nome}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>
+                            Cliente com acesso adicional à conta
+                          </div>
+                        </div>
+                        <span style={{
+                          fontSize: 10,
+                          color: checked ? 'var(--ws-blue)' : 'var(--ws-text-3)',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {checked ? 'Com acesso' : 'Sem acesso'}
+                        </span>
+                      </button>
+                    )
+                  }) : (
+                    <div style={{
+                      padding: '18px 14px',
+                      borderRadius: 10,
+                      border: `1px dashed ${wsSheetCreamTokens.border}`,
+                      color: 'var(--ws-text-3)',
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                    }}>
+                      {workspaces.length <= 1
+                        ? 'Não há outros clientes disponíveis para acesso adicional.'
+                        : 'Nenhum cliente encontrado com esse filtro.'}
+                    </div>
+                  )}
+                </div>
+
+                <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 8, lineHeight: 1.5 }}>
+                  O cliente principal da conta é fixo e sempre mantém acesso. Esta seção controla apenas acessos adicionais.
+                </p>
+              </div>
             </div>
           </div>
-          <div style={{ padding: '20px 28px', borderTop: '1px solid var(--ws-glass-border)', display: 'flex', gap: 12 }}>
-            <button onClick={() => setEditandoConta(null)} style={{ flex: 1, height: 42, borderRadius: 10, background: 'transparent', border: '1px solid var(--ws-glass-border)', fontSize: 14, fontWeight: 500, color: 'var(--ws-text-2)', cursor: 'pointer' }}>Cancelar</button>
-            <button onClick={salvarAgrupamento} disabled={salvandoEdit} style={{ flex: 2, height: 42, borderRadius: 10, background: salvandoEdit ? 'rgba(62,91,255,0.5)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)', border: 'none', fontSize: 14, fontWeight: 600, color: 'white', cursor: salvandoEdit ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+
+          <div style={{
+            padding: '20px 28px',
+            borderTop: '1px solid var(--ws-glass-border)',
+            display: 'flex',
+            gap: 12,
+          }}>
+            <button
+              onClick={fecharEdicaoConta}
+              style={{
+                flex: 1,
+                height: 42,
+                borderRadius: 10,
+                background: 'transparent',
+                border: '1px solid var(--ws-glass-border)',
+                fontSize: 14,
+                fontWeight: 500,
+                color: 'var(--ws-text-2)',
+                cursor: 'pointer',
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={salvarEdicaoConta}
+              disabled={salvandoEdit}
+              style={{
+                flex: 2,
+                height: 42,
+                borderRadius: 10,
+                background: salvandoEdit ? 'rgba(62,91,255,0.5)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
+                border: 'none',
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'white',
+                cursor: salvandoEdit ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                boxShadow: salvandoEdit ? 'none' : '0 4px 12px rgba(62,91,255,0.30)',
+              }}
+            >
               {salvandoEdit ? <Loader2 size={16} className="animate-spin" /> : null}
-              {salvandoEdit ? 'Salvando...' : 'Salvar'}
+              {salvandoEdit ? 'Salvando...' : 'Salvar alterações'}
             </button>
           </div>
         </SheetContent>

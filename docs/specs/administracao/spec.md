@@ -41,6 +41,9 @@ Usuários, Canais, Contas Ads: **Produção**. Empresas: **Em desenvolvimento**.
 - Sync mostra progress bar durante execução
 - Status da conta: mapeado do `account_status` da Meta API (1=ativo)
 - Toggle via `ativo` no banco
+- Modal de edição permite atualizar nome da conta, BM ID, token, agrupamento, pausa de sync e acessos adicionais por workspace
+- O workspace principal da conta é fixo; o modal gerencia os workspaces com acesso adicional via `workspace_ids_acesso`
+- `sync_paused` bloqueia apenas o sync manual/automático e deve aparecer na tabela como estado explícito
 
 ### Tokens Meta Ads (platform_admin)
 - Tokens globais — sem filtro de workspace
@@ -57,6 +60,7 @@ Usuários, Canais, Contas Ads: **Produção**. Empresas: **Em desenvolvimento**.
 - [x] Criação de usuário com workspace vinculado
 - [x] Canais exibem QR Code para WhatsApp Evolution
 - [x] Contas Ads com sync manual e toggle ativo/inativo
+- [x] Modal de edição de Contas Ads com acesso por workspace e pausa de sync
 - [x] Tokens globais sem filtro de workspace
 - [ ] Empresas — planos, financeiro, auditoria (em desenvolvimento)
 
