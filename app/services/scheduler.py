@@ -8,6 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.core.database import SessionLocal
 from app.models.ads_account import AdsAccount
 from app.services.meta_sync import MetaContaInacessivelError, sincronizar_conta
+from app.services.whatsapp_event_worker import process_next_whatsapp_jobs
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,16 @@ def _job_sync_todas_contas() -> None:
     log.info("Scheduler: sync concluído")
 
 
+def _job_process_whatsapp_events() -> None:
+    try:
+        result = process_next_whatsapp_jobs(limit=25)
+        total = sum(result.values())
+        if total:
+            log.info("Scheduler: fila WhatsApp processada — %s", result)
+    except Exception as exc:
+        log.exception("Erro ao processar fila WhatsApp: %s", exc)
+
+
 def iniciar_scheduler() -> None:
     # 06:00, 12:00, 18:00 horário de Brasília
     scheduler.add_job(
@@ -55,10 +66,23 @@ def iniciar_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=600,
     )
+    scheduler.add_job(
+        _job_process_whatsapp_events,
+        "interval",
+        seconds=5,
+        id="whatsapp_event_queue",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=30,
+    )
     scheduler.start()
     job = scheduler.get_job("meta_sync")
     next_run = job.next_run_time.isoformat() if job and job.next_run_time else "n/a"
-    log.info("Scheduler iniciado — jobs Meta Ads às 06h, 12h, 18h (Brasília); próximo=%s", next_run)
+    log.info(
+        "Scheduler iniciado — jobs Meta Ads às 06h, 12h, 18h (Brasília); próximo=%s; fila WhatsApp a cada 5s",
+        next_run,
+    )
 
 
 def parar_scheduler() -> None:

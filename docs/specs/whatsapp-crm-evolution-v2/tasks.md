@@ -9,13 +9,13 @@
 
 ## 1. Backend/Fila
 
-- [ ] Criar migration para `crm_whatsapp_eventos` com `workspace_id`, `canal_id`, `event_type`, `event_hash`, `processing_status`, `processed_at`, `retry_count`, `error_message`.
-- [ ] Criar tabela `crm_message_jobs`.
-- [ ] Criar modelo SQLAlchemy para jobs/eventos enriquecidos.
-- [ ] Implementar serviço `whatsapp_event_queue.py`.
-- [ ] Ajustar `/webhook/evolution/{token}` para persistir/enfileirar e responder rápido.
-- [ ] Implementar worker `process_next_whatsapp_jobs(limit=...)`.
-- [ ] Adicionar scheduler leve para drenar jobs.
+- [x] Criar migration para `crm_whatsapp_eventos` com `workspace_id`, `canal_id`, `event_type`, `event_hash`, `processing_status`, `processed_at`, `retry_count`, `error_message`.
+- [x] Criar tabela `crm_message_jobs`.
+- [x] Criar modelo SQLAlchemy para jobs/eventos enriquecidos.
+- [x] Implementar serviço `whatsapp_event_queue.py`.
+- [x] Ajustar `/webhook/evolution/{token}` para persistir/enfileirar e responder rápido.
+- [x] Implementar worker `process_next_whatsapp_jobs(limit=...)`.
+- [x] Adicionar scheduler leve para drenar jobs.
 
 ## 2. Normalização
 

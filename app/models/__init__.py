@@ -19,6 +19,7 @@ from app.models.crm import (
     Equipe,
     EquipeMembro,
     Evento,
+    MessageJob,
     MemoriaIA,
     Mensagem,
     Midia,
@@ -53,5 +54,6 @@ __all__ = [
     "Permissao",
     "Midia",
     "Evento",
+    "MessageJob",
     "MemoriaIA",
 ]

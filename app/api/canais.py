@@ -30,6 +30,7 @@ from app.models.workspace import Workspace
 from app.services import evolution as evo_service
 from app.services.object_storage import download_and_put, put_bytes, public_url
 from app.services.redis_pub import publish_whatsapp_event
+from app.services.whatsapp_event_queue import enqueue_evolution_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["canais"])
@@ -1674,13 +1675,46 @@ async def receber_webhook_evolution(
 
     event = payload.get("event", "")
     event_norm = _normalizar_evento_evolution(event)
-    instance_data = payload.get("data", {}) if isinstance(payload.get("data", {}), dict) else {}
 
     logger.info("[webhook-evolution] canal=%s event=%s", canal.nome, event)
 
-    # Sempre salvar payload bruto para audit trail
-    _salvar_evento_raw(db, canal.id, canal.evolution_instance_id or "opcl", event, payload)
+    try:
+        queued = enqueue_evolution_event(db, canal, event, payload)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("[webhook-evolution] falha ao enfileirar evento canal=%s event=%s", canal.nome, event)
+        raise HTTPException(status_code=500, detail="Falha ao enfileirar webhook")
 
+    if queued.get("queued"):
+        background_tasks.add_task(_drain_whatsapp_jobs_background)
+
+    return {
+        "recebido": True,
+        "event_id": queued.get("event_id"),
+        "queued": queued.get("queued", False),
+        "duplicate": not queued.get("inserted", False),
+    }
+
+
+def _drain_whatsapp_jobs_background() -> None:
+    try:
+        from app.services.whatsapp_event_worker import process_next_whatsapp_jobs
+
+        process_next_whatsapp_jobs(limit=10)
+    except Exception:
+        logger.exception("[webhook-evolution] falha no drain background da fila")
+
+
+def _processar_evento_evolution(
+    db: Session,
+    canal: CanalEntrada,
+    event_norm: str,
+    instance_data: dict,
+    *,
+    media_mode: str = "inline",
+    background_tasks: BackgroundTasks | None = None,
+) -> None:
     connection_events = {"CONNECTION_UPDATE", "CONNECTED", "LOGGEDOUT", "LOGGED_OUT", "DISCONNECTED", "QRCODE", "QR_CODE"}
     message_events = {"MESSAGE", "MESSAGES_UPSERT", "MESSAGE_UPSERT", "MESSAGE_RECEIVED"}
     receipt_events = {"RECEIPT", "READ_RECEIPT", "READRECEIPT", "MESSAGES_UPDATE", "MESSAGE_STATUS"}
@@ -1734,38 +1768,56 @@ async def receber_webhook_evolution(
         try:
             resultado = _processar_mensagem_evolution(db, canal, instance_data)
             if resultado and resultado.get("is_media"):
-                background_tasks.add_task(
-                    _baixar_e_salvar_midia,
-                    instance_name=canal.evolution_instance_id or "opcl",
-                    evolution_msg_id=resultado.get("evolution_msg_id", ""),
-                    mensagem_db_id=resultado.get("mensagem_id", ""),
-                    conversa_db_id=resultado.get("conversa_id", ""),
-                    message_type_raw=resultado.get("message_type", ""),
-                    media_base64=resultado.get("media_base64"),
-                    media_url=resultado.get("media_url"),
-                    media_mime_type=resultado.get("media_mime_type"),
-                    media_filename=resultado.get("media_filename"),
-                )
+                media_kwargs = {
+                    "instance_name": canal.evolution_instance_id or "opcl",
+                    "evolution_msg_id": resultado.get("evolution_msg_id", ""),
+                    "mensagem_db_id": resultado.get("mensagem_id", ""),
+                    "conversa_db_id": resultado.get("conversa_id", ""),
+                    "message_type_raw": resultado.get("message_type", ""),
+                    "media_base64": resultado.get("media_base64"),
+                    "media_url": resultado.get("media_url"),
+                    "media_mime_type": resultado.get("media_mime_type"),
+                    "media_filename": resultado.get("media_filename"),
+                }
+                if media_mode == "background" and background_tasks is not None:
+                    background_tasks.add_task(_baixar_e_salvar_midia, **media_kwargs)
+                else:
+                    _baixar_e_salvar_midia(**media_kwargs)
             if resultado:
                 instance_name = canal.evolution_instance_id or "opcl"
                 ws_id = resultado.get("workspace_id", "")
                 sender_jid = resultado.get("participant_jid") or resultado.get("remote_jid", "")
                 if sender_jid and ws_id:
-                    background_tasks.add_task(
-                        _enriquecer_contato_background,
-                        instance=instance_name,
-                        jid=sender_jid,
-                        workspace_id=ws_id,
-                    )
+                    if media_mode == "background" and background_tasks is not None:
+                        background_tasks.add_task(
+                            _enriquecer_contato_background,
+                            instance=instance_name,
+                            jid=sender_jid,
+                            workspace_id=ws_id,
+                        )
+                    else:
+                        _enriquecer_contato_background(
+                            instance=instance_name,
+                            jid=sender_jid,
+                            workspace_id=ws_id,
+                        )
                 if resultado.get("is_group") and resultado.get("remote_jid") and ws_id:
-                    background_tasks.add_task(
-                        _enriquecer_grupo_background,
-                        instance=instance_name,
-                        group_jid=resultado.get("remote_jid"),
-                        workspace_id=ws_id,
-                    )
+                    if media_mode == "background" and background_tasks is not None:
+                        background_tasks.add_task(
+                            _enriquecer_grupo_background,
+                            instance=instance_name,
+                            group_jid=resultado.get("remote_jid"),
+                            workspace_id=ws_id,
+                        )
+                    else:
+                        _enriquecer_grupo_background(
+                            instance=instance_name,
+                            group_jid=resultado.get("remote_jid"),
+                            workspace_id=ws_id,
+                        )
         except Exception:
             logger.exception("[webhook-evolution] ERRO no processamento")
+            raise
 
     if event_norm in receipt_events:
         logger.info("[webhook-evolution] processando evento de receipt/status")
@@ -1773,8 +1825,7 @@ async def receber_webhook_evolution(
             _processar_status_mensagem(db, canal, instance_data, event=event_norm)
         except Exception:
             logger.exception("[webhook-evolution] ERRO no processamento de status")
-
-    return {"recebido": True}
+            raise
 
 def _salvar_evento_raw(db: Session, canal_id: uuid.UUID, instance: str, event: str, payload: dict) -> None:
     """Salva o payload bruto do webhook para audit trail e debug."""
