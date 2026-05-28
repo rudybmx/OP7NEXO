@@ -192,7 +192,7 @@ def _extrair_leads_por_canal(actions: list[dict]) -> tuple[int, int, int, int]:
     return whatsapp, 0, 0, formulario
 
 
-def _paginar(client: httpx.Client, url: str, params: dict) -> list[dict]:
+def _paginar(client: httpx.Client, url: str, params: dict, raise_on_terminal: bool = True) -> list[dict]:
     """Busca todas as páginas de um endpoint Meta."""
     resultados: list[dict] = []
     current_url: str | None = url
@@ -207,9 +207,13 @@ def _paginar(client: httpx.Client, url: str, params: dict) -> list[dict]:
             resp = client.get(current_url)
 
         if resp.status_code != 200:
-            _levantar_se_meta_terminal(resp, f"Meta API em {url}")
             err, _ = _meta_erro_payload(resp)
-            log.error("Meta API erro %s em %s: %s", resp.status_code, url, err.get("message", resp.text))
+            mensagem = err.get("message", resp.text)
+            if raise_on_terminal:
+                _levantar_se_meta_terminal(resp, f"Meta API em {url}")
+                log.error("Meta API erro %s em %s: %s", resp.status_code, url, mensagem)
+            else:
+                log.warning("Meta API erro %s em %s: %s", resp.status_code, url, mensagem)
             break
 
         data = resp.json()
@@ -633,7 +637,13 @@ def _fetch_creative_thumbnails_hq_by_ids(
     return out
 
 
-def _fetch_videos_by_ids(client: httpx.Client, token: str, video_ids: list[str], on_progress=None) -> dict[str, dict]:
+def _fetch_videos_by_ids(
+    client: httpx.Client,
+    token: str,
+    video_ids: list[str],
+    totais: dict | None = None,
+    on_progress=None,
+) -> dict[str, dict]:
     out: dict[str, dict] = {}
     uniq = [v for v in dict.fromkeys(video_ids) if v]
     total_batches = max((len(uniq) + 49) // 50, 1)
@@ -644,18 +654,27 @@ def _fetch_videos_by_ids(client: httpx.Client, token: str, video_ids: list[str],
                 on_progress(f"anuncios:midia:videos ({batch_index}/{total_batches})", 70)
             except Exception:
                 pass
-        resp = client.get(
-            f"{META_BASE}/",
-            params={
-                "access_token": token,
-                "ids": ",".join(batch),
-                "fields": "id,picture,source,permalink_url,thumbnails{uri,width,height,is_preferred}",
-            },
-        )
+        try:
+            resp = client.get(
+                f"{META_BASE}/",
+                params={
+                    "access_token": token,
+                    "ids": ",".join(batch),
+                    "fields": "id,picture,source,permalink_url,thumbnails{uri,width,height,is_preferred}",
+                },
+            )
+        except httpx.HTTPError as exc:
+            log.warning("Erro batch vídeos tentativa %d/%d: %s", batch_index, total_batches, exc)
+            continue
         if resp.status_code != 200:
-            _levantar_se_meta_terminal(resp, "batch vídeos")
             err, _ = _meta_erro_payload(resp)
-            log.warning("Erro batch videos: %s", err.get("message", resp.text[:200]))
+            mensagem = err.get("message", resp.text[:200])
+            if int(err.get("code") or 0) == 10:
+                if totais is not None:
+                    totais["catalog_videos_ignorados_permissao"] = totais.get("catalog_videos_ignorados_permissao", 0) + len(batch)
+                log.warning("batch vídeos ignorado por permissão (%d ids): %s", len(batch), mensagem)
+            else:
+                log.warning("Erro batch vídeos: %s", mensagem)
             continue
         for vid, payload in resp.json().items():
             if isinstance(payload, dict):
@@ -943,18 +962,21 @@ def _fetch_criativos_batch(client: httpx.Client, ad_ids: list[str], token: str, 
                 on_progress(f"anuncios:criativos ({batch_index}/{total_batches})", 69)
             except Exception:
                 pass
-        resp = client.get(
-            f"{META_BASE}/",
-            params={
-                "access_token": token,
-                "ids": ",".join(batch),
-                "fields": fields,
-                "thumbnail_width": 1200,
-                "thumbnail_height": 628,
-            },
-        )
+        try:
+            resp = client.get(
+                f"{META_BASE}/",
+                params={
+                    "access_token": token,
+                    "ids": ",".join(batch),
+                    "fields": fields,
+                    "thumbnail_width": 1200,
+                    "thumbnail_height": 628,
+                },
+            )
+        except httpx.HTTPError as exc:
+            log.warning("Erro criativos batch tentativa %d/%d: %s", batch_index, total_batches, exc)
+            continue
         if resp.status_code != 200:
-            _levantar_se_meta_terminal(resp, "batch criativos")
             err, _ = _meta_erro_payload(resp)
             log.warning("Erro criativos batch: %s", err.get("message", resp.text[:200]))
             continue
@@ -1026,18 +1048,21 @@ def _fetch_criativos_batch_minimo(client: httpx.Client, ad_ids: list[str], token
                 on_progress(f"anuncios:criativos:minimo ({batch_index}/{total_batches})", 69)
             except Exception:
                 pass
-        resp = client.get(
-            f"{META_BASE}/",
-            params={
-                "access_token": token,
-                "ids": ",".join(batch),
-                "fields": fields,
-                "thumbnail_width": 1200,
-                "thumbnail_height": 628,
-            },
-        )
+        try:
+            resp = client.get(
+                f"{META_BASE}/",
+                params={
+                    "access_token": token,
+                    "ids": ",".join(batch),
+                    "fields": fields,
+                    "thumbnail_width": 1200,
+                    "thumbnail_height": 628,
+                },
+            )
+        except httpx.HTTPError as exc:
+            log.warning("Erro criativos batch mínimo tentativa %d/%d: %s", batch_index, total_batches, exc)
+            continue
         if resp.status_code != 200:
-            _levantar_se_meta_terminal(resp, "batch criativos mínimo")
             err, _ = _meta_erro_payload(resp)
             log.warning("Erro criativos batch mínimo: %s", err.get("message", resp.text[:200]))
             continue
@@ -1090,15 +1115,20 @@ def _fetch_criativos_por_conta(
         "object_story_spec{link_data{image_hash,child_attachments{image_hash,picture,video_id}},"
         "photo_data{image_hash},video_data{image_hash,video_id}}}"
     )
-    rows = _paginar(
-        client,
-        f"{META_BASE}/{account_id}/ads",
-        {
-            "access_token": token,
-            "fields": fields,
-            "limit": 100,
-        },
-    )
+    try:
+        rows = _paginar(
+            client,
+            f"{META_BASE}/{account_id}/ads",
+            {
+                "access_token": token,
+                "fields": fields,
+                "limit": 100,
+            },
+            raise_on_terminal=False,
+        )
+    except httpx.HTTPError as exc:
+        log.warning("Erro fallback criativos por conta %s: %s", account_id, exc)
+        return criativos
     total_rows = max(len(rows), 1)
     for index, ad_data in enumerate(rows, start=1):
         ad_id = ad_data.get("id")
@@ -1574,7 +1604,7 @@ def _sync_catalog_anuncios_criativos_videos(
     _aplicar_thumbnail_hq(client, criativos_map, token)
     _persist_hq_images_to_minio(client, criativos_map, str(conta.id))
     video_ids = [str(c.get("video_id")) for c in criativos_map.values() if c.get("video_id")]
-    video_map = _fetch_videos_by_ids(client, token, video_ids)
+    video_map = _fetch_videos_by_ids(client, token, video_ids, totais=totais)
 
     for r in rows:
         ad_id = r.get("id")
@@ -1867,81 +1897,84 @@ def _sync_video_metrics(
     time_range: str,
     ads_account_uuid: Any,
 ) -> None:
-    ad_rows = _paginar(
-        client,
-        f"{META_BASE}/{account_id}/ads",
-        {"access_token": token, "fields": "id", "limit": 500},
-    )
-    ad_ids = [r.get("id") for r in ad_rows if r.get("id")]
-    criativos = _fetch_criativos_batch(client, ad_ids, token) if ad_ids else {}
-    ad_to_video = {ad_id: c.get("video_id") for ad_id, c in criativos.items() if c.get("video_id")}
-    if not ad_to_video:
-        return
-    rows = _paginar(
-        client,
-        f"{META_BASE}/{account_id}/insights",
-        {
-            "access_token": token,
-            "fields": (
-                "ad_id,date_start,video_play_actions,video_avg_time_watched_actions,"
-                "video_30_sec_watched_actions,video_p25_watched_actions,video_p50_watched_actions,"
-                "video_p75_watched_actions,video_p95_watched_actions,video_p100_watched_actions,"
-                "video_thruplay_watched_actions,cost_per_thruplay,actions"
-            ),
-            "level": "ad",
-            "time_range": time_range,
-            "time_increment": 1,
-            "limit": 500,
-        },
-    )
-    for r in rows:
-        ad_id = r.get("ad_id")
-        video_id = ad_to_video.get(ad_id)
-        if not ad_id or not video_id:
-            continue
-        actions = r.get("actions") or []
-        db.execute(text("""
-            INSERT INTO meta_video_metrics_daily
-                (ads_account_id, ad_id, video_id, data, video_views, video_play_actions,
-                 video_avg_pct_watched_actions, video_complete_watched_actions, video_p25, video_p50,
-                 video_p75, video_p95, video_p100, thruplay, video_3_sec, cost_per_thruplay, atualizado_em)
-            VALUES
-                (:ads_account_id, :ad_id, :video_id, :data, :video_views, :video_play_actions,
-                 :video_avg_pct_watched_actions, :video_complete_watched_actions, :video_p25, :video_p50,
-                 :video_p75, :video_p95, :video_p100, :thruplay, :video_3_sec, :cost_per_thruplay, NOW())
-            ON CONFLICT (ads_account_id, video_id, ad_id, data) DO UPDATE SET
-                video_views = EXCLUDED.video_views,
-                video_play_actions = EXCLUDED.video_play_actions,
-                video_avg_pct_watched_actions = EXCLUDED.video_avg_pct_watched_actions,
-                video_complete_watched_actions = EXCLUDED.video_complete_watched_actions,
-                video_p25 = EXCLUDED.video_p25,
-                video_p50 = EXCLUDED.video_p50,
-                video_p75 = EXCLUDED.video_p75,
-                video_p95 = EXCLUDED.video_p95,
-                video_p100 = EXCLUDED.video_p100,
-                thruplay = EXCLUDED.thruplay,
-                video_3_sec = EXCLUDED.video_3_sec,
-                cost_per_thruplay = EXCLUDED.cost_per_thruplay,
-                atualizado_em = NOW()
-        """), {
-            "ads_account_id": str(ads_account_uuid),
-            "ad_id": ad_id,
-            "video_id": str(video_id),
-            "data": r.get("date_start"),
-            "video_views": _valor_action_any(actions, {"video_view"}),
-            "video_play_actions": _valor_video_action(r.get("video_play_actions") or []),
-            "video_avg_pct_watched_actions": _valor_video_action(r.get("video_avg_time_watched_actions") or []),
-            "video_complete_watched_actions": _valor_video_action(r.get("video_30_sec_watched_actions") or []),
-            "video_p25": _valor_video_action(r.get("video_p25_watched_actions") or []),
-            "video_p50": _valor_video_action(r.get("video_p50_watched_actions") or []),
-            "video_p75": _valor_video_action(r.get("video_p75_watched_actions") or []),
-            "video_p95": _valor_video_action(r.get("video_p95_watched_actions") or []),
-            "video_p100": _valor_video_action(r.get("video_p100_watched_actions") or []),
-            "thruplay": _valor_video_action(r.get("video_thruplay_watched_actions") or []),
-            "video_3_sec": 0,
-            "cost_per_thruplay": _safe_float((r.get("cost_per_thruplay") or [{}])[0].get("value") if r.get("cost_per_thruplay") else 0.0),
-        })
-    db.commit()
+    try:
+        ad_rows = _paginar(
+            client,
+            f"{META_BASE}/{account_id}/ads",
+            {"access_token": token, "fields": "id", "limit": 500},
+        )
+        ad_ids = [r.get("id") for r in ad_rows if r.get("id")]
+        criativos = _fetch_criativos_batch(client, ad_ids, token) if ad_ids else {}
+        ad_to_video = {ad_id: c.get("video_id") for ad_id, c in criativos.items() if c.get("video_id")}
+        if not ad_to_video:
+            return
+        rows = _paginar(
+            client,
+            f"{META_BASE}/{account_id}/insights",
+            {
+                "access_token": token,
+                "fields": (
+                    "ad_id,date_start,video_play_actions,video_avg_time_watched_actions,"
+                    "video_30_sec_watched_actions,video_p25_watched_actions,video_p50_watched_actions,"
+                    "video_p75_watched_actions,video_p95_watched_actions,video_p100_watched_actions,"
+                    "video_thruplay_watched_actions,cost_per_thruplay,actions"
+                ),
+                "level": "ad",
+                "time_range": time_range,
+                "time_increment": 1,
+                "limit": 500,
+            },
+        )
+        for r in rows:
+            ad_id = r.get("ad_id")
+            video_id = ad_to_video.get(ad_id)
+            if not ad_id or not video_id:
+                continue
+            actions = r.get("actions") or []
+            db.execute(text("""
+                INSERT INTO meta_video_metrics_daily
+                    (ads_account_id, ad_id, video_id, data, video_views, video_play_actions,
+                    video_avg_pct_watched_actions, video_complete_watched_actions, video_p25, video_p50,
+                    video_p75, video_p95, video_p100, thruplay, video_3_sec, cost_per_thruplay, atualizado_em)
+                VALUES
+                    (:ads_account_id, :ad_id, :video_id, :data, :video_views, :video_play_actions,
+                    :video_avg_pct_watched_actions, :video_complete_watched_actions, :video_p25, :video_p50,
+                    :video_p75, :video_p95, :video_p100, :thruplay, :video_3_sec, :cost_per_thruplay, NOW())
+                ON CONFLICT (ads_account_id, video_id, ad_id, data) DO UPDATE SET
+                    video_views = EXCLUDED.video_views,
+                    video_play_actions = EXCLUDED.video_play_actions,
+                    video_avg_pct_watched_actions = EXCLUDED.video_avg_pct_watched_actions,
+                    video_complete_watched_actions = EXCLUDED.video_complete_watched_actions,
+                    video_p25 = EXCLUDED.video_p25,
+                    video_p50 = EXCLUDED.video_p50,
+                    video_p75 = EXCLUDED.video_p75,
+                    video_p95 = EXCLUDED.video_p95,
+                    video_p100 = EXCLUDED.video_p100,
+                    thruplay = EXCLUDED.thruplay,
+                    video_3_sec = EXCLUDED.video_3_sec,
+                    cost_per_thruplay = EXCLUDED.cost_per_thruplay,
+                    atualizado_em = NOW()
+            """), {
+                "ads_account_id": str(ads_account_uuid),
+                "ad_id": ad_id,
+                "video_id": str(video_id),
+                "data": r.get("date_start"),
+                "video_views": _valor_action_any(actions, {"video_view"}),
+                "video_play_actions": _valor_video_action(r.get("video_play_actions") or []),
+                "video_avg_pct_watched_actions": _valor_video_action(r.get("video_avg_time_watched_actions") or []),
+                "video_complete_watched_actions": _valor_video_action(r.get("video_30_sec_watched_actions") or []),
+                "video_p25": _valor_video_action(r.get("video_p25_watched_actions") or []),
+                "video_p50": _valor_video_action(r.get("video_p50_watched_actions") or []),
+                "video_p75": _valor_video_action(r.get("video_p75_watched_actions") or []),
+                "video_p95": _valor_video_action(r.get("video_p95_watched_actions") or []),
+                "video_p100": _valor_video_action(r.get("video_p100_watched_actions") or []),
+                "thruplay": _valor_video_action(r.get("video_thruplay_watched_actions") or []),
+                "video_3_sec": 0,
+                "cost_per_thruplay": _safe_float((r.get("cost_per_thruplay") or [{}])[0].get("value") if r.get("cost_per_thruplay") else 0.0),
+            })
+        db.commit()
+    except (MetaContaInacessivelError, httpx.HTTPError) as exc:
+        log.warning("Métricas de vídeo ignoradas sem bloquear o sync da conta %s: %s", account_id, exc)
 
 
 def _carregar_objetivos_catalogo(db: Session, ads_account_uuid: Any) -> list[dict]:
@@ -2057,6 +2090,7 @@ def sincronizar_conta(
         "catalog_anuncios": 0,
         "catalog_criativos": 0,
         "catalog_videos": 0,
+        "catalog_videos_ignorados_permissao": 0,
         "diarios": 0,
         "campanhas": 0,
         "anuncios": 0,

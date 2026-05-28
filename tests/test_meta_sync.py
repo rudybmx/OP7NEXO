@@ -5,7 +5,10 @@ from app.services.meta_sync import (
     _carregar_objetivos_catalogo,
     _merge_hq_image_data,
     _resolver_mapa_adimages_hq,
+    _fetch_videos_by_ids,
     _sync_video_metrics,
+    MetaContaInacessivelError,
+    sincronizar_conta,
 )
 
 
@@ -55,6 +58,74 @@ class _FakeDb:
 
     def commit(self):
         self.commits += 1
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload: dict | None = None, text: str = ""):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+class _FakeClient:
+    def __init__(self, responses: list[_FakeResponse]):
+        self.responses = list(responses)
+        self.calls: list[tuple[str, dict | None]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def get(self, url, params=None, follow_redirects=False, timeout=None, headers=None):
+        self.calls.append((url, params))
+        if not self.responses:
+            raise AssertionError("Unexpected request")
+        return self.responses.pop(0)
+
+
+class _FakeContaSync:
+    def __init__(self):
+        self.id = "uuid-1"
+        self.workspace_id = "workspace-1"
+        self.account_id = "act_1"
+        self.account_name = "Conta teste"
+        self.meta_account_name = None
+        self.balance = None
+        self.amount_spent = None
+        self.spend_cap = None
+        self.config = {}
+        self.status = "ativo"
+        self.sync_paused = False
+        self.bm_token = "token"
+        self.token_expira_em = None
+        self.account_status = 1
+        self.periodo_sync_inicio = None
+
+
+class _FakeDbSync:
+    def __init__(self, conta):
+        self.conta = conta
+        self.commits = 0
+        self.rollbacks = 0
+        self.calls = []
+
+    def get(self, model, key):
+        return self.conta
+
+    def execute(self, stmt, params=None):
+        self.calls.append((stmt, params))
+        return _MappingResult([])
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
 
 
 class MetaSyncTests(unittest.TestCase):
@@ -173,6 +244,48 @@ class MetaSyncTests(unittest.TestCase):
         self.assertEqual(creative["hq_source"], "adimage_minio")
         self.assertEqual(creative["image_url_hq"], adimage_map["hash-1"]["url"])
         self.assertIsNone(creative.get("meta_image_url_tmp"))
+
+    def test_fetch_videos_by_ids_retorna_parcial_e_contabiliza_permissao(self):
+        responses = [
+            _FakeResponse(
+                200,
+                {
+                    f"v{i}": {
+                        "id": f"v{i}",
+                        "picture": f"https://cdn.example.com/v{i}.jpg",
+                        "thumbnails": [{"uri": f"https://cdn.example.com/v{i}-hq.jpg", "width": 1200, "height": 628, "is_preferred": True}],
+                    }
+                    for i in range(50)
+                },
+            ),
+            _FakeResponse(
+                400,
+                {"error": {"message": "Application does not have permission for this action", "code": 10}},
+                text="Application does not have permission for this action",
+            ),
+        ]
+        client = _FakeClient(responses)
+        totais = {"catalog_videos_ignorados_permissao": 0}
+
+        result = _fetch_videos_by_ids(client, "token", [f"v{i}" for i in range(51)], totais=totais)
+
+        self.assertEqual(len(result), 50)
+        self.assertEqual(totais["catalog_videos_ignorados_permissao"], 1)
+        self.assertEqual(result["v0"]["thumbnail_url"], "https://cdn.example.com/v0-hq.jpg")
+
+    def test_sincronizar_conta_mantem_error_terminal_em_saldo(self):
+        conta = _FakeContaSync()
+        db = _FakeDbSync(conta)
+        response = _FakeResponse(
+            400,
+            {"error": {"message": "Application does not have permission for this action", "code": 10}},
+            text="Application does not have permission for this action",
+        )
+        client = _FakeClient([response])
+
+        with patch("app.services.meta_sync.httpx.Client", return_value=client):
+            with self.assertRaises(MetaContaInacessivelError):
+                sincronizar_conta("uuid-1", db)
 
 
 if __name__ == "__main__":
