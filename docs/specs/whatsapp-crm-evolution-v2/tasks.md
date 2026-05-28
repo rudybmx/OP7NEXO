@@ -52,14 +52,14 @@
 
 ## 6. Frontend
 
-- [ ] Ajustar hooks para carregar canais/números do workspace.
-- [ ] Adicionar filtro de número/canal na inbox.
-- [ ] Implementar upload de imagem/documento.
-- [ ] Implementar gravação/envio de áudio.
-- [ ] Renderizar mídia inline.
-- [ ] Renderizar checks `sent/delivered/read/played/failed`.
-- [ ] Mostrar participante e menção em grupos.
-- [ ] Adicionar criação/edição rápida de follow-up no painel do contato.
+- [x] Ajustar hooks para carregar canais/números do workspace.
+- [x] Adicionar filtro de número/canal na inbox.
+- [x] Implementar upload de imagem/documento.
+- [x] Implementar gravação/envio de áudio.
+- [x] Renderizar mídia inline.
+- [x] Renderizar checks `sent/delivered/read/played/failed`.
+- [x] Mostrar participante e menção em grupos.
+- [x] Adicionar criação/edição rápida de follow-up no painel do contato.
 
 ## 7. Vetorização Futura
 
