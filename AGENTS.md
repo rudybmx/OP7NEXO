@@ -34,8 +34,8 @@ ls -la /root/op7nexo-api/graphify-out/
 ls -la /root/op7nexo-front/graphify-out/
 
 # 3. Se grafo tiver mais de 24h ou não existir, regenerar (rebuild completo)
-cd /root/op7nexo-api && graphify src/ docs/
-cd /root/op7nexo-front && graphify src/ docs/
+cd /root/op7nexo-api && graphify update .
+cd /root/op7nexo-front && graphify update .
 
 # 4. Ler o relatório do grafo
 cat /root/op7nexo-api/graphify-out/GRAPH_REPORT.md
@@ -113,8 +113,8 @@ Após qualquer implementação concluída, execute em sequência:
 
 ### 1. Atualizar grafo (graphify)
 ```bash
-cd /root/op7nexo-api && graphify src/ docs/ --update
-cd /root/op7nexo-front && graphify src/ docs/ --update
+cd /root/op7nexo-api && graphify update .
+cd /root/op7nexo-front && graphify update .
 ```
 Use `--update` — re-extrai apenas arquivos modificados (cache SHA256, sem custo de tokens para código). Rode apenas o(s) projeto(s) com arquivos modificados.
 
