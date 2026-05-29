@@ -13,6 +13,7 @@ from app.api import canais
 from app.services import whatsapp_crm_persistence
 from app.services import whatsapp_event_queue
 from app.services import whatsapp_event_worker
+from app.services import whatsapp_media
 
 
 class _Result:
@@ -303,6 +304,59 @@ def _build_message_payload():
     }
 
 
+def _build_media_message_payload():
+    return {
+        "event": "Message",
+        "data": {
+            "Info": {
+                "Chat": "554391996849@s.whatsapp.net",
+                "Sender": "554391996849@s.whatsapp.net",
+                "IsFromMe": False,
+                "ID": "media-msg-1",
+                "PushName": "Lead",
+                "Type": "media",
+                "MediaType": "image",
+                "Timestamp": "2026-05-29T17:28:57-03:00",
+            },
+            "Message": {
+                "base64": "Zm9v",
+                "imageMessage": {
+                    "URL": "https://example.invalid/image.jpg",
+                    "mimetype": "image/jpeg",
+                    "fileName": "foto.jpg",
+                    "caption": "Foto do pedido",
+                },
+            },
+        },
+    }
+
+
+def _build_audio_message_payload():
+    return {
+        "event": "Message",
+        "data": {
+            "Info": {
+                "Chat": "554391996849@s.whatsapp.net",
+                "Sender": "554391996849@s.whatsapp.net",
+                "IsFromMe": False,
+                "ID": "audio-msg-1",
+                "PushName": "Lead",
+                "Type": "media",
+                "MediaType": "audio",
+                "Timestamp": "2026-05-29T17:28:57-03:00",
+            },
+            "Message": {
+                "base64": "Zm9v",
+                "audioMessage": {
+                    "URL": "https://example.invalid/audio.ogg",
+                    "mimetype": "audio/ogg",
+                    "fileName": "audio.ogg",
+                },
+            },
+        },
+    }
+
+
 def test_webhook_evolution_responde_rapido_e_preserva_workspace_do_canal(monkeypatch):
     canal = SimpleNamespace(
         id=uuid.uuid4(),
@@ -401,6 +455,55 @@ def test_process_evolution_message_fallback_hash_nao_duplica_sem_provider_id(mon
     assert len(published) == 1
 
 
+def test_process_evolution_webhook_event_media_enfileira_download(monkeypatch):
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        evolution_instance_id="op7-instance",
+        numero_telefone="5511999999999",
+    )
+    db = _PersistenceDb()
+    payload = _build_media_message_payload()
+
+    monkeypatch.setattr(whatsapp_crm_persistence, "extract_lead_origin", lambda *args, **kwargs: {})
+    monkeypatch.setattr(whatsapp_crm_persistence, "has_lead_origin", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(whatsapp_crm_persistence, "_resolve_lid_contact", lambda *args, **kwargs: (kwargs["remote_jid"], None))
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_participant_contact", lambda *args, **kwargs: None)
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_contact", lambda *args, **kwargs: "contact-1")
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_conversation", lambda *args, **kwargs: "conversation-1")
+
+    published = []
+    monkeypatch.setattr(whatsapp_crm_persistence, "publish_whatsapp_event", lambda event: published.append(event))
+
+    enqueued = []
+
+    def fake_enqueue(db_arg, **kwargs):
+        enqueued.append(kwargs)
+        return True
+
+    monkeypatch.setattr(whatsapp_crm_persistence, "enqueue_inbound_media_download", fake_enqueue)
+
+    result = whatsapp_crm_persistence.process_evolution_webhook_event(
+        db,
+        canal,
+        "Message",
+        deepcopy(payload),
+        raw_event_id="event-1",
+    )
+
+    assert result["status"] == "done"
+    assert result["event_type"] == "MESSAGE"
+    assert enqueued
+    assert enqueued[0]["workspace_id"] == str(canal.workspace_id)
+    assert enqueued[0]["canal_id"] == str(canal.id)
+    assert enqueued[0]["raw_event_id"] == "event-1"
+    assert enqueued[0]["mensagem_id"] == db.messages_by_hash[next(iter(db.messages_by_hash))]["id"]
+    assert enqueued[0]["evolution_msg_id"] == "media-msg-1"
+    assert enqueued[0]["media_base64"] == "Zm9v"
+    assert db.commits == 2
+    assert published and published[0]["type"] == "message.upsert"
+
+
 def test_process_evolution_receipt_event_atualiza_status_da_mensagem_outbound(monkeypatch):
     canal = SimpleNamespace(
         id=uuid.uuid4(),
@@ -494,6 +597,37 @@ class ReceiptReconciliationTests(unittest.TestCase):
         self.assertEqual(published[0]["evolutionMsgId"], evolution_msg_id)
 
 
+class TextWebhookTests(unittest.TestCase):
+    def test_process_evolution_message_fallback_hash_nao_duplica_sem_provider_id(self):
+        canal = SimpleNamespace(
+            id=uuid.uuid4(),
+            workspace_id=uuid.uuid4(),
+            evolution_instance_id="op7-instance",
+            numero_telefone="5511999999999",
+        )
+        db = _PersistenceDb()
+        payload = _build_message_payload()
+        payload["data"]["Info"].pop("ID", None)
+
+        with (
+            patch.object(whatsapp_crm_persistence, "extract_lead_origin", return_value={}),
+            patch.object(whatsapp_crm_persistence, "has_lead_origin", return_value=False),
+            patch.object(whatsapp_crm_persistence, "_resolve_lid_contact", return_value=("5511999999999@s.whatsapp.net", None)),
+            patch.object(whatsapp_crm_persistence, "_upsert_participant_contact", return_value=None),
+            patch.object(whatsapp_crm_persistence, "_upsert_contact", return_value="contact-1"),
+            patch.object(whatsapp_crm_persistence, "_upsert_conversation", return_value="conversation-1"),
+            patch.object(whatsapp_crm_persistence, "publish_whatsapp_event"),
+        ):
+            first = whatsapp_crm_persistence.process_evolution_message(db, canal, deepcopy(payload))
+            second = whatsapp_crm_persistence.process_evolution_message(db, canal, deepcopy(payload))
+
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertEqual(first["mensagem_id"], second["mensagem_id"])
+        self.assertEqual(db.commits, 1)
+        self.assertEqual(len(db.messages_by_hash), 1)
+
+
 def test_worker_processa_job_e_marca_status(monkeypatch):
     canal = SimpleNamespace(id=uuid.uuid4(), workspace_id=uuid.uuid4(), evolution_instance_id="op7-instance", nome="Canal")
     job_id = str(uuid.uuid4())
@@ -525,3 +659,168 @@ def test_worker_processa_job_e_marca_status(monkeypatch):
     assert calls[0]["raw_event_id"] == event_id
     assert db.jobs[job_id]["status"] == "done"
     assert db.events[event_id]["processing_status"] == "done"
+
+
+def test_worker_processa_media_download_job(monkeypatch):
+    canal = SimpleNamespace(id=uuid.uuid4(), workspace_id=uuid.uuid4(), evolution_instance_id="op7-instance", nome="Canal")
+    job_id = str(uuid.uuid4())
+    event_id = str(uuid.uuid4())
+    payload = _build_message_payload()
+    db = _WorkerDb(canal, job_id, event_id, payload)
+    db.jobs[job_id]["job_type"] = "media_download"
+    db.jobs[job_id]["related_message_id"] = "msg-1"
+    db.jobs[job_id]["job_payload"] = {
+        "instance_name": "op7-instance",
+        "evolution_msg_id": "media-msg-1",
+        "mensagem_db_id": "msg-1",
+        "conversa_db_id": "conversation-1",
+        "message_type_raw": "imageMessage",
+        "media_base64": "Zm9v",
+        "media_url": None,
+        "media_mime_type": "image/jpeg",
+        "media_filename": "foto.jpg",
+    }
+
+    calls = []
+
+    def fake_process_media_download_job(db_arg, job_arg):
+        calls.append(job_arg)
+
+    monkeypatch.setattr(whatsapp_media, "process_media_download_job", fake_process_media_download_job)
+
+    result = whatsapp_event_worker.process_next_whatsapp_jobs(limit=1)
+
+    assert result == {"processed": 1, "failed": 0, "skipped": 0}
+    assert calls and calls[0]["payload"]["evolution_msg_id"] == "media-msg-1"
+    assert db.jobs[job_id]["status"] == "done"
+    assert db.events[event_id]["processing_status"] == "done"
+
+
+class WebhookMediaQueueTests(unittest.TestCase):
+    def test_process_evolution_webhook_event_media_enfileira_download(self):
+        canal = SimpleNamespace(
+            id=uuid.uuid4(),
+            workspace_id=uuid.uuid4(),
+            evolution_instance_id="op7-instance",
+            numero_telefone="5511999999999",
+        )
+        db = _PersistenceDb()
+        payload = _build_media_message_payload()
+
+        published = []
+        enqueued = []
+
+        with (
+            patch.object(whatsapp_crm_persistence, "extract_lead_origin", return_value={}),
+            patch.object(whatsapp_crm_persistence, "has_lead_origin", return_value=False),
+            patch.object(whatsapp_crm_persistence, "_resolve_lid_contact", return_value=("554391996849@s.whatsapp.net", None)),
+            patch.object(whatsapp_crm_persistence, "_upsert_participant_contact", return_value=None),
+            patch.object(whatsapp_crm_persistence, "_upsert_contact", return_value="contact-1"),
+            patch.object(whatsapp_crm_persistence, "_upsert_conversation", return_value="conversation-1"),
+            patch.object(whatsapp_crm_persistence, "publish_whatsapp_event", side_effect=lambda event: published.append(event)),
+            patch.object(
+                whatsapp_crm_persistence,
+                "enqueue_inbound_media_download",
+                side_effect=lambda db_arg, **kwargs: enqueued.append(kwargs) or True,
+            ),
+        ):
+            result = whatsapp_crm_persistence.process_evolution_webhook_event(
+                db,
+                canal,
+                "Message",
+                deepcopy(payload),
+                raw_event_id="event-1",
+            )
+
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(result["event_type"], "MESSAGE")
+        self.assertTrue(enqueued)
+        self.assertEqual(enqueued[0]["workspace_id"], str(canal.workspace_id))
+        self.assertEqual(enqueued[0]["canal_id"], str(canal.id))
+        self.assertEqual(enqueued[0]["raw_event_id"], "event-1")
+        self.assertEqual(enqueued[0]["mensagem_id"], result["result"]["mensagem_id"])
+        self.assertEqual(enqueued[0]["evolution_msg_id"], "media-msg-1")
+        self.assertEqual(enqueued[0]["media_base64"], "Zm9v")
+        self.assertEqual(db.commits, 2)
+        self.assertTrue(published)
+        self.assertEqual(published[0]["type"], "message.upsert")
+
+    def test_process_evolution_webhook_event_audio_enfileira_download(self):
+        canal = SimpleNamespace(
+            id=uuid.uuid4(),
+            workspace_id=uuid.uuid4(),
+            evolution_instance_id="op7-instance",
+            numero_telefone="5511999999999",
+        )
+        db = _PersistenceDb()
+        payload = _build_audio_message_payload()
+
+        published = []
+        enqueued = []
+
+        with (
+            patch.object(whatsapp_crm_persistence, "extract_lead_origin", return_value={}),
+            patch.object(whatsapp_crm_persistence, "has_lead_origin", return_value=False),
+            patch.object(whatsapp_crm_persistence, "_resolve_lid_contact", return_value=("554391996849@s.whatsapp.net", None)),
+            patch.object(whatsapp_crm_persistence, "_upsert_participant_contact", return_value=None),
+            patch.object(whatsapp_crm_persistence, "_upsert_contact", return_value="contact-1"),
+            patch.object(whatsapp_crm_persistence, "_upsert_conversation", return_value="conversation-1"),
+            patch.object(whatsapp_crm_persistence, "publish_whatsapp_event", side_effect=lambda event: published.append(event)),
+            patch.object(
+                whatsapp_crm_persistence,
+                "enqueue_inbound_media_download",
+                side_effect=lambda db_arg, **kwargs: enqueued.append(kwargs) or True,
+            ),
+        ):
+            result = whatsapp_crm_persistence.process_evolution_webhook_event(
+                db,
+                canal,
+                "Message",
+                deepcopy(payload),
+                raw_event_id="event-audio-1",
+            )
+
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(result["event_type"], "MESSAGE")
+        self.assertTrue(enqueued)
+        self.assertEqual(enqueued[0]["message_type_raw"], "audioMessage")
+        self.assertEqual(enqueued[0]["media_mime_type"], "audio/ogg")
+        self.assertEqual(enqueued[0]["media_url"], "https://example.invalid/audio.ogg")
+        self.assertEqual(db.commits, 2)
+        self.assertTrue(published)
+
+
+class WorkerMediaDownloadTests(unittest.TestCase):
+    def test_worker_processa_media_download_job(self):
+        canal = SimpleNamespace(id=uuid.uuid4(), workspace_id=uuid.uuid4(), evolution_instance_id="op7-instance", nome="Canal")
+        job_id = str(uuid.uuid4())
+        event_id = str(uuid.uuid4())
+        payload = _build_message_payload()
+        db = _WorkerDb(canal, job_id, event_id, payload)
+        db.jobs[job_id]["job_type"] = "media_download"
+        db.jobs[job_id]["related_message_id"] = "msg-1"
+        db.jobs[job_id]["job_payload"] = {
+            "instance_name": "op7-instance",
+            "evolution_msg_id": "media-msg-1",
+            "mensagem_db_id": "msg-1",
+            "conversa_db_id": "conversation-1",
+            "message_type_raw": "imageMessage",
+            "media_base64": "Zm9v",
+            "media_url": None,
+            "media_mime_type": "image/jpeg",
+            "media_filename": "foto.jpg",
+        }
+
+        calls = []
+
+        with (
+            patch.object(whatsapp_media, "process_media_download_job", side_effect=lambda db_arg, job_arg: calls.append(job_arg)),
+            patch.object(whatsapp_event_worker, "SessionLocal", lambda: _SessionContext(db)),
+        ):
+            result = whatsapp_event_worker.process_next_whatsapp_jobs(limit=1)
+
+        self.assertEqual(result, {"processed": 1, "failed": 0, "skipped": 0})
+        self.assertTrue(calls)
+        self.assertEqual(calls[0]["payload"]["evolution_msg_id"], "media-msg-1")
+        self.assertEqual(db.jobs[job_id]["status"], "done")
+        self.assertEqual(db.events[event_id]["processing_status"], "done")

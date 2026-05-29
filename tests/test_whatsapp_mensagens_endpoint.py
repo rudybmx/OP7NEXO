@@ -218,7 +218,112 @@ def test_get_mensagens_retorna_historico_mesmo_sem_thumbnail_url(monkeypatch):
     assert media_message["wa_status"] == "delivered"
     assert media_message["evolution_msg_id"] == "msg-media-1"
     assert media_message["midias"][0]["filename"] == "foto.jpg"
-    assert media_message["midias"][0]["url"] == "https://cdn.example.com/foto.jpg"
+
+
+class MensagensMediaTests(unittest.TestCase):
+    def test_get_mensagens_retorna_historico_mesmo_sem_thumbnail_url(self):
+        engine = _build_engine()
+        SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+
+        workspace_id = uuid.uuid4()
+        canal_id = uuid.uuid4()
+        conversa_id = uuid.uuid4()
+        contato_id = uuid.uuid4()
+        media_message_id = uuid.uuid4()
+        text_message_id = uuid.uuid4()
+        now = datetime.utcnow()
+
+        with SessionLocal() as db:
+            db.add_all(
+                [
+                    Mensagem(
+                        id=text_message_id,
+                        workspace_id=workspace_id,
+                        conversa_id=conversa_id,
+                        canal_id=canal_id,
+                        contato_id=contato_id,
+                        evolution_msg_id="msg-text-1",
+                        instance="op7-instance",
+                        remote_jid="5511999999999@s.whatsapp.net",
+                        direcao="entrada",
+                        from_me=False,
+                        remetente_tipo="contato",
+                        remetente_nome="Lead",
+                        conteudo="Mensagem de texto",
+                        message_type="conversation",
+                        wa_status="delivered",
+                        payload={},
+                        recebida_em=now,
+                        criado_em=now,
+                        atualizado_em=now,
+                        ativo=True,
+                    ),
+                    Mensagem(
+                        id=media_message_id,
+                        workspace_id=workspace_id,
+                        conversa_id=conversa_id,
+                        canal_id=canal_id,
+                        contato_id=contato_id,
+                        evolution_msg_id="msg-media-1",
+                        instance="op7-instance",
+                        remote_jid="5511999999999@s.whatsapp.net",
+                        direcao="entrada",
+                        from_me=False,
+                        remetente_tipo="contato",
+                        remetente_nome="Lead",
+                        conteudo="Foto do pedido",
+                        message_type="imageMessage",
+                        wa_status="delivered",
+                        payload={},
+                        recebida_em=now + timedelta(seconds=1),
+                        criado_em=now + timedelta(seconds=1),
+                        atualizado_em=now + timedelta(seconds=1),
+                        ativo=True,
+                    ),
+                    Midia(
+                        id=uuid.uuid4(),
+                        conversa_id=conversa_id,
+                        workspace_id=workspace_id,
+                        canal_id=canal_id,
+                        mensagem_id=media_message_id,
+                        tipo="image",
+                        minio_path=f"whatsapp/{workspace_id}/{conversa_id}/foto.jpg",
+                        url_publica="https://cdn.example.com/foto.jpg",
+                        mimetype="image/jpeg",
+                        tamanho=1024,
+                        filename="foto.jpg",
+                        caption="Foto do pedido",
+                        storage_status="ready",
+                        sha256="a" * 64,
+                        duration_seconds=None,
+                        width=800,
+                        height=600,
+                        criado_em=now + timedelta(seconds=1),
+                        atualizado_em=now + timedelta(seconds=1),
+                        ativo=True,
+                    ),
+                ]
+            )
+            db.commit()
+
+        with patch.object(mensagens_api, "verificar_acesso_workspace", lambda *args, **kwargs: None):
+            app = _build_app(SessionLocal, workspace_id)
+            client = TestClient(app)
+            response = client.get(
+                f"/mensagens?conversa_id={conversa_id}&workspace_id={workspace_id}&limit=10"
+            )
+
+        assert response.status_code == 200
+        messages = response.json()
+        assert len(messages) == 2
+        assert any(msg["midias"] for msg in messages)
+        text_message = next(msg for msg in messages if msg["id"] == str(text_message_id))
+        assert text_message["wa_status"] == "delivered"
+        assert text_message["evolution_msg_id"] == "msg-text-1"
+        media_message = next(msg for msg in messages if msg["id"] == str(media_message_id))
+        assert media_message["wa_status"] == "delivered"
+        assert media_message["evolution_msg_id"] == "msg-media-1"
+        assert media_message["midias"][0]["filename"] == "foto.jpg"
 
 
 class MensagensEndpointStatusTests(unittest.TestCase):

@@ -193,7 +193,7 @@ def normalize_media_payload(payload: dict[str, Any] | None) -> WhatsAppMediaPayl
         return None
 
     base64_value = pick("base64", "Base64", "data", "mediaBase64")
-    url = pick("mediaUrl", "mediaURL", "url", "Url", "downloadUrl", "downloadURL")
+    url = pick("mediaUrl", "mediaURL", "URL", "url", "Url", "downloadUrl", "downloadURL")
     caption = pick("caption", "Caption", "text", "body")
     message_type = normalize_message_type(payload)
     return WhatsAppMediaPayload(

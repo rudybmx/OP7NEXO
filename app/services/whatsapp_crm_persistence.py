@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.models.canal_entrada import CanalEntrada
 from app.services.lead_origin import extract_lead_origin, has_lead_origin
 from app.services.redis_pub import publish_whatsapp_event
+from app.services.whatsapp_media import enqueue_inbound_media_download
 from app.services.whatsapp_normalizer import (
     CONNECTION_EVENT_TYPES,
     MESSAGE_EVENT_TYPES,
@@ -924,6 +925,34 @@ def process_evolution_webhook_event(
     event_norm = normalize_event_type(event)
     if event_norm in MESSAGE_EVENT_TYPES:
         result = process_evolution_message(db, canal, data, raw_event_id=raw_event_id)
+        if result and result.get("is_media"):
+            mensagem_id = str(result.get("mensagem_id") or "")
+            conversa_id = str(result.get("conversa_id") or "")
+            evolution_msg_id = str(result.get("evolution_msg_id") or "")
+            if mensagem_id and conversa_id and evolution_msg_id:
+                enqueue_inbound_media_download(
+                    db,
+                    workspace_id=str(result.get("workspace_id") or canal.workspace_id),
+                    canal_id=str(canal.id),
+                    raw_event_id=raw_event_id,
+                    mensagem_id=mensagem_id,
+                    conversa_id=conversa_id,
+                    instance_name=canal.evolution_instance_id or "opcl",
+                    evolution_msg_id=evolution_msg_id,
+                    message_type_raw=str(result.get("message_type") or ""),
+                    media_base64=result.get("media_base64"),
+                    media_url=result.get("media_url"),
+                    media_mime_type=result.get("media_mime_type"),
+                    media_filename=result.get("media_filename"),
+                )
+                db.commit()
+            else:
+                logger.info(
+                    "[webhook-process] mídia ignorada por identificadores incompletos mensagem=%s conversa=%s evid=%s",
+                    mensagem_id,
+                    conversa_id,
+                    evolution_msg_id,
+                )
         return {
             "status": "done" if result else "ignored",
             "event_type": event_norm,
