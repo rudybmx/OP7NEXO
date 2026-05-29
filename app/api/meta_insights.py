@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, listar_workspaces_autorizados, verificar_acesso_workspace
 from app.services.ads_account_access import listar_ads_account_ids_acessiveis
+from app.services.object_storage import reescrever_carousel_urls
 from app.api.meta_delivery import (
     resolver_veiculacao_anuncio,
     resolver_veiculacao_campanha,
@@ -964,6 +965,7 @@ def anuncios_performance(
         creative_rows = db.execute(
             text(
                 "SELECT creative_id, ad_id, "
+                "MAX(ads_account_id::text) AS ads_account_id, "
                 "MAX(tipo_criativo) AS tipo_criativo, "
                 "MAX(thumbnail_url) AS thumbnail_url, "
                 "MAX(image_url_hq) AS image_url_hq, "
@@ -1135,6 +1137,11 @@ def anuncios_performance(
             carousel_items = _parse_jsonb(creative_row.get("carousel_items"))
         if not isinstance(carousel_items, list):
             carousel_items = []
+        carousel_items = reescrever_carousel_urls(
+            carousel_items,
+            str(creative_row.get("ads_account_id") or ""),
+            str(row.get("creative_id") or catalog_creative_id or ""),
+        )
         tipo_criativo = str(creative_row.get("tipo_criativo") or row.get("tipo_criativo") or "IMAGE").upper()
         if tipo_criativo not in {"IMAGE", "VIDEO", "CAROUSEL"}:
             tipo_criativo = "IMAGE"
@@ -1520,6 +1527,7 @@ def visao_geral(
         text(
             "SELECT "
             "  COALESCE(NULLIF(a.creative_id, ''), cr.creative_id, a.ad_id) AS creative_id, "
+            "  MAX(a.ads_account_id::text) AS ads_account_id, "
             "  MAX(a.nome) AS nome, "
             "  MAX(COALESCE(cr.thumbnail_url, a.thumbnail_url)) AS thumbnail_url, "
             "  MAX(COALESCE(cr.tipo_criativo, a.tipo_criativo)) AS tipo_criativo, "
@@ -1598,6 +1606,11 @@ def visao_geral(
         carousel_items = _parse_jsonb(carousel_raw)
         if not isinstance(carousel_items, list):
             carousel_items = []
+        carousel_items = reescrever_carousel_urls(
+            carousel_items,
+            str(r.get("ads_account_id") or ""),
+            str(r.get("creative_id") or ""),
+        )
 
         top_criativos.append({
             "id": r.get("creative_id"),

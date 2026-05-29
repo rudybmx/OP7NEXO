@@ -63,6 +63,35 @@ def stat_object(bucket: str, object_name: str):
     return client.stat_object(bucket, object_name)
 
 
+def reescrever_carousel_urls(
+    items: list,
+    ads_account_uuid: str | None,
+    creative_id: str | None,
+) -> list:
+    """Reconstrói image_url_hq de cada card com o caminho determinístico no MinIO.
+
+    Ignora o valor salvo (pode ser URL assinada expirada).  O objeto MinIO
+    segue o naming {creative_id}_card_{card_index}.jpg.
+    """
+    if not items or not ads_account_uuid or not creative_id:
+        return items
+    result = []
+    for card in items:
+        if not isinstance(card, dict):
+            result.append(card)
+            continue
+        idx = card.get("card_index")
+        if idx is None:
+            result.append(card)
+            continue
+        url = public_url(
+            settings.MINIO_BUCKET_CRIATIVOS,
+            f"ads-accounts/{ads_account_uuid}/criativos/{creative_id}_card_{idx}.jpg",
+        )
+        result.append({**card, "image_url_hq": url})
+    return result
+
+
 def download_and_put(bucket: str, object_name: str, source_url: str, content_type: str = "application/octet-stream") -> str | None:
     """Baixa um arquivo de uma URL e faz upload para o MinIO.
     Retorna a public_url em caso de sucesso, ou None em caso de falha."""

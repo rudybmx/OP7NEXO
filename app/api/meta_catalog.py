@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.deps import get_usuario_atual, verificar_acesso_workspace
 from app.models.user import User
 from app.services.ads_account_access import listar_ads_account_ids_acessiveis
+from app.services.object_storage import reescrever_carousel_urls
 from app.api.meta_delivery import (
     resolver_veiculacao_campanha,
     resolver_veiculacao_conjunto,
@@ -869,6 +870,13 @@ def catalogo_criativos(
                 headline_fallback=data.get("nome"),
             )
             data.update(tracking)
+        carousel_cards = data.get("carousel_cards")
+        if isinstance(carousel_cards, list):
+            data["carousel_cards"] = reescrever_carousel_urls(
+                carousel_cards,
+                str(data.get("ads_account_id") or ""),
+                str(data.get("creative_id") or ""),
+            )
         result.append(data)
     return result
 

@@ -970,16 +970,21 @@ def _persist_carousel_cards_to_minio(
         card_index = card.get("card_index")
         if card_index is None:
             continue
-        src_url = card.get("image_url_hq") or card.get("picture")
-        if not src_url:
+
+        # Build ordered candidate list: image_url_hq first, picture as fallback.
+        candidates: list[str] = []
+        for u in (card.get("image_url_hq"), card.get("picture")):
+            if u and u not in candidates:
+                candidates.append(u)
+        if not candidates:
             continue
 
-        object_name = f"ads-accounts/{ads_account_uuid}/criativos/{creative_id}_{card_index}.jpg"
+        object_name = f"ads-accounts/{ads_account_uuid}/criativos/{creative_id}_card_{card_index}.jpg"
         minio_url = public_url(bucket, object_name)
 
         # Idempotency: if already in MinIO just update the URL and move on.
-        if _eh_url_publica_minio(src_url):
-            card["image_url_hq"] = src_url
+        if _eh_url_publica_minio(candidates[0]):
+            card["image_url_hq"] = candidates[0]
             card["source_type"] = "adimage_minio"
             persisted += 1
             continue
@@ -993,27 +998,33 @@ def _persist_carousel_cards_to_minio(
             continue
         except S3Error as exc:
             if exc.code != "NoSuchKey":
-                log.warning("MinIO stat falhou card %s_%s: %s", creative_id, card_index, exc)
+                log.warning("MinIO stat falhou card %s_card_%s: %s", creative_id, card_index, exc)
                 continue
             # NoSuchKey → proceed to download and upload.
 
-        try:
-            resp = client.get(
-                src_url,
-                follow_redirects=True,
-                timeout=15,
-                headers={"Referer": "https://www.facebook.com/", "User-Agent": "Mozilla/5.0"},
-            )
-            if resp.status_code >= 400:
-                log.warning("Falha download card %s_%s: HTTP %s", creative_id, card_index, resp.status_code)
-                continue
-            content_type = resp.headers.get("content-type", "image/jpeg")
-            put_bytes(bucket, object_name, resp.content, content_type)
-            card["image_url_hq"] = minio_url
-            card["source_type"] = "adimage_minio"
-            persisted += 1
-        except Exception as exc:
-            log.warning("Falha ao persistir card %s_%s no MinIO: %s", creative_id, card_index, exc)
+        success = False
+        for src_url in candidates:
+            try:
+                resp = client.get(
+                    src_url,
+                    follow_redirects=True,
+                    timeout=15,
+                    headers={"Referer": "https://www.facebook.com/", "User-Agent": "Mozilla/5.0"},
+                )
+                if resp.status_code >= 400:
+                    log.warning("Falha download card %s_card_%s via %s: HTTP %s", creative_id, card_index, src_url[:60], resp.status_code)
+                    continue
+                content_type = resp.headers.get("content-type", "image/jpeg")
+                put_bytes(bucket, object_name, resp.content, content_type)
+                card["image_url_hq"] = minio_url
+                card["source_type"] = "adimage_minio"
+                persisted += 1
+                success = True
+                break
+            except Exception as exc:
+                log.warning("Falha ao persistir card %s_card_%s no MinIO: %s", creative_id, card_index, exc)
+        if not success and len(candidates) > 1:
+            log.warning("Todos os %d candidatos falharam para card %s_card_%s", len(candidates), creative_id, card_index)
 
     return persisted
 
