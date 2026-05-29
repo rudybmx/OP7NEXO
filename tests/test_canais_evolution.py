@@ -290,6 +290,41 @@ class CanaisEvolutionTests(unittest.TestCase):
         self.assertEqual(headers["instanceToken"], "instance-token-1")
         self.assertEqual(body["number"], "554391673791")
 
+    def test_configurar_webhook_usa_instance_token_como_apikey_sem_fallback_legacy(self):
+        responses = [_FakeResponse(200, {"status": "OK"})]
+        calls = []
+
+        class _ClientFactory:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self_inner):
+                return _FakeHttpxClient(responses, calls)
+
+            def __exit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("app.services.evolution.httpx.Client", _ClientFactory):
+            result = evo_service.configurar_webhook(
+                "instance-name",
+                "https://api.op7franquia.com.br/webhook/evolution/token",
+                instance_id="instance-id-1",
+                instance_token="instance-token-1",
+                subscribe=["ALL"],
+                immediate=True,
+            )
+
+        self.assertEqual(result["status"], "OK")
+        self.assertEqual(len(calls), 1)
+        url, headers, body = calls[0]
+        self.assertTrue(url.endswith("/instance/connect"))
+        self.assertEqual(headers["apikey"], "instance-token-1")
+        self.assertEqual(headers["instanceId"], "instance-id-1")
+        self.assertEqual(headers["instanceToken"], "instance-token-1")
+        self.assertEqual(body["webhookUrl"], "https://api.op7franquia.com.br/webhook/evolution/token")
+        self.assertEqual(body["subscribe"], ["ALL"])
+        self.assertTrue(body["immediate"])
+
     def test_enviar_mensagem_midia_e_template_usam_instance_token_como_apikey(self):
         responses = [
             _FakeResponse(200, {"media": "ok"}),

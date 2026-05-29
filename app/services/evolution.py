@@ -684,7 +684,7 @@ def _connect_instance(
     with httpx.Client(timeout=30) as client:
         resp = client.post(
             f"{META}/instance/connect",
-            headers=_headers(instance_id, instance_token),
+            headers=_send_headers(instance_id, instance_token),
             json=body,
         )
         if resp.status_code < 400:
@@ -695,7 +695,7 @@ def _connect_instance(
 
         legacy_resp = client.post(
             f"{META}/webhook/set/{instance_name}",
-            headers=_headers(None, instance_token),
+            headers=_send_headers(None, instance_token),
             json={
                 "webhook": {
                     "enabled": True,
