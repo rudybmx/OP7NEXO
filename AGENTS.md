@@ -1,8 +1,8 @@
 # OP7NEXO — Instruções do Agente
 
-## SINCRONIZAÇÃO DE ARQUIVOS (OBRIGATÓRIO)
+## ARQUIVO CANÔNICO
 
-`CLAUDE.md` e `AGENTS.md` são espelhos. Sempre que modificar um, atualize o outro com as mesmas alterações imediatamente.
+Este `AGENTS.md` é a **fonte única** de instrução (padrão aberto, lido nativo por Codex/opencode/Copilot). `CLAUDE.md` apenas importa este arquivo via `@AGENTS.md`. **Não edite o CLAUDE.md** — toda mudança de instrução vem aqui. Ver constituição, regra 1.3.
 
 ---
 
@@ -203,7 +203,7 @@ Rules:
 - ALWAYS read graphify-out/GRAPH_REPORT.md before reading any source files, running grep/glob searches, or answering codebase questions. The graph is your primary map of the codebase.
 - IF graphify-out/wiki/index.md EXISTS, navigate it instead of reading raw files
 - For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code, run `graphify src/ docs/ --update` to keep the graph current (AST-only for code, no API cost).
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
 
 ---
 
