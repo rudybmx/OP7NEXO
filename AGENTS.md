@@ -56,10 +56,11 @@ docs/specs/[nome-feature]/
 └── contracts/    — contratos de API (só se houver endpoints novos)
 ```
 
-### Comandos
-- `/speckit.specify [feature]` — cria `spec.md` a partir da descrição
-- `/speckit.plan` — lê `spec.md` e gera `plan.md`
-- `/speckit.tasks` — lê `plan.md` e gera `tasks.md` com paralelismo `[P]`
+### Comandos (skills do Spec Kit; no Codex invocam como `$speckit-*`)
+- `/speckit-specify [feature]` — cria `spec.md` a partir da descrição
+- `/speckit-plan` — lê `spec.md` e gera `plan.md`
+- `/speckit-tasks` — lê `plan.md` e gera `tasks.md` com paralelismo `[P]`
+- opcionais: `/speckit-clarify`, `/speckit-analyze`, `/speckit-checklist`, `/speckit-implement`
 
 ### Workflow obrigatório
 1. Verifique se spec existe: `find docs/specs/ -name "spec.md" | xargs grep -l "[keyword]" 2>/dev/null`
@@ -275,3 +276,8 @@ box-shadow: var(--ws-glass-shadow);
 ### Página de referência visual
 → Acesse `/design-system` para ver todos os componentes em ação
 → Guia detalhado: `src/components/design-system/ds-agentes.md`
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->
