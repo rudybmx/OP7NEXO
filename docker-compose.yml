@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+      - /root/infra/redis/.env
     networks:
       - traefik-public
     labels:

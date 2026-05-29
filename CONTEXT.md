@@ -230,6 +230,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Worker passou a processar mensagens, receipts e connection events via `crm_message_jobs`; o webhook não faz mais processamento pesado em-request.
 - Idempotência usa `event_hash` e `message_hash` canônicos estáveis; quando não há `evolution_msg_id`, campos instáveis do payload não entram na chave.
 
+### ✅ Implementado (2026-05-29) — Redis Realtime/SSE
+- API e front passaram a resolver Redis a partir de `REDIS_URL` ou `REDIS_PASSWORD`; o password vem de `/root/infra/redis/.env` via `env_file`.
+- O SSE do WhatsApp degrada para modo polling quando o Redis não está disponível, evitando quebra feia da resposta.
+
 ### ✅ Implementado (2026-05-28) — Evolution Go Auth de Envio
 - Endpoints de envio Evolution Go (`/send/text`, `/send/media`, template) usam `instance_token` como `apikey`.
 - Fallback legado `/message/sendText/{instance}` removido porque a Evolution Go 0.7.1 retorna 404.

@@ -1,18 +1,30 @@
 import json
 import os
+from urllib.parse import quote
 
 import redis
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://default:hgyQW64RKLQCdYz3ATb5vtfXhoVvfH3y@redis:6379")
 WHATSAPP_EVENTS_CHANNEL = os.getenv("WHATSAPP_EVENTS_CHANNEL", "whatsapp:events")
 
 _redis_client: redis.Redis | None = None
 
 
+def _resolve_redis_url() -> str:
+    explicit_url = (os.getenv("REDIS_URL") or "").strip()
+    if explicit_url:
+        return explicit_url
+
+    password = (os.getenv("REDIS_PASSWORD") or "").strip()
+    if password:
+        return f"redis://:{quote(password, safe='')}@redis:6379/0"
+
+    raise RuntimeError("Configuração Redis ausente. Defina REDIS_URL ou REDIS_PASSWORD.")
+
+
 def _get_redis() -> redis.Redis:
     global _redis_client
     if _redis_client is None:
-        _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        _redis_client = redis.from_url(_resolve_redis_url(), decode_responses=True)
     return _redis_client
 
 
