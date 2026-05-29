@@ -290,6 +290,20 @@ def normalize_receipt_event(
     message_ids: list[str] = []
     for value in (key.get("id"), root.get("id"), root.get("ID"), info.get("ID"), info.get("Id")):
         _append_message_id(message_ids, value)
+    info_message_ids = (
+        info.get("MessageIDs")
+        or info.get("messageIds")
+        or info.get("messageIDs")
+        or info.get("messagesIds")
+        or info.get("messagesIDs")
+        or info.get("ids")
+        or info.get("Ids")
+    )
+    if isinstance(info_message_ids, list):
+        for item in info_message_ids:
+            _append_message_id(message_ids, item)
+    else:
+        _append_message_id(message_ids, info_message_ids)
     for field in ("MessageIDs", "messageIds", "messageIDs", "messagesIds", "messagesIDs", "ids", "Ids"):
         value = root.get(field)
         if isinstance(value, list):

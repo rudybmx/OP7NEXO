@@ -1135,12 +1135,8 @@ def enviar_mensagem_canal(
         logger.error("[canais] falha ao enviar mensagem: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc))
 
-    # Extrai evolution_msg_id do response para deduplicação robusta no webhook
-    evo_msg_id = None
-    if isinstance(evo_resp, dict):
-        key_data = evo_resp.get("key", {})
-        if isinstance(key_data, dict):
-            evo_msg_id = key_data.get("id")
+    # Extrai evolution_msg_id do response para reconciliação de receipt
+    evo_msg_id = evo_service.extract_evolution_message_id(evo_resp)
 
     # 2. Atualiza ou cria conversa
     if not conversa_id:
@@ -1334,11 +1330,7 @@ def enviar_template_canal(
         logger.error("[canais] falha ao enviar template: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc))
 
-    evo_msg_id = None
-    if isinstance(evo_resp, dict):
-        key_data = evo_resp.get("key", {})
-        if isinstance(key_data, dict):
-            evo_msg_id = key_data.get("id")
+    evo_msg_id = evo_service.extract_evolution_message_id(evo_resp)
 
     # Cria/atualiza conversa
     if not conversa_id:

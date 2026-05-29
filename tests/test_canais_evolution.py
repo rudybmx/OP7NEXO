@@ -72,6 +72,56 @@ class _ReapplyDb:
         return _ReapplyQuery(self._canais)
 
 
+class _OutboundResult:
+    def __init__(self, row=None, scalar_value=None):
+        self._row = row
+        self._scalar_value = scalar_value
+
+    def fetchone(self):
+        return self._row
+
+    def scalar(self):
+        if self._scalar_value is not None:
+            return self._scalar_value
+        if isinstance(self._row, tuple):
+            return self._row[0]
+        if isinstance(self._row, dict):
+            return self._row.get("id")
+        return None
+
+
+class _OutboundDb:
+    def __init__(self, conversa_row, inserted_message_id="message-id-1"):
+        self.conversa_row = conversa_row
+        self.inserted_message_id = inserted_message_id
+        self.message_insert_params = None
+        self.commits = 0
+        self.calls = []
+
+    def execute(self, stmt, params=None):
+        sql = " ".join(str(stmt).split())
+        sql_lower = sql.lower()
+        self.calls.append((sql, params))
+
+        if "from public.crm_whatsapp_conversas c join public.crm_whatsapp_contatos ct" in sql_lower and "where c.id = :cid" in sql_lower:
+            return _OutboundResult(row=self.conversa_row)
+
+        if "update public.crm_whatsapp_conversas" in sql_lower and "where id = :cid" in sql_lower:
+            return _OutboundResult()
+
+        if "insert into public.crm_whatsapp_mensagens" in sql_lower:
+            self.message_insert_params = params
+            return _OutboundResult(scalar_value=self.inserted_message_id)
+
+        if "insert into public.crm_whatsapp_midia" in sql_lower:
+            return _OutboundResult(scalar_value=str(uuid.uuid4()))
+
+        raise AssertionError(f"Unexpected SQL: {sql}")
+
+    def commit(self):
+        self.commits += 1
+
+
 def _fake_canal(connection_status: str = "disconnected"):
     canal_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
@@ -363,6 +413,105 @@ class CanaisEvolutionTests(unittest.TestCase):
         self.assertEqual(template["template"], "ok")
         self.assertEqual(calls[0][1]["apikey"], "instance-token-1")
         self.assertEqual(calls[1][1]["apikey"], "instance-token-1")
+
+    def test_extract_evolution_message_id_reconhece_shapes_reais(self):
+        cases = [
+            ({"key": {"id": "key-id"}}, "key-id"),
+            ({"message": {"key": {"id": "message-key-id"}}}, "message-key-id"),
+            ({"data": {"Info": {"ID": "info-id"}}}, "info-id"),
+            ({"id": "root-id"}, "root-id"),
+            ({"messageId": "message-id"}, "message-id"),
+        ]
+
+        for payload, expected in cases:
+            with self.subTest(payload=payload):
+                self.assertEqual(evo_service.extract_evolution_message_id(payload), expected)
+
+    @patch("app.api.canais.publish_whatsapp_event")
+    @patch("app.api.canais._exigir_admin_canal")
+    @patch("app.api.canais._get_canal_or_404")
+    @patch("app.api.canais.evo_service.enviar_mensagem_texto")
+    def test_enviar_mensagem_canal_persiste_evolution_msg_id_do_response_alternativo(
+        self,
+        mock_enviar_texto,
+        mock_get_canal,
+        mock_exigir_admin,
+        mock_publish,
+    ):
+        canal = _fake_canal(connection_status="connected")
+        canal.status = "ativo"
+        conversa_id = uuid.uuid4()
+        contato_id = uuid.uuid4()
+        db = _OutboundDb(
+            (
+                str(conversa_id),
+                str(contato_id),
+                "554391996849@s.whatsapp.net",
+                "554391996849",
+                "554391996849@s.whatsapp.net",
+            )
+        )
+        usuario = SimpleNamespace(role="platform_admin", nome="Agente Teste", email="agente@example.com")
+        payload = canais.EnviarMensagemIn(conversa_id=str(conversa_id), texto="teste", tipo="texto")
+
+        mock_get_canal.return_value = canal
+        mock_enviar_texto.return_value = {"data": {"Info": {"ID": "text-id-123"}}}
+
+        resultado = canais.enviar_mensagem_canal(canal.id, payload, db=db, usuario=usuario)
+
+        self.assertTrue(resultado.ok)
+        self.assertEqual(resultado.mensagem_id, "message-id-1")
+        self.assertEqual(db.message_insert_params["evid"], "text-id-123")
+        self.assertEqual(db.message_insert_params["msg"], "teste")
+        self.assertEqual(db.message_insert_params["jid"], "554391996849@s.whatsapp.net")
+        self.assertEqual(db.commits, 1)
+        mock_publish.assert_called_once()
+
+    @patch("app.api.canais.publish_whatsapp_event")
+    @patch("app.api.canais._exigir_admin_canal")
+    @patch("app.api.canais._get_canal_or_404")
+    @patch("app.api.canais.evo_service.enviar_mensagem_midia")
+    def test_enviar_mensagem_canal_media_tambem_persiste_evolution_msg_id(
+        self,
+        mock_enviar_midia,
+        mock_get_canal,
+        mock_exigir_admin,
+        mock_publish,
+    ):
+        canal = _fake_canal(connection_status="connected")
+        canal.status = "ativo"
+        conversa_id = uuid.uuid4()
+        contato_id = uuid.uuid4()
+        db = _OutboundDb(
+            (
+                str(conversa_id),
+                str(contato_id),
+                "554391996849@s.whatsapp.net",
+                "554391996849",
+                "554391996849@s.whatsapp.net",
+            )
+        )
+        usuario = SimpleNamespace(role="platform_admin", nome="Agente Teste", email="agente@example.com")
+        payload = canais.EnviarMensagemIn(
+            conversa_id=str(conversa_id),
+            texto="imagem",
+            tipo="image",
+            media_url="https://example.com/foto.png",
+            caption="Legenda",
+        )
+
+        mock_get_canal.return_value = canal
+        mock_enviar_midia.return_value = {"message": {"key": {"id": "media-id-456"}}}
+
+        resultado = canais.enviar_mensagem_canal(canal.id, payload, db=db, usuario=usuario)
+
+        self.assertTrue(resultado.ok)
+        self.assertEqual(resultado.mensagem_id, "message-id-1")
+        self.assertEqual(db.message_insert_params["evid"], "media-id-456")
+        self.assertEqual(db.message_insert_params["msg"], "imagem")
+        self.assertEqual(db.message_insert_params["jid"], "554391996849@s.whatsapp.net")
+        self.assertEqual(db.commits, 1)
+        mock_publish.assert_called_once()
 
 
 if __name__ == "__main__":

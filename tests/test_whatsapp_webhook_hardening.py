@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import uuid
+import unittest
 from copy import deepcopy
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -114,6 +116,7 @@ class _PersistenceDb:
     def __init__(self):
         self.messages_by_hash: dict[str, dict[str, str]] = {}
         self.messages_by_evolution_id: dict[str, dict[str, str]] = {}
+        self.receipt_updates: list[tuple[str, str]] = []
         self.commits = 0
         self.calls: list[tuple[str, dict | None]] = []
 
@@ -148,6 +151,18 @@ class _PersistenceDb:
             if evolution_msg_id:
                 self.messages_by_evolution_id[evolution_msg_id] = row
             return _Result(scalar_value=message_id)
+
+        if "update public.crm_whatsapp_mensagens" in sql.lower() and "set wa_status = :status" in sql.lower():
+            evolution_msg_id = params["evid"]
+            row = self.messages_by_evolution_id.get(evolution_msg_id)
+            if row:
+                row["wa_status"] = params["status"]
+                if params["status"] == "delivered":
+                    row["delivered_at"] = True
+                elif params["status"] == "read":
+                    row["read_at"] = True
+                self.receipt_updates.append((evolution_msg_id, params["status"]))
+            return _Result()
 
         raise AssertionError(f"Unexpected SQL: {sql}")
 
@@ -384,6 +399,99 @@ def test_process_evolution_message_fallback_hash_nao_duplica_sem_provider_id(mon
     assert db.commits == 1
     assert len(db.messages_by_hash) == 1
     assert len(published) == 1
+
+
+def test_process_evolution_receipt_event_atualiza_status_da_mensagem_outbound(monkeypatch):
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        evolution_instance_id="op7-instance",
+    )
+    db = _PersistenceDb()
+    evolution_msg_id = "cfa2d37b-6163-4047-8ae1-a5bc4d068627"
+    db.messages_by_evolution_id[evolution_msg_id] = {
+        "id": "msg-1",
+        "conversa_id": "conversation-1",
+        "wa_status": "pending",
+        "delivered_at": None,
+        "read_at": None,
+    }
+    payload = {
+        "event": "Receipt",
+        "data": {
+            "Info": {
+                "Chat": "554391996849@s.whatsapp.net",
+                "Sender": "554391673791:2@s.whatsapp.net",
+                "IsFromMe": False,
+                "MessageIDs": [evolution_msg_id],
+                "Timestamp": "2026-05-29T17:22:48-03:00",
+            }
+        },
+    }
+
+    published = []
+    monkeypatch.setattr(whatsapp_crm_persistence, "publish_whatsapp_event", lambda event: published.append(event))
+
+    result = whatsapp_crm_persistence.process_evolution_receipt_event(db, canal, payload, event="Receipt")
+
+    assert result is not None
+    assert result["message_ids"] == [evolution_msg_id]
+    assert result["status"] == "delivered"
+    assert db.messages_by_evolution_id[evolution_msg_id]["wa_status"] == "delivered"
+    assert db.messages_by_evolution_id[evolution_msg_id]["delivered_at"] is True
+    assert db.messages_by_evolution_id[evolution_msg_id]["read_at"] is None
+    assert db.commits == 1
+    assert db.receipt_updates == [(evolution_msg_id, "delivered")]
+    assert published and published[0]["evolutionMsgId"] == evolution_msg_id
+
+
+class ReceiptReconciliationTests(unittest.TestCase):
+    def test_process_evolution_receipt_event_atualiza_status_da_mensagem_outbound(self):
+        canal = SimpleNamespace(
+            id=uuid.uuid4(),
+            workspace_id=uuid.uuid4(),
+            evolution_instance_id="op7-instance",
+        )
+        db = _PersistenceDb()
+        evolution_msg_id = "cfa2d37b-6163-4047-8ae1-a5bc4d068627"
+        db.messages_by_evolution_id[evolution_msg_id] = {
+            "id": "msg-1",
+            "conversa_id": "conversation-1",
+            "wa_status": "pending",
+            "delivered_at": None,
+            "read_at": None,
+        }
+        payload = {
+            "event": "Receipt",
+            "data": {
+                "Info": {
+                    "Chat": "554391996849@s.whatsapp.net",
+                    "Sender": "554391673791:2@s.whatsapp.net",
+                    "IsFromMe": False,
+                    "MessageIDs": [evolution_msg_id],
+                    "Timestamp": "2026-05-29T17:22:48-03:00",
+                }
+            },
+        }
+
+        published = []
+        with patch.object(
+            whatsapp_crm_persistence,
+            "publish_whatsapp_event",
+            side_effect=lambda event: published.append(event),
+        ):
+            result = whatsapp_crm_persistence.process_evolution_receipt_event(db, canal, payload, event="Receipt")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["message_ids"], [evolution_msg_id])
+        self.assertEqual(result["status"], "delivered")
+        self.assertEqual(db.messages_by_evolution_id[evolution_msg_id]["wa_status"], "delivered")
+        self.assertTrue(db.messages_by_evolution_id[evolution_msg_id]["delivered_at"])
+        self.assertIsNone(db.messages_by_evolution_id[evolution_msg_id]["read_at"])
+        self.assertEqual(db.commits, 1)
+        self.assertEqual(db.receipt_updates, [(evolution_msg_id, "delivered")])
+        self.assertTrue(published)
+        self.assertEqual(published[0]["evolutionMsgId"], evolution_msg_id)
 
 
 def test_worker_processa_job_e_marca_status(monkeypatch):

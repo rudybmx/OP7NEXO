@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import uuid
+import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -209,6 +211,64 @@ def test_get_mensagens_retorna_historico_mesmo_sem_thumbnail_url(monkeypatch):
     messages = response.json()
     assert len(messages) == 2
     assert any(msg["midias"] for msg in messages)
+    text_message = next(msg for msg in messages if msg["id"] == str(text_message_id))
+    assert text_message["wa_status"] == "delivered"
+    assert text_message["evolution_msg_id"] == "msg-text-1"
     media_message = next(msg for msg in messages if msg["id"] == str(media_message_id))
+    assert media_message["wa_status"] == "delivered"
+    assert media_message["evolution_msg_id"] == "msg-media-1"
     assert media_message["midias"][0]["filename"] == "foto.jpg"
     assert media_message["midias"][0]["url"] == "https://cdn.example.com/foto.jpg"
+
+
+class MensagensEndpointStatusTests(unittest.TestCase):
+    def test_get_mensagens_expoe_wa_status_do_banco(self):
+        engine = _build_engine()
+        SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+
+        workspace_id = uuid.uuid4()
+        canal_id = uuid.uuid4()
+        conversa_id = uuid.uuid4()
+        contato_id = uuid.uuid4()
+        now = datetime.utcnow()
+
+        with SessionLocal() as db:
+            db.add(
+                Mensagem(
+                    id=uuid.uuid4(),
+                    workspace_id=workspace_id,
+                    conversa_id=conversa_id,
+                    canal_id=canal_id,
+                    contato_id=contato_id,
+                    evolution_msg_id="receipt-check-1",
+                    instance="op7-instance",
+                    remote_jid="5511999999999@s.whatsapp.net",
+                    direcao="saida",
+                    from_me=True,
+                    remetente_tipo="agente",
+                    remetente_nome="Agente",
+                    conteudo="receipt-check",
+                    message_type="conversation",
+                    wa_status="delivered",
+                    enviada_em=now,
+                    recebida_em=now,
+                    delivered_at=now,
+                    criado_em=now,
+                    atualizado_em=now,
+                    ativo=True,
+                )
+            )
+            db.commit()
+
+        app = _build_app(SessionLocal, workspace_id)
+        with patch.object(mensagens_api, "verificar_acesso_workspace", lambda *args, **kwargs: None):
+            client = TestClient(app)
+            response = client.get(
+                f"/mensagens?conversa_id={conversa_id}&workspace_id={workspace_id}&limit=10"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        messages = response.json()
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["wa_status"], "delivered")
+        self.assertEqual(messages[0]["evolution_msg_id"], "receipt-check-1")

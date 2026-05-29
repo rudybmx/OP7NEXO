@@ -76,6 +76,55 @@ def _json_or_text(resp: httpx.Response) -> Any:
         return {"message": resp.text}
 
 
+def _nested_value(data: Any, path: tuple[str, ...]) -> Any:
+    current = data
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def extract_evolution_message_id(payload: Any) -> str | None:
+    """Extrai o id da mensagem em formatos conhecidos da Evolution."""
+    if not isinstance(payload, dict):
+        return None
+
+    candidate_paths: tuple[tuple[str, ...], ...] = (
+        ("key", "id"),
+        ("key", "ID"),
+        ("message", "key", "id"),
+        ("message", "key", "ID"),
+        ("message", "id"),
+        ("message", "ID"),
+        ("data", "Info", "ID"),
+        ("data", "Info", "Id"),
+        ("data", "Info", "id"),
+        ("data", "key", "id"),
+        ("data", "key", "ID"),
+        ("data", "id"),
+        ("data", "messageId"),
+        ("data", "messageID"),
+        ("response", "key", "id"),
+        ("response", "message", "key", "id"),
+        ("response", "messageId"),
+        ("response", "messageID"),
+        ("response", "id"),
+        ("messageId",),
+        ("messageID",),
+        ("id",),
+        ("ID",),
+    )
+
+    for path in candidate_paths:
+        value = _nested_value(payload, path)
+        if isinstance(value, str):
+            value = value.strip()
+            if value:
+                return value
+    return None
+
+
 def _error_message(resp: httpx.Response) -> str:
     data = _json_or_text(resp)
     if isinstance(data, dict):
