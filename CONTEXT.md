@@ -59,8 +59,8 @@ meta_videos_catalog         -- catálogo de vídeos com source_url e poster HQ p
 ```
 
 ### Migrations
-- Numeradas: `001_` ... `018_` (última aplicada: 018_sync_jobs)
-- Localização: `/root/op7nexo-api/migrations/` (confirmar path antes de criar nova)
+- Numeradas: `001_` ... `047_` (último arquivo: 047_crm_whatsapp_channel_not_null; conferir no banco o que está de fato aplicado)
+- Localização: `/root/op7nexo-api/alembic/versions/` (NÃO existe `migrations/` — ver constituição 2.5)
 - Sempre rodar após criar: `bash /root/deploy.sh api` + testar endpoint
 
 ---
