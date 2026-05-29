@@ -53,8 +53,8 @@ O primeiro provedor entregue será `whatsapp_evolution` usando Evolution Go. A a
 
 1. Todo dado operacional deve carregar `workspace_id`; nenhuma query pode depender apenas de `instance` ou `remote_jid`.
 2. Um workspace pode ter vários canais/números. Conversas devem carregar `canal_id` e `instance`.
-3. Webhook deve responder `2xx` rapidamente após validar token e enfileirar/persistir evento bruto; processamento pesado deve ir para worker/background job.
-4. Idempotência obrigatória por `(workspace_id, canal_id, instance, evolution_msg_id, event_type)`.
+3. Webhook deve responder `2xx` rapidamente após validar token e enfileirar/persistir evento bruto; o worker/background job é o único ponto de processamento pesado.
+4. Idempotência obrigatória por `(workspace_id, canal_id, instance, evolution_msg_id, event_type)`. Sem `evolution_msg_id`, usar hash canônico estável sem campos instáveis do payload.
 5. Mensagem duplicada não pode gerar nova conversa, nova mídia ou novo evento de follow-up.
 6. Conversa 1:1 ativa é identificada por `(workspace_id, canal_id, instance, remote_jid, status != resolvido)`.
 7. Conversa de grupo ativa é única por `(workspace_id, canal_id, instance, remote_jid, status != resolvido)`.
@@ -129,7 +129,7 @@ UI/labels em português do Brasil. Código, nomes técnicos e APIs em inglês qu
 ## Riscos E Decisões
 
 - Evolution Go retenta webhooks até 5 vezes; idempotência tem que ser no banco, não em memória.
-- BackgroundTasks do FastAPI é aceitável para MVP, mas não é fila robusta. Para produção, preferir worker com tabela `crm_message_jobs` e lock por `FOR UPDATE SKIP LOCKED`; Redis pode continuar apenas para realtime.
+- O webhook público não deve depender de `BackgroundTasks` para responder; a fila persistente `crm_message_jobs` com lock por `FOR UPDATE SKIP LOCKED` é o caminho robusto. Redis continua apenas para realtime.
 - Não usar URL efêmera da Evolution como fonte final de mídia. MinIO é a fonte persistente.
 - A tela atual tem API routes Next acessando banco diretamente e também proxy para FastAPI. O plano deve migrar gradualmente a regra de negócio para FastAPI e manter Next como BFF fino.
 - Antes de schema em produção, validar migrations existentes e corrigir possíveis inconsistências no `app/api/canais.py`.

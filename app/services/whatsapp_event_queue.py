@@ -12,6 +12,10 @@ from sqlalchemy.orm import Session
 
 from app.models.canal_entrada import CanalEntrada
 from app.services.whatsapp_normalizer import (
+    CONNECTION_EVENT_TYPES,
+    MESSAGE_EVENT_TYPES,
+    RECEIPT_EVENT_TYPES,
+    build_evolution_event_signature,
     normalize_event_type,
     normalize_message_event,
     normalize_receipt_event,
@@ -19,29 +23,12 @@ from app.services.whatsapp_normalizer import (
 
 log = logging.getLogger(__name__)
 
-SUPPORTED_EVENT_TYPES = {
-    "CONNECTION_UPDATE",
-    "CONNECTED",
-    "LOGGEDOUT",
-    "LOGGED_OUT",
-    "DISCONNECTED",
-    "QRCODE",
-    "QR_CODE",
-    "MESSAGE",
-    "MESSAGES_UPSERT",
-    "MESSAGE_UPSERT",
-    "MESSAGE_RECEIVED",
-    "RECEIPT",
-    "READ_RECEIPT",
-    "READRECEIPT",
-    "MESSAGES_UPDATE",
-    "MESSAGE_STATUS",
-}
+SUPPORTED_EVENT_TYPES = MESSAGE_EVENT_TYPES | RECEIPT_EVENT_TYPES | CONNECTION_EVENT_TYPES
 
 
 def extract_event_identifiers(payload: dict[str, Any] | None, event_type: str | None = None) -> dict[str, str | None]:
     event_type = normalize_event_type(event_type or (payload.get("event") if isinstance(payload, dict) else None))
-    if event_type in {"RECEIPT", "READ_RECEIPT", "READRECEIPT", "MESSAGES_UPDATE", "MESSAGE_STATUS"}:
+    if event_type in RECEIPT_EVENT_TYPES:
         receipt = normalize_receipt_event(payload, event_type)
         evolution_msg_id = receipt.message_ids[0] if receipt.message_ids else None
         return {
@@ -50,12 +37,18 @@ def extract_event_identifiers(payload: dict[str, Any] | None, event_type: str | 
             "instance": receipt.instance,
         }
 
-    message = normalize_message_event(payload, event_type)
+    if event_type in MESSAGE_EVENT_TYPES:
+        message = normalize_message_event(payload, event_type)
+        return {
+            "remote_jid": message.remote_jid or None,
+            "evolution_msg_id": message.evolution_msg_id or None,
+            "instance": message.instance,
+        }
 
     return {
-        "remote_jid": message.remote_jid or None,
-        "evolution_msg_id": message.evolution_msg_id or None,
-        "instance": message.instance,
+        "remote_jid": None,
+        "evolution_msg_id": None,
+        "instance": None,
     }
 
 
@@ -75,9 +68,24 @@ def build_event_hash(
     msg_id = ids.get("evolution_msg_id")
     remote_jid = ids.get("remote_jid")
     if msg_id:
-        base = f"{workspace_id}:{canal_id}:{instance}:{event_type}:{remote_jid or ''}:{msg_id}"
+        canonical = {
+            "workspace_id": str(workspace_id),
+            "canal_id": str(canal_id),
+            "instance": instance,
+            "event_type": event_type,
+            "remote_jid": remote_jid or "",
+            "evolution_msg_id": msg_id,
+        }
     else:
-        base = f"{workspace_id}:{canal_id}:{instance}:{event_type}:{_canonical_payload(payload)}"
+        signature = build_evolution_event_signature(payload, event_type, instance=instance)
+        canonical = {
+            "workspace_id": str(workspace_id),
+            "canal_id": str(canal_id),
+            "instance": instance,
+            "event_type": event_type,
+            "signature": signature,
+        }
+    base = json.dumps(canonical, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 

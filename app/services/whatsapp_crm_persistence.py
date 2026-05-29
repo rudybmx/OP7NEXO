@@ -13,7 +13,17 @@ from sqlalchemy.orm import Session
 from app.models.canal_entrada import CanalEntrada
 from app.services.lead_origin import extract_lead_origin, has_lead_origin
 from app.services.redis_pub import publish_whatsapp_event
-from app.services.whatsapp_normalizer import normalize_message_event, payload_message
+from app.services.whatsapp_normalizer import (
+    CONNECTION_EVENT_TYPES,
+    MESSAGE_EVENT_TYPES,
+    RECEIPT_EVENT_TYPES,
+    build_evolution_message_signature,
+    normalize_connection_event,
+    normalize_event_type,
+    normalize_message_event,
+    normalize_receipt_event,
+    payload_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +47,6 @@ def process_evolution_message(
     instance = canal.evolution_instance_id or "opcl"
     media_payload = normalized.media.model_dump()
     is_group = normalized.is_group
-    sender_jid = normalized.sender_jid
     sender_name = push_name
     msg_text = normalized.text
     is_mentioned = normalized.is_channel_mentioned(canal.numero_telefone)
@@ -45,15 +54,15 @@ def process_evolution_message(
     workspace_id = str(canal.workspace_id)
     canal_id = str(canal.id)
     raw_event_id_str = str(raw_event_id) if raw_event_id else None
+    message_signature = build_evolution_message_signature(normalized)
     message_hash = _build_message_hash(
         workspace_id=workspace_id,
         canal_id=canal_id,
         instance=instance,
-        remote_jid=remote_jid,
         evolution_msg_id=evolution_msg_id,
-        received_at=recebida_em.isoformat(),
-        text=msg_text,
         direction=direcao,
+        remote_jid=remote_jid,
+        message_signature=message_signature,
     )
 
     logger.info(
@@ -630,14 +639,14 @@ def _upsert_message(
             msg_existente = db.execute(
                 text("""
                     SELECT id FROM public.crm_whatsapp_mensagens
-                    WHERE conversa_id = CAST(:cid AS uuid)
-                      AND conteudo = :msg
+                    WHERE workspace_id = CAST(:ws AS uuid)
+                      AND canal_id = CAST(:canal AS uuid)
+                      AND message_hash = :message_hash
                       AND direcao = 'saida'
                       AND status = 'enviada'
-                      AND created_at >= NOW() - interval '60 seconds'
-                    ORDER BY created_at DESC LIMIT 1
+                    LIMIT 1
                 """),
-                {"cid": conversa_id, "msg": text_value},
+                {"ws": workspace_id, "canal": canal_id, "message_hash": message_hash},
             ).fetchone()
 
         if msg_existente:
@@ -732,11 +741,28 @@ def _build_message_hash(
     instance: str,
     remote_jid: str,
     evolution_msg_id: str,
-    received_at: str,
-    text: str,
     direction: str,
+    message_signature: dict[str, Any],
 ) -> str:
-    base = f"{workspace_id}:{canal_id}:{instance}:{remote_jid}:{evolution_msg_id or received_at}:{direction}:{text}"
+    if evolution_msg_id:
+        canonical = {
+            "workspace_id": workspace_id,
+            "canal_id": canal_id,
+            "instance": instance,
+            "remote_jid": remote_jid,
+            "evolution_msg_id": evolution_msg_id,
+            "direction": direction,
+        }
+    else:
+        canonical = {
+            "workspace_id": workspace_id,
+            "canal_id": canal_id,
+            "instance": instance,
+            "remote_jid": remote_jid,
+            "direction": direction,
+            "signature": message_signature,
+        }
+    base = json.dumps(canonical, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
@@ -770,3 +796,151 @@ def _result(
         "media_mime_type": media_payload.get("mimetype"),
         "media_filename": media_payload.get("filename"),
     }
+
+
+def process_evolution_receipt_event(
+    db: Session,
+    canal: CanalEntrada,
+    data: dict[str, Any],
+    *,
+    event: str = "",
+) -> dict[str, Any] | None:
+    from datetime import datetime, timezone
+
+    event_norm = normalize_event_type(event)
+    receipt = normalize_receipt_event(data, event_norm, instance=canal.evolution_instance_id or "opcl")
+
+    if not receipt.message_ids or not receipt.status:
+        logger.info("[webhook-status] ABORTANDO: evolution_msg_id ou status vazio")
+        return None
+
+    message_ids = list(dict.fromkeys(sorted(receipt.message_ids)))
+    wa_status = receipt.status
+    remote_jid = receipt.remote_jid
+    instance = canal.evolution_instance_id or "opcl"
+    timestamp = datetime.now(timezone.utc)
+
+    for evolution_msg_id in message_ids:
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_mensagens
+                SET wa_status = :status,
+                    delivered_at = CASE WHEN :status = 'delivered' AND delivered_at IS NULL THEN NOW() ELSE delivered_at END,
+                    read_at = CASE WHEN :status = 'read' AND read_at IS NULL THEN NOW() ELSE read_at END,
+                    updated_at = NOW()
+                WHERE evolution_msg_id = :evid
+                  AND instance = :inst
+            """),
+            {"status": wa_status, "evid": evolution_msg_id, "inst": instance},
+        )
+
+    db.commit()
+
+    logger.info("[webhook-status] msg_ids=%s status=%s", message_ids, wa_status)
+
+    try:
+        for evolution_msg_id in message_ids:
+            publish_whatsapp_event(
+                {
+                    "type": "message.status",
+                    "workspaceId": str(canal.workspace_id),
+                    "evolutionMsgId": evolution_msg_id,
+                    "remoteJid": remote_jid,
+                    "status": wa_status,
+                    "instance": instance,
+                    "timestamp": timestamp.isoformat(),
+                }
+            )
+        logger.info("[webhook-status] REDIS PUBLICADO")
+    except Exception as e:
+        logger.info("[webhook-status] REDIS FALHOU: %s", e)
+
+    return {
+        "message_ids": message_ids,
+        "status": wa_status,
+        "remote_jid": remote_jid,
+        "instance": instance,
+    }
+
+
+def process_evolution_connection_event(
+    db: Session,
+    canal: CanalEntrada,
+    data: dict[str, Any],
+    *,
+    event: str = "",
+) -> dict[str, Any] | None:
+    from datetime import datetime, timezone
+
+    event_norm = normalize_event_type(event)
+    connection = normalize_connection_event(data, event_norm, instance=canal.evolution_instance_id or "opcl")
+
+    if connection.state == "unknown":
+        return None
+
+    updates: dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+    if connection.state == "connected":
+        updates.update(
+            {
+                "status": "ativo",
+                "connection_status": "connected",
+                "conectado_em": datetime.now(timezone.utc),
+            }
+        )
+        if connection.number:
+            updates["numero_telefone"] = connection.number
+    elif connection.state == "connecting":
+        updates["connection_status"] = "connecting"
+    elif connection.state == "disconnected":
+        updates.update({"status": "inativo", "connection_status": "disconnected"})
+
+    set_clause = ", ".join(f"{column} = :{column}" for column in updates)
+    db.execute(
+        text(f"""
+            UPDATE public.canais_entrada
+            SET {set_clause}
+            WHERE id = :canal_id
+        """),
+        {**updates, "canal_id": str(canal.id)},
+    )
+    db.commit()
+
+    logger.info("[webhook-connection] canal=%s state=%s", canal.id, connection.state)
+    return {
+        "state": connection.state,
+        "number": connection.number,
+        "qr_code": connection.qr_code,
+    }
+
+
+def process_evolution_webhook_event(
+    db: Session,
+    canal: CanalEntrada,
+    event: str,
+    data: dict[str, Any],
+    *,
+    raw_event_id: str | uuid.UUID | None = None,
+) -> dict[str, Any]:
+    event_norm = normalize_event_type(event)
+    if event_norm in MESSAGE_EVENT_TYPES:
+        result = process_evolution_message(db, canal, data, raw_event_id=raw_event_id)
+        return {
+            "status": "done" if result else "ignored",
+            "event_type": event_norm,
+            "result": result,
+        }
+    if event_norm in RECEIPT_EVENT_TYPES:
+        result = process_evolution_receipt_event(db, canal, data, event=event_norm)
+        return {
+            "status": "done" if result else "ignored",
+            "event_type": event_norm,
+            "result": result,
+        }
+    if event_norm in CONNECTION_EVENT_TYPES:
+        result = process_evolution_connection_event(db, canal, data, event=event_norm)
+        return {
+            "status": "done" if result else "ignored",
+            "event_type": event_norm,
+            "result": result,
+        }
+    return {"status": "ignored", "event_type": event_norm, "result": None}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -14,6 +15,31 @@ MEDIA_MESSAGE_KEYS = (
     "stickerMessage",
     "ptvMessage",
 )
+
+MESSAGE_EVENT_TYPES = {
+    "MESSAGE",
+    "MESSAGES_UPSERT",
+    "MESSAGE_UPSERT",
+    "MESSAGE_RECEIVED",
+}
+
+RECEIPT_EVENT_TYPES = {
+    "RECEIPT",
+    "READ_RECEIPT",
+    "READRECEIPT",
+    "MESSAGES_UPDATE",
+    "MESSAGE_STATUS",
+}
+
+CONNECTION_EVENT_TYPES = {
+    "CONNECTION_UPDATE",
+    "CONNECTED",
+    "LOGGEDOUT",
+    "LOGGED_OUT",
+    "DISCONNECTED",
+    "QRCODE",
+    "QR_CODE",
+}
 
 
 class WhatsAppMediaPayload(BaseModel):
@@ -40,6 +66,7 @@ class WhatsAppMessageEvent(BaseModel):
     mentioned_jids: list[str] = Field(default_factory=list)
     media: WhatsAppMediaPayload = Field(default_factory=WhatsAppMediaPayload)
     received_at: datetime
+    received_at_source: Literal["payload", "fallback"] = "fallback"
     is_group: bool = False
     is_lid: bool = False
     raw: dict[str, Any] = Field(default_factory=dict)
@@ -233,6 +260,7 @@ def normalize_message_event(
         mentioned_jids=mentioned_jids,
         media=media,
         received_at=_parse_timestamp(timestamp_raw),
+        received_at_source=_parse_timestamp_source(timestamp_raw),
         is_group=is_group,
         is_lid="@lid" in remote_jid,
         raw=root,
@@ -337,6 +365,96 @@ def normalize_connection_event(
         qr_code=_extract_qr_code(root),
         raw=root,
     )
+
+
+def build_evolution_media_signature(media: WhatsAppMediaPayload) -> dict[str, Any]:
+    signature: dict[str, Any] = {
+        "is_media": media.is_media,
+        "mimetype": media.mimetype,
+    }
+    if media.filename:
+        signature["filename"] = media.filename
+    if media.caption:
+        signature["caption"] = media.caption
+    if media.url:
+        signature["url"] = media.url
+    if media.base64:
+        signature["base64_sha256"] = hashlib.sha256(media.base64.encode("utf-8")).hexdigest()
+    return signature
+
+
+def build_evolution_message_signature(message: WhatsAppMessageEvent) -> dict[str, Any]:
+    signature: dict[str, Any] = {
+        "remote_jid": message.remote_jid or "",
+        "participant_jid": message.participant_jid or "",
+        "sender_jid": message.sender_jid or "",
+        "from_me": message.from_me,
+        "message_type": message.message_type,
+        "text": message.text,
+        "mentioned_jids": sorted(dict.fromkeys(message.mentioned_jids)),
+        "is_group": message.is_group,
+        "is_lid": message.is_lid,
+        "media": build_evolution_media_signature(message.media),
+    }
+    if message.received_at_source == "payload":
+        signature["received_at"] = message.received_at.isoformat()
+    return signature
+
+
+def build_evolution_receipt_signature(receipt: WhatsAppReceiptEvent) -> dict[str, Any]:
+    return {
+        "remote_jid": receipt.remote_jid or "",
+        "status": receipt.status,
+        "message_ids": sorted(dict.fromkeys(receipt.message_ids)),
+    }
+
+
+def build_evolution_connection_signature(connection: WhatsAppConnectionEvent) -> dict[str, Any]:
+    return {
+        "state": connection.state,
+        "number": connection.number or "",
+        "qr_code": connection.qr_code or "",
+    }
+
+
+def build_evolution_event_signature(
+    payload: dict[str, Any] | None,
+    event: str | None = None,
+    *,
+    instance: str | None = None,
+) -> dict[str, Any]:
+    event_type = normalize_event_type(event or (payload.get("event") if isinstance(payload, dict) else None))
+    if event_type in RECEIPT_EVENT_TYPES:
+        receipt = normalize_receipt_event(payload, event_type, instance=instance)
+        return {
+            "kind": "receipt",
+            "event_type": receipt.event_type,
+            "instance": instance or receipt.instance or "",
+            "signature": build_evolution_receipt_signature(receipt),
+        }
+    if event_type in CONNECTION_EVENT_TYPES:
+        connection = normalize_connection_event(payload, event_type, instance=instance)
+        return {
+            "kind": "connection",
+            "event_type": connection.event_type,
+            "instance": instance or connection.instance or "",
+            "signature": build_evolution_connection_signature(connection),
+        }
+    if event_type in MESSAGE_EVENT_TYPES:
+        message = normalize_message_event(payload, event_type, instance=instance)
+        return {
+            "kind": "message",
+            "event_type": message.event_type,
+            "instance": instance or message.instance or "",
+            "signature": build_evolution_message_signature(message),
+        }
+
+    return {
+        "kind": "raw",
+        "event_type": event_type,
+        "instance": instance or _instance_from_payload(payload) or "",
+        "signature": payload_root(payload),
+    }
 
 
 def _extract_text(message: dict[str, Any], info: dict[str, Any], media: WhatsAppMediaPayload) -> str:
@@ -459,19 +577,27 @@ def _append_message_id(message_ids: list[str], value: object) -> None:
 
 
 def _parse_timestamp(value: Any) -> datetime:
+    return _parse_timestamp_with_source(value)[0]
+
+
+def _parse_timestamp_source(value: Any) -> Literal["payload", "fallback"]:
+    return _parse_timestamp_with_source(value)[1]
+
+
+def _parse_timestamp_with_source(value: Any) -> tuple[datetime, Literal["payload", "fallback"]]:
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return (value if value.tzinfo else value.replace(tzinfo=timezone.utc), "payload")
     if isinstance(value, str):
         if value.isdigit():
-            return datetime.fromtimestamp(int(value), tz=timezone.utc)
+            return datetime.fromtimestamp(int(value), tz=timezone.utc), "payload"
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return datetime.fromisoformat(value.replace("Z", "+00:00")), "payload"
         except ValueError:
-            return datetime.now(timezone.utc)
+            return datetime.now(timezone.utc), "fallback"
     if isinstance(value, (int, float)) and value:
         timestamp = value / 1000 if value > 10_000_000_000 else value
-        return datetime.fromtimestamp(timestamp, tz=timezone.utc)
-    return datetime.now(timezone.utc)
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc), "payload"
+    return datetime.now(timezone.utc), "fallback"
 
 
 def _first_str(source: dict[str, Any], *keys: str) -> str:

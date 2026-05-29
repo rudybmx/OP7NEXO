@@ -225,6 +225,11 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Backfill de produção vinculou conversas/mensagens/eventos antigos ao canal `rudy_zap` (`workspace_id=9647ad83-20c6-416a-a5f1-527aee1e48ce`).
 - Migration 047 torna `workspace_id` e `canal_id` NOT NULL em `crm_whatsapp_conversas`, `crm_whatsapp_mensagens` e `crm_whatsapp_eventos`.
 
+### ✅ Implementado (2026-05-29) — Hardening Webhook Evolution
+- `POST /webhook/evolution/{token}` agora só valida token/canal, persiste evento bruto + job e responde rápido.
+- Worker passou a processar mensagens, receipts e connection events via `crm_message_jobs`; o webhook não faz mais processamento pesado em-request.
+- Idempotência usa `event_hash` e `message_hash` canônicos estáveis; quando não há `evolution_msg_id`, campos instáveis do payload não entram na chave.
+
 ### ✅ Implementado (2026-05-28) — Evolution Go Auth de Envio
 - Endpoints de envio Evolution Go (`/send/text`, `/send/media`, template) usam `instance_token` como `apikey`.
 - Fallback legado `/message/sendText/{instance}` removido porque a Evolution Go 0.7.1 retorna 404.

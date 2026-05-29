@@ -1607,7 +1607,6 @@ async def receber_webhook_evolution_test(
 async def receber_webhook_evolution(
     token: str,
     request: Request,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     try:
@@ -1622,7 +1621,7 @@ async def receber_webhook_evolution(
     event = payload.get("event", "")
     event_norm = _normalizar_evento_evolution(event)
 
-    logger.info("[webhook-evolution] canal=%s event=%s", canal.nome, event)
+    logger.info("[webhook-evolution] canal=%s event=%s normalized=%s", canal.nome, event, event_norm)
 
     try:
         queued = enqueue_evolution_event(db, canal, event, payload)
@@ -1632,24 +1631,12 @@ async def receber_webhook_evolution(
         logger.exception("[webhook-evolution] falha ao enfileirar evento canal=%s event=%s", canal.nome, event)
         raise HTTPException(status_code=500, detail="Falha ao enfileirar webhook")
 
-    if queued.get("queued"):
-        background_tasks.add_task(_drain_whatsapp_jobs_background)
-
     return {
         "recebido": True,
         "event_id": queued.get("event_id"),
         "queued": queued.get("queued", False),
         "duplicate": not queued.get("inserted", False),
     }
-
-
-def _drain_whatsapp_jobs_background() -> None:
-    try:
-        from app.services.whatsapp_event_worker import process_next_whatsapp_jobs
-
-        process_next_whatsapp_jobs(limit=10)
-    except Exception:
-        logger.exception("[webhook-evolution] falha no drain background da fila")
 
 
 def _processar_evento_evolution(

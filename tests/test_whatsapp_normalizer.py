@@ -124,6 +124,26 @@ def test_normalize_lid_with_sender_pn():
     assert event.sender_pn == "5511987654321@s.whatsapp.net"
 
 
+def test_normalize_message_event_marks_fallback_timestamp_when_missing():
+    payload = {
+        "data": {
+            "Info": {
+                "Chat": "5511888888888@s.whatsapp.net",
+                "Sender": "5511888888888@s.whatsapp.net",
+                "IsFromMe": False,
+                "ID": "",
+                "PushName": "Lead",
+            },
+            "Message": {"conversation": "Oi"},
+        },
+    }
+
+    event = normalize_message_event(payload, "Message")
+
+    assert event.received_at_source == "fallback"
+    assert event.received_at.tzinfo is not None
+
+
 def test_normalize_receipt_and_messages_update():
     receipt = normalize_receipt_event(
         {

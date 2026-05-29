@@ -3,13 +3,12 @@ from __future__ import annotations
 import logging
 import socket
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from sqlalchemy import text
 
 from app.core.database import SessionLocal
 from app.models.canal_entrada import CanalEntrada
-from app.services.whatsapp_event_queue import SUPPORTED_EVENT_TYPES
+from app.services.whatsapp_crm_persistence import process_evolution_webhook_event
 
 log = logging.getLogger(__name__)
 
@@ -100,30 +99,21 @@ def _process_job(job_id: str) -> str:
                 _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
                 return "processed"
 
-            event_type = str(job["event_type"] or "").upper()
-            if event_type not in SUPPORTED_EVENT_TYPES:
-                _mark_done(db, job_id, str(job["event_id"] or ""), status="ignored")
-                return "skipped"
-
             canal = db.query(CanalEntrada).filter(CanalEntrada.id == job["canal_id"]).first()
             if not canal:
                 raise RuntimeError(f"Canal não encontrado para job {job_id}")
 
             payload = job["payload"] if isinstance(job["payload"], dict) else {}
-            instance_data = payload.get("data", {}) if isinstance(payload.get("data"), dict) else {}
-
-            from app.api.canais import _processar_evento_evolution
-
-            _processar_evento_evolution(
+            result = process_evolution_webhook_event(
                 db=db,
                 canal=canal,
-                event_norm=event_type,
-                instance_data=instance_data,
-                media_mode="inline",
+                event=str(job["event_type"] or ""),
+                data=payload,
                 raw_event_id=str(job["event_id"]),
             )
-            _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
-            return "processed"
+            status = str(result.get("status") or "done")
+            _mark_done(db, job_id, str(job["event_id"] or ""), status=status)
+            return "skipped" if status == "ignored" else "processed"
         except Exception as exc:
             _mark_failed(
                 db,
