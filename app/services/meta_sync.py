@@ -945,6 +945,79 @@ def _persist_hq_images_to_minio(
             log.warning("Falha ao persistir criativo %s no MinIO: %s", creative_id, exc)
 
 
+def _persist_carousel_cards_to_minio(
+    client: httpx.Client,
+    creative_id: str,
+    ads_account_uuid: str,
+    cards: list[dict],
+) -> int:
+    """Persists each carousel card image to MinIO in-place, updating card dicts.
+
+    Uses fixed .jpg extension for idempotency across syncs (fbcdn path segments
+    vary per request, so content-type-derived extension would cause stat misses).
+    Returns count of cards successfully persisted.
+    """
+    from minio.error import S3Error
+
+    bucket = settings.MINIO_BUCKET_CRIATIVOS
+    if not settings.MINIO_ACCESS_KEY or not settings.MINIO_SECRET_KEY:
+        return 0
+
+    from app.services.object_storage import stat_object
+
+    persisted = 0
+    for card in cards:
+        card_index = card.get("card_index")
+        if card_index is None:
+            continue
+        src_url = card.get("image_url_hq") or card.get("picture")
+        if not src_url:
+            continue
+
+        object_name = f"ads-accounts/{ads_account_uuid}/criativos/{creative_id}_{card_index}.jpg"
+        minio_url = public_url(bucket, object_name)
+
+        # Idempotency: if already in MinIO just update the URL and move on.
+        if _eh_url_publica_minio(src_url):
+            card["image_url_hq"] = src_url
+            card["source_type"] = "adimage_minio"
+            persisted += 1
+            continue
+
+        try:
+            stat_object(bucket, object_name)
+            # Object exists — reuse URL, no download needed.
+            card["image_url_hq"] = minio_url
+            card["source_type"] = "adimage_minio"
+            persisted += 1
+            continue
+        except S3Error as exc:
+            if exc.code != "NoSuchKey":
+                log.warning("MinIO stat falhou card %s_%s: %s", creative_id, card_index, exc)
+                continue
+            # NoSuchKey → proceed to download and upload.
+
+        try:
+            resp = client.get(
+                src_url,
+                follow_redirects=True,
+                timeout=15,
+                headers={"Referer": "https://www.facebook.com/", "User-Agent": "Mozilla/5.0"},
+            )
+            if resp.status_code >= 400:
+                log.warning("Falha download card %s_%s: HTTP %s", creative_id, card_index, resp.status_code)
+                continue
+            content_type = resp.headers.get("content-type", "image/jpeg")
+            put_bytes(bucket, object_name, resp.content, content_type)
+            card["image_url_hq"] = minio_url
+            card["source_type"] = "adimage_minio"
+            persisted += 1
+        except Exception as exc:
+            log.warning("Falha ao persistir card %s_%s no MinIO: %s", creative_id, card_index, exc)
+
+    return persisted
+
+
 def _fetch_criativos_batch(client: httpx.Client, ad_ids: list[str], token: str, on_progress=None) -> dict[str, dict]:
     """Busca criativo HQ, tipo e link para ad_ids em batches de 50."""
     criativos: dict[str, dict] = {}
@@ -1629,6 +1702,10 @@ def _sync_catalog_anuncios_criativos_videos(
         carousel_items = _extract_carousel_cards(creative_enriquecido.get("raw_creative") or creative, adimage_map)
         if not carousel_items:
             carousel_items = creative_enriquecido.get("carousel_items") or []
+        if creative_id and carousel_items:
+            n = _persist_carousel_cards_to_minio(client, creative_id, str(conta.id), carousel_items)
+            if n:
+                log.debug("MinIO cards: %d/%d para criativo %s", n, len(carousel_items), creative_id)
         video_id = creative_enriquecido.get("video_id") or creative.get("video_id")
         video_payload = video_map.get(str(video_id)) if video_id else {}
         video_thumbnail_url = None
@@ -2676,6 +2753,8 @@ def _sync_anuncios(
         carousel_raw = _extract_carousel_cards(creative.get("raw_creative") or {}, adimage_map)
         if not carousel_raw:
             carousel_raw = creative.get("carousel_items") or []
+        if creative_id and carousel_raw:
+            _persist_carousel_cards_to_minio(client, creative_id, str(ads_account_uuid), carousel_raw)
         carousel_json = json.dumps(carousel_raw) if carousel_raw else None
         ad_status = ad_statuses.get(ad_id, "ACTIVE")
         campaign_id = r.get("campaign_id")
