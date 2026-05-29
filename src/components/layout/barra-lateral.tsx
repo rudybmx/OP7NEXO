@@ -405,7 +405,8 @@ export function BarraLateral() {
     }
   }
 
-  const currentWidth = isCollapsed ? 64 : 220
+  // Largura anterior do estado aberto: 220px
+  const currentWidth = isCollapsed ? 64 : 270
 
   if (isMobile) {
     return (
