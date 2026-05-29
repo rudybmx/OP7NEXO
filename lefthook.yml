@@ -1,0 +1,16 @@
+# lefthook — dono dos git hooks do op7nexo-front (versionado, pega Codex/CI/qualquer clone).
+# Decisão de arquitetura 2026-05-29. Ativar com: lefthook install
+post-commit:
+  commands:
+    graphify:
+      run: sh .githooks/graphify-rebuild.sh
+
+post-checkout:
+  commands:
+    graphify:
+      run: sh .githooks/graphify-rebuild.sh
+
+pre-push:
+  commands:
+    gate:
+      run: sh .githooks/pre-push-gate.sh
