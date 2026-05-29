@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+from app.core.config import settings
+from app.services.object_storage import public_url, reescrever_carousel_urls
 from app.services.meta_sync import (
     _carregar_objetivos_catalogo,
     _merge_hq_image_data,
@@ -244,6 +246,34 @@ class MetaSyncTests(unittest.TestCase):
         self.assertEqual(creative["hq_source"], "adimage_minio")
         self.assertEqual(creative["image_url_hq"], adimage_map["hash-1"]["url"])
         self.assertIsNone(creative.get("meta_image_url_tmp"))
+
+    def test_reescrever_carousel_urls_retorna_picture_e_image_url_hq_estaveis(self):
+        items = [
+            {
+                "card_index": 0,
+                "picture": "https://fbcdn.example.com/card-0.jpg",
+                "image_url_hq": "https://fbcdn.example.com/card-0-hq.jpg",
+            },
+            {
+                "card_index": 1,
+                "picture": "https://fbcdn.example.com/card-1.jpg",
+            },
+        ]
+
+        result = reescrever_carousel_urls(items, "uuid-1", "creative-1")
+        expected_0 = public_url(
+            settings.MINIO_BUCKET_CRIATIVOS,
+            "ads-accounts/uuid-1/criativos/creative-1_card_0.jpg",
+        )
+        expected_1 = public_url(
+            settings.MINIO_BUCKET_CRIATIVOS,
+            "ads-accounts/uuid-1/criativos/creative-1_card_1.jpg",
+        )
+
+        self.assertEqual(result[0]["image_url_hq"], expected_0)
+        self.assertEqual(result[0]["picture"], expected_0)
+        self.assertEqual(result[1]["image_url_hq"], expected_1)
+        self.assertEqual(result[1]["picture"], expected_1)
 
     def test_fetch_videos_by_ids_retorna_parcial_e_contabiliza_permissao(self):
         responses = [

@@ -977,6 +977,11 @@ def _persist_carousel_cards_to_minio(
             if u and u not in candidates:
                 candidates.append(u)
         if not candidates:
+            log.warning(
+                "Card %s_card_%s sem candidatos de mídia; carrossel pode cair em fallback vazio",
+                creative_id,
+                card_index,
+            )
             continue
 
         object_name = f"ads-accounts/{ads_account_uuid}/criativos/{creative_id}_card_{card_index}.jpg"
@@ -985,6 +990,7 @@ def _persist_carousel_cards_to_minio(
         # Idempotency: if already in MinIO just update the URL and move on.
         if _eh_url_publica_minio(candidates[0]):
             card["image_url_hq"] = candidates[0]
+            card["picture"] = candidates[0]
             card["source_type"] = "adimage_minio"
             persisted += 1
             continue
@@ -993,6 +999,7 @@ def _persist_carousel_cards_to_minio(
             stat_object(bucket, object_name)
             # Object exists — reuse URL, no download needed.
             card["image_url_hq"] = minio_url
+            card["picture"] = minio_url
             card["source_type"] = "adimage_minio"
             persisted += 1
             continue
@@ -1017,6 +1024,7 @@ def _persist_carousel_cards_to_minio(
                 content_type = resp.headers.get("content-type", "image/jpeg")
                 put_bytes(bucket, object_name, resp.content, content_type)
                 card["image_url_hq"] = minio_url
+                card["picture"] = minio_url
                 card["source_type"] = "adimage_minio"
                 persisted += 1
                 success = True
@@ -1715,6 +1723,13 @@ def _sync_catalog_anuncios_criativos_videos(
             carousel_items = creative_enriquecido.get("carousel_items") or []
         if creative_id and carousel_items:
             n = _persist_carousel_cards_to_minio(client, creative_id, str(conta.id), carousel_items)
+            if n < len(carousel_items):
+                log.warning(
+                    "Carrossel %s persistiu apenas %d/%d cards no MinIO",
+                    creative_id,
+                    n,
+                    len(carousel_items),
+                )
             if n:
                 log.debug("MinIO cards: %d/%d para criativo %s", n, len(carousel_items), creative_id)
         video_id = creative_enriquecido.get("video_id") or creative.get("video_id")
@@ -1904,8 +1919,20 @@ def _sync_catalog_anuncios_criativos_videos(
                         adset_id = EXCLUDED.adset_id,
                         image_hash = EXCLUDED.image_hash,
                         video_id = EXCLUDED.video_id,
-                        image_url_hq = EXCLUDED.image_url_hq,
-                        source_type = EXCLUDED.source_type,
+                        image_url_hq = CASE
+                            WHEN COALESCE(EXCLUDED.image_url_hq, '') LIKE '%/meta/storage/%'
+                                THEN EXCLUDED.image_url_hq
+                            WHEN COALESCE(meta_creative_cards_catalog.image_url_hq, '') LIKE '%/meta/storage/%'
+                                THEN meta_creative_cards_catalog.image_url_hq
+                            ELSE EXCLUDED.image_url_hq
+                        END,
+                        source_type = CASE
+                            WHEN COALESCE(EXCLUDED.image_url_hq, '') LIKE '%/meta/storage/%'
+                                THEN EXCLUDED.source_type
+                            WHEN COALESCE(meta_creative_cards_catalog.image_url_hq, '') LIKE '%/meta/storage/%'
+                                THEN meta_creative_cards_catalog.source_type
+                            ELSE EXCLUDED.source_type
+                        END,
                         link = EXCLUDED.link,
                         name = EXCLUDED.name,
                         description = EXCLUDED.description,
@@ -2765,7 +2792,14 @@ def _sync_anuncios(
         if not carousel_raw:
             carousel_raw = creative.get("carousel_items") or []
         if creative_id and carousel_raw:
-            _persist_carousel_cards_to_minio(client, creative_id, str(ads_account_uuid), carousel_raw)
+            n = _persist_carousel_cards_to_minio(client, creative_id, str(ads_account_uuid), carousel_raw)
+            if n < len(carousel_raw):
+                log.warning(
+                    "Carrossel %s persistiu apenas %d/%d cards no MinIO",
+                    creative_id,
+                    n,
+                    len(carousel_raw),
+                )
         carousel_json = json.dumps(carousel_raw) if carousel_raw else None
         ad_status = ad_statuses.get(ad_id, "ACTIVE")
         campaign_id = r.get("campaign_id")

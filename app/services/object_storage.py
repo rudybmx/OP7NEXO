@@ -68,10 +68,12 @@ def reescrever_carousel_urls(
     ads_account_uuid: str | None,
     creative_id: str | None,
 ) -> list:
-    """Reconstrói image_url_hq de cada card com o caminho determinístico no MinIO.
+    """Reconstrói as mídias de cada card com o caminho determinístico no MinIO.
 
-    Ignora o valor salvo (pode ser URL assinada expirada).  O objeto MinIO
-    segue o naming {creative_id}_card_{card_index}.jpg.
+    Ignora o valor salvo (pode ser URL assinada expirada). O objeto MinIO
+    segue o naming {creative_id}_card_{card_index}.jpg e é exposto tanto em
+    ``image_url_hq`` quanto em ``picture`` para que os consumidores tenham o
+    mesmo fallback estável.
     """
     if not items or not ads_account_uuid or not creative_id:
         return items
@@ -88,7 +90,7 @@ def reescrever_carousel_urls(
             settings.MINIO_BUCKET_CRIATIVOS,
             f"ads-accounts/{ads_account_uuid}/criativos/{creative_id}_card_{idx}.jpg",
         )
-        result.append({**card, "image_url_hq": url})
+        result.append({**card, "image_url_hq": url, "picture": url})
     return result
 
 
