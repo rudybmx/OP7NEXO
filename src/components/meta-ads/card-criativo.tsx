@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ImageIcon, Video, Layers, Play, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 import { proxyImagem } from '@/lib/imagem-proxy'
 import { formatarNumero, formatarMoeda, formatarPorcentagem } from '@/lib/formatar'
@@ -23,6 +23,15 @@ export interface CardCriativoData {
   leads: number
   ctr: number
   cpl: number
+}
+
+export function buildCardCriativoSignature(data: CardCriativoData): string {
+  const items = normalizeCarouselItems(data.carouselItems)
+  const carouselSignature = items
+    .map((item) => `${item.card_index ?? ''}:${item.image_url_hq ?? ''}:${item.picture ?? ''}`)
+    .join('|')
+  const fallbackSignature = `${data.imageUrlHq ?? ''}:${data.thumbnailUrl ?? ''}`
+  return `${data.tipo}:${carouselSignature}::${fallbackSignature}`
 }
 
 const TIPO_CONFIG: Record<string, { bg: string; Icon: typeof ImageIcon; label: string }> = {
@@ -107,13 +116,25 @@ export function CardCriativo({
   const isCarousel = resolvedType === 'CAROUSEL'
   const config = TIPO_CONFIG[resolvedType] ?? TIPO_CONFIG.IMAGE
   const IconComp = config.Icon
+  const carouselSignature = buildCardCriativoSignature(data)
   const mediaSources = isCarousel
     ? buildCarouselImageCandidates(items, carouselIdx, [data.imageUrlHq, data.thumbnailUrl])
     : [data.imageUrlHq, data.thumbnailUrl]
-  const mediaSignature = isCarousel
-    ? items.map((item) => `${item.card_index ?? ''}:${item.image_url_hq ?? ''}:${item.picture ?? ''}`).join('|')
-    : `${data.imageUrlHq ?? ''}:${data.thumbnailUrl ?? ''}`
+  const mediaSignature = carouselSignature
   const mediaKey = `${data.id}:${isCarousel ? carouselIdx : 'single'}:${mediaSignature}`
+  const mediaSourcesEmpty = mediaSources.length === 0
+
+  useEffect(() => {
+    if (!isCarousel || !mediaSourcesEmpty) return
+    console.warn('[meta-ads] carousel media fallback empty', {
+      id: data.id,
+      nome: data.nome,
+      tipo: data.tipo,
+      carouselItems: items.length,
+      thumbnailUrl: data.thumbnailUrl ?? null,
+      imageUrlHq: data.imageUrlHq ?? null,
+    })
+  }, [data.id, data.imageUrlHq, data.nome, data.thumbnailUrl, data.tipo, isCarousel, items.length, mediaSignature, mediaSourcesEmpty])
 
   const prevSlide = (e: React.MouseEvent) => {
     e.preventDefault()

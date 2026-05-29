@@ -19,7 +19,7 @@ function criativoParaTop(c: Criativo): CriativoTop {
     nome: c.nome,
     tipo: c.tipo,
     thumbnailUrl: c.thumbnailUrl,
-    imageUrlHq: c.thumbnailUrl,
+    imageUrlHq: c.imageUrlHq ?? c.thumbnailUrl ?? undefined,
     linkAnuncio: c.linkAnuncio ?? undefined,
     headline: c.headline ?? undefined,
     destinationUrl: c.destinationUrl ?? undefined,

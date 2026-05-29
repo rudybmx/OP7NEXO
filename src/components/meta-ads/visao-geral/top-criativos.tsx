@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { InfoTooltip } from '@/components/ui/info-tooltip'
 import type { CriativoTop } from '@/types/meta-ads'
-import { CardCriativo } from '@/components/meta-ads/card-criativo'
+import { CardCriativo, buildCardCriativoSignature, type CardCriativoData } from '@/components/meta-ads/card-criativo'
 import { resolveCreativeType } from '@/components/meta-ads/carousel-media'
 import { ModalAnaliseCriativoOverview } from './modal-analise-criativo-overview'
 
@@ -61,25 +61,29 @@ export function TopCriativos({ criativos, filtros, workspaceId }: TopCriativosPr
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
-        {criativos.map((cr, indice) => (
-          <CardCriativo
-            key={`${cr.id}-${indice}`}
-            data={{
-              id: cr.id,
-              nome: cr.nome,
-              tipo: resolveCreativeType(cr.tipo, cr.carouselItems ?? []),
-              thumbnailUrl: cr.thumbnailUrl,
-              imageUrlHq: cr.imageUrlHq,
-              linkAnuncio: cr.linkAnuncio,
-              carouselItems: cr.carouselItems,
-              leads: cr.leads,
-              ctr: cr.ctr,
-              cpl: cr.cpl,
-            }}
-            rank={indice}
-            onClick={() => setCriativoSelecionado(cr)}
-          />
-        ))}
+        {criativos.map((cr, indice) => {
+          const cardData: CardCriativoData = {
+            id: cr.id,
+            nome: cr.nome,
+            tipo: resolveCreativeType(cr.tipo, cr.carouselItems ?? []),
+            thumbnailUrl: cr.thumbnailUrl,
+            imageUrlHq: cr.imageUrlHq,
+            linkAnuncio: cr.linkAnuncio,
+            carouselItems: cr.carouselItems,
+            leads: cr.leads,
+            ctr: cr.ctr,
+            cpl: cr.cpl,
+          }
+
+          return (
+            <CardCriativo
+              key={`${cr.id}-${indice}:${buildCardCriativoSignature(cardData)}`}
+              data={cardData}
+              rank={indice}
+              onClick={() => setCriativoSelecionado(cr)}
+            />
+          )
+        })}
         {Array.from({ length: Math.max(0, vagas) }).map((_, i) => (
           <div
             key={`empty-${i}`}

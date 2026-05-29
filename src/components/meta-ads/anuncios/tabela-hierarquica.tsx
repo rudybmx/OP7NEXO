@@ -89,9 +89,9 @@ export function TabelaHierarquica({ anuncios, agrupar, onAbrirAnuncio }: Props) 
       >
         {!isFlat && <td style={{ width: 32 }} />}
         <td style={{ padding: '6px 4px 6px 10px', width: 36 }}>
-          {a.thumbnailUrl ? (
+          {a.imageUrlHq || a.thumbnailUrl ? (
             <img
-              src={proxyImagem(a.thumbnailUrl)}
+              src={proxyImagem(a.imageUrlHq ?? a.thumbnailUrl)}
               alt=""
               style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'cover', display: 'block', background: '#f0f0f0' }}
               referrerPolicy="no-referrer"

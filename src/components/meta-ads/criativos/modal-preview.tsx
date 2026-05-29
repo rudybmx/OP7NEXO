@@ -113,8 +113,8 @@ export function ModalPreview({ criativo, aberto, onFechar, onAbrirDetalhe }: Pro
             justifyContent: 'center',
             overflow: 'hidden',
           }} className="cc-thumb">
-            {criativo.thumbnailUrl
-              ? <img src={proxyImagem(criativo.thumbnailUrl)} alt={criativo.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" loading="lazy" />
+            {criativo.imageUrlHq || criativo.thumbnailUrl
+              ? <img src={proxyImagem(criativo.imageUrlHq ?? criativo.thumbnailUrl)} alt={criativo.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" loading="lazy" />
               : <IconeTipo tipo={criativo.tipo} />
             }
           </div>

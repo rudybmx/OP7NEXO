@@ -28,6 +28,7 @@ export interface Criativo {
   status: StatusCriativo
   corFundo: string
   thumbnailUrl?: string
+  imageUrlHq?: string
   linkAnuncio?: string | null
   headline?: string | null
   destinationUrl?: string | null

@@ -12,6 +12,7 @@ export interface Criativo {
   id: string
   tipo: TipoCriativo
   thumbnailUrl?: string
+  imageUrlHq?: string
   corFundo: string
 }
 

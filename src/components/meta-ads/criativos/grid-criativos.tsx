@@ -217,8 +217,8 @@ export function GridCriativos({
                   position: 'relative',
                   overflow: 'hidden',
                 }} className="cc-thumb">
-                  {c.thumbnailUrl
-                    ? <img src={proxyImagem(c.thumbnailUrl)} alt={c.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" loading="lazy" />
+                  {c.imageUrlHq || c.thumbnailUrl
+                    ? <img src={proxyImagem(c.imageUrlHq ?? c.thumbnailUrl)} alt={c.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" loading="lazy" />
                     : <IconeTipo tipo={c.tipo} />
                   }
 

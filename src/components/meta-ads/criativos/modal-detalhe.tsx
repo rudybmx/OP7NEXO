@@ -122,8 +122,8 @@ export function ModalDetalhe({ criativo, insight, aberto, onFechar, onAbrirPrevi
               overflow: 'hidden',
               flexShrink: 0,
             }} className="cc-thumb">
-              {criativo.thumbnailUrl
-                ? <img src={proxyImagem(criativo.thumbnailUrl)} alt={criativo.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" loading="lazy" />
+              {criativo.imageUrlHq || criativo.thumbnailUrl
+                ? <img src={proxyImagem(criativo.imageUrlHq ?? criativo.thumbnailUrl)} alt={criativo.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" loading="lazy" />
                 : <IconeTipo tipo={criativo.tipo} />
               }
             </div>

@@ -210,7 +210,8 @@ function mapAnuncio(a: RawAnuncio): Anuncio {
   const criativo: Criativo = {
     id: a.creative_id || a.ad_id,
     tipo: ((a.tipo_criativo || 'IMAGE').toUpperCase() as TipoCriativo),
-    thumbnailUrl: a.image_url_hq ?? a.thumbnail_url ?? undefined,
+    thumbnailUrl: a.thumbnail_url ?? undefined,
+    imageUrlHq: a.image_url_hq ?? a.thumbnail_url ?? undefined,
     corFundo: '#f0f0f0',
   }
 

@@ -357,8 +357,8 @@ function CriativoThumb({ criativo, onClick }: { criativo: Criativo; onClick: () 
         el.style.opacity = '1'
       }}
     >
-      {criativo.thumbnailUrl ? (
-        <img src={proxyImagem(criativo.thumbnailUrl)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      {criativo.imageUrlHq || criativo.thumbnailUrl ? (
+        <img src={proxyImagem(criativo.imageUrlHq ?? criativo.thumbnailUrl)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : (
         tipoIcon[criativo.tipo]
       )}
