@@ -76,10 +76,11 @@ class _QueueDb:
         self.calls: list[tuple[str, dict | None]] = []
 
     def execute(self, stmt, params=None):
-        sql = str(stmt)
+        sql = " ".join(str(stmt).split())
+        sql_lower = sql.lower()
         self.calls.append((sql, params))
 
-        if "INSERT INTO public.crm_whatsapp_eventos" in sql:
+        if "insert into public.crm_whatsapp_eventos" in sql_lower:
             event_hash = params["event_hash"]
             if event_hash in self.events_by_hash:
                 return _Result()
@@ -87,14 +88,18 @@ class _QueueDb:
             self.events_by_hash[event_hash] = {"id": event_id, "processing_status": "pending"}
             return _Result(row=(event_id,))
 
-        if "SELECT id, processing_status" in sql and "FROM public.crm_whatsapp_eventos" in sql:
+        if "select id, processing_status" in sql_lower and "from public.crm_whatsapp_eventos" in sql_lower:
             event_hash = params["event_hash"]
             row = self.events_by_hash.get(event_hash)
             if not row:
                 return _Result()
             return _Result(row=(row["id"], row["processing_status"]))
 
-        if "INSERT INTO public.crm_message_jobs" in sql:
+        if "insert into public.crm_message_jobs" in sql_lower:
+            assert (
+                "on conflict (raw_event_id) where raw_event_id is not null and job_type = 'webhook_event' do nothing"
+                in sql_lower
+            ), sql
             raw_event_id = params["raw_event_id"]
             if raw_event_id in self.jobs_by_raw_event_id:
                 return _Result()
@@ -186,23 +191,24 @@ class _WorkerDb:
         return _WebhookQuery(self._canal)
 
     def execute(self, stmt, params=None):
-        sql = str(stmt)
+        sql = " ".join(str(stmt).split())
+        sql_lower = sql.lower()
         self.calls.append((sql, params))
 
-        if "FROM public.crm_message_jobs" in sql and "FOR UPDATE SKIP LOCKED" in sql:
+        if "from public.crm_message_jobs" in sql_lower and "for update skip locked" in sql_lower:
             rows = []
             for job in self.jobs.values():
                 if job["status"] in {"pending", "error"} and job["attempts"] < job["max_attempts"]:
                     rows.append((job["id"],))
             return _Result(rows=rows)
 
-        if "SET status = 'running'" in sql:
+        if "set status = 'running'" in sql_lower:
             job = self.jobs[params["job_id"]]
             job["status"] = "running"
             job["attempts"] += 1
             return _Result()
 
-        if "FROM public.crm_message_jobs j" in sql and "LEFT JOIN public.crm_whatsapp_eventos e" in sql:
+        if "from public.crm_message_jobs j" in sql_lower and "left join public.crm_whatsapp_eventos e" in sql_lower:
             job = self.jobs[params["job_id"]]
             event = self.events[job["event_id"]]
             return _Result(
@@ -222,7 +228,7 @@ class _WorkerDb:
                 }
             )
 
-        if "UPDATE public.crm_message_jobs" in sql and "processed_at = NOW()" in sql:
+        if "update public.crm_message_jobs" in sql_lower and "processed_at = now()" in sql_lower:
             job = self.jobs[params["job_id"]]
             job["status"] = params["status"]
             job["processed_at"] = True
@@ -231,7 +237,7 @@ class _WorkerDb:
             job["error_message"] = None
             return _Result()
 
-        if "UPDATE public.crm_whatsapp_eventos" in sql and "processed_at = NOW()" in sql:
+        if "update public.crm_whatsapp_eventos" in sql_lower and "processed_at = now()" in sql_lower:
             event = self.events[params["event_id"]]
             event["processing_status"] = params["status"]
             event["processed_at"] = True

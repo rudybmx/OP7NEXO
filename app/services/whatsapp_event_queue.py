@@ -160,7 +160,9 @@ def enqueue_evolution_event(
                 :workspace_id, :canal_id, :raw_event_id, 'webhook_event', 'pending', :priority,
                 jsonb_build_object('event_type', :event_type)
             )
-            ON CONFLICT (raw_event_id) DO NOTHING
+            ON CONFLICT (raw_event_id)
+            WHERE raw_event_id IS NOT NULL AND job_type = 'webhook_event'
+            DO NOTHING
             RETURNING id
         """),
         {
