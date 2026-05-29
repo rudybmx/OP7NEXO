@@ -149,6 +149,10 @@ def _nome_instancia_evo(canal: CanalEntrada) -> str:
     return f"op7-{canal.workspace_id}-{canal.id}"
 
 
+def _webhook_base_url() -> str:
+    return (settings.SERVER_URL or "https://api.op7franquia.com.br").rstrip("/")
+
+
 def _configurar_webhook_evolution(canal: CanalEntrada, db: Session) -> None:
     if canal.tipo != "whatsapp_evolution":
         return
@@ -159,13 +163,13 @@ def _configurar_webhook_evolution(canal: CanalEntrada, db: Session) -> None:
         db.refresh(canal)
 
     instance_name, instance_id, instance_token = _evolution_meta(canal)
-    if not instance_id:
+    if not instance_id and not instance_token:
         return
 
     if canal.connection_status not in {"connecting", "connected"} and canal.status != "ativo":
         return
 
-    webhook_base = settings.SERVER_URL or "https://api.op7franquia.com.br"
+    webhook_base = _webhook_base_url()
     webhook_url = f"{webhook_base}/webhook/evolution/{canal.webhook_token}"
     try:
         evo_service.configurar_webhook(
@@ -174,10 +178,30 @@ def _configurar_webhook_evolution(canal: CanalEntrada, db: Session) -> None:
             instance_id=instance_id,
             instance_token=instance_token,
             subscribe=["ALL"],
-            immediate=False,
+            immediate=True,
         )
     except evo_service.EvolutionError as exc:
         logger.error("[canais] falha ao configurar webhook Evolution: %s", exc)
+
+
+def reaplicar_webhooks_evolution_ativos(db: Session) -> int:
+    canais = (
+        db.query(CanalEntrada)
+        .filter(CanalEntrada.tipo == "whatsapp_evolution")
+        .all()
+    )
+    reaplicados = 0
+
+    for canal in canais:
+        if canal.status != "ativo":
+            continue
+        try:
+            _configurar_webhook_evolution(canal, db)
+            reaplicados += 1
+        except Exception:
+            logger.exception("[canais] falha inesperada ao reaplicar webhook Evolution canal=%s", canal.nome)
+
+    return reaplicados
 
 
 def _normalizar_numero_whatsapp(valor: str | None) -> str | None:

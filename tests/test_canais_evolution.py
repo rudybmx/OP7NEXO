@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.api import canais
+from app.core.config import settings
 from app.services import evolution as evo_service
 
 
@@ -50,6 +51,25 @@ class _FakeDb:
 
     def refresh(self, obj):
         self.refreshes.append(obj)
+
+
+class _ReapplyQuery:
+    def __init__(self, canais):
+        self._canais = canais
+
+    def filter(self, *_args, **_kwargs):
+        return self
+
+    def all(self):
+        return self._canais
+
+
+class _ReapplyDb:
+    def __init__(self, canais):
+        self._canais = canais
+
+    def query(self, _model):
+        return _ReapplyQuery(self._canais)
 
 
 def _fake_canal(connection_status: str = "disconnected"):
@@ -204,6 +224,39 @@ class CanaisEvolutionTests(unittest.TestCase):
             instance_token="instance-token-1",
             retries=1,
         )
+
+    @patch("app.api.canais.evo_service.configurar_webhook")
+    def test_configurar_webhook_evolution_usa_url_publica_e_events_all(self, mock_configurar_webhook):
+        canal = _fake_canal(connection_status="connected")
+        canal.status = "ativo"
+        db = _FakeDb()
+
+        canais._configurar_webhook_evolution(canal, db)
+
+        mock_configurar_webhook.assert_called_once()
+        args, kwargs = mock_configurar_webhook.call_args
+        self.assertEqual(args[0], canal.evolution_instance_id)
+        self.assertEqual(
+            args[1],
+            f"{settings.SERVER_URL.rstrip('/')}/webhook/evolution/{canal.webhook_token}",
+        )
+        self.assertEqual(kwargs["instance_id"], "instance-id-1")
+        self.assertEqual(kwargs["instance_token"], "instance-token-1")
+        self.assertEqual(kwargs["subscribe"], ["ALL"])
+        self.assertTrue(kwargs["immediate"])
+
+    @patch("app.api.canais._configurar_webhook_evolution")
+    def test_reaplicar_webhooks_evolution_ativos_processa_so_canais_ativos(self, mock_configurar_webhook):
+        ativo = _fake_canal(connection_status="connected")
+        ativo.status = "ativo"
+        inativo = _fake_canal(connection_status="connected")
+        inativo.status = "inativo"
+        db = _ReapplyDb([ativo, inativo])
+
+        total = canais.reaplicar_webhooks_evolution_ativos(db)
+
+        self.assertEqual(total, 1)
+        mock_configurar_webhook.assert_called_once_with(ativo, db)
 
     def test_enviar_mensagem_texto_usa_instance_token_como_apikey_sem_fallback_legacy(self):
         responses = [_FakeResponse(200, {"message": "success"})]

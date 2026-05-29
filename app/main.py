@@ -26,7 +26,9 @@ from app.api.sftp import router as sftp_router
 from app.api.users import router as users_router
 from app.api.workspaces import router as workspaces_router
 from app.core.config import settings
+from app.core.database import SessionLocal
 from app.core.logging import setup_logging
+from app.api.canais import reaplicar_webhooks_evolution_ativos
 from app.services import sftp_pool
 from app.services.meta_sync import marcar_sync_jobs_ativos_como_interrompidos
 from app.services.scheduler import iniciar_scheduler, parar_scheduler
@@ -52,6 +54,14 @@ async def lifespan(app: FastAPI):
     interrompidos = marcar_sync_jobs_ativos_como_interrompidos()
     if interrompidos:
         log.warning("Jobs Meta Ads ativos interrompidos no startup: %s", interrompidos)
+    try:
+        with SessionLocal() as db:
+            reaplicados = reaplicar_webhooks_evolution_ativos(db)
+    except Exception:
+        log.exception("Falha ao reaplicar webhooks Evolution no startup")
+    else:
+        if reaplicados:
+            log.info("Webhooks Evolution reaplicados no startup: %s canais", reaplicados)
     iniciar_scheduler()
     sftp_cleanup_task = asyncio.create_task(sftp_pool.cleanup_loop())
     try:
