@@ -1,10 +1,10 @@
 import Redis from 'ioredis'
+import { resolveRedisUrl } from './redis-url'
 
 // ---------------------------------------------------------------------------
 // Configuração
 // ---------------------------------------------------------------------------
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://default:t868uuo98kj2g9q0akmvlnf82elr1q6t@redis_op7-nexo:6379'
 const MAX_MESSAGES = 50
 const TTL_SECONDS = 24 * 60 * 60 // 24 horas
 
@@ -17,7 +17,7 @@ let _redis: Redis | null = null
 function getRedis(): Redis {
   if (_redis) return _redis
 
-  _redis = new Redis(REDIS_URL, {
+  _redis = new Redis(resolveRedisUrl('redis-buffer'), {
     maxRetriesPerRequest: 3,
     retryStrategy(times) {
       if (times > 5) {

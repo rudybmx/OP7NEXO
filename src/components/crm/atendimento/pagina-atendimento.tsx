@@ -125,8 +125,13 @@ export function PaginaAtendimento() {
       streamUrl.searchParams.set('workspace_id', workspaceAtual)
       eventSource = new EventSource(streamUrl.toString())
 
-      eventSource.addEventListener('ready', () => {
-        setAoVivo(true)
+      eventSource.addEventListener('ready', (event) => {
+        try {
+          const data = JSON.parse((event as MessageEvent).data)
+          setAoVivo(data?.mode === 'sse')
+        } catch {
+          setAoVivo(false)
+        }
       })
 
       eventSource.addEventListener('whatsapp.refresh', (e) => {

@@ -1,6 +1,6 @@
 import Redis from 'ioredis'
+import { resolveRedisUrl } from './redis-url'
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://default:hgyQW64RKLQCdYz3ATb5vtfXhoVvfH3y@redis:6379'
 const WHATSAPP_EVENTS_CHANNEL = process.env.WHATSAPP_EVENTS_CHANNEL || 'whatsapp:events'
 
 type WhatsappRealtimeEvent = {
@@ -45,7 +45,7 @@ function getSubscriber(): Redis {
   const state = getState()
   if (state.sub) return state.sub
 
-  state.sub = new Redis(REDIS_URL, {
+  state.sub = new Redis(resolveRedisUrl('whatsapp-realtime'), {
     maxRetriesPerRequest: null,
     retryStrategy(times) {
       return Math.min(times * 100, 2000)
@@ -86,14 +86,23 @@ async function ensureSubscribed() {
   }
 }
 
-export async function subscribeToWhatsappEvents(listener: Listener): Promise<() => void> {
+export async function subscribeToWhatsappEvents(listener: Listener): Promise<{ unsubscribe: () => void; subscribed: boolean }> {
   const state = getState()
-  await ensureSubscribed()
   state.listeners.add(listener)
 
-  return () => {
+  try {
+    await ensureSubscribed()
+    return {
+      unsubscribe: () => {
+        state.listeners.delete(listener)
+      },
+      subscribed: true,
+    }
+  } catch (error) {
     state.listeners.delete(listener)
+    throw error instanceof Error ? error : new Error(String(error))
   }
+
 }
 
 export type { WhatsappRealtimeEvent }

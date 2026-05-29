@@ -238,6 +238,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Painel do contato exibe lead/follow-up e permite criar ou marcar follow-up como feito via `/crm/followups`.
 - BFF de WhatsApp valida acesso de workspace em `GET /me/workspaces` da API Python.
 
+### ✅ Implementado (2026-05-29) — Realtime Redis/SSE
+- `whatsapp-realtime` e `redis-buffer` usam `REDIS_URL` ou `REDIS_PASSWORD` compartilhado com a infra.
+- `GET /api/whatsapp/stream` degrada para polling quando o Redis não consegue assinar, evitando `ERR_HTTP2_PROTOCOL_ERROR`.
+
 ### ⏳ Em andamento / Próximas tarefas
 1. **Testar end-to-end**: enviar mensagem real pelo WhatsApp e confirmar que aparece no front (bugfix de evento deployado)
 2. Filtro campaign_id + adset_id em Criativos

@@ -92,15 +92,22 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      send(JSON.stringify({ ok: true, mode: 'sse' }), 'ready')
+      let readyMode: 'sse' | 'polling' = 'polling'
+      try {
+        const subscription = await subscribeToWhatsappEvents((event) => {
+          if (!event.workspaceId || event.workspaceId !== workspaceId) {
+            return
+          }
 
-      unsubscribe = await subscribeToWhatsappEvents((event) => {
-        if (!event.workspaceId || event.workspaceId !== workspaceId) {
-          return
-        }
+          send(serializeEvent(event), 'whatsapp.refresh')
+        })
+        unsubscribe = subscription.unsubscribe
+        readyMode = subscription.subscribed ? 'sse' : 'polling'
+      } catch (error) {
+        console.error('[API /whatsapp/stream] falha ao assinar Redis:', error instanceof Error ? error.message : error)
+      }
 
-        send(serializeEvent(event), 'whatsapp.refresh')
-      })
+      send(JSON.stringify({ ok: true, mode: readyMode }), 'ready')
 
       pingTimer = setInterval(() => {
         send(JSON.stringify({ ts: new Date().toISOString() }), 'ping')

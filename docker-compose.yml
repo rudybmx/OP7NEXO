@@ -13,6 +13,7 @@ services:
       - traefik-public
     env_file:
       - .env
+      - /root/infra/redis/.env
     environment:
       - NODE_ENV=production
       - PORT=3000
