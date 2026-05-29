@@ -686,22 +686,24 @@ export function BarraLateral() {
   }
 
   return (
-    <aside
-      style={{
-        position: "relative",
-        width: currentWidth,
-        height: "100dvh",
-        minHeight: 0,
-        display: "flex",
-        flexDirection: "column",
-        background: "linear-gradient(160deg, rgba(30, 40, 80, 0.97) 0%, rgba(14, 20, 42, 0.99) 45%, rgba(10, 15, 35, 1.0) 100%)",
-        borderRight: `1px solid ${W08}`,
-        boxShadow: `inset -1px 0 0 ${W04}, 4px 0 24px rgba(0,0,0,0.25)`,
-        padding: isCollapsed ? "0 0 16px" : "0 12px 16px",
-        color: "#ffffff",
-        transition: "width 250ms cubic-bezier(0.4, 0, 0.2, 1)",
-        zIndex: 50
-      }}
+      <aside
+        style={{
+          position: "relative",
+          width: currentWidth,
+          height: "100dvh",
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          // Cor atual antes desta troca:
+          // linear-gradient(160deg, rgba(30, 40, 80, 0.97) 0%, rgba(14, 20, 42, 0.99) 45%, rgba(10, 15, 35, 1.0) 100%)
+          background: "linear-gradient(160deg, rgba(10, 10, 10, 0.98) 0%, rgba(5, 5, 5, 0.995) 46%, rgba(18, 18, 18, 1) 100%)",
+          borderRight: "1px solid rgba(255,255,255,0.06)",
+          boxShadow: "inset -1px 0 0 rgba(255,255,255,0.03), 4px 0 24px rgba(0,0,0,0.35)",
+          padding: isCollapsed ? "0 0 16px" : "0 12px 16px",
+          color: "#ffffff",
+          transition: "width 250ms cubic-bezier(0.4, 0, 0.2, 1)",
+          zIndex: 50
+        }}
     >
       {/* Top highlight line */}
       <div
@@ -711,7 +713,7 @@ export function BarraLateral() {
           left: 0,
           right: 0,
           height: 1,
-          background: `linear-gradient(90deg, transparent 0%, ${W12} 30%, ${W06} 70%, transparent 100%)`,
+          background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 30%, rgba(255,255,255,0.04) 70%, transparent 100%)",
         }}
       />
 
@@ -727,9 +729,9 @@ export function BarraLateral() {
           width: 28,
           height: 28,
           borderRadius: 8,
-          background: "rgba(20, 28, 56, 0.95)",
-          border: `1px solid ${W14}`,
-          boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+          background: "rgba(14, 14, 14, 0.96)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.45)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
