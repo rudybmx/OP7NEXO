@@ -6,6 +6,7 @@ import { Building2, Edit3, Loader2, Mail, Plus, Search, Shield, Star, Trash2, Us
 import { toast } from 'sonner'
 import useSWR from 'swr'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { WSTable, WSTableShell } from '@/components/ui/ws-table'
 import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
 import { UsuarioWorkspacesSummary } from '@/components/administracao/usuarios/usuario-workspaces-summary'
@@ -877,22 +878,23 @@ export default function UsuariosAdministracaoPage() {
         </SheetContent>
       </Sheet>
 
-      <Sheet open={editDrawerAberto} onOpenChange={(open) => (open ? setEditDrawerAberto(true) : fecharEdicao())}>
-        <SheetContent
-          side="right"
+      <Dialog open={editDrawerAberto} onOpenChange={(open) => (open ? setEditDrawerAberto(true) : fecharEdicao())}>
+        <DialogContent
           showCloseButton={false}
           style={{
-            width: 'min(480px, 100vw)',
+            width: 'min(960px, calc(100vw - 16px))',
+            maxHeight: 'calc(100vh - 16px)',
+            borderRadius: 18,
             ...wsSheetCreamStyle,
             padding: 0,
             display: 'flex',
             flexDirection: 'column',
           }}
         >
-          <SheetTitle className="sr-only">Editar Usuário</SheetTitle>
-          <SheetDescription className="sr-only">
+          <DialogTitle className="sr-only">Editar Usuário</DialogTitle>
+          <DialogDescription className="sr-only">
             Atualize os dados do usuário, status e acessos de workspace
-          </SheetDescription>
+          </DialogDescription>
           <div style={{
             padding: '24px 28px 20px',
             borderBottom: `1px solid ${wsSheetCreamTokens.border}`,
@@ -905,8 +907,11 @@ export default function UsuariosAdministracaoPage() {
               <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--ws-text-1)' }}>
                 Editar Usuário
               </h2>
-              <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0' }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ws-text-1)', margin: '4px 0 0' }}>
                 {usuarioEditando?.nome}
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '2px 0 0' }}>
+                {usuarioEditando?.email}
               </p>
             </div>
             <button
@@ -1218,8 +1223,8 @@ export default function UsuariosAdministracaoPage() {
               {editSalvando ? 'Salvando...' : 'Salvar'}
             </button>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
