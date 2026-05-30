@@ -516,12 +516,11 @@ def atualizar_canal(
     c = _get_canal_or_404(canal_id, db)
     _exigir_admin_canal(usuario, c, db)
     stored_config = payload.config or {}
-    webhook_secret: str | None = None
     if c.tipo == "webhook":
-        stored_config, webhook_secret, _ = prepare_webhook_config(
+        stored_config, _, _ = prepare_webhook_config(
             stored_config,
             existing_config=c.config,
-            generate_secret=True,
+            generate_secret=False,
         )
     c.nome = payload.nome
     c.config = stored_config
@@ -529,6 +528,34 @@ def atualizar_canal(
     c.status = payload.status
     db.commit()
     db.refresh(c)
+    return _canal_out(c)
+
+
+@router.post(
+    "/canais/{canal_id}/webhook-secret/rotacionar",
+    response_model=CanalOut,
+    response_model_exclude_none=True,
+)
+def rotacionar_webhook_secret(
+    canal_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_usuario_atual),
+):
+    c = _get_canal_or_404(canal_id, db)
+    _exigir_admin_canal(usuario, c, db)
+    if c.tipo != "webhook":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Canal não é webhook")
+
+    stored_config, webhook_secret, _ = prepare_webhook_config(
+        c.config,
+        existing_config=c.config,
+        generate_secret=False,
+        force_new_secret=True,
+    )
+    c.config = stored_config
+    db.commit()
+    db.refresh(c)
+
     return _canal_out(c, webhook_secret=webhook_secret)
 
 

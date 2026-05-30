@@ -71,6 +71,7 @@ class _WebhookDb:
         self._canal = canal
         self.commits = 0
         self.rollbacks = 0
+        self.refreshes = 0
         self.calls: list[tuple[str, dict | None]] = []
         self.events_by_hash: dict[str, dict[str, str]] = {}
         self.contacts_by_jid: dict[str, dict[str, str]] = {}
@@ -259,6 +260,10 @@ class _WebhookDb:
     def rollback(self):
         self.rollbacks += 1
 
+    def refresh(self, obj):
+        self.refreshes += 1
+        return obj
+
 
 def _build_app(db):
     app = FastAPI()
@@ -318,15 +323,16 @@ def test_criar_canal_webhook_gera_secret_e_sanitiza_resposta(monkeypatch):
     assert db.added[0].config["webhook"]["hmac_secret"] == data["webhook_secret"]
 
 
-def test_atualizar_canal_webhook_sem_secret_gera_secret_e_preserva_config(monkeypatch):
+def test_atualizar_canal_webhook_nao_reexibe_secret_e_preserva_secret_existente(monkeypatch):
     db = _CrudDb()
     workspace_id = uuid.uuid4()
+    secret = "e" * 64
     canal = CanalEntrada(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         tipo="webhook",
         nome="Canal Legado",
-        config={"webhook": {"endpoint": "https://example.test"}},
+        config={"webhook": {"endpoint": "https://example.test", "hmac_secret": secret}},
         webhook_token="token-legado",
         status="inativo",
     )
@@ -346,10 +352,85 @@ def test_atualizar_canal_webhook_sem_secret_gera_secret_e_preserva_config(monkey
 
     assert response.status_code == 200
     data = response.json()
+    assert "webhook_secret" not in data
+    assert data["config"]["webhook"]["endpoint"] == "https://example.test/editado"
+    assert "hmac_secret" not in data["config"]["webhook"]
+    assert canal.config["webhook"]["hmac_secret"] == secret
+
+
+def test_rotacionar_secret_webhook_retorna_secret_uma_vez(monkeypatch):
+    db = _WebhookDb(None)
+    workspace_id = uuid.uuid4()
+    canal = CanalEntrada(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        tipo="webhook",
+        nome="Canal Webhook",
+        config={"webhook": {"endpoint": "https://example.test", "hmac_secret": "f" * 64}},
+        webhook_token="token-webhook",
+        status="ativo",
+    )
+    db._canal = canal
+    app = _build_app(db)
+    client = TestClient(app)
+
+    response = client.post(f"/canais/{canal.id}/webhook-secret/rotacionar")
+
+    assert response.status_code == 200
+    data = response.json()
     assert data["webhook_secret"]
     assert len(data["webhook_secret"]) == 64
-    assert canal.config["webhook"]["hmac_secret"] == data["webhook_secret"]
+    assert data["config"]["webhook"]["endpoint"] == "https://example.test"
     assert "hmac_secret" not in data["config"]["webhook"]
+    assert canal.config["webhook"]["hmac_secret"] == data["webhook_secret"]
+
+
+def test_listagem_e_detalhe_de_canais_webhook_nao_expoem_secret(monkeypatch):
+    secret = "g" * 64
+    canal = CanalEntrada(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        tipo="webhook",
+        nome="Canal Webhook",
+        config={"webhook": {"endpoint": "https://example.test", "hmac_secret": secret}},
+        webhook_token="token-webhook",
+        status="ativo",
+    )
+
+    class _ListQuery:
+        def __init__(self, canais):
+            self._canais = canais
+
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def all(self):
+            return self._canais
+
+    class _ListDb:
+        def query(self, _model):
+            return _ListQuery([canal])
+
+    db = _ListDb()
+    app = _build_app(db)
+    app.dependency_overrides[canais.get_workspace_atual] = lambda: None
+    monkeypatch.setattr(canais, "verificar_acesso_workspace", lambda *_args, **_kwargs: None)
+    client = TestClient(app)
+
+    response_list = client.get("/canais")
+    assert response_list.status_code == 200
+    list_data = response_list.json()
+    assert list_data[0]["tipo"] == "webhook"
+    assert "webhook_secret" not in list_data[0]
+    assert "hmac_secret" not in list_data[0]["config"]["webhook"]
+
+    monkeypatch.setattr(canais, "_get_canal_or_404", lambda *_args, **_kwargs: canal)
+    response_detail = client.get(f"/canais/{canal.id}")
+    assert response_detail.status_code == 200
+    detail_data = response_detail.json()
+    assert detail_data["tipo"] == "webhook"
+    assert "webhook_secret" not in detail_data
+    assert "hmac_secret" not in detail_data["config"]["webhook"]
 
 
 def test_webhook_token_invalido_retorna_404():
@@ -545,6 +626,8 @@ def test_webhook_evento_valido_cria_contato_conversa_mensagem_e_idempotencia(cap
     assert response_1.json()["contato_id"]
     assert response_1.json()["conversa_id"]
     assert response_1.json()["mensagem_id"]
+    assert "webhook_secret" not in response_1.json()
+    assert "hmac_secret" not in response_1.json()
 
     assert response_2.status_code == 200
     assert response_2.json()["status"] == "duplicate"
@@ -553,6 +636,8 @@ def test_webhook_evento_valido_cria_contato_conversa_mensagem_e_idempotencia(cap
     assert response_2.json()["contato_id"] == response_1.json()["contato_id"]
     assert response_2.json()["conversa_id"] == response_1.json()["conversa_id"]
     assert response_2.json()["mensagem_id"] == response_1.json()["mensagem_id"]
+    assert "webhook_secret" not in response_2.json()
+    assert "hmac_secret" not in response_2.json()
 
     assert len(db.events_by_hash) == 1
     assert len(db.contacts_by_jid) == 1

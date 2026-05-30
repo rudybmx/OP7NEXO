@@ -85,6 +85,7 @@ def prepare_webhook_config(
     *,
     existing_config: dict[str, Any] | None = None,
     generate_secret: bool = False,
+    force_new_secret: bool = False,
 ) -> tuple[dict[str, Any], str | None, bool]:
     config = copy.deepcopy(incoming_config or {})
     webhook = dict(config.get("webhook") or {})
@@ -92,7 +93,11 @@ def prepare_webhook_config(
     generated = False
     secret_to_return: str | None = None
 
-    if existing_secret:
+    if force_new_secret:
+        secret_to_return = secrets.token_hex(32)
+        webhook["hmac_secret"] = secret_to_return
+        generated = True
+    elif existing_secret:
         webhook["hmac_secret"] = existing_secret
     elif generate_secret:
         secret_to_return = secrets.token_hex(32)
