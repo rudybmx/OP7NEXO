@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
           ON (
             c.evolution_instance_id = conv.instance
             OR CONCAT('op7-', c.workspace_id::text, '-', c.id::text) = conv.instance
+            OR CONCAT('webhook:', LEFT(REPLACE(c.id::text, '-', ''), 8)) = conv.instance
           )
         WHERE conv.id = ${conversa_id}::uuid
         LIMIT 1
