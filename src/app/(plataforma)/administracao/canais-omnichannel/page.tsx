@@ -126,6 +126,7 @@ export default function CanaisOmnichannelPage() {
 
   // QR Code / Conexão
   const [qrCode, setQrCode] = useState<string | null>(null)
+  const [pairingCode, setPairingCode] = useState<string | null>(null)
   const [conectando, setConectando] = useState(false)
   const [pollingId, setPollingId] = useState<ReturnType<typeof setInterval> | null>(null)
 
@@ -220,6 +221,7 @@ export default function CanaisOmnichannelPage() {
       config: canal.config ?? {},
     })
     setQrCode(null)
+    setPairingCode(null)
     setConectando(false)
     setEditDrawerAberto(true)
   }
@@ -229,6 +231,7 @@ export default function CanaisOmnichannelPage() {
     setCanalEditando(null)
     setEditForm({ nome: '', mensagem_boas_vindas: '', config: {} })
     setQrCode(null)
+    setPairingCode(null)
     setConectando(false)
     if (pollingId) {
       clearInterval(pollingId)
@@ -275,21 +278,44 @@ export default function CanaisOmnichannelPage() {
 
   async function conectarEvolution() {
     if (!canalEditando || canalEditando.tipo !== 'whatsapp_evolution') return
+    if (pollingId) {
+      clearInterval(pollingId)
+      setPollingId(null)
+    }
     setConectando(true)
     setQrCode(null)
+    setPairingCode(null)
     try {
-      const resp = await api.post<{ qr_code: string | null; connection_status: string; message: string }>(`/canais/${canalEditando.id}/conectar`)
-      if (resp.qr_code) {
-        setQrCode(resp.qr_code)
-        // Polling de status direto na Evolution (fallback pro webhook)
+      const resp = await api.post<{
+        qr_code: string | null
+        pairing_code: string | null
+        connection_status: string
+        instance_id: string | null
+        message: string
+      }>(`/canais/${canalEditando.id}/conectar`)
+
+      setCanalEditando(prev => prev ? { ...prev, connection_status: resp.connection_status } : prev)
+
+      if (resp.qr_code || resp.pairing_code || resp.connection_status === 'connecting') {
+        if (resp.qr_code) setQrCode(resp.qr_code)
+        if (resp.pairing_code) setPairingCode(resp.pairing_code)
         const id = setInterval(async () => {
           try {
-            const status = await api.get<{ connection_status: string; evolution_state: string; numero_telefone: string | null; conectado_em: string | null }>(`/canais/${canalEditando.id}/status-evolution`)
+            const status = await api.get<{
+              connection_status: string
+              evolution_state: string
+              numero_telefone: string | null
+              conectado_em: string | null
+              qr_code: string | null
+              pairing_code: string | null
+              instance_id: string | null
+            }>(`/canais/${canalEditando.id}/status-evolution`)
             if (status.connection_status === 'connected') {
               const canalAtualizado = await api.get<Canal>(`/canais/${canalEditando.id}`)
               setCanais(prev => prev.map(c => c.id === canalAtualizado.id ? canalAtualizado : c))
               setCanalEditando(canalAtualizado)
               setQrCode(null)
+              setPairingCode(null)
               setConectando(false)
               clearInterval(id)
               setPollingId(null)
@@ -301,8 +327,13 @@ export default function CanaisOmnichannelPage() {
         }, 3000)
         setPollingId(id)
       } else if (resp.connection_status === 'connected') {
+        const canalAtualizado = await api.get<Canal>(`/canais/${canalEditando.id}`)
+        setCanais(prev => prev.map(c => c.id === canalAtualizado.id ? canalAtualizado : c))
+        setCanalEditando(canalAtualizado)
+        setQrCode(null)
+        setPairingCode(null)
         setConectando(false)
-        toast.success('Já está conectado')
+        toast.success('WhatsApp conectado!')
       } else {
         setConectando(false)
         toast.info(resp.message)
@@ -316,10 +347,16 @@ export default function CanaisOmnichannelPage() {
   async function desconectarEvolution() {
     if (!canalEditando || canalEditando.tipo !== 'whatsapp_evolution') return
     try {
+      if (pollingId) {
+        clearInterval(pollingId)
+        setPollingId(null)
+      }
       await api.post(`/canais/${canalEditando.id}/desconectar`)
       const atualizado = { ...canalEditando, connection_status: 'disconnected', numero_telefone: null, conectado_em: null }
       setCanais(prev => prev.map(c => c.id === atualizado.id ? atualizado : c))
       setCanalEditando(atualizado)
+      setQrCode(null)
+      setPairingCode(null)
       toast.success('Desconectado')
     } catch (err: any) {
       toast.error(err.message || 'Erro ao desconectar')
@@ -983,6 +1020,36 @@ export default function CanaisOmnichannelPage() {
                       />
                       <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>
                         Escaneie com seu WhatsApp
+                      </p>
+                    </div>
+                  )}
+
+                  {!qrCode && pairingCode && (
+                    <div style={{
+                      textAlign: 'center',
+                      marginBottom: 12,
+                      padding: '14px 16px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(37,211,102,0.22)',
+                      background: 'rgba(37,211,102,0.06)',
+                    }}>
+                      <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginBottom: 8 }}>
+                        Código de pareamento
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 20,
+                          fontWeight: 700,
+                          letterSpacing: '0.16em',
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                          color: 'var(--ws-text-1)',
+                          wordBreak: 'break-word',
+                        }}
+                      >
+                        {pairingCode}
+                      </div>
+                      <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 8 }}>
+                        Digite esse código no WhatsApp para concluir a conexão
                       </p>
                     </div>
                   )}
