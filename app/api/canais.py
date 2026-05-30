@@ -29,6 +29,7 @@ from app.core.deps import (
 )
 from app.models.canal_entrada import CanalEntrada
 from app.models.user import RoleUsuario, User
+from app.models.user_workspace_access import UserWorkspaceAccess
 from app.models.workspace import Workspace
 from app.services import evolution as evo_service
 from app.services.object_storage import download_and_put, put_bytes, public_url
@@ -148,7 +149,6 @@ def _exigir_admin_canal(usuario: User, canal: CanalEntrada, db: Session) -> None
         return
     if usuario.role == RoleUsuario.company_admin:
         # company_admin pode editar se o canal pertence ao workspace dele
-        from app.models.user_workspace_access import UserWorkspaceAccess
         uwa = db.query(UserWorkspaceAccess).filter(
             UserWorkspaceAccess.user_id == usuario.id,
             UserWorkspaceAccess.workspace_id == canal.workspace_id,
@@ -159,6 +159,54 @@ def _exigir_admin_canal(usuario: User, canal: CanalEntrada, db: Session) -> None
         if usuario.workspace_id == canal.workspace_id:
             return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para editar este canal")
+
+
+def _role_value(role: RoleUsuario | str) -> str:
+    return role.value if isinstance(role, RoleUsuario) else str(role)
+
+
+def _workspace_access_role_for_usuario(role: RoleUsuario | str) -> str:
+    role_value = _role_value(role)
+    if role_value in {"platform_admin", "network_admin", "company_admin"}:
+        return "admin"
+    if role_value == "network_viewer":
+        return "viewer"
+    return "editor"
+
+
+def _workspace_access_role_para_atendimento(usuario: User, workspace_id: uuid.UUID, db: Session) -> str | None:
+    if _role_value(usuario.role) == RoleUsuario.platform_admin.value:
+        return "admin"
+
+    acesso = db.query(UserWorkspaceAccess).filter(
+        UserWorkspaceAccess.user_id == usuario.id,
+        UserWorkspaceAccess.workspace_id == workspace_id,
+        UserWorkspaceAccess.ativo.is_(True),
+    ).first()
+    if acesso:
+        role = str(acesso.role).strip().lower()
+        if role in {"viewer", "editor", "admin"}:
+            return role
+
+    if usuario.workspace_id is not None and str(usuario.workspace_id) == str(workspace_id):
+        return _workspace_access_role_for_usuario(usuario.role)
+
+    return None
+
+
+def _exigir_permissao_atendimento(usuario: User, canal: CanalEntrada, db: Session) -> None:
+    """Permissão operacional para responder atendimento."""
+    if _role_value(usuario.role) == RoleUsuario.platform_admin.value:
+        return
+
+    role_acesso = _workspace_access_role_para_atendimento(usuario, canal.workspace_id, db)
+    if role_acesso in {"editor", "admin"}:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Sem permissão para enviar mensagens neste atendimento",
+    )
 
 
 def _uuid_curto(valor: uuid.UUID | str) -> str:
@@ -1073,7 +1121,7 @@ async def upload_midia_canal(
     usuario: User = Depends(get_usuario_atual),
 ):
     c = _get_canal_or_404(canal_id, db)
-    _exigir_admin_canal(usuario, c, db)
+    _exigir_permissao_atendimento(usuario, c, db)
     content = await arquivo.read()
     mimetype = arquivo.content_type or mimetypes.guess_type(arquivo.filename or "")[0] or "application/octet-stream"
     mensagem_id = str(uuid.uuid4())
@@ -1316,7 +1364,7 @@ def enviar_mensagem_canal(
     usuario: User = Depends(get_usuario_atual),
 ):
     c = _get_canal_or_404(canal_id, db)
-    _exigir_admin_canal(usuario, c, db)
+    _exigir_permissao_atendimento(usuario, c, db)
 
     if c.tipo == "whatsapp_oficial":
         return _enviar_mensagem_meta_cloud(c, payload, db, usuario)

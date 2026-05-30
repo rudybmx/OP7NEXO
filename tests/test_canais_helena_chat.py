@@ -46,10 +46,12 @@ class _HelenaOutboundDb:
         *,
         conversa_row: tuple[str, str, str, str | None, str | None, str | None],
         inserted_message_id: str = "message-id-1",
+        workspace_access_role: str | None = None,
     ) -> None:
         self._canal = canal
         self.conversa_row = conversa_row
         self.inserted_message_id = inserted_message_id
+        self.workspace_access_role = workspace_access_role
         self.commits = 0
         self.refreshes = 0
         self.calls: list[tuple[str, dict | None]] = []
@@ -57,7 +59,14 @@ class _HelenaOutboundDb:
         self.insert_params: dict | None = None
 
     def query(self, _model):
-        return _Query(self._canal)
+        if _model is canais.CanalEntrada:
+            return _Query(self._canal)
+        if _model is canais.UserWorkspaceAccess:
+            acesso = None
+            if self.workspace_access_role is not None:
+                acesso = SimpleNamespace(role=self.workspace_access_role, ativo=True)
+            return _Query(acesso)
+        return _Query(None)
 
     def execute(self, stmt, params=None):
         sql = " ".join(str(stmt).split())
@@ -85,7 +94,7 @@ class _HelenaOutboundDb:
         return obj
 
 
-def _build_app(db):
+def _build_app(db, usuario=None):
     app = FastAPI()
     app.include_router(canais.router)
 
@@ -93,11 +102,12 @@ def _build_app(db):
         yield db
 
     app.dependency_overrides[canais.get_db] = override_get_db
-    app.dependency_overrides[canais.get_usuario_atual] = lambda: SimpleNamespace(
+    app.dependency_overrides[canais.get_usuario_atual] = lambda: usuario or SimpleNamespace(
         id=uuid.uuid4(),
         role="platform_admin",
         nome="Admin",
         email="admin@example.com",
+        workspace_id=None,
     )
     return app
 
@@ -255,3 +265,194 @@ def test_enviar_mensagem_canal_webhook_helena_sem_outbound_retorna_erro_claro(mo
 
     assert response.status_code == 400
     assert "Canal Helena é inbound" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "usuario_role,workspace_access_role,workspace_id,expected_status,expected_detail,should_send",
+    [
+        ("company_agent", "editor", None, 200, None, True),
+        ("company_agent", "admin", None, 200, None, True),
+        ("platform_admin", None, None, 200, None, True),
+        ("company_agent", "viewer", None, 403, "Sem permissão para enviar mensagens neste atendimento", False),
+        ("company_agent", None, None, 403, "Sem permissão para enviar mensagens neste atendimento", False),
+    ],
+)
+def test_enviar_mensagem_canal_respeita_permissa_operacional(
+    monkeypatch,
+    usuario_role,
+    workspace_access_role,
+    workspace_id,
+    expected_status,
+    expected_detail,
+    should_send,
+):
+    monkeypatch.setenv("HELENA_CHAT_TOKEN_QOZT", "token-de-teste")
+
+    canal = _make_helena_canal()
+    conversa_id = uuid.uuid4()
+    contato_id = uuid.uuid4()
+    db = _HelenaOutboundDb(
+        canal,
+        conversa_row=(
+            str(conversa_id),
+            str(contato_id),
+            "sess-900",
+            "5547 9999-8888",
+            "+55 (47) 9999-8888",
+            "554799998888@s.whatsapp.net",
+        ),
+        workspace_access_role=workspace_access_role,
+    )
+    usuario = SimpleNamespace(
+        id=uuid.uuid4(),
+        role=usuario_role,
+        nome="Larissa",
+        email="larissa@example.com",
+        workspace_id=workspace_id,
+    )
+    app = _build_app(db, usuario=usuario)
+    client = TestClient(app)
+
+    provider_response = {
+        "provider": "helena_chat",
+        "provider_token_ref": "HELENA_CHAT_TOKEN_QOZT",
+        "provider_message_id": "msg-900",
+        "provider_session_id": "session-900",
+        "provider_status": "SENT",
+        "provider_status_normalized": "sent",
+        "provider_status_label": "enviada",
+        "provider_status_url": "https://api.helena.run/chat/v1/message/status/msg-900",
+        "provider_failure_reason": None,
+        "raw": {
+            "id": "msg-900",
+            "sessionId": "session-900",
+            "status": "SENT",
+            "statusUrl": "https://api.helena.run/chat/v1/message/status/msg-900",
+            "failureReason": None,
+        },
+    }
+
+    with patch("app.api.canais.helena_service.send_text_message", return_value=provider_response) as mock_send, patch(
+        "app.api.canais.publish_whatsapp_event"
+    ) as mock_publish:
+        response = client.post(
+            f"/canais/{canal.id}/enviar-mensagem",
+            json={
+                "conversa_id": str(conversa_id),
+                "texto": "Olá, Helena",
+                "tipo": "texto",
+            },
+        )
+
+    assert response.status_code == expected_status
+    if should_send:
+        data = response.json()
+        assert data["ok"] is True
+        assert data["evolution_response"]["provider_message_id"] == "msg-900"
+        mock_send.assert_called_once()
+        mock_publish.assert_called_once()
+    else:
+        assert response.json()["detail"] == expected_detail
+        mock_send.assert_not_called()
+        mock_publish.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "usuario_role,workspace_access_role,workspace_id,expected_status,expected_detail,should_store",
+    [
+        ("company_agent", "editor", None, 200, None, True),
+        ("platform_admin", None, None, 200, None, True),
+        ("company_agent", "viewer", None, 403, "Sem permissão para enviar mensagens neste atendimento", False),
+        ("company_agent", None, None, 403, "Sem permissão para enviar mensagens neste atendimento", False),
+    ],
+)
+def test_upload_midia_usa_mesma_permissa_operacional(
+    monkeypatch,
+    usuario_role,
+    workspace_access_role,
+    workspace_id,
+    expected_status,
+    expected_detail,
+    should_store,
+):
+    canal = _make_helena_canal()
+    db = _HelenaOutboundDb(
+        canal,
+        conversa_row=(
+            str(uuid.uuid4()),
+            str(uuid.uuid4()),
+            "sess-901",
+            "5547 9999-8888",
+            "+55 (47) 9999-8888",
+            "554799998888@s.whatsapp.net",
+        ),
+        workspace_access_role=workspace_access_role,
+    )
+    usuario = SimpleNamespace(
+        id=uuid.uuid4(),
+        role=usuario_role,
+        nome="Larissa",
+        email="larissa@example.com",
+        workspace_id=workspace_id,
+    )
+    app = _build_app(db, usuario=usuario)
+    client = TestClient(app)
+
+    stored_media = SimpleNamespace(
+        url="https://cdn.example.com/media/teste.pdf",
+        object_key="whatsapp/teste.pdf",
+        mimetype="application/pdf",
+        filename="teste.pdf",
+        size=11,
+        sha256="abc123",
+        media_type="document",
+    )
+
+    with patch("app.api.canais.store_media_bytes", return_value=stored_media) as mock_store:
+        response = client.post(
+            f"/canais/{canal.id}/upload-midia",
+            data={"conversa_id": str(uuid.uuid4())},
+            files={"arquivo": ("teste.pdf", b"conteudo", "application/pdf")},
+        )
+
+    assert response.status_code == expected_status
+    if should_store:
+        data = response.json()
+        assert data["ok"] is True
+        assert data["media_url"] == stored_media.url
+        mock_store.assert_called_once()
+    else:
+        assert response.json()["detail"] == expected_detail
+        mock_store.assert_not_called()
+
+
+def test_editar_canal_continua_protegido_para_usuario_operacional(monkeypatch):
+    monkeypatch.setenv("HELENA_CHAT_TOKEN_QOZT", "token-de-teste")
+
+    canal = _make_helena_canal()
+    db = _HelenaOutboundDb(
+        canal,
+        conversa_row=(
+            str(uuid.uuid4()),
+            str(uuid.uuid4()),
+            "sess-902",
+            "5547 9999-8888",
+            "+55 (47) 9999-8888",
+            "554799998888@s.whatsapp.net",
+        ),
+        workspace_access_role="editor",
+    )
+    usuario = SimpleNamespace(
+        id=uuid.uuid4(),
+        role="company_agent",
+        nome="Larissa",
+        email="larissa@example.com",
+        workspace_id=None,
+    )
+    app = _build_app(db, usuario=usuario)
+    client = TestClient(app)
+
+    response = client.post(f"/canais/{canal.id}/webhook-secret/rotacionar")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Sem permissão para editar este canal"
