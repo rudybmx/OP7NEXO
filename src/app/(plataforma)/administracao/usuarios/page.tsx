@@ -54,12 +54,20 @@ interface EditUsuarioForm {
   ativo: boolean
 }
 
+type StatusFiltro = 'ativo' | 'inativo' | 'todos'
+
 const ROLES: { id: RoleUsuario; label: string }[] = [
   { id: 'platform_admin', label: 'Administrador' },
   { id: 'network_admin', label: 'Gestor de Rede' },
   { id: 'network_viewer', label: 'Supervisor' },
   { id: 'company_admin', label: 'Admin Cliente' },
   { id: 'company_agent', label: 'Atendente' },
+]
+
+const STATUS_OPTIONS: { id: StatusFiltro; label: string }[] = [
+  { id: 'ativo', label: 'Ativos' },
+  { id: 'inativo', label: 'Inativos' },
+  { id: 'todos', label: 'Todos' },
 ]
 
 const ROLE_LABELS = ROLES.reduce<Record<RoleUsuario, string>>((acc, role) => {
@@ -116,6 +124,8 @@ export default function UsuariosAdministracaoPage() {
 
   const [busca, setBusca] = useState('')
   const [filtroRole, setFiltroRole] = useState<RoleUsuario | 'todas'>('todas')
+  const [filtroStatus, setFiltroStatus] = useState<StatusFiltro>('ativo')
+  const [filtroWorkspace, setFiltroWorkspace] = useState<string>('todos')
   const [drawerAberto, setDrawerAberto] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [form, setForm] = useState<NovoUsuarioForm>(emptyForm)
@@ -130,7 +140,7 @@ export default function UsuariosAdministracaoPage() {
     ativo: true,
   })
   const [editSalvando, setEditSalvando] = useState(false)
-  const [excluindoId, setExcluindoId] = useState<string | null>(null)
+  const [alterandoStatusId, setAlterandoStatusId] = useState<string | null>(null)
   const [acessosWs, setAcessosWs] = useState<AcessoWsLocal[]>([])
   const [acessosWsOriginais, setAcessosWsOriginais] = useState<AcessoWsLocal[]>([])
   const [acessosWsCarregando, setAcessosWsCarregando] = useState(false)
@@ -149,6 +159,11 @@ export default function UsuariosAdministracaoPage() {
   const {
     data: workspaces = [],
   } = useSWR<WorkspaceRow[]>(isPlatformAdmin ? '/workspaces' : null, fetchWorkspaces)
+
+  const workspacesOrdenados = useMemo(
+    () => [...workspaces].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })),
+    [workspaces],
+  )
 
   const workspacesPorUsuarioVisivel = useMemo<Record<string, WorkspaceAcesso[]>>(
     () => (isPlatformAdmin && usuarios.length > 0 ? workspacesPorUsuario : ({} as Record<string, WorkspaceAcesso[]>)),
@@ -185,7 +200,7 @@ export default function UsuariosAdministracaoPage() {
     }
   }, [isPlatformAdmin, usuarios])
 
-  const filtrados = useMemo(() => {
+  const usuariosFiltrados = useMemo(() => {
     const termo = busca.trim().toLowerCase()
     return usuarios.filter((usuario) => {
       const matchBusca =
@@ -193,9 +208,21 @@ export default function UsuariosAdministracaoPage() {
         usuario.nome.toLowerCase().includes(termo) ||
         usuario.email.toLowerCase().includes(termo)
       const matchRole = filtroRole === 'todas' || usuario.role === filtroRole
-      return matchBusca && matchRole
+      const matchStatus =
+        filtroStatus === 'todos'
+          ? true
+          : filtroStatus === 'ativo'
+            ? usuario.ativo
+            : !usuario.ativo
+      const workspacesUsuario = workspacesPorUsuarioVisivel[usuario.id] ?? []
+      const matchWorkspace =
+        filtroWorkspace === 'todos'
+        || usuario.workspace_id === filtroWorkspace
+        || workspacesUsuario.some((acesso) => acesso.workspace_id === filtroWorkspace)
+
+      return matchBusca && matchRole && matchStatus && matchWorkspace
     })
-  }, [usuarios, busca, filtroRole])
+  }, [usuarios, busca, filtroRole, filtroStatus, filtroWorkspace, workspacesPorUsuarioVisivel])
 
   function fecharDrawer() {
     setDrawerAberto(false)
@@ -269,7 +296,6 @@ export default function UsuariosAdministracaoPage() {
     setUsuarioEditando(null)
     setAcessosWs([])
     setAcessosWsOriginais([])
-    setBuscaWorkspaceAcesso('')
     acessosWsCarregadosParaUsuario.current = null
   }
 
@@ -392,24 +418,39 @@ export default function UsuariosAdministracaoPage() {
     }
   }
 
-  async function excluirUsuario(usuario: UsuarioRow) {
-    const confirmar = window.confirm(`Tem certeza que deseja inativar o usuário "${usuario.nome}"? Ele deixará de aparecer como ativo.`)
-    if (!confirmar) return
+  async function alterarStatusUsuario(usuario: UsuarioRow) {
+    const tornarAtivo = !usuario.ativo
+    if (!tornarAtivo) {
+      const confirmar = window.confirm(`Tem certeza que deseja inativar o usuário "${usuario.nome}"? Ele deixará de aparecer como ativo.`)
+      if (!confirmar) return
+    }
 
-    setExcluindoId(usuario.id)
+    setAlterandoStatusId(usuario.id)
     try {
-      await api.delete(`/users/${usuario.id}`)
-      if (usuarioEditando?.id === usuario.id) {
-        fecharEdicao()
+      if (tornarAtivo) {
+        await api.put(`/users/${usuario.id}`, { ativo: true })
+      } else {
+        await api.delete(`/users/${usuario.id}`)
       }
-      toast.success('Usuário inativado com sucesso')
-      await mutateUsuarios().catch((syncErr: unknown) => {
-        toast.error(getErrorMessage(syncErr, 'Usuário inativado, mas não foi possível atualizar a lista'))
-      })
+
+      await mutateUsuarios(
+        (atuais = []) => atuais.map((item) => (
+          item.id === usuario.id
+            ? { ...item, ativo: tornarAtivo }
+            : item
+        )),
+        { revalidate: false },
+      )
+
+      if (usuarioEditando?.id === usuario.id) {
+        setEditForm((prev) => ({ ...prev, ativo: tornarAtivo }))
+      }
+
+      toast.success(tornarAtivo ? 'Usuário reativado com sucesso' : 'Usuário inativado com sucesso')
     } catch (err: unknown) {
-      toast.error(getErrorMessage(err, 'Erro ao inativar usuário'))
+      toast.error(getErrorMessage(err, tornarAtivo ? 'Erro ao reativar usuário' : 'Erro ao inativar usuário'))
     } finally {
-      setExcluindoId(null)
+      setAlterandoStatusId(null)
     }
   }
 
@@ -470,14 +511,20 @@ export default function UsuariosAdministracaoPage() {
         }}>
           <Search size={16} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
           <input
-            type="text"
+            type="search"
+            name="usuarios-busca"
+            id="usuarios-busca"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             placeholder="Buscar por nome ou email..."
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
             style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', fontSize: 14, color: 'var(--ws-text-1)', outline: 'none' }}
           />
           <span style={{ fontSize: 12, color: 'var(--ws-text-3)', flexShrink: 0 }}>
-            {filtrados.length} usuário{filtrados.length !== 1 ? 's' : ''}
+            {usuariosFiltrados.length} usuário{usuariosFiltrados.length !== 1 ? 's' : ''}
           </span>
         </div>
 
@@ -491,6 +538,27 @@ export default function UsuariosAdministracaoPage() {
             <option key={role.id} value={role.id}>{role.label}</option>
           ))}
         </select>
+
+        <select
+          value={filtroStatus}
+          onChange={(event) => setFiltroStatus(event.target.value as StatusFiltro)}
+          style={{ ...inputStyle, height: 48, cursor: 'pointer' }}
+        >
+          {STATUS_OPTIONS.map((status) => (
+            <option key={status.id} value={status.id}>{status.label}</option>
+          ))}
+        </select>
+
+        <select
+          value={filtroWorkspace}
+          onChange={(event) => setFiltroWorkspace(event.target.value)}
+          style={{ ...inputStyle, height: 48, cursor: 'pointer' }}
+        >
+          <option value="todos">Todos os workspaces</option>
+          {workspacesOrdenados.map((workspace) => (
+            <option key={workspace.id} value={workspace.id}>{workspace.nome}</option>
+          ))}
+        </select>
       </div>
 
       <WSTableShell>
@@ -499,11 +567,13 @@ export default function UsuariosAdministracaoPage() {
             <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ws-blue)' }} />
             <p style={{ fontSize: 13, color: 'var(--ws-text-2)', marginTop: 12 }}>Carregando usuários...</p>
           </div>
-        ) : filtrados.length === 0 ? (
+        ) : usuariosFiltrados.length === 0 ? (
           <div style={{ padding: 60, textAlign: 'center' }}>
             <Users size={32} style={{ color: 'var(--ws-text-3)', marginBottom: 12 }} />
             <p style={{ fontSize: 14, color: 'var(--ws-text-2)' }}>
-              {busca || filtroRole !== 'todas' ? 'Nenhum usuário encontrado' : 'Nenhum usuário cadastrado'}
+              {busca || filtroRole !== 'todas' || filtroStatus !== 'ativo' || filtroWorkspace !== 'todos'
+                ? 'Nenhum usuário encontrado'
+                : 'Nenhum usuário cadastrado'}
             </p>
           </div>
         ) : (
@@ -524,7 +594,7 @@ export default function UsuariosAdministracaoPage() {
               </tr>
             </thead>
             <tbody>
-              {filtrados.map((usuario) => {
+              {usuariosFiltrados.map((usuario) => {
                 const roleStyle = ROLE_STYLES[usuario.role] || ROLE_STYLES.company_agent
                 return (
                   <tr
@@ -625,25 +695,31 @@ export default function UsuariosAdministracaoPage() {
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <button
-                          onClick={() => excluirUsuario(usuario)}
-                          disabled={excluindoId === usuario.id}
+                          onClick={() => alterarStatusUsuario(usuario)}
+                          disabled={alterandoStatusId === usuario.id}
                           style={{
                             height: 30,
                             padding: '0 10px',
                             borderRadius: 6,
-                            border: '1px solid rgba(163,45,45,0.35)',
+                            border: `1px solid ${usuario.ativo ? 'rgba(163,45,45,0.35)' : 'rgba(15,168,86,0.35)'}`,
                             background: 'transparent',
-                            color: '#a32d2d',
+                            color: usuario.ativo ? '#a32d2d' : 'var(--ws-green)',
                             fontSize: 12,
-                            cursor: excluindoId === usuario.id ? 'not-allowed' : 'pointer',
+                            cursor: alterandoStatusId === usuario.id ? 'not-allowed' : 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 6,
-                            opacity: excluindoId === usuario.id ? 0.6 : 1,
+                            opacity: alterandoStatusId === usuario.id ? 0.6 : 1,
                           }}
                         >
-                          {excluindoId === usuario.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                          Inativar usuário
+                          {alterandoStatusId === usuario.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : usuario.ativo ? (
+                            <Trash2 size={12} />
+                          ) : (
+                            <UserPlus size={12} />
+                          )}
+                          {usuario.ativo ? 'Inativar usuário' : 'Reativar usuário'}
                         </button>
                         <button
                           onClick={() => abrirEdicao(usuario)}
@@ -729,6 +805,8 @@ export default function UsuariosAdministracaoPage() {
                 <label style={labelStyle}>Nome *</label>
                 <input
                   type="text"
+                  name="novo-usuario-nome"
+                  autoComplete="off"
                   value={form.nome}
                   onChange={(event) => setForm((prev) => ({ ...prev, nome: event.target.value }))}
                   placeholder="Nome completo"
@@ -740,6 +818,8 @@ export default function UsuariosAdministracaoPage() {
                 <label style={labelStyle}>Email *</label>
                 <input
                   type="email"
+                  name="novo-usuario-email"
+                  autoComplete="off"
                   value={form.email}
                   onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
                   placeholder="usuario@empresa.com.br"
@@ -751,6 +831,8 @@ export default function UsuariosAdministracaoPage() {
                 <label style={labelStyle}>Senha *</label>
                 <input
                   type="password"
+                  name="novo-usuario-senha"
+                  autoComplete="new-password"
                   value={form.senha}
                   onChange={(event) => setForm((prev) => ({ ...prev, senha: event.target.value }))}
                   placeholder="Mínimo 6 caracteres"
@@ -891,6 +973,8 @@ export default function UsuariosAdministracaoPage() {
                 <label style={labelStyle}>Nome *</label>
                 <input
                   type="text"
+                  name="editar-usuario-nome"
+                  autoComplete="off"
                   value={editForm.nome}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, nome: e.target.value }))}
                   placeholder="Nome completo"
@@ -901,6 +985,8 @@ export default function UsuariosAdministracaoPage() {
                 <label style={labelStyle}>Email *</label>
                 <input
                   type="email"
+                  name="editar-usuario-email"
+                  autoComplete="off"
                   value={editForm.email}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
                   placeholder="usuario@empresa.com.br"
@@ -951,6 +1037,8 @@ export default function UsuariosAdministracaoPage() {
                 </label>
                 <input
                   type="password"
+                  name="editar-usuario-senha"
+                  autoComplete="new-password"
                   value={editForm.senha}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, senha: e.target.value }))}
                   placeholder="Mínimo 6 caracteres"
@@ -991,6 +1079,11 @@ export default function UsuariosAdministracaoPage() {
                   <Search size={14} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
                   <input
                     type="text"
+                    name="editar-usuario-workspace-search"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     value={buscaWorkspaceAcesso}
                     onChange={(event) => setBuscaWorkspaceAcesso(event.target.value)}
                     placeholder="Buscar workspace..."
