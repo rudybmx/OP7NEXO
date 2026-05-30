@@ -38,6 +38,8 @@ export function UsuarioWorkspacesSummary({ workspaces }: UsuarioWorkspacesSummar
         <TooltipTrigger asChild>
           <button
             type="button"
+            aria-label={`Detalhes de workspaces: ${summary}`}
+            title={`Detalhes de workspaces: ${summary}`}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
