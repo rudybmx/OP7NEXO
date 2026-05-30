@@ -6,6 +6,8 @@ import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { CardRastreamento } from './card-rastreamento'
 import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
 
+const AI_HANDOFF_ENABLED = false
+
 interface PainelChatProps {
   conversa: ConversaApi
   mensagens: MensagemApi[]
@@ -264,7 +266,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {grupo.mensagens.map(msg => {
               const isEntrada = msg.direcao === 'entrada'
-              const isIA = msg.remetenteTipo === 'ia'
+              const isIA = AI_HANDOFF_ENABLED && msg.remetenteTipo === 'ia'
               const participantLabel = msg.participantName || msg.remetenteNome || 'Contato'
               return (
                 <div
@@ -286,7 +288,6 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
                     gap: 4,
                     justifyContent: isEntrada ? 'flex-start' : 'flex-end',
                   }}>
-                    {isIA && 'IA'}
                     {isEntrada
                       ? (conversa.isGroup ? participantLabel : (msg.remetenteNome || 'Contato'))
                       : (isIA ? 'IA Agente' : 'Atendente')}

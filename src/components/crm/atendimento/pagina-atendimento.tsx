@@ -22,6 +22,8 @@ import { ModalResolver } from './modal-resolver'
 import { ModalIniciarConversa } from './modal-iniciar-conversa'
 import { InputMensagem } from './input-mensagem'
 
+const AI_HANDOFF_ENABLED = false
+
 export function PaginaAtendimento() {
   const { workspaceAtual, workspaces, loading: workspaceLoading } = useWorkspace()
   const workspaceResolvido = !workspaceLoading && (workspaceAtual !== null || workspaces.length === 0)
@@ -173,8 +175,8 @@ export function PaginaAtendimento() {
   const handleSelectConversa = useCallback((id: string) => {
     const conversa = conversas.find(c => c.id === id)
     setConversaAtivaId(id)
-    // Se a conversa está sem responsável e ainda está nova, mostra modal para assumir
-    if (conversa && !conversa.responsavelId && conversa.status === 'nova') {
+    // Mantido atrás de flag local para reativação futura.
+    if (AI_HANDOFF_ENABLED && conversa && !conversa.responsavelId && conversa.status === 'nova') {
       setMostrarModalAssumir(true)
     }
   }, [conversas])
@@ -381,7 +383,7 @@ export function PaginaAtendimento() {
       </div>
 
       {/* Modal Assumir */}
-      {mostrarModalAssumir && conversaAtiva && (
+      {AI_HANDOFF_ENABLED && mostrarModalAssumir && conversaAtiva && (
         <ModalAssumir
           conversa={conversaAtiva}
           onConfirmar={handleAssumir}
