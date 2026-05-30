@@ -41,11 +41,11 @@ class WebhookAPIError(Exception):
 @dataclass(slots=True)
 class WebhookIngestionResult:
     received: bool
-    status: Literal["processed", "duplicate"]
+    status: Literal["processed", "duplicate", "ignored"]
     idempotent: bool
     event_id: str
-    contato_id: str
-    conversa_id: str
+    contato_id: str | None
+    conversa_id: str | None
     mensagem_id: str | None
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,10 +71,20 @@ def webhook_secret_from_config(config: dict[str, Any] | None) -> str | None:
     return secret_str or None
 
 
+def webhook_provider_from_config(config: dict[str, Any] | None) -> str:
+    webhook = (config or {}).get("webhook")
+    if not isinstance(webhook, dict):
+        return "generic"
+    provider = webhook.get("provider")
+    provider_str = str(provider).strip().lower() if provider is not None else ""
+    return provider_str or "generic"
+
+
 def sanitize_webhook_config(config: dict[str, Any] | None) -> dict[str, Any]:
     sanitized = copy.deepcopy(config or {})
     webhook = sanitized.get("webhook")
     if isinstance(webhook, dict):
+        _redact_webhook_tokens(webhook)
         webhook.pop("hmac_secret", None)
         sanitized["webhook"] = webhook
     return sanitized
@@ -89,11 +99,21 @@ def prepare_webhook_config(
 ) -> tuple[dict[str, Any], str | None, bool]:
     config = copy.deepcopy(incoming_config or {})
     webhook = dict(config.get("webhook") or {})
+    _redact_webhook_tokens(webhook)
     existing_secret = webhook_secret_from_config(existing_config)
+    provider = webhook_provider_from_config(config)
+    if provider == "generic" and existing_config is not None:
+        existing_provider = webhook_provider_from_config(existing_config)
+        if existing_provider != "generic":
+            provider = existing_provider
     generated = False
     secret_to_return: str | None = None
 
-    if force_new_secret:
+    if provider == "helena":
+        webhook.pop("hmac_secret", None)
+        webhook["provider"] = "helena"
+        webhook.setdefault("security_mode", "provider_token")
+    elif force_new_secret:
         secret_to_return = secrets.token_hex(32)
         webhook["hmac_secret"] = secret_to_return
         generated = True
@@ -110,6 +130,16 @@ def prepare_webhook_config(
     return config, secret_to_return, generated
 
 
+def _redact_webhook_tokens(webhook: dict[str, Any]) -> None:
+    for key in ("api_token", "bearer_token", "access_token"):
+        webhook.pop(key, None)
+    helena = webhook.get("helena")
+    if isinstance(helena, dict):
+        for key in ("api_token", "bearer_token", "access_token"):
+            helena.pop(key, None)
+        webhook["helena"] = helena
+
+
 def process_webhook_api_ingestion(
     db: Session,
     canal: CanalEntrada,
@@ -124,6 +154,12 @@ def process_webhook_api_ingestion(
             "webhook_payload_too_large",
             "Payload excede 1 MB",
         )
+
+    provider = webhook_provider_from_config(canal.config)
+    if provider == "helena":
+        from app.services.webhook_helena import process_helena_webhook_ingestion
+
+        return process_helena_webhook_ingestion(db, canal, raw_body)
 
     secret = webhook_secret_from_config(canal.config)
     if not secret:
@@ -433,7 +469,13 @@ def _normalize_phone(phone: Any) -> str | None:
     return digits or None
 
 
-def _build_contact_identity(canal: CanalEntrada, envelope: dict[str, Any]) -> dict[str, Any]:
+def _build_contact_identity(
+    canal: CanalEntrada,
+    envelope: dict[str, Any],
+    *,
+    allow_name_only: bool = True,
+    allow_fallback: bool = True,
+) -> dict[str, Any]:
     contact = envelope["contact"]
     lead = envelope["lead"]
     metadata = envelope["metadata"]
@@ -452,10 +494,10 @@ def _build_contact_identity(canal: CanalEntrada, envelope: dict[str, Any]) -> di
         identity["email"] = str(email).strip().lower()
 
     name = contact.get("name") or lead.get("name") or metadata.get("name")
-    if not identity and name is not None and str(name).strip():
+    if not identity and allow_name_only and name is not None and str(name).strip():
         identity["name"] = str(name).strip()
 
-    if not identity:
+    if not identity and allow_fallback:
         identity["fallback"] = envelope.get("event_id") or envelope["occurred_at"].isoformat()
 
     identity["channel_id"] = str(canal.id)
@@ -504,7 +546,7 @@ def _build_tracking_values(envelope: dict[str, Any]) -> dict[str, Any]:
     source = metadata.get("provider") or lead.get("source") or "webhook"
     medium = metadata.get("utm_medium") or metadata.get("medium")
     campaign = lead.get("campaign") or metadata.get("utm_campaign") or metadata.get("campaign")
-    origin_label = lead.get("source") or metadata.get("provider") or "Webhook/API"
+    origin_label = metadata.get("provider_label") or lead.get("origin") or lead.get("source") or metadata.get("provider") or "Webhook/API"
     return {
         "source": str(source) if source is not None else None,
         "medium": str(medium) if medium is not None else None,
@@ -540,9 +582,13 @@ def _build_message_content(envelope: dict[str, Any]) -> tuple[str, str]:
 
     contact_name = _build_contact_display_name(envelope)
     lead = envelope["lead"]
-    source = lead.get("source") or envelope["metadata"].get("provider") or "Webhook/API"
+    metadata = envelope["metadata"]
+    source = lead.get("origin") or lead.get("source") or metadata.get("provider") or "Webhook/API"
+    provider_label = "Webhook/API"
+    if metadata.get("provider") == "helena":
+        provider_label = metadata.get("provider_label") or metadata.get("provider") or provider_label
     suffix = f" - {contact_name}" if contact_name else ""
-    return f"[Webhook/API] Lead recebido{suffix} ({source})", "lead"
+    return f"[{provider_label}] Lead recebido{suffix} ({source})", "lead"
 
 
 def _insert_raw_event(
@@ -550,7 +596,7 @@ def _insert_raw_event(
     *,
     canal: CanalEntrada,
     instance: str,
-    contato_jid: str,
+    contato_jid: str | None,
     envelope: dict[str, Any],
     event_hash: str,
 ) -> tuple[str | None, bool]:
