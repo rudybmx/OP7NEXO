@@ -358,7 +358,6 @@ export function PaginaAtendimento() {
               onEnviar={handleEnviar}
               isEnviando={isEnviando}
               conversa={conversaAtiva}
-              onAssumir={() => setMostrarModalAssumir(true)}
               erro={erroEnvio}
             />
           </>

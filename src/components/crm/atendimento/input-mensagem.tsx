@@ -10,12 +10,10 @@ interface InputMensagemProps {
   onEnviar: (options?: { file?: File | Blob | null; filename?: string; tipo?: 'image' | 'audio' | 'video' | 'document'; caption?: string | null }) => void
   isEnviando: boolean
   conversa: ConversaApi
-  onAssumir: () => void
   erro?: string | null
 }
 
-export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa, onAssumir, erro }: InputMensagemProps) {
-  const isBloqueado = !conversa.responsavelId && conversa.status === 'nova'
+export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa, erro }: InputMensagemProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
@@ -29,7 +27,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
   const temAnexo = Boolean(arquivo || audioBlob)
 
   async function toggleGravacao() {
-    if (isBloqueado || isEnviando) return
+    if (isEnviando) return
     if (gravando) {
       mediaRecorderRef.current?.stop()
       return
@@ -71,19 +69,13 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
       minWidth: 0,
       boxSizing: 'border-box',
     }}>
-      {/* Toggle IA / Status */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 12, color: 'var(--ws-text-2)', fontWeight: 500 }}>
-            {conversa.responsavelId ? 'IA Agente (pausada)' : 'IA Agente (ativa)'}
-          </span>
-        </div>
-        {conversa.campanha && (
+      {conversa.campanha && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12 }}>
           <span style={{ fontSize: 10, color: 'var(--ws-text-3)', fontStyle: 'italic' }}>
             Campanha: {conversa.campanha}
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
       {erro && (
         <div style={{
@@ -156,67 +148,49 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
           padding: '8px 12px',
         }}>
           <div style={{ display: 'flex', gap: 8, paddingBottom: 6 }}>
-            <button style={iconBtnStyle} disabled={isBloqueado}><Smile size={18} /></button>
-            <button style={iconBtnStyle} disabled={isBloqueado || isEnviando} onClick={() => fileInputRef.current?.click()} title="Anexar arquivo"><Paperclip size={18} /></button>
-            <button style={{ ...iconBtnStyle, color: gravando ? '#a32d2d' : iconBtnStyle.color }} disabled={isBloqueado || isEnviando} onClick={toggleGravacao} title={gravando ? 'Parar gravação' : 'Gravar áudio'}>
+            <button style={iconBtnStyle} disabled={isEnviando}><Smile size={18} /></button>
+            <button style={iconBtnStyle} disabled={isEnviando} onClick={() => fileInputRef.current?.click()} title="Anexar arquivo"><Paperclip size={18} /></button>
+            <button style={{ ...iconBtnStyle, color: gravando ? '#a32d2d' : iconBtnStyle.color }} disabled={isEnviando} onClick={toggleGravacao} title={gravando ? 'Parar gravação' : 'Gravar áudio'}>
               {gravando ? <Square size={18} /> : <Mic size={18} />}
             </button>
           </div>
 
-          {isBloqueado ? (
-            <button
-              onClick={onAssumir}
-              style={{
-                flex: 1,
-                background: 'none',
-                border: 'none',
-                color: 'var(--ws-blue)',
-                fontSize: 13,
-                textAlign: 'left',
-                cursor: 'pointer',
-                padding: '4px 0',
-              }}
-            >
-              Conversa com IA. Clique para assumir...
-            </button>
-          ) : (
-            <textarea
-              value={valor}
-              onChange={e => onChange(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  enviarAtual()
-                }
-              }}
-              placeholder="Digite uma mensagem..."
-              disabled={isEnviando}
-              style={{
-                flex: 1,
-                background: 'none',
-                border: 'none',
-                color: 'var(--ws-text-1)',
-                fontSize: 13,
-                outline: 'none',
-                resize: 'none',
-                minWidth: 0,
-                padding: '4px 0',
-                minHeight: 20,
-                maxHeight: 100,
-              }}
-              rows={1}
-            />
-          )}
+          <textarea
+            value={valor}
+            onChange={e => onChange(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                enviarAtual()
+              }
+            }}
+            placeholder="Digite uma mensagem..."
+            disabled={isEnviando}
+            style={{
+              flex: 1,
+              background: 'none',
+              border: 'none',
+              color: 'var(--ws-text-1)',
+              fontSize: 13,
+              outline: 'none',
+              resize: 'none',
+              minWidth: 0,
+              padding: '4px 0',
+              minHeight: 20,
+              maxHeight: 100,
+            }}
+            rows={1}
+          />
         </div>
 
         <button
           onClick={enviarAtual}
-          disabled={isEnviando || (!valor.trim() && !temAnexo) || isBloqueado}
+          disabled={isEnviando || (!valor.trim() && !temAnexo)}
           style={{
             width: 40,
             height: 40,
             borderRadius: '50%',
-            background: isEnviando || (!valor.trim() && !temAnexo) || isBloqueado
+            background: isEnviando || (!valor.trim() && !temAnexo)
               ? 'rgba(62,91,255,0.45)'
               : 'linear-gradient(135deg, var(--ws-blue) 0%, var(--ws-purple) 100%)',
             border: 'none',
