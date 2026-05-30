@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, Check, Edit3, Loader2, Mail, Plus, Search, Shield, Star, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { Building2, Edit3, Loader2, Mail, Plus, Search, Shield, Star, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import useSWR from 'swr'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
@@ -11,12 +11,18 @@ import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle
 import { useAuth } from '@/hooks/use-auth'
 import api from '@/lib/api-client'
 
-type RoleUsuario =
-  | 'platform_admin'
-  | 'network_admin'
-  | 'network_viewer'
-  | 'company_admin'
-  | 'company_agent'
+import {
+  buildWorkspaceAccessDrafts,
+  buildWorkspaceAccessPlan,
+  hasWorkspaceAccessChanges,
+  validateWorkspaceAccessDrafts,
+  type AdminUserRole,
+  type WorkspaceAccessApiRow,
+  type WorkspaceAccessDraft,
+  type WorkspaceOption,
+} from '@/lib/admin-users-edit'
+
+type RoleUsuario = AdminUserRole
 
 interface UsuarioRow {
   id: string
@@ -28,26 +34,9 @@ interface UsuarioRow {
   ativo: boolean
 }
 
-interface WorkspaceRow {
-  id: string
-  nome: string
-}
-
-interface WorkspaceAcesso {
-  workspace_id: string
-  workspace_nome: string | null
-  role: string
-  ativo: boolean
-  padrao: boolean
-}
-
-interface AcessoWsLocal {
-  workspace_id: string
-  workspace_nome: string
-  checked: boolean
-  role: string
-  padrao: boolean
-}
+type WorkspaceRow = WorkspaceOption
+type WorkspaceAcesso = WorkspaceAccessApiRow
+type AcessoWsLocal = WorkspaceAccessDraft
 
 interface NovoUsuarioForm {
   nome: string
@@ -55,14 +44,6 @@ interface NovoUsuarioForm {
   senha: string
   role: RoleUsuario
   workspace_id: string
-}
-
-interface EditUsuarioForm {
-  nome: string
-  email: string
-  senha: string
-  role: RoleUsuario
-  ativo: boolean
 }
 
 interface EditUsuarioForm {
@@ -153,8 +134,9 @@ export default function UsuariosAdministracaoPage() {
   const [acessosWs, setAcessosWs] = useState<AcessoWsLocal[]>([])
   const [acessosWsOriginais, setAcessosWsOriginais] = useState<AcessoWsLocal[]>([])
   const [acessosWsCarregando, setAcessosWsCarregando] = useState(false)
-  const [acessosWsSalvando, setAcessosWsSalvando] = useState(false)
+  const [buscaWorkspaceAcesso, setBuscaWorkspaceAcesso] = useState('')
   const [workspacesPorUsuario, setWorkspacesPorUsuario] = useState<Record<string, WorkspaceAcesso[]>>({})
+  const acessosWsCarregadosParaUsuario = useRef<string | null>(null)
   const isPlatformAdmin = user?.role === 'platform_admin'
 
   const {
@@ -167,16 +149,6 @@ export default function UsuariosAdministracaoPage() {
   const {
     data: workspaces = [],
   } = useSWR<WorkspaceRow[]>(isPlatformAdmin ? '/workspaces' : null, fetchWorkspaces)
-
-  const acessosWsMap = useMemo(
-    () => new Map(acessosWs.map((acesso) => [acesso.workspace_id, acesso] as const)),
-    [acessosWs],
-  )
-
-  const acessosWsOriginaisMap = useMemo(
-    () => new Map(acessosWsOriginais.map((acesso) => [acesso.workspace_id, acesso] as const)),
-    [acessosWsOriginais],
-  )
 
   const workspacesPorUsuarioVisivel = useMemo<Record<string, WorkspaceAcesso[]>>(
     () => (isPlatformAdmin && usuarios.length > 0 ? workspacesPorUsuario : ({} as Record<string, WorkspaceAcesso[]>)),
@@ -230,34 +202,54 @@ export default function UsuariosAdministracaoPage() {
     setForm(emptyForm())
   }
 
-  const carregarAcessosWs = useCallback(async (usuario: UsuarioRow) => {
+  const carregarAcessosWs = useCallback(async (usuario: UsuarioRow, silent = false) => {
     setAcessosWsCarregando(true)
     setAcessosWs([])
     setAcessosWsOriginais([])
     try {
       const acessos = await api.get<WorkspaceAcesso[]>(`/users/${usuario.id}/workspaces`)
-      const acessoMap = new Map(acessos.map((a) => [a.workspace_id, a]))
-      const lista = workspaces.map((ws) => {
-        const acesso = acessoMap.get(ws.id)
-        return {
-          workspace_id: ws.id,
-          workspace_nome: ws.nome,
-          checked: !!acesso,
-          role: acesso?.role ?? 'viewer',
-          padrao: acesso?.padrao ?? false,
-        }
-      })
+      const lista = buildWorkspaceAccessDrafts(workspaces, acessos)
       setAcessosWs(lista)
       setAcessosWsOriginais(lista)
-    } catch {
-      toast.error('Erro ao carregar acessos de workspace')
+    } catch (err: unknown) {
+      if (!silent) {
+        toast.error(getErrorMessage(err, 'Erro ao carregar acessos de workspace'))
+      }
     } finally {
       setAcessosWsCarregando(false)
     }
   }, [workspaces])
 
+  useEffect(() => {
+    if (!editDrawerAberto || !usuarioEditando || workspaces.length === 0) return
+    if (acessosWsCarregadosParaUsuario.current === usuarioEditando.id) return
+
+    acessosWsCarregadosParaUsuario.current = usuarioEditando.id
+    void carregarAcessosWs(usuarioEditando)
+  }, [editDrawerAberto, usuarioEditando, workspaces, carregarAcessosWs])
+
+  const acessosWsFiltrados = useMemo(() => {
+    const termo = buscaWorkspaceAcesso.trim().toLowerCase()
+    if (!termo) return acessosWs
+    return acessosWs.filter((acesso) =>
+      acesso.workspace_nome.toLowerCase().includes(termo)
+      || acesso.workspace_id.toLowerCase().includes(termo),
+    )
+  }, [acessosWs, buscaWorkspaceAcesso])
+
+  const acessosTemMudancas = useMemo(
+    () => hasWorkspaceAccessChanges(acessosWs),
+    [acessosWs],
+  )
+
+  const precisaEscolherPadrao = useMemo(
+    () => acessosWs.some((acesso) => acesso.checked) && !acessosWs.some((acesso) => acesso.checked && acesso.padrao),
+    [acessosWs],
+  )
+
   function abrirEdicao(usuario: UsuarioRow) {
     setUsuarioEditando(usuario)
+    acessosWsCarregadosParaUsuario.current = null
     setEditForm({
       nome: usuario.nome,
       email: usuario.email,
@@ -265,8 +257,11 @@ export default function UsuariosAdministracaoPage() {
       role: usuario.role,
       ativo: usuario.ativo,
     })
+    setBuscaWorkspaceAcesso('')
     setEditDrawerAberto(true)
-    carregarAcessosWs(usuario)
+    setAcessosWsCarregando(true)
+    setAcessosWs([])
+    setAcessosWsOriginais([])
   }
 
   function fecharEdicao() {
@@ -274,66 +269,26 @@ export default function UsuariosAdministracaoPage() {
     setUsuarioEditando(null)
     setAcessosWs([])
     setAcessosWsOriginais([])
+    setBuscaWorkspaceAcesso('')
+    acessosWsCarregadosParaUsuario.current = null
   }
 
-  async function salvarAcessosWs() {
-    if (!usuarioEditando) return
-    setAcessosWsSalvando(true)
-    try {
-      const acessosAtuais = acessosWs.map((acesso) => ({ ...acesso }))
-      const originalMap = acessosWsOriginaisMap
-
-      for (const acesso of acessosAtuais) {
-        const tinha = originalMap.has(acesso.workspace_id)
-        if (acesso.checked && !tinha) {
-          await api.post(`/users/${usuarioEditando.id}/workspaces`, {
-            workspace_id: acesso.workspace_id,
-            role: acesso.role,
-          })
-        } else if (acesso.checked && tinha) {
-          const ant = originalMap.get(acesso.workspace_id)!
-          if (ant.role !== acesso.role) {
-            await api.patch(`/users/${usuarioEditando.id}/workspaces/${acesso.workspace_id}`, { role: acesso.role })
-          }
-        } else if (!acesso.checked && tinha) {
-          await api.delete(`/users/${usuarioEditando.id}/workspaces/${acesso.workspace_id}`)
-        }
+  function alterarAcessoWorkspace(workspaceId: string, checked: boolean) {
+    setAcessosWs((prev) => prev.map((acesso) => {
+      if (acesso.workspace_id !== workspaceId) return acesso
+      return {
+        ...acesso,
+        checked,
+        padrao: checked ? acesso.padrao : false,
       }
-      setAcessosWsOriginais(acessosAtuais)
-      toast.success('Acessos atualizados')
-      await mutateUsuarios()
-    } catch {
-      toast.error('Erro ao salvar acessos')
-    } finally {
-      setAcessosWsSalvando(false)
-    }
+    }))
   }
 
-  const podeDefinirPadrao = useCallback((workspace_id: string) => {
-    const atual = acessosWsMap.get(workspace_id)
-    const original = acessosWsOriginaisMap.get(workspace_id)
-
-    if (!atual || !original || !atual.checked) {
-      return false
-    }
-
-    return atual.checked === original.checked && atual.role === original.role
-  }, [acessosWsMap, acessosWsOriginaisMap])
-
-  async function definirPadrao(workspace_id: string) {
-    if (!usuarioEditando) return
-    if (!podeDefinirPadrao(workspace_id)) {
-      toast.error('Salve este acesso antes de definir o workspace padrão')
-      return
-    }
-    try {
-      await api.patch(`/users/${usuarioEditando.id}/workspace-padrao/${workspace_id}`, {})
-      setAcessosWs((prev) => prev.map((a) => ({ ...a, padrao: a.workspace_id === workspace_id })))
-      await mutateUsuarios()
-      toast.success('Workspace padrão definido')
-    } catch {
-      toast.error('Erro ao definir workspace padrão')
-    }
+  function definirPadraoLocal(workspaceId: string) {
+    setAcessosWs((prev) => prev.map((acesso) => ({
+      ...acesso,
+      padrao: acesso.checked && acesso.workspace_id === workspaceId,
+    })))
   }
 
   async function salvarUsuario() {
@@ -372,6 +327,16 @@ export default function UsuariosAdministracaoPage() {
 
     if (!nome) { toast.error('Nome é obrigatório'); return }
     if (!email) { toast.error('Email é obrigatório'); return }
+    if (editForm.senha.trim() && editForm.senha.trim().length < 6) {
+      toast.error('Senha deve ter no mínimo 6 caracteres')
+      return
+    }
+
+    const erroAcessos = validateWorkspaceAccessDrafts(acessosWs, editForm.role)
+    if (erroAcessos) {
+      toast.error(erroAcessos)
+      return
+    }
 
     const payload: Record<string, unknown> = {
       nome,
@@ -383,33 +348,66 @@ export default function UsuariosAdministracaoPage() {
       payload.senha = editForm.senha.trim()
     }
 
+    const planoAcessos = buildWorkspaceAccessPlan(acessosWs)
+    const workspacePadraoOriginal = acessosWsOriginais.find((acesso) => acesso.originalPadrao)?.workspace_id ?? null
+
     setEditSalvando(true)
     try {
-      const atualizado = await api.put<UsuarioRow>(`/users/${usuarioEditando.id}`, payload)
-      await mutateUsuarios(
-        (atuais = []) => atuais.map((u) => (u.id === atualizado.id ? atualizado : u)),
-        { revalidate: false },
-      )
+      await api.put<UsuarioRow>(`/users/${usuarioEditando.id}`, payload)
+
+      for (const acesso of planoAcessos.toAdd) {
+        await api.post(`/users/${usuarioEditando.id}/workspaces`, {
+          workspace_id: acesso.workspace_id,
+          role: acesso.role,
+        })
+      }
+
+      for (const acesso of planoAcessos.toUpdate) {
+        await api.patch(`/users/${usuarioEditando.id}/workspaces/${acesso.workspace_id}`, {
+          role: acesso.role,
+        })
+      }
+
+      if (planoAcessos.defaultWorkspaceId && planoAcessos.defaultWorkspaceId !== workspacePadraoOriginal) {
+        await api.patch(`/users/${usuarioEditando.id}/workspace-padrao/${planoAcessos.defaultWorkspaceId}`, {})
+      }
+
+      for (const acesso of planoAcessos.toRemove) {
+        await api.delete(`/users/${usuarioEditando.id}/workspaces/${acesso.workspace_id}`)
+      }
+
       fecharEdicao()
       toast.success('Usuário atualizado com sucesso')
+      await mutateUsuarios().catch((syncErr: unknown) => {
+        toast.error(getErrorMessage(syncErr, 'Usuário salvo, mas não foi possível atualizar a lista'))
+      })
     } catch (err: unknown) {
       toast.error(getErrorMessage(err, 'Erro ao atualizar usuário'))
+      if (usuarioEditando) {
+        await carregarAcessosWs(usuarioEditando, true)
+      }
+      await mutateUsuarios().catch(() => {})
     } finally {
       setEditSalvando(false)
     }
   }
 
   async function excluirUsuario(usuario: UsuarioRow) {
-    const confirmar = window.confirm(`Tem certeza que deseja excluir o usuário "${usuario.nome}"? Esta ação não pode ser desfeita.`)
+    const confirmar = window.confirm(`Tem certeza que deseja inativar o usuário "${usuario.nome}"? Ele deixará de aparecer como ativo.`)
     if (!confirmar) return
 
     setExcluindoId(usuario.id)
     try {
       await api.delete(`/users/${usuario.id}`)
-      await mutateUsuarios((atuais = []) => atuais.filter((u) => u.id !== usuario.id), { revalidate: false })
-      toast.success('Usuário excluído com sucesso')
+      if (usuarioEditando?.id === usuario.id) {
+        fecharEdicao()
+      }
+      toast.success('Usuário inativado com sucesso')
+      await mutateUsuarios().catch((syncErr: unknown) => {
+        toast.error(getErrorMessage(syncErr, 'Usuário inativado, mas não foi possível atualizar a lista'))
+      })
     } catch (err: unknown) {
-      toast.error(getErrorMessage(err, 'Erro ao excluir usuário'))
+      toast.error(getErrorMessage(err, 'Erro ao inativar usuário'))
     } finally {
       setExcluindoId(null)
     }
@@ -645,7 +643,7 @@ export default function UsuariosAdministracaoPage() {
                           }}
                         >
                           {excluindoId === usuario.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                          Excluir
+                          Inativar usuário
                         </button>
                         <button
                           onClick={() => abrirEdicao(usuario)}
@@ -962,38 +960,80 @@ export default function UsuariosAdministracaoPage() {
 
               {/* Workspace Access Section */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
                   <label style={labelStyle}>Acesso a Workspaces</label>
-                  <button
-                    type="button"
-                    onClick={salvarAcessosWs}
-                    disabled={acessosWsSalvando}
-                    style={{
-                      height: 28,
-                      padding: '0 12px',
-                      borderRadius: 6,
-                      border: 'none',
-                      background: acessosWsSalvando ? 'rgba(62,91,255,0.40)' : 'rgba(62,91,255,0.85)',
-                      color: '#ffffff',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: acessosWsSalvando ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 5,
-                    }}
-                  >
-                    {acessosWsSalvando ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-                    Salvar acessos
-                  </button>
+                  {acessosTemMudancas && (
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      padding: '3px 8px',
+                      borderRadius: 999,
+                      background: 'rgba(62,91,255,0.12)',
+                      border: '1px solid rgba(62,91,255,0.18)',
+                      color: 'var(--ws-blue)',
+                    }}>
+                      Alterações pendentes
+                    </span>
+                  )}
                 </div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  marginBottom: 10,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  background: wsSheetCreamTokens.surface,
+                  border: `1px solid ${wsSheetCreamTokens.border}`,
+                }}>
+                  <Search size={14} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
+                  <input
+                    type="text"
+                    value={buscaWorkspaceAcesso}
+                    onChange={(event) => setBuscaWorkspaceAcesso(event.target.value)}
+                    placeholder="Buscar workspace..."
+                    style={{
+                      ...inputStyle,
+                      padding: 0,
+                      border: 'none',
+                      background: 'transparent',
+                      height: 20,
+                      minWidth: 0,
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--ws-text-3)', whiteSpace: 'nowrap' }}>
+                    {acessosWsFiltrados.length}/{acessosWs.length}
+                  </span>
+                </div>
+                {precisaEscolherPadrao && (
+                  <p style={{ fontSize: 11, color: '#a16207', margin: '0 0 10px' }}>
+                    Escolha um workspace padrão entre os selecionados antes de salvar.
+                  </p>
+                )}
+                {!editForm.ativo && (
+                  <p style={{ fontSize: 11, color: 'var(--ws-text-3)', margin: '0 0 10px' }}>
+                    O usuário está inativo; ajuste o status no topo se precisar reativar.
+                  </p>
+                )}
                 {acessosWsCarregando ? (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}>
                     <Loader2 size={18} className="animate-spin" style={{ color: 'var(--ws-blue)' }} />
                   </div>
+                ) : acessosWsFiltrados.length === 0 ? (
+                  <div style={{
+                    padding: '14px 12px',
+                    borderRadius: 10,
+                    border: `1px dashed ${wsSheetCreamTokens.border}`,
+                    color: 'var(--ws-text-3)',
+                    fontSize: 12,
+                  }}>
+                    {buscaWorkspaceAcesso ? 'Nenhum workspace encontrado para este filtro.' : 'Nenhum workspace disponível.'}
+                  </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {acessosWs.map((acesso) => (
+                    {acessosWsFiltrados.map((acesso) => (
                       <div
                         key={acesso.workspace_id}
                         style={{
@@ -1009,23 +1049,41 @@ export default function UsuariosAdministracaoPage() {
                         <input
                           type="checkbox"
                           checked={acesso.checked}
-                          disabled={acessosWsSalvando}
-                          onChange={(e) =>
-                            setAcessosWs((prev) =>
-                              prev.map((a) =>
-                                a.workspace_id === acesso.workspace_id
-                                  ? { ...a, checked: e.target.checked }
-                                  : a,
-                              ),
-                            )
-                          }
-                          style={{ flexShrink: 0, cursor: acessosWsSalvando ? 'not-allowed' : 'pointer' }}
+                          disabled={editSalvando}
+                          onChange={(e) => alterarAcessoWorkspace(acesso.workspace_id, e.target.checked)}
+                          style={{ flexShrink: 0, cursor: editSalvando ? 'not-allowed' : 'pointer' }}
                         />
                         <Building2 size={13} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
                         <span style={{ flex: 1, fontSize: 13, color: 'var(--ws-text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {acesso.workspace_nome}
                         </span>
-                        {acesso.padrao && (
+                        {acesso.checked && (
+                          <select
+                            value={acesso.role}
+                            disabled={editSalvando}
+                            onChange={(event) =>
+                              setAcessosWs((prev) => prev.map((item) => (
+                                item.workspace_id === acesso.workspace_id
+                                  ? { ...item, role: event.target.value }
+                                  : item
+                              )))
+                            }
+                            style={{
+                              padding: '3px 6px',
+                              borderRadius: 5,
+                              border: `1px solid ${wsSheetCreamTokens.border}`,
+                              background: 'var(--ws-glass-bg)',
+                              color: 'var(--ws-text-2)',
+                              fontSize: 11,
+                              cursor: editSalvando ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            <option value="viewer">Viewer</option>
+                            <option value="editor">Editor</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        )}
+                        {acesso.checked && acesso.padrao && (
                           <span style={{
                             fontSize: 9, fontWeight: 700,
                             padding: '2px 6px', borderRadius: 4,
@@ -1035,55 +1093,25 @@ export default function UsuariosAdministracaoPage() {
                             Padrão
                           </span>
                         )}
-                        {acesso.checked && (
-                          <>
-                            <select
-                              value={acesso.role}
-                              disabled={acessosWsSalvando}
-                              onChange={(e) =>
-                                setAcessosWs((prev) =>
-                                  prev.map((a) =>
-                                    a.workspace_id === acesso.workspace_id
-                                      ? { ...a, role: e.target.value }
-                                      : a,
-                                  ),
-                                )
-                              }
-                              style={{
-                                padding: '3px 6px',
-                                borderRadius: 5,
-                                border: `1px solid ${wsSheetCreamTokens.border}`,
-                                background: 'var(--ws-glass-bg)',
-                                color: 'var(--ws-text-2)',
-                                fontSize: 11,
-                                cursor: acessosWsSalvando ? 'not-allowed' : 'pointer',
-                              }}
-                            >
-                              <option value="viewer">Viewer</option>
-                              <option value="editor">Editor</option>
-                              <option value="admin">Admin</option>
-                            </select>
-                            {!acesso.padrao && (
-                              <button
-                                type="button"
-                                title="Definir como padrão"
-                                onClick={() => definirPadrao(acesso.workspace_id)}
-                                disabled={!podeDefinirPadrao(acesso.workspace_id) || acessosWsSalvando}
-                                style={{
-                                  background: 'transparent',
-                                  border: 'none',
-                                  cursor: !podeDefinirPadrao(acesso.workspace_id) || acessosWsSalvando ? 'not-allowed' : 'pointer',
-                                  padding: 2,
-                                  color: !podeDefinirPadrao(acesso.workspace_id) || acessosWsSalvando ? 'var(--ws-text-3)' : 'var(--ws-blue)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  opacity: !podeDefinirPadrao(acesso.workspace_id) || acessosWsSalvando ? 0.45 : 1,
-                                }}
-                              >
-                                <Star size={13} />
-                              </button>
-                            )}
-                          </>
+                        {acesso.checked && !acesso.padrao && (
+                          <button
+                            type="button"
+                            title="Definir como padrão"
+                            onClick={() => definirPadraoLocal(acesso.workspace_id)}
+                            disabled={editSalvando}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              cursor: editSalvando ? 'not-allowed' : 'pointer',
+                              padding: 2,
+                              color: 'var(--ws-blue)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              opacity: editSalvando ? 0.45 : 1,
+                            }}
+                          >
+                            <Star size={13} />
+                          </button>
                         )}
                       </div>
                     ))}
