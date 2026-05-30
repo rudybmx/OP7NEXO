@@ -204,6 +204,67 @@ def _looks_like_qr_text(value: str) -> bool:
     return len(bruto) > 80 and any(ch in bruto for ch in ("=", "/", "+"))
 
 
+def _normalize_qr_image_value(value: Any) -> str | None:
+    if isinstance(value, dict):
+        for key in ("Qrcode", "qrcode", "qrCode", "qr_code", "base64", "base64Qr", "base64Qrcode"):
+            nested = value.get(key)
+            if nested is not None:
+                normalized = _normalize_qr_image_value(nested)
+                if normalized:
+                    return normalized
+        for nested in value.values():
+            if isinstance(nested, (dict, list)):
+                normalized = _normalize_qr_image_value(nested)
+                if normalized:
+                    return normalized
+        return None
+    if isinstance(value, list):
+        for item in value:
+            normalized = _normalize_qr_image_value(item)
+            if normalized:
+                return normalized
+        return None
+    if isinstance(value, str):
+        bruto = value.strip()
+        if not bruto:
+            return None
+        if bruto.startswith("data:image") or bruto.startswith("http://") or bruto.startswith("https://"):
+            return bruto
+        if _looks_like_qr_text(bruto):
+            return f"data:image/png;base64,{bruto}"
+    return None
+
+
+def _normalize_qr_code_value(value: Any) -> str | None:
+    if isinstance(value, dict):
+        for key in ("Code", "code", "pairingCode", "pairing_code"):
+            nested = value.get(key)
+            if isinstance(nested, str):
+                text = nested.strip()
+                if text:
+                    return text
+            elif nested is not None:
+                normalized = _normalize_qr_code_value(nested)
+                if normalized:
+                    return normalized
+        for nested in value.values():
+            if isinstance(nested, (dict, list)):
+                normalized = _normalize_qr_code_value(nested)
+                if normalized:
+                    return normalized
+        return None
+    if isinstance(value, list):
+        for item in value:
+            normalized = _normalize_qr_code_value(item)
+            if normalized:
+                return normalized
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    return None
+
+
 def _normalize_instance(raw: Any, fallback_name: str | None = None) -> dict[str, Any]:
     data = _unwrap_payload(raw)
     if not isinstance(data, dict):
@@ -322,67 +383,21 @@ def _normalize_connection(payload: Any, fallback_name: str | None = None) -> dic
 
 def _normalize_qrcode(payload: Any) -> dict[str, Any]:
     data = _unwrap_payload(payload)
-    if not isinstance(data, dict):
-        if isinstance(data, str):
-            data = {"qrcode": data}
-        else:
+    if isinstance(data, str):
+        qrcode = _normalize_qr_image_value(data)
+        pairing_code = None
+    else:
+        if not isinstance(data, dict):
             data = {}
-
-    qrcode = None
-    pairing_code = None
-
-    def _visit(valor: Any) -> None:
-        nonlocal qrcode, pairing_code
-        if qrcode and pairing_code:
-            return
-        if isinstance(valor, dict):
-            for chave in ("base64", "qrcode", "qrCode", "qr_code"):
-                nested = valor.get(chave)
-                if isinstance(nested, str) and nested.strip():
-                    qrcode = qrcode or nested.strip()
-                elif nested is not None:
-                    _visit(nested)
-            for chave in ("pairingCode", "pairing_code", "code", "Code"):
-                nested = valor.get(chave)
-                if isinstance(nested, str) and nested.strip():
-                    pairing_code = pairing_code or nested.strip()
-                elif nested is not None:
-                    _visit(nested)
-            qr_or_code = valor.get("qrOrCode") or valor.get("qr_or_code")
-            if isinstance(qr_or_code, str) and qr_or_code.strip():
-                texto = qr_or_code.strip()
-                if _looks_like_qr_text(texto):
-                    qrcode = qrcode or texto
-                else:
-                    pairing_code = pairing_code or texto
-            elif qr_or_code is not None:
-                _visit(qr_or_code)
-            for nested in valor.values():
-                if qrcode and pairing_code:
-                    break
-                _visit(nested)
-            return
-        if isinstance(valor, list):
-            for item in valor:
-                if qrcode and pairing_code:
-                    break
-                _visit(item)
-            return
-        if isinstance(valor, str):
-            texto = valor.strip()
-            if not texto:
-                return
-            if _looks_like_qr_text(texto):
-                qrcode = qrcode or texto
-            else:
-                pairing_code = pairing_code or texto
-
-    _visit(data)
+        qrcode = _normalize_qr_image_value(data)
+        pairing_code = _normalize_qr_code_value(data)
     normalized = {
+        "qr_code": qrcode,
         "base64": qrcode,
         "qrcode": {"base64": qrcode} if qrcode else {},
         "code": pairing_code,
         "pairing_code": pairing_code,
+        "status": "READY" if qrcode else ("PAIRING_CODE" if pairing_code else "NOT_READY"),
         "raw": data,
     }
     return normalized
@@ -392,7 +407,7 @@ def _fetch_qrcode_once(instance_name: str, instance_id: str | None = None, insta
     with httpx.Client(timeout=QR_CODE_HTTP_TIMEOUT_SECONDS) as client:
         resp = client.get(
             f"{META}/instance/qr",
-            headers=_headers(instance_id, instance_token),
+            headers=_send_headers(instance_id, instance_token),
         )
         if resp.status_code < 400:
             try:
@@ -402,7 +417,7 @@ def _fetch_qrcode_once(instance_name: str, instance_id: str | None = None, insta
             return _normalize_qrcode(payload)
         legacy_resp = client.get(
             f"{META}/instance/connect/{instance_name}",
-            headers=_headers(None, instance_token),
+            headers=_send_headers(None, instance_token),
         )
         if legacy_resp.status_code < 400:
             try:
@@ -412,7 +427,15 @@ def _fetch_qrcode_once(instance_name: str, instance_id: str | None = None, insta
             return _normalize_qrcode(payload)
         if legacy_resp.status_code not in {404, 204}:
             _handle_error(legacy_resp, "obter_qr_code")
-        return {"base64": None, "qrcode": {}, "code": None, "pairing_code": None, "raw": {"status": "NOT_READY"}}
+        return {
+            "qr_code": None,
+            "base64": None,
+            "qrcode": {},
+            "code": None,
+            "pairing_code": None,
+            "status": "NOT_READY",
+            "raw": {"status": "NOT_READY"},
+        }
 
 
 def _normalize_contact_entry(entry: dict[str, Any]) -> dict[str, Any]:
@@ -743,11 +766,19 @@ def obter_qr_code(
     """Solicita o QR code para conexão."""
     attempts = max(1, int(retries))
     delay = QR_CODE_BASE_DELAY_SECONDS
-    last_result: dict[str, Any] = {"base64": None, "qrcode": {}, "code": None, "pairing_code": None, "raw": {}}
+    last_result: dict[str, Any] = {
+        "qr_code": None,
+        "base64": None,
+        "qrcode": {},
+        "code": None,
+        "pairing_code": None,
+        "status": "NOT_READY",
+        "raw": {},
+    }
 
     for attempt in range(attempts):
         result = _fetch_qrcode_once(instance_name, instance_id=instance_id, instance_token=instance_token)
-        if result.get("base64"):
+        if result.get("qr_code") or result.get("base64") or result.get("pairing_code") or result.get("code"):
             return result
         last_result = result
         if attempt < attempts - 1:

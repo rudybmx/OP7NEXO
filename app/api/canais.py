@@ -238,66 +238,28 @@ def _instancia_evolution_exata(
 
 
 def _extrair_qr_e_pairing_evolution(payload: object) -> tuple[str | None, str | None]:
-    qr_code = None
-    pairing_code = None
+    if not isinstance(payload, dict):
+        return None, None
 
-    def _looks_like_qr(valor: str) -> bool:
-        bruto = valor.strip()
-        if not bruto:
-            return False
-        if bruto.startswith("data:image") or bruto.startswith("http://") or bruto.startswith("https://"):
-            return True
-        if bruto.startswith("iVBOR"):
-            return True
-        return len(bruto) > 80 and any(ch in bruto for ch in ("=", "/", "+"))
+    qr_code = payload.get("qr_code") or payload.get("base64")
+    if not qr_code:
+        qrcode = payload.get("qrcode")
+        if isinstance(qrcode, dict):
+            qr_code = qrcode.get("base64") or qrcode.get("qr_code") or qrcode.get("qrcode")
+        elif isinstance(qrcode, str) and qrcode.strip():
+            qr_code = qrcode.strip()
 
-    def _visit(valor: object) -> None:
-        nonlocal qr_code, pairing_code
-        if qr_code and pairing_code:
-            return
-        if isinstance(valor, str):
-            texto = valor.strip()
-            if not texto:
-                return
-            if _looks_like_qr(texto):
-                qr_code = qr_code or texto
-            elif texto:
-                pairing_code = pairing_code or texto
-            return
-        if isinstance(valor, dict):
-            for chave in ("base64", "qrcode", "qrCode", "qr_code"):
-                nested = valor.get(chave)
-                if isinstance(nested, str) and nested.strip():
-                    qr_code = qr_code or nested.strip()
-                elif nested is not None:
-                    _visit(nested)
-            for chave in ("pairingCode", "pairing_code", "code", "Code"):
-                nested = valor.get(chave)
-                if isinstance(nested, str) and nested.strip():
-                    pairing_code = pairing_code or nested.strip()
-                elif nested is not None:
-                    _visit(nested)
-            qr_or_code = valor.get("qrOrCode") or valor.get("qr_or_code")
-            if isinstance(qr_or_code, str) and qr_or_code.strip():
-                texto = qr_or_code.strip()
-                if _looks_like_qr(texto):
-                    qr_code = qr_code or texto
-                else:
-                    pairing_code = pairing_code or texto
-            elif qr_or_code is not None:
-                _visit(qr_or_code)
-            for nested in valor.values():
-                if qr_code and pairing_code:
-                    break
-                _visit(nested)
-            return
-        if isinstance(valor, list):
-            for item in valor:
-                if qr_code and pairing_code:
-                    break
-                _visit(item)
+    pairing_code = payload.get("pairing_code") or payload.get("code")
+    if not pairing_code:
+        pairing_nested = payload.get("qrcode")
+        if isinstance(pairing_nested, dict):
+            pairing_code = pairing_nested.get("pairing_code") or pairing_nested.get("code")
 
-    _visit(payload)
+    if isinstance(qr_code, str):
+        qr_code = qr_code.strip() or None
+    if isinstance(pairing_code, str):
+        pairing_code = pairing_code.strip() or None
+
     return qr_code, pairing_code
 
 
@@ -629,7 +591,7 @@ def conectar_canal(
             logger.warning("[canais] instância Evolution não pôde ser criada: %s", exc)
             raise HTTPException(status_code=502, detail=str(exc))
 
-    connect_data = _configurar_webhook_evolution(c, db, forcar=True)
+    _configurar_webhook_evolution(c, db, forcar=True)
 
     try:
         state = evo_service.estado_conexao(instance_name, instance_id=instance_id, instance_token=instance_token)
@@ -651,16 +613,13 @@ def conectar_canal(
                 message="Instância já está conectada",
             )
 
-        qr_code, pairing_code = _extrair_qr_e_pairing_evolution(connect_data)
-        if not qr_code and not pairing_code:
-            qr_data = evo_service.obter_qr_code(
-                instance_name,
-                instance_id=instance_id,
-                instance_token=instance_token,
-                retries=4,
-            )
-            qr_code = _extrair_qr_code_evolution(qr_data)
-            pairing_code = _extrair_pairing_code_evolution(qr_data)
+        qr_data = evo_service.obter_qr_code(
+            instance_name,
+            instance_id=instance_id,
+            instance_token=instance_token,
+            retries=4,
+        )
+        qr_code, pairing_code = _extrair_qr_e_pairing_evolution(qr_data)
         c.connection_status = "connecting"
         db.commit()
         return ConectarOut(

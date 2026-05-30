@@ -7,6 +7,11 @@ from app.api import canais
 from app.core.config import settings
 from app.services import evolution as evo_service
 
+_BASE64_QR_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/"
+    "x8AAwMCAO+X9eAAAAAASUVORK5CYII="
+)
+
 
 class _FakeResponse:
     def __init__(self, status_code: int, payload):
@@ -206,7 +211,7 @@ class CanaisEvolutionTests(unittest.TestCase):
         responses = [
             _FakeResponse(404, {"message": "not ready"}),
             _FakeResponse(404, {"message": "not ready"}),
-            _FakeResponse(200, {"base64": "abc123"}),
+            _FakeResponse(200, {"data": {"Qrcode": _BASE64_QR_PNG}}),
         ]
         calls = []
 
@@ -223,14 +228,18 @@ class CanaisEvolutionTests(unittest.TestCase):
         with patch("app.services.evolution.httpx.Client", _ClientFactory), patch("app.services.evolution._time.sleep") as mock_sleep:
             result = evo_service.obter_qr_code("instance-name", instance_id="instance-id", instance_token="token", retries=2)
 
-        self.assertEqual(result["base64"], "abc123")
+        self.assertEqual(result["qr_code"], f"data:image/png;base64,{_BASE64_QR_PNG}")
+        self.assertEqual(result["base64"], result["qr_code"])
+        self.assertEqual(result["status"], "READY")
         self.assertGreaterEqual(len(calls), 3)
         self.assertTrue(any("/instance/qr" in url for url, _ in calls))
         self.assertTrue(any("/instance/connect/instance-name" in url for url, _ in calls))
         mock_sleep.assert_called_once()
 
-    def test_obter_qr_code_reconhece_pairing_code_em_payload(self):
-        responses = [_FakeResponse(200, {"pairingCode": "123-456"})]
+    def test_obter_qr_code_preserva_data_uri_em_qrcode(self):
+        responses = [
+            _FakeResponse(200, {"data": {"Qrcode": f"data:image/png;base64,{_BASE64_QR_PNG}"}}),
+        ]
         calls = []
 
         class _ClientFactory:
@@ -246,9 +255,32 @@ class CanaisEvolutionTests(unittest.TestCase):
         with patch("app.services.evolution.httpx.Client", _ClientFactory):
             result = evo_service.obter_qr_code("instance-name", instance_id="instance-id", instance_token="token", retries=1)
 
+        self.assertEqual(result["qr_code"], f"data:image/png;base64,{_BASE64_QR_PNG}")
+        self.assertEqual(result["base64"], result["qr_code"])
+        self.assertEqual(result["status"], "READY")
+        self.assertEqual(len(calls), 1)
+
+    def test_obter_qr_code_reconhece_code_sem_tratar_como_imagem(self):
+        responses = [_FakeResponse(200, {"data": {"Code": "123-456"}})]
+        calls = []
+
+        class _ClientFactory:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self_inner):
+                return _FakeHttpxClient(responses, calls)
+
+            def __exit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("app.services.evolution.httpx.Client", _ClientFactory):
+            result = evo_service.obter_qr_code("instance-name", instance_id="instance-id", instance_token="token", retries=1)
+
+        self.assertIsNone(result["qr_code"])
         self.assertIsNone(result["base64"])
-        self.assertEqual(result["pairing_code"], "123-456")
         self.assertEqual(result["code"], "123-456")
+        self.assertEqual(result["pairing_code"], "123-456")
         self.assertEqual(len(calls), 1)
 
     @patch("app.api.canais._get_canal_or_404")
@@ -280,20 +312,30 @@ class CanaisEvolutionTests(unittest.TestCase):
             "instance_token": "instance-token-created",
         }
         mock_estado_conexao.return_value = {"state": "connecting", "instance": {"state": "connecting"}}
-        mock_obter_qr_code.return_value = {"base64": "abc123"}
-        mock_configurar_webhook.return_value = None
+        mock_obter_qr_code.return_value = {
+            "qr_code": f"data:image/png;base64,{_BASE64_QR_PNG}",
+            "base64": f"data:image/png;base64,{_BASE64_QR_PNG}",
+            "status": "READY",
+            "raw": {"data": {"Qrcode": _BASE64_QR_PNG}},
+        }
+        mock_configurar_webhook.return_value = {
+            "data": {
+                "eventString": "evt-123",
+                "webhookUrl": "https://api.op7franquia.com.br/webhook/evolution/webhook-token-1",
+            }
+        }
 
         resposta = canais.conectar_canal(canal.id, db=db, usuario=usuario)
 
         self.assertEqual(resposta.connection_status, "connecting")
-        self.assertEqual(resposta.qr_code, "abc123")
+        self.assertEqual(resposta.qr_code, f"data:image/png;base64,{_BASE64_QR_PNG}")
         self.assertIsNone(resposta.pairing_code)
         self.assertEqual(resposta.instance_id, "instance-id-created")
         self.assertEqual(db.commits, 2)
         self.assertEqual(canal.evolution_instance_id, instance_name)
         self.assertEqual(canal.config["evolution"]["managed_by"], "op7nexo")
         self.assertTrue(canal.config["evolution"]["created_by_connect_flow"])
-        mock_instancia_exata.assert_not_called()
+        mock_instancia_exata.assert_called_once()
         mock_criar_instancia.assert_called_once()
         mock_configurar_webhook.assert_called_once_with(canal, db, forcar=True)
         mock_obter_qr_code.assert_called_once_with(
@@ -332,7 +374,12 @@ class CanaisEvolutionTests(unittest.TestCase):
             "raw": {},
         }
         mock_estado_conexao.return_value = {"state": "connecting", "instance": {"state": "connecting"}}
-        mock_obter_qr_code.return_value = {"pairing_code": "123-456"}
+        mock_obter_qr_code.return_value = {
+            "code": "123-456",
+            "pairing_code": "123-456",
+            "status": "PAIRING_CODE",
+            "raw": {"data": {"Code": "123-456"}},
+        }
         mock_configurar_webhook.return_value = None
 
         resposta = canais.conectar_canal(canal.id, db=db, usuario=usuario)
@@ -341,7 +388,7 @@ class CanaisEvolutionTests(unittest.TestCase):
         self.assertIsNone(resposta.qr_code)
         self.assertEqual(resposta.pairing_code, "123-456")
         self.assertEqual(resposta.instance_id, "instance-id-1")
-        self.assertEqual(db.commits, 2)
+        self.assertEqual(db.commits, 1)
         mock_criar_instancia.assert_not_called()
         mock_configurar_webhook.assert_called_once_with(canal, db, forcar=True)
         mock_obter_qr_code.assert_called_once_with(
@@ -392,7 +439,12 @@ class CanaisEvolutionTests(unittest.TestCase):
 
         mock_get_canal.return_value = canal
         mock_estado_conexao.return_value = {"state": "connecting", "instance": {"state": "connecting"}}
-        mock_obter_qr_code.return_value = {"pairing_code": "654-321"}
+        mock_obter_qr_code.return_value = {
+            "code": "654-321",
+            "pairing_code": "654-321",
+            "status": "PAIRING_CODE",
+            "raw": {"data": {"Code": "654-321"}},
+        }
 
         resposta = canais.status_evolution(canal.id, db=db, usuario=usuario)
 
