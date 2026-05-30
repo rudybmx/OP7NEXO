@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Building2, Edit3, Loader2, Mail, Plus, Search, Shield, Star, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import useSWR from 'swr'
@@ -122,6 +122,8 @@ const labelStyle: React.CSSProperties = {
 
 export default function UsuariosAdministracaoPage() {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { user, isLoading: authLoading } = useAuth()
 
   const [busca, setBusca] = useState('')
@@ -149,7 +151,10 @@ export default function UsuariosAdministracaoPage() {
   const [buscaWorkspaceAcesso, setBuscaWorkspaceAcesso] = useState('')
   const [workspacesPorUsuario, setWorkspacesPorUsuario] = useState<Record<string, WorkspaceAcesso[]>>({})
   const acessosWsCarregadosParaUsuario = useRef<string | null>(null)
+  const filtroWorkspaceInicializado = useRef(false)
+  const filtroWorkspaceRef = useRef(filtroWorkspace)
   const isPlatformAdmin = user?.role === 'platform_admin'
+  const workspaceIdQuery = searchParams.get('workspace_id') ?? ''
 
   const {
     data: usuarios = [],
@@ -175,6 +180,27 @@ export default function UsuariosAdministracaoPage() {
   useEffect(() => {
     if (!authLoading && user && user.role !== 'platform_admin') router.push('/')
   }, [authLoading, user, router])
+
+  useEffect(() => {
+    if (workspaceIdQuery) {
+      filtroWorkspaceInicializado.current = true
+      if (workspaceIdQuery !== filtroWorkspaceRef.current) {
+        setFiltroWorkspace(workspaceIdQuery)
+      }
+      return
+    }
+
+    if (!filtroWorkspaceInicializado.current) {
+      filtroWorkspaceInicializado.current = true
+      if (filtroWorkspaceRef.current !== 'todos') {
+        setFiltroWorkspace('todos')
+      }
+    }
+  }, [workspaceIdQuery])
+
+  useEffect(() => {
+    filtroWorkspaceRef.current = filtroWorkspace
+  }, [filtroWorkspace])
 
   useEffect(() => {
     if (usuariosError) toast.error(getErrorMessage(usuariosError, 'Erro ao carregar usuários'))
@@ -229,6 +255,28 @@ export default function UsuariosAdministracaoPage() {
   function fecharDrawer() {
     setDrawerAberto(false)
     setForm(emptyForm())
+  }
+
+  function abrirNovoUsuario() {
+    setForm((prev) => ({
+      ...prev,
+      workspace_id: filtroWorkspace === 'todos' ? '' : filtroWorkspace,
+    }))
+    setDrawerAberto(true)
+  }
+
+  function atualizarFiltroWorkspace(workspaceId: string) {
+    setFiltroWorkspace(workspaceId)
+
+    const params = new URLSearchParams(searchParams.toString())
+    if (workspaceId === 'todos') {
+      params.delete('workspace_id')
+    } else {
+      params.set('workspace_id', workspaceId)
+    }
+
+    const nextPath = params.toString() ? `${pathname}?${params.toString()}` : pathname
+    router.replace(nextPath, { scroll: false })
   }
 
   const carregarAcessosWs = useCallback(async (usuario: UsuarioRow, silent = false) => {
@@ -477,7 +525,7 @@ export default function UsuariosAdministracaoPage() {
         </div>
 
         <button
-          onClick={() => setDrawerAberto(true)}
+          onClick={abrirNovoUsuario}
           style={{
             height: 42,
             padding: '0 20px',
@@ -553,7 +601,7 @@ export default function UsuariosAdministracaoPage() {
 
         <select
           value={filtroWorkspace}
-          onChange={(event) => setFiltroWorkspace(event.target.value)}
+          onChange={(event) => atualizarFiltroWorkspace(event.target.value)}
           style={{ ...inputStyle, height: 48, cursor: 'pointer' }}
         >
           <option value="todos">Todos os workspaces</option>
