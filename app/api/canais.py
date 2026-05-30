@@ -1,6 +1,9 @@
 """Rotas de canais de entrada (omnichannel)."""
 
+from __future__ import annotations
+
 import base64
+import hashlib
 import json
 import logging
 import mimetypes
@@ -30,11 +33,14 @@ from app.models.workspace import Workspace
 from app.services import evolution as evo_service
 from app.services.object_storage import download_and_put, put_bytes, public_url
 from app.services.webhook_api_ingestion import (
+    CRM_EXTERNO_ZAPI_PROVIDER,
     WebhookAPIError,
     prepare_webhook_config,
     process_webhook_api_ingestion,
     sanitize_webhook_config,
+    webhook_provider_from_config,
 )
+from app.services import helena_chat as helena_service
 from app.services.redis_pub import publish_whatsapp_event
 from app.services.whatsapp_crm_persistence import process_evolution_message
 from app.services.whatsapp_event_queue import enqueue_evolution_event
@@ -355,6 +361,225 @@ def _evolution_meta(canal: CanalEntrada) -> tuple[str, str | None, str | None]:
     instance_id = evolution.get("instance_id")
     instance_token = evolution.get("instance_token")
     return instance_name, instance_id, instance_token
+
+
+def _helena_instance(canal: CanalEntrada) -> str:
+    return f"webhook:{_uuid_curto(canal.id)}"
+
+
+def _helena_destino_conversa(
+    db: Session,
+    conversa_id: uuid.UUID,
+) -> tuple[str, str, str]:
+    result = db.execute(
+        text("""
+            SELECT c.id, c.contato_id, c.remote_jid, ct.numero_evo, ct.telefone, ct.jid
+            FROM public.crm_whatsapp_conversas c
+            JOIN public.crm_whatsapp_contatos ct ON ct.id = c.contato_id
+            WHERE c.id = :cid
+        """),
+        {"cid": str(conversa_id)},
+    )
+    row = result.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+
+    contato_id = str(row[1])
+    remote_jid = str(row[2]) if row[2] else ""
+    telefone_contato = row[4] or row[3]
+    to_phone = helena_service._normalize_phone(telefone_contato)
+    if not to_phone:
+        raise HTTPException(
+            status_code=400,
+            detail="Conversa sem telefone do contato configurado para envio via Helena",
+        )
+
+    return contato_id, remote_jid or to_phone, to_phone
+
+
+def _persistir_envio_helena(
+    db: Session,
+    *,
+    canal: CanalEntrada,
+    conversa_id: str,
+    contato_id: str,
+    remote_jid: str,
+    texto: str,
+    usuario: User,
+    provider_response: dict[str, object],
+) -> str:
+    wa_status = provider_response.get("provider_status_normalized")
+    status_label = provider_response.get("provider_status_label")
+    provider_message_id = str(provider_response.get("provider_message_id") or "").strip()
+    provider_session_id = provider_response.get("provider_session_id")
+    provider_status_url = provider_response.get("provider_status_url")
+    provider_failure_reason = provider_response.get("provider_failure_reason")
+    payload = {
+        "provider": "crm_externo_zapi",
+        "provider_name": "helena_chat",
+        "provider_message_id": provider_message_id,
+        "provider_session_id": provider_session_id,
+        "provider_status": provider_response.get("provider_status"),
+        "provider_status_normalized": wa_status,
+        "provider_status_label": status_label,
+        "provider_status_url": provider_status_url,
+        "provider_failure_reason": provider_failure_reason,
+        "provider_raw_response": provider_response.get("raw"),
+    }
+    message_hash = hashlib.sha256(
+        json.dumps(
+            {
+                "workspace_id": str(canal.workspace_id),
+                "canal_id": str(canal.id),
+                "instance": _helena_instance(canal),
+                "remote_jid": remote_jid,
+                "provider_message_id": provider_message_id,
+                "direction": "saida",
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+    row = db.execute(
+        text("""
+            INSERT INTO public.crm_whatsapp_mensagens (
+                workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id,
+                message_hash, instance, remote_jid, direcao, from_me, remetente_tipo,
+                remetente_nome, conteudo, message_type, status, wa_status, failed_reason,
+                payload, enviada_em, recebida_em, created_at, updated_at, ativo
+            )
+            VALUES (
+                CAST(:workspace_id AS uuid), CAST(:canal_id AS uuid), CAST(:conversa_id AS uuid), CAST(:contato_id AS uuid), :evolution_msg_id,
+                :message_hash, :instance, :remote_jid, 'saida', true, 'agente',
+                :remetente_nome, :conteudo, 'conversation', :status, :wa_status, :failed_reason,
+                CAST(:payload AS jsonb), NOW(), NULL, NOW(), NOW(), true
+            )
+            RETURNING id
+        """),
+        {
+            "workspace_id": str(canal.workspace_id),
+            "canal_id": str(canal.id),
+            "conversa_id": conversa_id,
+            "contato_id": contato_id,
+            "evolution_msg_id": provider_message_id,
+            "message_hash": message_hash,
+            "instance": _helena_instance(canal),
+            "remote_jid": remote_jid,
+            "remetente_nome": usuario.nome or usuario.email or "agente",
+            "conteudo": texto,
+            "status": status_label or wa_status or "enviada",
+            "wa_status": wa_status,
+            "failed_reason": provider_failure_reason if wa_status == "failed" else None,
+            "payload": json.dumps(payload, ensure_ascii=False),
+        },
+    ).fetchone()
+
+    if not row:
+        raise RuntimeError("Falha ao persistir mensagem outbound Helena")
+    return str(row[0])
+
+
+def _atualizar_conversa_saida_helena(
+    db: Session,
+    *,
+    conversa_id: str,
+    texto: str,
+) -> None:
+    db.execute(
+        text("""
+            UPDATE public.crm_whatsapp_conversas
+            SET ultima_mensagem = :ultima_mensagem,
+                ultima_direcao = 'saida',
+                ultima_msg_at = NOW(),
+                last_outbound_at = NOW(),
+                updated_at = NOW()
+            WHERE id = CAST(:conversa_id AS uuid)
+        """),
+        {
+            "conversa_id": conversa_id,
+            "ultima_mensagem": texto[:500],
+        },
+    )
+
+
+def _enviar_mensagem_helena_chat(
+    canal: CanalEntrada,
+    payload: EnviarMensagemIn,
+    db: Session,
+    usuario: User,
+) -> EnviarMensagemOut:
+    """Envia mensagem via Helena Chat para canais crm_externo_zapi."""
+    texto = (payload.texto or "").strip()
+    if payload.tipo != "texto" or payload.media_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Helena Chat no momento aceita apenas mensagens de texto.",
+        )
+    if not texto:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Texto obrigatório para envio via Helena Chat.",
+        )
+    if not payload.conversa_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Informe conversa_id para enviar mensagem via Helena Chat.",
+        )
+
+    try:
+        conversa_uuid = uuid.UUID(payload.conversa_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="conversa_id inválido.",
+        ) from exc
+
+    try:
+        contato_id, remote_jid, to_phone = _helena_destino_conversa(db, conversa_uuid)
+        provider_response = helena_service.send_text_message(
+            canal,
+            to_phone=to_phone,
+            text=texto,
+        )
+    except helena_service.HelenaChatError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    mensagem_id = _persistir_envio_helena(
+        db,
+        canal=canal,
+        conversa_id=payload.conversa_id,
+        contato_id=contato_id,
+        remote_jid=remote_jid,
+        texto=texto,
+        usuario=usuario,
+        provider_response=provider_response,
+    )
+    _atualizar_conversa_saida_helena(
+        db,
+        conversa_id=payload.conversa_id,
+        texto=texto,
+    )
+    db.commit()
+
+    try:
+        publish_whatsapp_event(
+            {
+                "type": "message.upsert",
+                "workspaceId": str(canal.workspace_id),
+                "conversaId": str(payload.conversa_id),
+                "remoteJid": remote_jid,
+                "direction": "saida",
+                "text": texto,
+                "instance": _helena_instance(canal),
+                "messageType": "conversation",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+    except Exception as exc:
+        logger.info("[enviar-helena] REDIS FALHOU: %s", exc)
+
+    return EnviarMensagemOut(ok=True, mensagem_id=str(mensagem_id), evolution_response=provider_response)
 
 
 def _extrair_qr_code_evolution(payload: object) -> str | None:
@@ -1095,6 +1320,20 @@ def enviar_mensagem_canal(
 
     if c.tipo == "whatsapp_oficial":
         return _enviar_mensagem_meta_cloud(c, payload, db, usuario)
+
+    if c.tipo == "webhook":
+        provider = webhook_provider_from_config(c.config)
+        if provider == CRM_EXTERNO_ZAPI_PROVIDER:
+            return _enviar_mensagem_helena_chat(c, payload, db, usuario)
+        if provider == "helena":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Canal Helena é inbound. Configure provider crm_externo_zapi para usar Helena Chat no outbound.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Canal webhook sem outbound configurado. Configure provider crm_externo_zapi para enviar via Helena Chat.",
+        )
 
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")

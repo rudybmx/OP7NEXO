@@ -20,6 +20,21 @@ Todas as variáveis são lidas via `pydantic-settings` do arquivo `.env` na raiz
 | `openai_base_url` | `""` | Base URL da API OpenAI-compatível. Ex: `https://opencode.ai/zen/go/v1` |
 | `openai_model` | `gpt-4o-mini` | Nome do modelo a usar. Em produção: `deepseek-v4-flash` |
 
+## Outbound Helena Chat
+
+O outbound do provider `crm_externo_zapi` lê o segredo por referência, não por valor.
+
+| Variável | Tipo | Descrição | Exemplo |
+|---|---|---|---|
+| `HELENA_CHAT_TOKEN_QOZT` | string | Token Bearer usado pelo adapter Helena Chat. O valor real fica no ambiente do container e nunca deve ser salvo em banco, log ou commit. | `***` |
+
+### Como carregar no container
+
+- O `docker-compose.yml` da API já injeta variáveis via `env_file`.
+- Para este MVP, adicione `HELENA_CHAT_TOKEN_QOZT` no arquivo `.env` usado pelo backend e recrie o serviço com `/root/deploy.sh api`.
+- O canal salva apenas `config.webhook.helena.api_token_ref = "HELENA_CHAT_TOKEN_QOZT"` e `config.webhook.helena.from_phone = "..."`
+- Se a variável não existir no ambiente, o envio falha antes de chamar a API real da Helena.
+
 ## Arquivo .env de exemplo
 
 ```env
@@ -32,6 +47,9 @@ JWT_EXPIRE_MINUTES=1440
 OPENAI_API_KEY=sk-...
 OPENAI_BASE_URL=https://opencode.ai/zen/go/v1
 OPENAI_MODEL=deepseek-v4-flash
+
+# Helena Chat outbound para crm_externo_zapi
+HELENA_CHAT_TOKEN_QOZT=
 ```
 
 ## Observações
