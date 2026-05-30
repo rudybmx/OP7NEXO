@@ -453,7 +453,7 @@ def _persistir_envio_helena(
                 CAST(:workspace_id AS uuid), CAST(:canal_id AS uuid), CAST(:conversa_id AS uuid), CAST(:contato_id AS uuid), :evolution_msg_id,
                 :message_hash, :instance, :remote_jid, 'saida', true, 'agente',
                 :remetente_nome, :conteudo, 'conversation', :status, :wa_status, :failed_reason,
-                CAST(:payload AS jsonb), NOW(), NULL, NOW(), NOW(), true
+                CAST(:payload AS jsonb), NOW(), NOW(), NOW(), NOW(), true
             )
             RETURNING id
         """),
