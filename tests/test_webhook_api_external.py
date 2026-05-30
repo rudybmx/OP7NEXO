@@ -74,9 +74,12 @@ class _WebhookDb:
         self.refreshes = 0
         self.calls: list[tuple[str, dict | None]] = []
         self.events_by_hash: dict[str, dict[str, str]] = {}
+        self.events_by_id: dict[str, dict[str, str]] = {}
         self.contacts_by_jid: dict[str, dict[str, str]] = {}
         self.conversations_by_key: dict[tuple[str, str, str, str], dict[str, str]] = {}
         self.messages_by_hash: dict[str, dict[str, str]] = {}
+        self.messages_by_id: dict[str, dict[str, str]] = {}
+        self.messages_by_provider_id: dict[str, dict[str, str]] = {}
         self.lead_origin_by_raw_event_id: dict[str, dict[str, str]] = {}
 
     def query(self, _model):
@@ -92,13 +95,26 @@ class _WebhookDb:
             if event_hash in self.events_by_hash:
                 return _Result()
             event_id = str(uuid.uuid4())
-            self.events_by_hash[event_hash] = {
+            row = {
                 "id": event_id,
                 "event_hash": event_hash,
                 "event_type": params["event_type"],
                 "payload": params["payload"],
+                "remote_jid": params.get("remote_jid"),
+                "raw_event_id": event_id,
             }
+            self.events_by_hash[event_hash] = row
+            self.events_by_id[event_id] = row
             return _Result(row=(event_id,))
+
+        if "update public.crm_whatsapp_eventos" in sql_lower:
+            raw_event_id = params["raw_event_id"]
+            row = self.events_by_id.get(raw_event_id)
+            if row:
+                row["payload"] = params.get("payload")
+                row["processing_status"] = "done"
+                row["error_message"] = None
+            return _Result()
 
         if "select id from public.crm_whatsapp_eventos" in sql_lower and "where event_hash = :event_hash" in sql_lower:
             row = self.events_by_hash.get(params["event_hash"])
@@ -173,10 +189,15 @@ class _WebhookDb:
             row = next((item for item in self.conversations_by_key.values() if item["id"] == conversation_id), None)
             if row:
                 row["ultima_mensagem"] = params["ultima_mensagem"]
-                row["ultima_direcao"] = "entrada"
                 row["ultima_msg_at"] = params["ultima_msg_at"]
-                row["last_inbound_at"] = params["last_inbound_at"]
-                row["nao_lidas"] = row.get("nao_lidas", 0) + params.get("nao_lidas", 1)
+                if params.get("last_outbound_at") is not None:
+                    row["ultima_direcao"] = "saida"
+                    row["last_outbound_at"] = params["last_outbound_at"]
+                    row["nao_lidas"] = row.get("nao_lidas", 0) + params.get("nao_lidas", 0)
+                else:
+                    row["ultima_direcao"] = "entrada"
+                    row["last_inbound_at"] = params["last_inbound_at"]
+                    row["nao_lidas"] = row.get("nao_lidas", 0) + params.get("nao_lidas", 1)
                 row["campanha"] = row.get("campanha") or params.get("campanha")
                 row["lead_status"] = row.get("lead_status") or params.get("lead_status")
                 return _Result(row=(conversation_id,))
@@ -195,14 +216,58 @@ class _WebhookDb:
                 "status": "nova",
                 "nao_lidas": params.get("nao_lidas", 1),
                 "ultima_mensagem": params["ultima_mensagem"],
-                "ultima_direcao": "entrada",
+                "ultima_direcao": params.get("ultima_direcao", "entrada"),
                 "ultima_msg_at": params["ultima_msg_at"],
-                "last_inbound_at": params["last_inbound_at"],
+                "last_inbound_at": params.get("last_inbound_at"),
+                "last_outbound_at": params.get("last_outbound_at"),
                 "campanha": params.get("campanha"),
                 "lead_status": params.get("lead_status"),
             }
             self.conversations_by_key[key] = row
             return _Result(row=(conversation_id,))
+
+        if (
+            "insert into public.crm_whatsapp_mensagens" in sql_lower
+            and "evolution_msg_id" in sql_lower
+            and "status, wa_status" in sql_lower
+            and params is not None
+            and "evolution_msg_id" in params
+            and "status" in params
+            and "wa_status" in params
+        ):
+            provider_message_id = params["evolution_msg_id"]
+            if provider_message_id in self.messages_by_provider_id:
+                return _Result()
+            message_id = str(uuid.uuid4())
+            row = {
+                "id": message_id,
+                "workspace_id": params["workspace_id"],
+                "canal_id": params["canal_id"],
+                "raw_event_id": params["raw_event_id"],
+                "contato_id": params["contato_id"],
+                "conversa_id": params["conversa_id"],
+                "message_hash": params["message_hash"],
+                "evolution_msg_id": provider_message_id,
+                "conteudo": params["conteudo"],
+                "message_type": params["message_type"],
+                "status": params.get("status"),
+                "wa_status": params.get("wa_status"),
+                "remetente_tipo": params["remetente_tipo"],
+                "remetente_nome": params["remetente_nome"],
+                "payload": params["payload"],
+                "instance": params["instance"],
+                "remote_jid": params["remote_jid"],
+                "direcao": params.get("direcao", "entrada"),
+                "from_me": params.get("from_me", False),
+                "enviada_em": params.get("enviada_em"),
+                "recebida_em": params.get("recebida_em"),
+                "delivered_at": None,
+                "read_at": None,
+            }
+            self.messages_by_provider_id[provider_message_id] = row
+            self.messages_by_id[message_id] = row
+            self.messages_by_hash[params["message_hash"]] = row
+            return _Result(row=(message_id,))
 
         if "insert into public.crm_whatsapp_mensagens" in sql_lower:
             message_hash = params["message_hash"]
@@ -225,11 +290,52 @@ class _WebhookDb:
                 "remote_jid": params["remote_jid"],
             }
             self.messages_by_hash[message_hash] = row
+            self.messages_by_id[message_id] = row
             return _Result(row=(message_id,))
+
+        if (
+            "update public.crm_whatsapp_mensagens" in sql_lower
+            and "where id = cast(:mensagem_id as uuid)" in sql_lower
+        ):
+            row = self.messages_by_id.get(params["mensagem_id"])
+            if row:
+                row["workspace_id"] = params.get("workspace_id", row.get("workspace_id"))
+                row["canal_id"] = params.get("canal_id", row.get("canal_id"))
+                row["raw_event_id"] = params.get("raw_event_id", row.get("raw_event_id"))
+                row["contato_id"] = params.get("contato_id", row.get("contato_id"))
+                row["conversa_id"] = params.get("conversa_id", row.get("conversa_id"))
+                row["evolution_msg_id"] = params.get("evolution_msg_id", row.get("evolution_msg_id"))
+                row["message_hash"] = params.get("message_hash", row.get("message_hash"))
+                row["conteudo"] = params.get("conteudo", row.get("conteudo"))
+                row["message_type"] = params.get("message_type", row.get("message_type"))
+                row["status"] = params.get("status", row.get("status"))
+                row["wa_status"] = params.get("wa_status", row.get("wa_status"))
+                row["remetente_nome"] = params.get("remetente_nome", row.get("remetente_nome"))
+                row["payload"] = params.get("payload", row.get("payload"))
+                row["instance"] = params.get("instance", row.get("instance"))
+                row["remote_jid"] = params.get("remote_jid", row.get("remote_jid"))
+                row["direcao"] = params.get("direcao", row.get("direcao"))
+                row["from_me"] = params.get("from_me", row.get("from_me"))
+                row["enviada_em"] = params.get("message_timestamp") if params.get("from_me") else row.get("enviada_em")
+                row["recebida_em"] = params.get("message_timestamp") if not params.get("from_me") else row.get("recebida_em")
+                if params.get("wa_status") == "delivered":
+                    row["delivered_at"] = params.get("message_timestamp")
+                if params.get("wa_status") == "read":
+                    row["read_at"] = params.get("message_timestamp")
+                if row.get("message_hash"):
+                    self.messages_by_hash[row["message_hash"]] = row
+                if row.get("evolution_msg_id"):
+                    self.messages_by_provider_id[row["evolution_msg_id"]] = row
+                return _Result(row=(row["id"],))
+            return _Result()
 
         if "select id from public.crm_whatsapp_mensagens" in sql_lower and "message_hash = :message_hash" in sql_lower:
             row = self.messages_by_hash.get(params["message_hash"])
             return _Result(row=(row["id"],)) if row else _Result()
+
+        if "select id, workspace_id, canal_id, instance, evolution_msg_id" in sql_lower and "evolution_msg_id = :provider_message_id" in sql_lower:
+            row = self.messages_by_provider_id.get(params["provider_message_id"])
+            return _Result(mapping=row) if row else _Result()
 
         if (
             "select id from public.crm_whatsapp_mensagens" in sql_lower
@@ -358,6 +464,63 @@ def _crm_externo_payload(
     if message_text is not None:
         payload["message"] = {"text": message_text}
     return payload
+
+
+def _crm_externo_wrapper_payload(
+    *,
+    event_type: str = "MESSAGE_RECEIVED",
+    direction: str = "FROM_HUB",
+    content_id: str = "e6b9db1f-72f6-4df3-ba51-f38eed96da2d",
+    session_id: str = "cafe48b9-f305-4800-8c3b-3adeea6555ff",
+    text: str | None = "oi",
+    content_type: str = "TEXT",
+    status: str = "SENT",
+    origin: str = "GATEWAY",
+    company_id: str = "583469db-0990-4507-b912-8b7ad5804aa8",
+    phone_from: str = "+55 47 99999-0001",
+    phone_to: str = "+55 47 98888-0002",
+    as_object: bool = False,
+) -> dict | list:
+    contact_phone = phone_from if direction == "FROM_HUB" else phone_to
+    destination_phone = phone_to if direction == "FROM_HUB" else phone_from
+    content = {
+        "id": content_id,
+        "companyId": company_id,
+        "sessionId": session_id,
+        "type": content_type,
+        "timestamp": "2026-05-30T06:40:25.196Z",
+        "text": text,
+        "direction": direction,
+        "status": status,
+        "origin": origin,
+        "details": {
+            "to": destination_phone,
+            "from": contact_phone,
+            "file": None,
+            "location": None,
+            "contact": None,
+            "errors": None,
+            "transcription": None,
+            "billing": None,
+        },
+    }
+    body = {
+        "eventType": event_type,
+        "date": "2026-05-30T06:40:26.0706187Z",
+        "content": content,
+        "changeMetadata": None,
+    }
+    wrapper = {
+        "headers": {"x-test": "1"},
+        "params": {},
+        "query": {},
+        "body": body,
+        "webhookUrl": "https://example.test/webhook/external",
+        "executionMode": "production",
+    }
+    if as_object:
+        return wrapper
+    return [wrapper]
 
 
 def test_criar_canal_webhook_gera_secret_e_sanitiza_resposta(monkeypatch):
@@ -785,6 +948,127 @@ def test_webhook_crm_externo_zapi_aceita_sem_hmac_e_eh_idempotente():
     assert contact_row["workspace_id"] == str(canal.workspace_id)
     assert conversation_row["workspace_id"] == str(canal.workspace_id)
     assert conversation_row["canal_id"] == str(canal.id)
+
+
+def test_webhook_crm_externo_zapi_wrapper_array_cria_mensagem_de_entrada_textual():
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        webhook_token="token-webhook",
+        tipo="webhook",
+        nome="CRM Externo ZAPI",
+        config={"webhook": {"provider": "crm_externo_zapi", "security_mode": "provider_token"}},
+    )
+    db = _WebhookDb(canal)
+    app = _build_app(db)
+    client = TestClient(app)
+    body = _json_body(
+        _crm_externo_wrapper_payload(
+            event_type="MESSAGE_RECEIVED",
+            direction="FROM_HUB",
+            content_id="msg-100",
+            session_id="sess-100",
+            text="oi",
+            content_type="TEXT",
+            status="SENT",
+            phone_from="+55 47 99999-0001",
+            phone_to="+55 47 98888-0002",
+        )
+    )
+
+    response_1 = client.post("/webhook/token-webhook", content=body)
+    response_2 = client.post("/webhook/token-webhook", content=body)
+
+    assert response_1.status_code == 200
+    assert response_1.json()["status"] == "processed"
+    assert response_1.json()["idempotent"] is False
+    assert response_1.json()["mensagem_id"]
+    assert response_2.status_code == 200
+    assert response_2.json()["status"] == "duplicate"
+    assert response_2.json()["idempotent"] is True
+    assert response_2.json()["mensagem_id"] == response_1.json()["mensagem_id"]
+    assert len(db.events_by_hash) == 1
+    assert len(db.messages_by_hash) == 1
+    assert len(db.messages_by_provider_id) == 1
+    stored_message = next(iter(db.messages_by_provider_id.values()))
+    assert stored_message["conteudo"] == "oi"
+    assert stored_message["direcao"] == "entrada"
+    assert stored_message["from_me"] is False
+    assert stored_message["evolution_msg_id"] == "msg-100"
+    instance = f"webhook:{str(canal.id).replace('-', '')[:8]}"
+    conversation_key = "sess-100"
+    conversation_row = db.conversations_by_key[(str(canal.workspace_id), str(canal.id), instance, "sess-100")]
+    assert conversation_row["remote_jid"] == conversation_key
+    assert conversation_row["ultima_direcao"] == "entrada"
+    assert conversation_row["nao_lidas"] == 1
+    assert len(db.lead_origin_by_raw_event_id) == 1
+
+
+def test_webhook_crm_externo_zapi_wrapper_object_message_sent_atualiza_status_sem_duplica():
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        webhook_token="token-webhook",
+        tipo="webhook",
+        nome="CRM Externo ZAPI",
+        config={"webhook": {"provider": "crm_externo_zapi", "security_mode": "provider_token"}},
+    )
+    db = _WebhookDb(canal)
+    app = _build_app(db)
+    client = TestClient(app)
+    body_1 = _json_body(
+        _crm_externo_wrapper_payload(
+            event_type="MESSAGE_SENT",
+            direction="TO_HUB",
+            content_id="msg-200",
+            session_id="sess-200",
+            text="mensagem enviada",
+            content_type="TEXT",
+            status="SENT",
+            phone_from="+55 47 98888-0002",
+            phone_to="+55 47 99999-0001",
+            as_object=True,
+        )
+    )
+    body_2 = _json_body(
+        _crm_externo_wrapper_payload(
+            event_type="MESSAGE_SENT",
+            direction="TO_HUB",
+            content_id="msg-200",
+            session_id="sess-200",
+            text="mensagem enviada",
+            content_type="TEXT",
+            status="DELIVERED",
+            phone_from="+55 47 98888-0002",
+            phone_to="+55 47 99999-0001",
+            as_object=True,
+        )
+    )
+
+    response_1 = client.post("/webhook/token-webhook", content=body_1)
+    response_2 = client.post("/webhook/token-webhook", content=body_2)
+
+    assert response_1.status_code == 200
+    assert response_1.json()["status"] == "processed"
+    assert response_1.json()["mensagem_id"]
+    assert response_2.status_code == 200
+    assert response_2.json()["status"] == "processed"
+    assert response_2.json()["mensagem_id"] == response_1.json()["mensagem_id"]
+    assert len(db.events_by_hash) == 1
+    assert len(db.messages_by_hash) == 1
+    assert len(db.messages_by_provider_id) == 1
+    stored_message = next(iter(db.messages_by_provider_id.values()))
+    assert stored_message["conteudo"] == "mensagem enviada"
+    assert stored_message["direcao"] == "saida"
+    assert stored_message["from_me"] is True
+    assert stored_message["status"] == "entregue"
+    assert stored_message["wa_status"] == "delivered"
+    instance = f"webhook:{str(canal.id).replace('-', '')[:8]}"
+    conversation_row = db.conversations_by_key[(str(canal.workspace_id), str(canal.id), instance, "sess-200")]
+    assert conversation_row["remote_jid"] == "sess-200"
+    assert conversation_row["ultima_direcao"] == "saida"
+    assert conversation_row["nao_lidas"] == 0
+    assert len(db.lead_origin_by_raw_event_id) == 1
 
 
 def test_webhook_crm_externo_zapi_rejeita_sem_type_e_sem_contact_identificavel():
