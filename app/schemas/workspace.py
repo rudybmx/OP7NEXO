@@ -19,3 +19,7 @@ class WorkspaceOut(BaseModel):
     modulos: list[str] = []
 
     model_config = {"from_attributes": True}
+
+
+class WorkspaceStatusIn(BaseModel):
+    ativo: bool

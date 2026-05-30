@@ -12,7 +12,7 @@ from app.models.workspace import Workspace
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
-from app.schemas.workspace import WorkspaceIn, WorkspaceOut
+from app.schemas.workspace import WorkspaceIn, WorkspaceOut, WorkspaceStatusIn
 
 def _get_modulos(workspace_id: uuid.UUID, db: Session) -> list[str]:
     rows = db.execute(
@@ -114,6 +114,20 @@ def atualizar_workspace(
     w.cnpj = payload.cnpj
     w.endereco = payload.endereco
     _salvar_modulos(w.id, payload.modulos, db)
+    db.commit()
+    db.refresh(w)
+    return _workspace_out(w, db)
+
+
+@router.patch("/{workspace_id}/status", response_model=WorkspaceOut)
+def atualizar_status_workspace(
+    workspace_id: uuid.UUID,
+    payload: WorkspaceStatusIn,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(exigir_platform_admin),
+):
+    w = _get_workspace_or_404(workspace_id, db)
+    w.ativo = payload.ativo
     db.commit()
     db.refresh(w)
     return _workspace_out(w, db)
