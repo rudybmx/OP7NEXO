@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 MAX_WEBHOOK_PAYLOAD_BYTES = 1_048_576
 REPLAY_WINDOW_SECONDS = 300
 WEBHOOK_INSTANCE_PREFIX = "webhook"
+CRM_EXTERNO_ZAPI_PROVIDER = "crm_externo_zapi"
+CRM_EXTERNO_ZAPI_PROVIDER_LABEL = "CRM externo/Z-API"
 
 
 class WebhookAPIError(Exception):
@@ -80,6 +82,15 @@ def webhook_provider_from_config(config: dict[str, Any] | None) -> str:
     return provider_str or "generic"
 
 
+def webhook_security_mode_from_config(config: dict[str, Any] | None) -> str:
+    webhook = (config or {}).get("webhook")
+    if not isinstance(webhook, dict):
+        return ""
+    security_mode = webhook.get("security_mode")
+    security_mode_str = str(security_mode).strip().lower() if security_mode is not None else ""
+    return security_mode_str
+
+
 def sanitize_webhook_config(config: dict[str, Any] | None) -> dict[str, Any]:
     sanitized = copy.deepcopy(config or {})
     webhook = sanitized.get("webhook")
@@ -112,6 +123,10 @@ def prepare_webhook_config(
     if provider == "helena":
         webhook.pop("hmac_secret", None)
         webhook["provider"] = "helena"
+        webhook.setdefault("security_mode", "provider_token")
+    elif provider == CRM_EXTERNO_ZAPI_PROVIDER:
+        webhook.pop("hmac_secret", None)
+        webhook["provider"] = CRM_EXTERNO_ZAPI_PROVIDER
         webhook.setdefault("security_mode", "provider_token")
     elif force_new_secret:
         secret_to_return = secrets.token_hex(32)
@@ -160,6 +175,8 @@ def process_webhook_api_ingestion(
         from app.services.webhook_helena import process_helena_webhook_ingestion
 
         return process_helena_webhook_ingestion(db, canal, raw_body)
+    if provider == CRM_EXTERNO_ZAPI_PROVIDER:
+        return process_crm_externo_zapi_webhook(db, canal, raw_body)
 
     secret = webhook_secret_from_config(canal.config)
     if not secret:
@@ -278,6 +295,156 @@ def process_webhook_api_ingestion(
         status="processed",
         idempotent=False,
         event_id=str(raw_event_id),
+        contato_id=str(contato_id),
+        conversa_id=str(conversa_id),
+        mensagem_id=str(mensagem_id) if mensagem_id else None,
+    )
+
+
+def process_crm_externo_zapi_webhook(
+    db: Session,
+    canal: CanalEntrada,
+    raw_body: bytes,
+) -> WebhookIngestionResult:
+    try:
+        payload = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+    except Exception as exc:  # pragma: no cover - malformed body branch
+        raise WebhookAPIError(
+            status.HTTP_400_BAD_REQUEST,
+            "webhook_payload_invalid",
+            "Payload JSON inválido",
+        ) from exc
+
+    envelope = _normalize_envelope(payload)
+    contact = envelope["contact"]
+    has_identifiable_contact = bool(
+        _normalize_phone(contact.get("phone"))
+        or str(contact.get("external_id") or "").strip()
+    )
+    if not has_identifiable_contact:
+        raise WebhookAPIError(
+            status.HTTP_400_BAD_REQUEST,
+            "webhook_payload_invalid",
+            "Campo 'contact' deve conter ao menos 'phone' ou 'external_id'",
+        )
+
+    event_hash = _build_event_hash(canal, envelope)
+    instance = f"{WEBHOOK_INSTANCE_PREFIX}:{_uuid_curto(canal.id)}"
+    contact_identity = _build_contact_identity(
+        canal,
+        envelope,
+        allow_name_only=False,
+        allow_fallback=False,
+    )
+    contato_jid = _build_contact_jid(canal, contact_identity)
+    received_at = envelope["occurred_at"]
+    raw_event_id, inserted_event = _insert_raw_event(
+        db,
+        canal=canal,
+        instance=instance,
+        contato_jid=contato_jid,
+        envelope=envelope,
+        event_hash=event_hash,
+    )
+
+    if not inserted_event:
+        duplicate = _load_idempotent_result(db, event_hash)
+        if duplicate is None:
+            raise RuntimeError("Evento duplicado não encontrado após conflito de hash")
+        logger.info(
+            "[webhook-crm-externo] canal=%s event_type=%s idempotent=true",
+            canal.id,
+            envelope["type"],
+        )
+        db.commit()
+        return WebhookIngestionResult(
+            received=True,
+            status="duplicate",
+            idempotent=True,
+            event_id=str(duplicate["raw_event_id"]),
+            contato_id=str(duplicate["contato_id"]),
+            conversa_id=str(duplicate["conversa_id"]),
+            mensagem_id=str(duplicate["mensagem_id"]) if duplicate.get("mensagem_id") else None,
+        )
+
+    contato_id = _upsert_contact(
+        db,
+        canal=canal,
+        instance=instance,
+        contato_jid=contato_jid,
+        contact_identity=contact_identity,
+        envelope=envelope,
+        received_at=received_at,
+    )
+    message_text = envelope["message"].get("text") if isinstance(envelope["message"], dict) else None
+    has_message_text = bool(message_text is not None and str(message_text).strip())
+    existing_message_id = _load_existing_message_id(
+        db,
+        canal,
+        instance=instance,
+        remote_jid=contato_jid,
+    )
+    nao_lidas = 1 if has_message_text or existing_message_id is None else 0
+    conversa_id = _upsert_conversation(
+        db,
+        canal=canal,
+        instance=instance,
+        contato_id=str(contato_id),
+        contato_jid=contato_jid,
+        envelope=envelope,
+        received_at=received_at,
+        nao_lidas=nao_lidas,
+    )
+    mensagem_id: str | None = None
+    if has_message_text or existing_message_id is None:
+        mensagem_id = _insert_message(
+            db,
+            canal=canal,
+            raw_event_id=raw_event_id,
+            contato_id=str(contato_id),
+            conversa_id=str(conversa_id),
+            instance=instance,
+            contato_jid=contato_jid,
+            envelope=envelope,
+            event_hash=event_hash,
+            received_at=received_at,
+        )
+    else:
+        mensagem_id = existing_message_id
+
+    origin_event_id = _record_lead_origin_event(
+        db,
+        canal=canal,
+        raw_event_id=raw_event_id,
+        contato_id=str(contato_id),
+        conversa_id=str(conversa_id),
+        mensagem_id=str(mensagem_id) if mensagem_id else None,
+        envelope=envelope,
+    )
+    if origin_event_id:
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_contatos
+                SET last_origin_event_id = :origin_event_id,
+                    updated_at = NOW()
+                WHERE id = CAST(:contato_id AS uuid)
+            """),
+            {"origin_event_id": origin_event_id, "contato_id": str(contato_id)},
+        )
+
+    db.commit()
+    synthetic_created = not has_message_text and existing_message_id is None
+    logger.info(
+        "[webhook-crm-externo] canal=%s event_type=%s idempotent=false synthetic=%s",
+        canal.id,
+        envelope["type"],
+        synthetic_created,
+    )
+    return WebhookIngestionResult(
+        received=True,
+        status="processed",
+        idempotent=False,
+        event_id=str(raw_event_id) if raw_event_id else event_hash,
         contato_id=str(contato_id),
         conversa_id=str(conversa_id),
         mensagem_id=str(mensagem_id) if mensagem_id else None,
@@ -672,6 +839,36 @@ def _load_idempotent_result(db: Session, event_hash: str) -> dict[str, Any] | No
     return dict(row) if row else None
 
 
+def _load_existing_message_id(
+    db: Session,
+    canal: CanalEntrada,
+    *,
+    instance: str,
+    remote_jid: str | None,
+) -> str | None:
+    if not remote_jid:
+        return None
+    row = db.execute(
+        text("""
+            SELECT id
+            FROM public.crm_whatsapp_mensagens
+            WHERE workspace_id = CAST(:workspace_id AS uuid)
+              AND canal_id = CAST(:canal_id AS uuid)
+              AND instance = :instance
+              AND remote_jid = :remote_jid
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {
+            "workspace_id": str(canal.workspace_id),
+            "canal_id": str(canal.id),
+            "instance": instance,
+            "remote_jid": remote_jid,
+        },
+    ).fetchone()
+    return str(row[0]) if row else None
+
+
 def _upsert_contact(
     db: Session,
     *,
@@ -752,6 +949,7 @@ def _upsert_conversation(
     contato_jid: str,
     envelope: dict[str, Any],
     received_at: datetime,
+    nao_lidas: int = 1,
 ) -> str:
     tracking = _build_tracking_values(envelope)
     message_content, _message_type = _build_message_content(envelope)
@@ -783,7 +981,7 @@ def _upsert_conversation(
                     ultima_direcao = 'entrada',
                     ultima_msg_at = :ultima_msg_at,
                     last_inbound_at = :last_inbound_at,
-                    nao_lidas = nao_lidas + 1,
+                    nao_lidas = nao_lidas + :nao_lidas,
                     campanha = COALESCE(public.crm_whatsapp_conversas.campanha, :campanha),
                     lead_status = COALESCE(public.crm_whatsapp_conversas.lead_status, :lead_status),
                     updated_at = NOW()
@@ -795,6 +993,7 @@ def _upsert_conversation(
                 "ultima_mensagem": message_content[:500],
                 "ultima_msg_at": received_at,
                 "last_inbound_at": received_at,
+                "nao_lidas": nao_lidas,
                 "campanha": tracking["campaign"],
                 "lead_status": envelope["lead"].get("status") or "novo",
             },
@@ -811,7 +1010,7 @@ def _upsert_conversation(
             VALUES (
                 CAST(:workspace_id AS uuid), CAST(:contato_id AS uuid), CAST(:canal_id AS uuid), :instance, :remote_jid,
                 false, NULL, 'nova',
-                1, :ultima_mensagem, 'entrada', :ultima_msg_at, :last_inbound_at,
+                :nao_lidas, :ultima_mensagem, 'entrada', :ultima_msg_at, :last_inbound_at,
                 :campanha, :lead_status, NOW(), NOW()
             )
             RETURNING id
@@ -822,6 +1021,7 @@ def _upsert_conversation(
             "canal_id": str(canal.id),
             "instance": instance,
             "remote_jid": contato_jid,
+            "nao_lidas": nao_lidas,
             "ultima_mensagem": message_content[:500],
             "ultima_msg_at": received_at,
             "last_inbound_at": received_at,
