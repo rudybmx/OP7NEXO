@@ -5,11 +5,11 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Building2, Edit3, Loader2, Mail, Plus, Search, Shield, Star, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import useSWR from 'swr'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { WSTable, WSTableShell } from '@/components/ui/ws-table'
 import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
 import { UsuarioWorkspacesSummary } from '@/components/administracao/usuarios/usuario-workspaces-summary'
+import { NovoUsuarioDialog } from '@/components/administracao/usuarios/novo-usuario-dialog'
 import { useAuth } from '@/hooks/use-auth'
 import api from '@/lib/api-client'
 
@@ -39,14 +39,6 @@ interface UsuarioRow {
 type WorkspaceRow = WorkspaceOption
 type WorkspaceAcesso = WorkspaceAccessApiRow
 type AcessoWsLocal = WorkspaceAccessDraft
-
-interface NovoUsuarioForm {
-  nome: string
-  email: string
-  senha: string
-  role: RoleUsuario
-  workspace_id: string
-}
 
 interface EditUsuarioForm {
   nome: string
@@ -85,14 +77,6 @@ const ROLE_STYLES: Record<RoleUsuario, { bg: string; color: string }> = {
   company_agent: { bg: 'rgba(15,168,86,0.15)', color: 'var(--ws-green)' },
 }
 
-const emptyForm = (): NovoUsuarioForm => ({
-  nome: '',
-  email: '',
-  senha: '',
-  role: 'company_agent',
-  workspace_id: '',
-})
-
 function getErrorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback
 }
@@ -130,9 +114,7 @@ export default function UsuariosAdministracaoPage() {
   const [filtroRole, setFiltroRole] = useState<RoleUsuario | 'todas'>('todas')
   const [filtroStatus, setFiltroStatus] = useState<StatusFiltro>('ativo')
   const [filtroWorkspace, setFiltroWorkspace] = useState<string>('todos')
-  const [drawerAberto, setDrawerAberto] = useState(false)
-  const [salvando, setSalvando] = useState(false)
-  const [form, setForm] = useState<NovoUsuarioForm>(emptyForm)
+  const [novoUsuarioAberto, setNovoUsuarioAberto] = useState(false)
 
   const [editDrawerAberto, setEditDrawerAberto] = useState(false)
   const [usuarioEditando, setUsuarioEditando] = useState<UsuarioRow | null>(null)
@@ -252,19 +234,6 @@ export default function UsuariosAdministracaoPage() {
     })
   }, [usuarios, busca, filtroRole, filtroStatus, filtroWorkspace, workspacesPorUsuarioVisivel])
 
-  function fecharDrawer() {
-    setDrawerAberto(false)
-    setForm(emptyForm())
-  }
-
-  function abrirNovoUsuario() {
-    setForm((prev) => ({
-      ...prev,
-      workspace_id: filtroWorkspace === 'todos' ? '' : filtroWorkspace,
-    }))
-    setDrawerAberto(true)
-  }
-
   function atualizarFiltroWorkspace(workspaceId: string) {
     setFiltroWorkspace(workspaceId)
 
@@ -365,35 +334,6 @@ export default function UsuariosAdministracaoPage() {
       ...acesso,
       padrao: acesso.checked && acesso.workspace_id === workspaceId,
     })))
-  }
-
-  async function salvarUsuario() {
-    const nome = form.nome.trim()
-    const email = form.email.trim().toLowerCase()
-    const senha = form.senha.trim()
-
-    if (!nome) { toast.error('Nome é obrigatório'); return }
-    if (!email) { toast.error('Email é obrigatório'); return }
-    if (!senha) { toast.error('Senha é obrigatória'); return }
-    if (senha.length < 6) { toast.error('Senha deve ter no mínimo 6 caracteres'); return }
-
-    setSalvando(true)
-    try {
-      const novo = await api.post<UsuarioRow>('/auth/registro-usuario', {
-        nome,
-        email,
-        senha,
-        role: form.role,
-        workspace_id: form.workspace_id || null,
-      })
-      await mutateUsuarios((atuais = []) => [novo, ...atuais], { revalidate: false })
-      fecharDrawer()
-      toast.success('Usuário criado com sucesso')
-    } catch (err: unknown) {
-      toast.error(getErrorMessage(err, 'Erro ao criar usuário'))
-    } finally {
-      setSalvando(false)
-    }
   }
 
   async function salvarEdicao() {
@@ -525,7 +465,7 @@ export default function UsuariosAdministracaoPage() {
         </div>
 
         <button
-          onClick={abrirNovoUsuario}
+          onClick={() => setNovoUsuarioAberto(true)}
           style={{
             height: 42,
             padding: '0 20px',
@@ -758,173 +698,15 @@ export default function UsuariosAdministracaoPage() {
         )}
       </WSTableShell>
 
-      <Sheet open={drawerAberto} onOpenChange={(open) => (open ? setDrawerAberto(true) : fecharDrawer())}>
-        <SheetContent
-          side="right"
-          showCloseButton={false}
-          style={{
-            width: 'min(480px, 100vw)',
-            ...wsSheetCreamStyle,
-            padding: 0,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <SheetTitle className="sr-only">Novo Usuário</SheetTitle>
-          <SheetDescription className="sr-only">Cadastre um acesso para a plataforma</SheetDescription>
-          <div style={{
-            padding: '24px 28px 20px',
-            borderBottom: `1px solid ${wsSheetCreamTokens.border}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 16,
-          }}>
-            <div>
-              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--ws-text-1)' }}>
-                Novo Usuário
-              </h2>
-              <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0' }}>
-                Cadastre um acesso para a plataforma
-              </p>
-            </div>
-            <button
-              onClick={fecharDrawer}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                ...wsSheetCreamCloseButtonStyle,
-                color: 'var(--ws-text-2)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              <div>
-                <label style={labelStyle}>Nome *</label>
-                <input
-                  type="text"
-                  name="novo-usuario-nome"
-                  autoComplete="off"
-                  value={form.nome}
-                  onChange={(event) => setForm((prev) => ({ ...prev, nome: event.target.value }))}
-                  placeholder="Nome completo"
-                  style={inputStyle}
-                />
-              </div>
-
-              <div>
-                <label style={labelStyle}>Email *</label>
-                <input
-                  type="email"
-                  name="novo-usuario-email"
-                  autoComplete="off"
-                  value={form.email}
-                  onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-                  placeholder="usuario@empresa.com.br"
-                  style={inputStyle}
-                />
-              </div>
-
-              <div>
-                <label style={labelStyle}>Senha *</label>
-                <input
-                  type="password"
-                  name="novo-usuario-senha"
-                  autoComplete="new-password"
-                  value={form.senha}
-                  onChange={(event) => setForm((prev) => ({ ...prev, senha: event.target.value }))}
-                  placeholder="Mínimo 6 caracteres"
-                  style={inputStyle}
-                />
-              </div>
-
-              <div>
-                <label style={labelStyle}>Role *</label>
-                <select
-                  value={form.role}
-                  onChange={(event) => setForm((prev) => ({ ...prev, role: event.target.value as RoleUsuario }))}
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                >
-                  {ROLES.map((role) => (
-                    <option key={role.id} value={role.id}>{role.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={labelStyle}>Workspace <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>(opcional)</span></label>
-                <select
-                  value={form.workspace_id}
-                  onChange={(event) => setForm((prev) => ({ ...prev, workspace_id: event.target.value }))}
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                >
-                  <option value="">Sem workspace</option>
-                  {workspaces.map((workspace) => (
-                    <option key={workspace.id} value={workspace.id}>{workspace.nome}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div style={{
-            padding: '20px 28px',
-            borderTop: `1px solid ${wsSheetCreamTokens.border}`,
-            display: 'flex',
-            gap: 12,
-          }}>
-            <button
-              onClick={fecharDrawer}
-              style={{
-                flex: 1,
-                height: 42,
-                borderRadius: 10,
-                border: `1px solid ${wsSheetCreamTokens.border}`,
-                background: 'transparent',
-                color: 'var(--ws-text-2)',
-                fontSize: 14,
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={salvarUsuario}
-              disabled={salvando}
-              style={{
-                flex: 2,
-                height: 42,
-                borderRadius: 10,
-                border: 'none',
-                background: salvando ? 'rgba(62,91,255,0.50)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
-                color: '#ffffff',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: salvando ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                boxShadow: salvando ? 'none' : '0 4px 12px rgba(62,91,255,0.30)',
-              }}
-            >
-              {salvando ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
-              {salvando ? 'Salvando...' : 'Salvar'}
-            </button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      <NovoUsuarioDialog
+        open={novoUsuarioAberto}
+        onOpenChange={setNovoUsuarioAberto}
+        workspaces={workspaces}
+        initialWorkspaceId={filtroWorkspace === 'todos' ? null : filtroWorkspace}
+        onCreated={async () => {
+          await mutateUsuarios()
+        }}
+      />
 
       <Dialog open={editDrawerAberto} onOpenChange={(open) => (open ? setEditDrawerAberto(true) : fecharEdicao())}>
         <DialogContent
