@@ -8,6 +8,7 @@ import useSWR from 'swr'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { WSTable, WSTableShell } from '@/components/ui/ws-table'
 import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
+import { UsuarioWorkspacesSummary } from '@/components/administracao/usuarios/usuario-workspaces-summary'
 import { useAuth } from '@/hooks/use-auth'
 import api from '@/lib/api-client'
 
@@ -604,26 +605,9 @@ export default function UsuariosAdministracaoPage() {
                     onMouseLeave={(event) => (event.currentTarget.style.background = 'transparent')}
                   >
                     <td style={{ padding: '9px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 10,
-                          background: 'linear-gradient(135deg, rgba(62,91,255,0.85), rgba(122,90,248,0.85))',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: '#ffffff',
-                          fontSize: 13,
-                          fontWeight: 700,
-                          flexShrink: 0,
-                        }}>
-                          {usuario.nome.charAt(0).toUpperCase()}
-                        </div>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>
-                          {usuario.nome}
-                        </span>
-                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>
+                        {usuario.nome}
+                      </span>
                     </td>
                     <td style={{ padding: '9px 14px' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--ws-text-2)' }}>
@@ -649,32 +633,7 @@ export default function UsuariosAdministracaoPage() {
                       </span>
                     </td>
                     <td style={{ padding: '9px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <Building2 size={13} style={{ color: 'var(--ws-text-3)' }} />
-                        {(workspacesPorUsuarioVisivel[usuario.id]?.length ?? 0) > 0 ? (
-                          workspacesPorUsuarioVisivel[usuario.id].map((ws) => (
-                            <span
-                              key={`${usuario.id}-${ws.workspace_id}`}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                padding: '3px 8px',
-                                borderRadius: 999,
-                                background: 'rgba(62,91,255,0.10)',
-                                border: '1px solid rgba(62,91,255,0.18)',
-                                color: 'var(--ws-blue)',
-                                fontSize: 11,
-                                fontWeight: 600,
-                                lineHeight: 1.2,
-                              }}
-                            >
-                              {ws.workspace_nome ?? ws.workspace_id}
-                            </span>
-                          ))
-                        ) : (
-                          <span style={{ fontSize: 13, color: 'var(--ws-text-2)' }}>Sem workspace</span>
-                        )}
-                      </div>
+                      <UsuarioWorkspacesSummary workspaces={workspacesPorUsuarioVisivel[usuario.id] ?? []} />
                     </td>
                     <td style={{ padding: '9px 14px' }}>
                       <span style={{
