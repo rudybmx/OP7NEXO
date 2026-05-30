@@ -16,20 +16,67 @@ import type {
 
 interface AccountSummaryRow {
   alcance: number
-  frequencia_media: string | number
+  frequencia_media: number
 }
 
-const DISPOSITIVOS_FIXO: DadosDispositivo[] = [
-  { tipo: 'mobile',  percentual: 85, leads: 0, cpl: 0 },
-  { tipo: 'desktop', percentual: 12, leads: 0, cpl: 0 },
-  { tipo: 'tablet',  percentual: 3,  leads: 0, cpl: 0 },
-]
+interface PublicosDemograficoRow {
+  faixa: string | null
+  genero: string | null
+  leads: number
+  spend: number
+  cpl: number
+  ctr: number
+  alcance: number
+  impressoes: number
+}
 
-const SO_FIXO: DadosSO[] = [
-  { nome: 'Android', percentual: 68, cpl: 0 },
-  { nome: 'iOS',     percentual: 29, cpl: 0 },
-  { nome: 'Windows', percentual: 3,  cpl: 0 },
-]
+interface PublicosPlacementRow {
+  nome: string | null
+  plataforma: string | null
+  leads: number
+  spend: number
+  cpl: number
+  percentual: number
+}
+
+interface PublicosDispositivoRow {
+  tipo: DadosDispositivo['tipo']
+  percentual: number
+  leads: number
+  cpl: number
+}
+
+interface PublicosSORow {
+  nome: string
+  percentual: number
+  cpl: number
+}
+
+interface PublicosHoraRow {
+  dia: number
+  hora: number
+  leads: number
+  intensidade?: number | null
+}
+
+interface PublicosCidadeRow {
+  nome: string
+  leads: number
+  spend: number
+  cpl: number
+  percentual: number
+}
+
+interface PublicosApiResponse {
+  demograficos: PublicosDemograficoRow[]
+  placements: PublicosPlacementRow[]
+  dispositivos: PublicosDispositivoRow[]
+  sistema_operacional: PublicosSORow[]
+  heatmap: PublicosHoraRow[]
+  cidades: PublicosCidadeRow[]
+  alcance_total: number
+  frequencia_media: number
+}
 
 const KPI_VAZIO: KpiPublicos = {
   alcanceTotal: 0, frequenciaMedia: 0,
@@ -50,10 +97,11 @@ function corPlataforma(plataforma: string): string {
   return COR_MAP[plataforma] ?? '#7A5AF8'
 }
 
-function normalizePlataforma(p: string): DadosPlacement['plataforma'] {
+function normalizePlataforma(p: string | null | undefined): DadosPlacement['plataforma'] {
   const valid = ['facebook', 'instagram', 'whatsapp', 'audience_network'] as const
-  return (valid as readonly string[]).includes(p)
-    ? p as DadosPlacement['plataforma']
+  const value = String(p ?? '')
+  return (valid as readonly string[]).includes(value)
+    ? value as DadosPlacement['plataforma']
     : 'facebook'
 }
 
@@ -120,59 +168,70 @@ export function useMetaPublicos(
     ? `/meta/insights/publicos?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}${contaIdsParam}${campParam}`
     : null
 
-  const { data, isLoading, error } = useSWR(
+  const { data, isLoading, error } = useSWR<PublicosApiResponse>(
     key,
-    () => api.get<any>(key!),
+    () => api.get<PublicosApiResponse>(key!),
     { revalidateOnFocus: false }
   )
 
-  const demograficos: DadosDemograficos[] = (data?.demograficos ?? []).map((row: any) => ({
-    faixa:       row.faixa.replace('-', '–'),
-    genero:      row.genero === 'male' ? 'masc' : (row.genero === 'female' ? 'fem' : row.genero),
-    leads:       row.leads,
-    investimento: row.spend,
-    cpl:         row.cpl,
-    ctr:         row.ctr,
-    alcance:     row.alcance,
-    impressoes:  row.impressoes,
-  }))
+  const demograficos: DadosDemograficos[] = (data?.demograficos ?? [])
+    .filter((row): row is PublicosDemograficoRow & { faixa: string; genero: 'male' | 'female' } => (
+      Boolean(row.faixa) && (row.genero === 'male' || row.genero === 'female')
+    ))
+    .map((row) => ({
+      faixa:       row.faixa.replace('-', '–'),
+      genero:      row.genero === 'male' ? 'masc' : 'fem',
+      leads:       row.leads,
+      investimento: row.spend,
+      cpl:         row.cpl,
+      ctr:         row.ctr,
+      alcance:     row.alcance,
+      impressoes:  row.impressoes,
+    }))
 
-  const placements: DadosPlacement[] = (data?.placements ?? []).map((row: any) => ({
-    nome:        row.nome,
-    plataforma:  normalizePlataforma(row.plataforma),
-    leads:       row.leads,
-    investimento: row.spend,
-    cpl:         row.cpl,
-    percentual:  row.percentual,
-    ctr:         0,
-    cor:         corPlataforma(row.plataforma),
-  }))
+  const placements: DadosPlacement[] = (data?.placements ?? [])
+    .filter((row): row is PublicosPlacementRow & { nome: string; plataforma: string } => (
+      Boolean(row.nome) && Boolean(row.plataforma)
+    ))
+    .map((row) => ({
+      nome:        row.nome,
+      plataforma:  normalizePlataforma(row.plataforma),
+      leads:       row.leads,
+      investimento: row.spend,
+      cpl:         row.cpl,
+      percentual:  row.percentual,
+      ctr:         0,
+      cor:         corPlataforma(row.plataforma),
+    }))
 
   const accountRows: AccountSummaryRow[] = data
-    ? [{ alcance: data.alcance_total, frequencia_media: data.frequencia_media }]
+    ? [{
+      alcance: Number(data.alcance_total ?? 0),
+      frequencia_media: Number(data.frequencia_media ?? 0),
+    }]
     : []
 
-  const dispositivos: DadosDispositivo[] = (data?.dispositivos ?? []).map((d: any) => ({
+  const dispositivos: DadosDispositivo[] = (data?.dispositivos ?? []).map((d) => ({
     tipo:       d.tipo as DadosDispositivo['tipo'],
     percentual: d.percentual,
     leads:      d.leads,
     cpl:        d.cpl,
   }))
 
-  const sistemaOperacional: DadosSO[] = (data?.sistema_operacional ?? []).map((s: any) => ({
+  const sistemaOperacional: DadosSO[] = (data?.sistema_operacional ?? []).map((s) => ({
     nome:       s.nome,
     percentual: s.percentual,
     cpl:        s.cpl,
   }))
 
-  const heatmapHoras: DadosHora[] = (data?.heatmap ?? []).map((h: any) => ({
+  const heatmapHoras: DadosHora[] = (data?.heatmap ?? []).map((h) => ({
     dia:         h.dia,
     hora:        h.hora,
     leads:       h.leads,
     intensidade: h.intensidade ?? 0,
   }))
 
-  const cidades: DadosCidade[] = (data?.cidades ?? []).map((c: any) => ({
+  const cidades: DadosCidade[] = (data?.cidades ?? []).map((c) => ({
     nome:         c.nome,
     leads:        c.leads,
     investimento: c.spend,
@@ -180,15 +239,15 @@ export function useMetaPublicos(
     percentualLeads: c.percentual,
   }))
 
-  const kpi = demograficos.length > 0 || placements.length > 0
+  const kpi = data
     ? computeKpi(demograficos, cidades, accountRows, placements, heatmapHoras)
     : KPI_VAZIO
 
   return {
     demograficos,
     placements,
-    dispositivos:       dispositivos.length > 0 ? dispositivos : DISPOSITIVOS_FIXO,
-    sistemaOperacional: sistemaOperacional.length > 0 ? sistemaOperacional : SO_FIXO,
+    dispositivos,
+    sistemaOperacional,
     heatmapHoras:       heatmapHoras,
     cidades,
     kpi,

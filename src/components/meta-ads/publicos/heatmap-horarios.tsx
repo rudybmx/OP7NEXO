@@ -39,6 +39,29 @@ const HEATMAP_HORARIOS_DIAGRAM = `
 `
 
 export function HeatmapHorarios({ heatmap }: Props) {
+  if (!heatmap.length) {
+    return (
+      <div style={{
+        background: 'var(--ws-glass-bg)',
+        border: '1px solid var(--ws-glass-border)',
+        borderRadius: 'var(--ws-radius-lg)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow: 'var(--ws-glass-shadow)',
+        padding: '16px 20px',
+        minHeight: 220,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--ws-text-2)',
+        fontSize: 13,
+        textAlign: 'center',
+      }}>
+        Dados de horário não disponíveis para o período selecionado.
+      </div>
+    )
+  }
+
   const horas = Array.from({ length: 24 }, (_, i) => i)
 
   function getHeatColor(intensidade: number) {

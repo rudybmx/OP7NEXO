@@ -8,25 +8,25 @@ interface Props {
 }
 
 const FUNIL_DIAGRAM = `
-  <div style="font-size:10px;color:#666;display:flex;flex-direction:column;gap:3px">
-    <div style="display:flex;align-items:center;gap:4px">
-      <div style="width:60px;height:14px;background:#0f2744;border-radius:2px;display:flex;align-items:center;justify-content:center;color:white;font-size:9px">100%</div>
-      <span>Impressões</span>
-    </div>
+    <div style="font-size:10px;color:#666;display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:4px">
+        <div style="width:60px;height:14px;background:#0f2744;border-radius:2px;display:flex;align-items:center;justify-content:center;color:white;font-size:9px">100%</div>
+        <span>Impressões</span>
+      </div>
     <div style="display:flex;align-items:center;gap:4px;padding-left:8px">
       <div style="width:24px;height:2px;background:#666;opacity:0.4"></div>
     </div>
-    <div style="display:flex;align-items:center;gap:4px">
-      <div style="width:40px;height:14px;background:#3b6d11;border-radius:2px;display:flex;align-items:center;justify-content:center;color:white;font-size:9px">28%</div>
-      <span>Hook Rate (3s)</span>
-    </div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <div style="width:40px;height:14px;background:#3b6d11;border-radius:2px;display:flex;align-items:center;justify-content:center;color:white;font-size:9px">28%</div>
+        <span>Taxa de abertura (3s)</span>
+      </div>
     <div style="display:flex;align-items:center;gap:4px;padding-left:8px">
       <div style="width:24px;height:2px;background:#666;opacity:0.4"></div>
     </div>
-    <div style="display:flex;align-items:center;gap:4px">
-      <div style="width:22px;height:14px;background:#854f0b;border-radius:2px;display:flex;align-items:center;justify-content:center;color:white;font-size:9px">43%</div>
-      <span>Hold Rate (15s)</span>
-    </div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <div style="width:22px;height:14px;background:#854f0b;border-radius:2px;display:flex;align-items:center;justify-content:center;color:white;font-size:9px">43%</div>
+        <span>Taxa de retenção (15s)</span>
+      </div>
   </div>
 `
 
@@ -64,8 +64,8 @@ export function FunilAtencao({ criativos: todos }: Props) {
 
   const etapas = [
     { label: 'Impressões', valor: fmt(totalImpressoes), sub: '100%', barra: { cor: 'var(--foreground)', pct: 100 } },
-    { label: 'Hook Rate', valor: hookRate.toFixed(1) + '%', sub: fmt(totalViews3s), barra: { cor: corHook(hookRate), pct: hookRate } },
-    { label: 'Hold Rate', valor: holdRate.toFixed(1) + '%', sub: fmt(totalViews15s), barra: { cor: corHold(holdRate), pct: holdRate } },
+    { label: 'Taxa de abertura', valor: hookRate.toFixed(1) + '%', sub: fmt(totalViews3s), barra: { cor: corHook(hookRate), pct: hookRate } },
+    { label: 'Taxa de retenção', valor: holdRate.toFixed(1) + '%', sub: fmt(totalViews15s), barra: { cor: corHold(holdRate), pct: holdRate } },
     { label: 'Cliques', valor: ctrMedio.toFixed(1) + '%', sub: fmt(totalCliques), barra: { cor: '#854f0b', pct: ctrMedio * 10 } },
     { label: 'Leads', valor: totalLeads.toLocaleString('pt-BR'), sub: totalImpressoes > 0 ? ((totalLeads / totalImpressoes) * 100).toFixed(2) + '%' : '—', barra: { cor: '#3b6d11', pct: Math.min((totalLeads / (totalImpressoes / 100)) * 100, 100) } },
   ]
@@ -94,7 +94,7 @@ export function FunilAtencao({ criativos: todos }: Props) {
         </div>
         <InfoTooltip
           title="Funil de atenção"
-          description="Mostra onde a audiência abandona o vídeo. Hook Rate = quem parou nos 3s. Hold Rate = quem continuou até 15s."
+          description="Mostra onde a audiência abandona o vídeo. Taxa de abertura = quem parou nos 3s. Taxa de retenção = quem continuou até 15s."
           diagram={FUNIL_DIAGRAM}
         />
       </div>
@@ -119,8 +119,8 @@ export function FunilAtencao({ criativos: todos }: Props) {
 
       <div style={{ display: 'flex', gap: '16px', marginTop: '12px', flexWrap: 'wrap' }}>
         {[
-          { cor: '#3b6d11', texto: 'Hook Rate >25% = bom · >35% = excelente' },
-          { cor: '#854f0b', texto: 'Hold Rate >40% = bom · >60% = excelente' },
+          { cor: '#3b6d11', texto: 'Taxa de abertura >25% = bom · >35% = excelente' },
+          { cor: '#854f0b', texto: 'Taxa de retenção >40% = bom · >60% = excelente' },
           { cor: '#a32d2d', texto: 'Abaixo da meta = revisar criativo' },
         ].map(l => (
           <div key={l.texto} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10px', color: 'var(--ws-text-3)' }}>

@@ -57,7 +57,7 @@ export function AbaCriativos({ workspaceId, dataInicio, dataFim, contaIds = [] }
   const [criativoSelecionado, setCriativoSelecionado] = useState<CriativoTop | null>(null)
   const [criativoPreviewId, setCriativoPreviewId] = useState<string | null>(null)
 
-  const { criativos } = useMetaCriativos(filtros, dataInicio, dataFim, contaIds, workspaceId)
+  const { criativos, isLoading, error } = useMetaCriativos(filtros, dataInicio, dataFim, contaIds, workspaceId)
   const insights = useInsightsCriativos(criativos)
 
   const criativoPreview = criativos.find(c => c.id === criativoPreviewId) ?? null
@@ -142,6 +142,8 @@ export function AbaCriativos({ workspaceId, dataInicio, dataFim, contaIds = [] }
         onCardClick={handleCardClick}
         onAbrirPreview={setCriativoPreviewId}
         onColunasChange={(n) => setFiltros(f => ({ ...f, colunas: n }))}
+        isLoading={isLoading}
+        error={error}
       />
 
       <ModalPreview

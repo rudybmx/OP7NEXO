@@ -42,7 +42,7 @@ export function KpiPublicos({ kpi }: Props) {
       <Card label="Alcance total" valor={formatarGrande(kpi.alcanceTotal)} delta="+18% vs ant." deltaCor="#3b6d11" />
       <Card label="Frequência média" valor={kpi.frequenciaMedia.toFixed(1)} delta="Saudável" />
       <Card label="Melhor faixa (CPL)" valor={kpi.melhorFaixaCpl} delta={`CPL R$${kpi.melhorFaixaValor.toFixed(2).replace('.', ',')}`} deltaCor="#3b6d11" />
-      <Card label="Melhor placement" valor={kpi.melhorPlacement} delta={`CPL R$${kpi.melhorPlacementCpl.toFixed(2).replace('.', ',')}`} deltaCor="#3b6d11" />
+      <Card label="Melhor posicionamento" valor={kpi.melhorPlacement} delta={`CPL R$${kpi.melhorPlacementCpl.toFixed(2).replace('.', ',')}`} deltaCor="#3b6d11" />
       <Card label="Melhor horário" valor={kpi.melhorHorario} delta={kpi.melhorDia} />
       <Card label="Melhor cidade" valor={kpi.melhorCidade} delta={`${kpi.melhorCidadeLeads.toLocaleString('pt-BR')} leads`} deltaCor="var(--ws-gold)" />
     </div>

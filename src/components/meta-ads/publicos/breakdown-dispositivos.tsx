@@ -42,6 +42,25 @@ function IconeTablet() {
   )
 }
 
+function EmptyHint({ title, description }: { title: string; description: string }) {
+  return (
+    <div style={{
+      border: '1px dashed var(--ws-glass-border)',
+      borderRadius: 'var(--ws-radius-md)',
+      padding: '14px 12px',
+      color: 'var(--ws-text-2)',
+      background: 'rgba(14,20,42,0.03)',
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ws-text-1)', marginBottom: 4 }}>
+        {title}
+      </div>
+      <div style={{ fontSize: 11, lineHeight: 1.5 }}>
+        {description}
+      </div>
+    </div>
+  )
+}
+
 const ICONES: Record<string, React.ReactNode> = {
   mobile: <IconeMobile />,
   desktop: <IconeDesktop />,
@@ -55,6 +74,9 @@ const NOMES: Record<string, string> = {
 }
 
 export function BreakdownDispositivos({ dispositivos, sistemasOperacionais }: Props) {
+  const semDispositivos = dispositivos.length === 0
+  const semSistemas = sistemasOperacionais.length === 0
+
   return (
     <div style={{
       background: 'var(--ws-glass-bg)',
@@ -75,23 +97,32 @@ export function BreakdownDispositivos({ dispositivos, sistemasOperacionais }: Pr
         <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ws-text-1)' }}>Performance por dispositivo</div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
-        {dispositivos.map(d => (
-          <div key={d.tipo} style={{
-            background: 'rgba(14,20,42,0.04)',
-            border: '1px solid var(--ws-glass-border)',
-            borderRadius: 'var(--ws-radius-md)',
-            padding: '10px 8px',
-            textAlign: 'center',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--ws-text-2)', marginBottom: 4 }}>
-              {ICONES[d.tipo]}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--ws-text-2)', marginBottom: 2 }}>{NOMES[d.tipo]}</div>
-            <div style={{ fontSize: 20, fontWeight: 500, color: 'var(--ws-text-1)' }}>{d.percentual}%</div>
-            <div style={{ fontSize: 11, color: corCpl(d.cpl) }}>R${d.cpl.toFixed(2).replace('.', ',')} CPL</div>
+      <div style={{ marginBottom: 14 }}>
+        {semDispositivos ? (
+          <EmptyHint
+            title="Dados de dispositivos não disponíveis para o período selecionado."
+            description="Quando a API retornar essa série, a distribuição por mobile, desktop e tablet será exibida aqui."
+          />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {dispositivos.map(d => (
+              <div key={d.tipo} style={{
+                background: 'rgba(14,20,42,0.04)',
+                border: '1px solid var(--ws-glass-border)',
+                borderRadius: 'var(--ws-radius-md)',
+                padding: '10px 8px',
+                textAlign: 'center',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--ws-text-2)', marginBottom: 4 }}>
+                  {ICONES[d.tipo]}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ws-text-2)', marginBottom: 2 }}>{NOMES[d.tipo]}</div>
+                <div style={{ fontSize: 20, fontWeight: 500, color: 'var(--ws-text-1)' }}>{d.percentual}%</div>
+                <div style={{ fontSize: 11, color: corCpl(d.cpl) }}>R${d.cpl.toFixed(2).replace('.', ',')} CPL</div>
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
       <Separator style={{ marginBottom: 12, opacity: 0.1 }} />
@@ -100,17 +131,24 @@ export function BreakdownDispositivos({ dispositivos, sistemasOperacionais }: Pr
         <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--ws-text-2)', marginBottom: 8 }}>
           Sistema operacional
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-          {sistemasOperacionais.map(so => (
-            <div key={so.nome} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: 11, color: 'var(--ws-text-1)' }}>{so.nome}</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>{so.percentual}%</span>
-                <span style={{ fontSize: 11, color: corCpl(so.cpl) }}>R${so.cpl.toFixed(2).replace('.', ',')}</span>
+        {semSistemas ? (
+          <EmptyHint
+            title="Dados de sistema operacional não disponíveis para o período selecionado."
+            description="Quando a API retornar essa série, a distribuição por Android, iOS e desktop será exibida aqui."
+          />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {sistemasOperacionais.map(so => (
+              <div key={so.nome} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--ws-text-1)' }}>{so.nome}</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>{so.percentual}%</span>
+                  <span style={{ fontSize: 11, color: corCpl(so.cpl) }}>R${so.cpl.toFixed(2).replace('.', ',')}</span>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

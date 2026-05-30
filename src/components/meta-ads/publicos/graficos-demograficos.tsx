@@ -23,6 +23,29 @@ const dadosTempo = [
 const FAIXAS = ['18–24', '25–34', '35–44', '45–54', '55–64', '65+']
 
 export function GraficosDemograficos({ demograficos }: Props) {
+  if (!demograficos.length) {
+    return (
+      <div style={{
+        background: 'var(--ws-glass-bg)',
+        border: '1px solid var(--ws-glass-border)',
+        borderRadius: 'var(--ws-radius-lg)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow: 'var(--ws-glass-shadow)',
+        padding: 20,
+        minHeight: 220,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--ws-text-2)',
+        fontSize: 13,
+        textAlign: 'center',
+      }}>
+        Gráficos demográficos indisponíveis para o período selecionado.
+      </div>
+    )
+  }
+
   const dadosPorFaixa = FAIXAS.map(faixa => ({
     faixa,
     masc: demograficos.find(d => d.faixa === faixa && d.genero === 'masc')?.leads ?? 0,

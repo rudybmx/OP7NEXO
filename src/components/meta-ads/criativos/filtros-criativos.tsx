@@ -61,11 +61,6 @@ export function FiltrosCriativos({
     localStorage.setItem(LS_KEY, String(filtros.colunas))
   }, [filtros.colunas])
 
-  function setColunas(n: number) {
-    localStorage.setItem(LS_KEY, String(n))
-    onChange({ ...filtros, colunas: n })
-  }
-
   const contaIdsParam = contaIds.length ? `&conta_ids=${contaIds.join(',')}` : ''
   const campanhasKey = wsId
     ? `/meta/insights/campanhas?workspace_id=${wsId}&data_inicio=${dataInicio}&data_fim=${dataFim}&limit=5000${contaIdsParam}`
@@ -153,8 +148,8 @@ export function FiltrosCriativos({
         onChange={e => onChange({ ...filtros, ordenarPor: e.target.value as FiltrosCriativos['ordenarPor'] })}
       >
         <option value="score">Ordenar: Score IA</option>
-        <option value="hookRate">Hook Rate</option>
-        <option value="holdRate">Hold Rate</option>
+        <option value="hookRate">Taxa de abertura (indisponível)</option>
+        <option value="holdRate">Taxa de retenção (indisponível)</option>
         <option value="cpl">CPL</option>
         <option value="leads">Leads</option>
         <option value="diasAtivo">Mais antigo</option>

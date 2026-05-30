@@ -85,10 +85,10 @@ export function useInsightsPublicos(
       insights.push({
         id: 'concentracao-placement',
         severidade: 'alerta',
-        titulo: 'Concentração em um placement',
+        titulo: 'Concentração em um posicionamento',
         mensagem: `${dominante.percentual.toFixed(0)}% dos leads vêm de ${dominante.nome}. Alta dependência aumenta risco de volatilidade.`,
-        analiseCompleta: `${dominante.nome} responde por ${dominante.percentual.toFixed(0)}% dos leads. Concentração acima de 60% aumenta vulnerabilidade a mudanças de algoritmo ou CPM. ${segundo ? `Recomendação: testar aumento de budget em ${segundo.nome} (CPL R$${segundo.cpl.toFixed(2).replace('.', ',')}) para diversificar.` : 'Recomendação: ativar mais placements para distribuir risco.'}`,
-        labelAcao: 'Ver placements',
+        analiseCompleta: `${dominante.nome} responde por ${dominante.percentual.toFixed(0)}% dos leads. Concentração acima de 60% aumenta vulnerabilidade a mudanças de algoritmo ou CPM. ${segundo ? `Recomendação: testar aumento de budget em ${segundo.nome} (CPL R$${segundo.cpl.toFixed(2).replace('.', ',')}) para diversificar.` : 'Recomendação: ativar mais posicionamentos para distribuir risco.'}`,
+        labelAcao: 'Ver posicionamentos',
       })
     }
 
@@ -101,10 +101,10 @@ export function useInsightsPublicos(
       insights.push({
         id: 'plat-sub',
         severidade: 'info',
-        titulo: 'Placement subaproveitado',
+        titulo: 'Posicionamento subaproveitado',
         mensagem: `${melhorPlat.nome} tem CPL R$${melhorPlat.cpl.toFixed(2).replace('.', ',')} e apenas ${melhorPlat.percentual.toFixed(0)}% do orçamento. Aumentar pode reduzir CPL médio.`,
-        analiseCompleta: `${melhorPlat.nome} é o placement mais eficiente (CPL R$${melhorPlat.cpl.toFixed(2).replace('.', ',')}) mas recebe apenas ${melhorPlat.percentual.toFixed(0)}% do orçamento (${melhorPlat.leads} leads). ${refCpl}. Recomendação: ajustar Advantage+ placements ou criar conjunto dedicado para ${melhorPlat.nome}.`,
-        labelAcao: 'Ver placements',
+        analiseCompleta: `${melhorPlat.nome} é o posicionamento mais eficiente (CPL R$${melhorPlat.cpl.toFixed(2).replace('.', ',')}) mas recebe apenas ${melhorPlat.percentual.toFixed(0)}% do orçamento (${melhorPlat.leads} leads). ${refCpl}. Recomendação: ajustar Advantage+ posicionamentos ou criar conjunto dedicado para ${melhorPlat.nome}.`,
+        labelAcao: 'Ver posicionamentos',
       })
     }
   }

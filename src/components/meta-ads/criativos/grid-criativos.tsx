@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Image, Video, LayoutGrid, Eye, Check } from 'lucide-react'
+import { Image, Video, LayoutGrid, Eye, Check, Loader2, AlertTriangle } from 'lucide-react'
 import { Criativo, TipoCriativo, StatusCriativo } from '@/types/meta-ads-criativos'
 import { proxyImagem } from '@/lib/imagem-proxy'
 
@@ -13,6 +13,8 @@ interface Props {
   onCardClick: (id: string) => void
   onAbrirPreview: (id: string) => void
   onColunasChange?: (n: number) => void
+  isLoading?: boolean
+  error?: Error | null
 }
 
 function IconeTipo({ tipo }: { tipo: TipoCriativo }) {
@@ -63,7 +65,9 @@ export function GridCriativos({
   selecionados,
   onCardClick,
   onAbrirPreview,
-  onColunasChange
+  onColunasChange,
+  isLoading = false,
+  error = null,
 }: Props) {
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
@@ -72,6 +76,58 @@ export function GridCriativos({
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
+
+  if (isLoading) {
+    return (
+      <div style={{
+        background: 'var(--ws-glass-bg)',
+        border: '1px solid var(--ws-glass-border)',
+        borderRadius: 'var(--ws-radius-lg)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow: 'var(--ws-glass-shadow)',
+        padding: '20px',
+        minHeight: 260,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--ws-text-2)',
+        fontSize: 13,
+        textAlign: 'center',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Loader2 size={18} className="animate-spin" />
+          Carregando criativos...
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        background: 'var(--ws-glass-bg)',
+        border: '1px solid var(--ws-glass-border)',
+        borderRadius: 'var(--ws-radius-lg)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow: 'var(--ws-glass-shadow)',
+        padding: '20px',
+        minHeight: 260,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--ws-text-2)',
+        fontSize: 13,
+        textAlign: 'center',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, maxWidth: 520 }}>
+          <AlertTriangle size={18} style={{ color: '#a32d2d', flexShrink: 0 }} />
+          Não foi possível carregar os criativos desta conta e período. Ajuste os filtros ou tente novamente mais tarde.
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{

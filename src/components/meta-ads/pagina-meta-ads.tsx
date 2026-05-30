@@ -17,18 +17,19 @@ import { BreadcrumbMobile } from '@/components/ui/breadcrumb-mobile'
 import { siMeta } from 'simple-icons'
 import { useWorkspace } from '@/lib/workspace-context'
 
-import { LayoutDashboard, Megaphone, Image, Users, Clapperboard, Wallet } from 'lucide-react'
+import { LayoutDashboard, Megaphone, Image, Palette, Users, Clapperboard, Wallet } from 'lucide-react'
 
 const ABAS_CONFIG = [
   { id: 'Visão geral', icon: LayoutDashboard },
   { id: 'Campanhas', icon: Megaphone },
   { id: 'Anúncios', icon: Image },
-  { id: 'Vídeos', icon: Clapperboard },
+  { id: 'Criativos', icon: Palette },
   { id: 'Públicos', icon: Users },
+  { id: 'Vídeo', icon: Clapperboard },
   { id: 'Financeiro', icon: Wallet },
 ] as const
 
-type Aba = (typeof ABAS_CONFIG)[number]['id'] | 'Criativos'
+type Aba = (typeof ABAS_CONFIG)[number]['id']
 
 function periodoPadraoAtual() {
   const now = new Date()
@@ -258,7 +259,7 @@ export function PaginaMetaAds() {
         />
       )}
       {abaAtiva === 'Criativos' && <AbaCriativos workspaceId={wsId ?? null} dataInicio={filtros.dataInicio} dataFim={filtros.dataFim} contaIds={filtros.contaIds} />}
-      {abaAtiva === 'Vídeos' && <AbaVideos workspaceId={wsId ?? null} dataInicio={filtros.dataInicio} dataFim={filtros.dataFim} contaIds={filtros.contaIds} />}
+      {abaAtiva === 'Vídeo' && <AbaVideos workspaceId={wsId ?? null} dataInicio={filtros.dataInicio} dataFim={filtros.dataFim} contaIds={filtros.contaIds} />}
       {abaAtiva === 'Públicos' && <AbaPublicos workspaceId={wsId ?? null} dataInicio={filtros.dataInicio} dataFim={filtros.dataFim} contaIds={filtros.contaIds} />}
     </div>
   )

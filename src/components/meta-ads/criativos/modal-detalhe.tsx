@@ -166,8 +166,8 @@ export function ModalDetalhe({ criativo, insight, aberto, onFechar, onAbrirPrevi
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                   {[
-                    { label: 'Hook Rate', valor: `${criativo.hookRate}%`, cor: corHook(criativo.hookRate) },
-                    { label: 'Hold Rate', valor: criativo.holdRate !== null ? `${criativo.holdRate}%` : '—', cor: criativo.holdRate !== null ? corHold(criativo.holdRate) : 'var(--text2)' },
+                    { label: 'Taxa de abertura', valor: `${criativo.hookRate}%`, cor: corHook(criativo.hookRate) },
+                    { label: 'Taxa de retenção', valor: criativo.holdRate !== null ? `${criativo.holdRate}%` : 'Métrica indisponível', cor: criativo.holdRate !== null ? corHold(criativo.holdRate) : 'var(--text2)' },
                     { label: 'CTR', valor: `${criativo.ctr.toFixed(1)}%`, cor: 'var(--text)' },
                     { label: 'Leads', valor: criativo.leads.toLocaleString('pt-BR'), cor: 'var(--ws-gold)' },
                   ].map((et, i, arr) => (

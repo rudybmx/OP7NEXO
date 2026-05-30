@@ -67,16 +67,16 @@ export function Comparador({ criativos, onFechar }: Props) {
       render: c => ({ texto: c.frequencia.toFixed(1), cor: corFreq(c.frequencia), barraMax: maxFreq, barraVal: c.frequencia }),
     },
     {
-      label: 'Hook Rate',
+      label: 'Taxa de abertura',
       render: c => c.hookRate !== null
         ? { texto: `${c.hookRate}%`, cor: c.hookRate >= 25 ? '#3b6d11' : '#a32d2d', barraMax: maxHook, barraVal: c.hookRate }
-        : { texto: 'N/A', cor: 'var(--text2)', barraMax: 1, barraVal: 0 },
+        : { texto: 'Métrica indisponível', cor: 'var(--text2)', barraMax: 1, barraVal: 0 },
     },
     {
-      label: 'Hold Rate',
+      label: 'Taxa de retenção',
       render: c => c.holdRate !== null
         ? { texto: `${c.holdRate}%`, cor: c.holdRate >= 40 ? '#3b6d11' : '#854f0b', barraMax: maxHold, barraVal: c.holdRate }
-        : { texto: 'N/A', cor: 'var(--text2)', barraMax: 1, barraVal: 0 },
+        : { texto: 'Métrica indisponível', cor: 'var(--text2)', barraMax: 1, barraVal: 0 },
     },
   ]
 
@@ -117,7 +117,7 @@ export function Comparador({ criativos, onFechar }: Props) {
                   <div style={{ fontSize: '12px', fontWeight: 500, color: cell.cor, marginBottom: '3px' }}>
                     {cell.texto}
                   </div>
-                  {cell.texto !== 'N/A' && (
+                  {cell.texto !== 'Métrica indisponível' && (
                     <Barra valor={cell.barraVal} max={cell.barraMax} cor={cell.cor} />
                   )}
                 </div>

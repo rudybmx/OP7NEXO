@@ -60,7 +60,30 @@ function IconePlataforma({ plataforma, cor }: { plataforma: DadosPlacement['plat
 }
 
 export function BreakdownPlacements({ placements }: Props) {
-  const maxLeads = Math.max(...placements.map(p => p.leads))
+  if (!placements.length) {
+    return (
+      <div style={{
+        background: 'var(--ws-glass-bg)',
+        border: '1px solid var(--ws-glass-border)',
+        borderRadius: 'var(--ws-radius-lg)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow: 'var(--ws-glass-shadow)',
+        padding: '16px 20px',
+        minHeight: 220,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--ws-text-2)',
+        fontSize: 13,
+        textAlign: 'center',
+      }}>
+        Dados de posicionamentos não disponíveis para o período selecionado.
+      </div>
+    )
+  }
+
+  const maxLeads = Math.max(...placements.map(p => p.leads), 1)
 
   return (
     <div style={{
@@ -80,12 +103,12 @@ export function BreakdownPlacements({ placements }: Props) {
       }} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ws-text-1)' }}>Performance por placement</div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ws-text-1)' }}>Performance por posicionamento</div>
           <div style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>Distribuição de leads e CPL por canal</div>
         </div>
         <InfoTooltip
-          title="Performance por placement"
-          description="Compara leads e CPL entre os canais onde seus anúncios veiculam. Use para realocar orçamento para o mais eficiente."
+          title="Performance por posicionamento"
+          description="Compara leads e CPL entre os posicionamentos onde seus anúncios veiculam. Use para realocar orçamento para o mais eficiente."
           diagram={PLACEMENTS_DIAGRAM}
         />
       </div>

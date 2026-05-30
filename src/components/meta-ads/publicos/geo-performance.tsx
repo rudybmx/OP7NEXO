@@ -16,7 +16,7 @@ function LinhasCidade({ cidades, ordenarPor }: { cidades: DadosCidade[]; ordenar
   const ordenadas = [...cidades].sort((a, b) =>
     ordenarPor === 'leads' ? b.leads - a.leads : a.cpl - b.cpl
   ).slice(0, 7)
-  const maxLeads = Math.max(...ordenadas.map(c => c.leads))
+  const maxLeads = Math.max(...ordenadas.map(c => c.leads), 1)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -45,6 +45,29 @@ function LinhasCidade({ cidades, ordenarPor }: { cidades: DadosCidade[]; ordenar
 }
 
 export function GeoPerformance({ cidades }: Props) {
+  if (!cidades.length) {
+    return (
+      <div style={{
+        background: 'var(--ws-glass-bg)',
+        border: '1px solid var(--ws-glass-border)',
+        borderRadius: 'var(--ws-radius-lg)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow: 'var(--ws-glass-shadow)',
+        padding: '16px 20px',
+        minHeight: 220,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--ws-text-2)',
+        fontSize: 13,
+        textAlign: 'center',
+      }}>
+        Dados geográficos não disponíveis para o período selecionado.
+      </div>
+    )
+  }
+
   return (
     <div style={{
       background: 'var(--ws-glass-bg)',
