@@ -109,8 +109,14 @@ export async function GET(request: NextRequest) {
     const backendConversas: BackendConversaRow[] = Array.isArray(data) ? data : []
 
       // Transforma resposta do backend para formato do frontend
+    const isResolvidas = filtro === 'resolvidas'
     const filteredRows = backendConversas.filter(row => {
       if (canalIdParam && row.canal_id !== canalIdParam) return false
+      if (isResolvidas) {
+        if (row.status !== 'resolvido') return false
+      } else if (row.status === 'resolvido') {
+        return false
+      }
       if (filtro === 'grupos' && !row.is_group) return false
       if (filtro === 'equipe' && (!row.equipe_id || row.responsavel_id === access.user.id)) return false
       return true

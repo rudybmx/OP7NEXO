@@ -232,7 +232,7 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Frontend exibe ícone 👥 + nome do grupo na inbox, nome do participant no chat, e badge @mention com destaque dourado
 
 ### ✅ Implementado (2026-05-28) — WhatsApp Web + CRM Fase 5
-- `/crm/atendimento/conversas` carrega canais/números do workspace e filtra a inbox por canal.
+- `/crm/atendimento/conversas` carrega canais/números do workspace, filtra a inbox por canal e oculta conversas `resolvido` da aba ativa, deixando-as só em `Resolvidos`.
 - Composer envia texto, imagem/documento e áudio gravado via upload `/canais/{canal_id}/upload-midia` + envio Evolution.
 - Chat renderiza mídia inline, checks de status (`pending/sent/delivered/read/played/failed`), participante e menção em grupos.
 - Painel do contato exibe lead/follow-up e permite criar ou marcar follow-up como feito via `/crm/followups`.

@@ -34,6 +34,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     // Verifica se conversa existe e pertence a um workspace acessível
     const conversas = await db`
       SELECT id, workspace_id, status, responsavel_id, equipe_id
+           , closed_at, first_response_at
       FROM public.crm_whatsapp_conversas
       WHERE id = ${id}::uuid
     `
@@ -69,8 +70,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
     }
 
-    // Se resolver, registra resolucao no historico
-    const historicoEntry = status === 'resolvido'
+    const isResolucao = status === 'resolvido'
+
+    // Se resolver, registra resolucao no historico apenas na transicao
+    const historicoEntry = isResolucao && conversa.status !== 'resolvido'
       ? JSON.stringify({
           acao: 'resolvido',
           de: conversa.status,
@@ -82,16 +85,22 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       : null
 
     // Monta UPDATE dinâmico com status e/ou ia_ativa
-    const updated = historicoEntry
+    const updated = isResolucao
       ? await db`
           UPDATE public.crm_whatsapp_conversas
           SET
             status = ${status},
+            closed_at = COALESCE(closed_at, NOW()),
+            resolution_time = CASE
+              WHEN resolution_time IS NULL AND first_response_at IS NOT NULL
+                THEN EXTRACT(EPOCH FROM (COALESCE(closed_at, NOW()) - first_response_at))::int
+              ELSE resolution_time
+            END,
             ${setIaAtiva ? db`ia_ativa = ${ia_ativa},` : db``}
-            historico_transferencias = historico_transferencias || ${historicoEntry}::jsonb,
+            ${historicoEntry ? db`historico_transferencias = historico_transferencias || ${historicoEntry}::jsonb,` : db``}
             updated_at = NOW()
           WHERE id = ${id}::uuid
-          RETURNING id, status, ia_ativa, updated_at
+          RETURNING id, status, closed_at, ia_ativa, resolution_time, updated_at
         `
       : status
         ? await db`
@@ -101,7 +110,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
               ${setIaAtiva ? db`ia_ativa = ${ia_ativa},` : db``}
               updated_at = NOW()
             WHERE id = ${id}::uuid
-            RETURNING id, status, ia_ativa, updated_at
+            RETURNING id, status, closed_at, ia_ativa, resolution_time, updated_at
           `
         : await db`
             UPDATE public.crm_whatsapp_conversas
@@ -109,7 +118,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
               ia_ativa = ${ia_ativa},
               updated_at = NOW()
             WHERE id = ${id}::uuid
-            RETURNING id, status, ia_ativa, updated_at
+            RETURNING id, status, closed_at, ia_ativa, resolution_time, updated_at
           `
 
     return NextResponse.json({
