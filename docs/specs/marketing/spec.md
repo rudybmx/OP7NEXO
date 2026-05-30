@@ -35,6 +35,9 @@ Implementado e em produção. Visão Geral + Campanhas com dados reais. Público
 - Breakdowns demográficos (idade/gênero) e placement (facebook/feed, etc.)
 - Filtro por campanha: dropdown Radix UI com scroll, opção "Todas"
 - Dados via `GET /meta/insights/publicos?workspace_id=...&campaign_id=...`
+- Contrato de placements: `{ nome, plataforma, leads, spend, cpl, percentual, impressoes, ctr }` — `ctr` calculado pelo backend (`SUM(clicks)/SUM(impressions)*100`)
+- Dívida D1: `demograficos[].alcance` = 0 estrutural — `reach` ausente em `meta_publicos_insights` e na requisição à Meta API; não corrigir sem migration + sync aprovados
+- Dívida D3: `campaign_id = 'ALL'` como sentinela para "sem filtro" — não alterar sem migration + backfill aprovados
 
 ### Aba Criativos
 - Grid de criativos com thumbnail, métricas (spend, leads, CPL, CTR)

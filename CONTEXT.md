@@ -84,7 +84,13 @@ Account
 
 ### Filtros implementados
 - ✅ Públicos: dropdown de campanha filtrando por `campaign_id`
+- ✅ Públicos: `placements[].ctr` e `placements[].impressoes` calculados pelo backend (antes eram 0 fixo no hook)
 - ⏳ Criativos: mesmo padrão, adicionar `campaign_id` + `adset_id` (próxima tarefa)
+
+### Dívida conhecida — Meta Ads Públicos
+- `demograficos[].alcance` retorna 0: `reach` não existe em `meta_publicos_insights` nem é solicitado à Meta API no breakdown demográfico; corrigir exige migration + sync (D1)
+- `frequencia_media` não filtra por campanha: vem de `meta_insights_diarios` total; sem fonte agregada por `campaign_id` (D2)
+- `campaign_id = 'ALL'` sentinel: embutido em sync + tabela + query; alterar exige migration + backfill (D3)
 
 ---
 

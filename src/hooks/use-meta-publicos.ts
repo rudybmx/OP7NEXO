@@ -37,6 +37,8 @@ interface PublicosPlacementRow {
   spend: number
   cpl: number
   percentual: number
+  impressoes?: number
+  ctr: number
 }
 
 interface PublicosDispositivoRow {
@@ -200,7 +202,7 @@ export function useMetaPublicos(
       investimento: row.spend,
       cpl:         row.cpl,
       percentual:  row.percentual,
-      ctr:         0,
+      ctr:         row.ctr ?? 0,
       cor:         corPlataforma(row.plataforma),
     }))
 
