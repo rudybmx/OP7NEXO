@@ -2927,7 +2927,8 @@ def publicos(
             "SELECT breakdown_value, "
             "  COALESCE(SUM(leads),0) AS leads, "
             "  COALESCE(SUM(spend),0) AS spend, "
-            "  COALESCE(SUM(impressions),0) AS impressions "
+            "  COALESCE(SUM(impressions),0) AS impressions, "
+            "  COALESCE(SUM(clicks),0) AS clicks "
             "FROM meta_publicos_insights "
             "WHERE ads_account_id = ANY(:ids) "
             "  AND data BETWEEN :ini AND :fim "
@@ -2957,6 +2958,7 @@ def publicos(
     for r in plac_rows:
         bv = r[0] or ""
         leads = int(r[1]); spend = float(r[2])
+        impressions = int(r[3]); clicks = int(r[4])
         plataforma = bv.split("|")[0] if "|" in bv else bv
         placements.append({
             "nome": PLACEMENT_MAP.get(bv, bv),
@@ -2965,6 +2967,8 @@ def publicos(
             "spend": spend,
             "cpl": _safe_div(spend, leads),
             "percentual": round(leads / total_leads_plac * 100, 1),
+            "impressoes": impressions,
+            "ctr": round(_safe_div(clicks, impressions) * 100, 4),
         })
 
     geral_row = db.execute(
