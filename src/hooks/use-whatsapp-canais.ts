@@ -14,6 +14,8 @@ export interface WhatsappCanal {
   connection_status?: string | null
 }
 
+const TIPOS_CANAL_ATENDIMENTO = new Set(['whatsapp_evolution', 'whatsapp_oficial', 'webhook'])
+
 interface UseWhatsappCanaisReturn {
   canais: WhatsappCanal[]
   isLoading: boolean
@@ -38,7 +40,7 @@ export function useWhatsappCanais(workspaceId?: string | null, enabled = true): 
       setIsLoading(true)
       setError(null)
       const data = await api.get<WhatsappCanal[]>(`/workspaces/${workspaceId}/canais`)
-      setCanais(data.filter(canal => canal.tipo === 'whatsapp_evolution' || canal.tipo === 'whatsapp_oficial'))
+      setCanais(data.filter(canal => TIPOS_CANAL_ATENDIMENTO.has(canal.tipo)))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar canais')
     } finally {

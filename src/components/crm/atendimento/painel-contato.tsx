@@ -155,7 +155,7 @@ export function PainelContato({ conversa, workspaceId, onAtualizar }: PainelCont
         <div style={{ display: 'grid', gap: 8 }}>
           <InfoRow label="Telefone" valor={conversa.contato.numeroEvo || conversa.contato.telefone} icon={<Phone size={12} />} />
           <InfoRow label="Remote JID" valor={conversa.contato.remoteJid} icon={<MessageSquare size={12} />} />
-          <InfoRow label="Número conectado" valor={conversa.canalNumero || conversa.canalNome} icon={<MessageSquare size={12} />} />
+          <InfoRow label={conversa.canalTipo === 'webhook' ? 'Canal' : 'Número conectado'} valor={conversa.canalNumero || conversa.canalNome} icon={<MessageSquare size={12} />} />
           <InfoRow label="Próximo follow-up" valor={conversa.followupDueAt ? new Date(conversa.followupDueAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null} icon={<CalendarClock size={12} />} />
         </div>
       </div>

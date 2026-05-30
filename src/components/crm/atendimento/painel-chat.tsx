@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { ArrowRightLeft, Check, CheckCheck, Clock, FileText, PlayCircle, AlertCircle, User } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { CardRastreamento } from './card-rastreamento'
+import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
 
 interface PainelChatProps {
   conversa: ConversaApi
@@ -152,8 +153,22 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ws-text-1)' }}>
               {conversa.isGroup ? `👥 ${conversa.groupName || conversa.contato.nome}` : conversa.contato.nome}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>
-              {conversa.status.replace('_', ' ')}
+            <div style={{ fontSize: 11, color: 'var(--ws-text-3)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span>{conversa.status.replace('_', ' ')}</span>
+              {conversa.canalTipo === 'webhook' && (
+                <span style={{
+                  fontSize: 9,
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: 'rgba(245,158,11,0.12)',
+                  color: '#F59E0B',
+                  border: '1px solid rgba(245,158,11,0.20)',
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                }}>
+                  {getCanalBadgeLabel(conversa.canalTipo)}
+                </span>
+              )}
             </div>
           </div>
         </div>

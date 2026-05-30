@@ -80,6 +80,7 @@ export interface ConversaApi {
   canal: string
   canalNome?: string | null
   canalNumero?: string | null
+  canalTipo?: string | null
   tags: string[]
   responsavelId?: string | null
   leadStatus?: string | null

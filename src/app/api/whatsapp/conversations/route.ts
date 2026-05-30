@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveWhatsappWorkspaceAccess, normalizeWorkspaceId } from '@/lib/whatsapp-workspace-access'
+import { getCanalTags } from '@/lib/whatsapp-canal'
 import type { NextRequest } from 'next/server'
 
 const API_BASE_URL = 'http://op7nexo-api:8000'
@@ -116,7 +117,7 @@ export async function GET(request: NextRequest) {
     })
 
     const channelIds = [...new Set(filteredRows.map(row => row.canal_id).filter(Boolean) as string[])]
-    const channelById = new Map<string, { nome?: string | null; numero_telefone?: string | null }>()
+    const channelById = new Map<string, { nome?: string | null; numero_telefone?: string | null; tipo?: string | null }>()
     if (channelIds.length > 0) {
       const channelsResponse = await fetch(`${API_BASE_URL}/workspaces/${workspaceIdParam}/canais`, {
         headers: { Authorization: access.tokenToForward },
@@ -151,7 +152,8 @@ export async function GET(request: NextRequest) {
       canal: 'whatsapp',
       canalNome: channel?.nome || null,
       canalNumero: channel?.numero_telefone || null,
-      tags: ['WhatsApp', 'Evolution'],
+      canalTipo: channel?.tipo || null,
+      tags: getCanalTags(channel?.tipo),
       responsavelId: row.responsavel_id,
       leadStatus: row.lead_status || null,
       followupDueAt: iso(row.followup_due_at),

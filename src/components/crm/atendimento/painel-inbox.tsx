@@ -3,6 +3,7 @@
 import { Search, RefreshCw, MessageCircle, AtSign, Paperclip } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import type { WhatsappCanal } from '@/hooks/use-whatsapp-canais'
+import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
 
 interface PainelInboxProps {
   conversas: ConversaApi[]
@@ -159,7 +160,9 @@ export function PainelInbox({
             <option value="todos">Todos os números</option>
             {canais.map(canal => (
               <option key={canal.id} value={canal.id}>
-                {canal.nome}{canal.numero_telefone ? ` · ${canal.numero_telefone}` : ''}
+                {canal.tipo === 'webhook'
+                  ? `${getCanalBadgeLabel(canal.tipo)} · ${canal.nome}`
+                  : `${canal.nome}${canal.numero_telefone ? ` · ${canal.numero_telefone}` : ''}`}
               </option>
             ))}
           </select>
@@ -290,13 +293,13 @@ export function PainelInbox({
                 fontSize: 9,
                 padding: '1px 6px',
                 borderRadius: 4,
-                background: 'rgba(37,211,102,0.12)',
-                color: '#25D366',
-                border: '1px solid rgba(37,211,102,0.18)',
+                background: conversa.canalTipo === 'webhook' ? 'rgba(245,158,11,0.12)' : 'rgba(37,211,102,0.12)',
+                color: conversa.canalTipo === 'webhook' ? '#F59E0B' : '#25D366',
+                border: `1px solid ${conversa.canalTipo === 'webhook' ? 'rgba(245,158,11,0.20)' : 'rgba(37,211,102,0.18)'}`,
                 textTransform: 'uppercase',
                 fontWeight: 700,
               }}>
-                WhatsApp
+                {getCanalBadgeLabel(conversa.canalTipo)}
               </span>
               {conversa.canalNome && (
                 <span style={{
