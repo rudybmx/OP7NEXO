@@ -164,25 +164,24 @@ export default function UsuariosAdministracaoPage() {
   }, [authLoading, user, router])
 
   useEffect(() => {
-    if (workspaceIdQuery) {
-      filtroWorkspaceInicializado.current = true
-      if (workspaceIdQuery !== filtroWorkspaceRef.current) {
-        setFiltroWorkspace(workspaceIdQuery)
-      }
+    if (filtroWorkspaceInicializado.current) return
+
+    // Se há workspace_id na URL, aguardar workspaces carregarem para validar o ID
+    if (workspaceIdQuery && workspacesOrdenados.length === 0) return
+
+    filtroWorkspaceInicializado.current = true
+
+    if (!workspaceIdQuery) return  // 'todos' já é o default
+
+    const existe = workspacesOrdenados.some((w) => w.id === workspaceIdQuery)
+    if (!existe) {
+      console.warn('[usuarios-admin] workspace_id da URL não encontrado na lista, usando Todos')
       return
     }
-
-    if (!filtroWorkspaceInicializado.current) {
-      filtroWorkspaceInicializado.current = true
-      if (filtroWorkspaceRef.current !== 'todos') {
-        setFiltroWorkspace('todos')
-      }
+    if (workspaceIdQuery !== filtroWorkspaceRef.current) {
+      setFiltroWorkspace(workspaceIdQuery)
     }
-  }, [workspaceIdQuery])
-
-  useEffect(() => {
-    filtroWorkspaceRef.current = filtroWorkspace
-  }, [filtroWorkspace])
+  }, [workspaceIdQuery, workspacesOrdenados])
 
   useEffect(() => {
     if (usuariosError) toast.error(getErrorMessage(usuariosError, 'Erro ao carregar usuários'))
@@ -191,19 +190,19 @@ export default function UsuariosAdministracaoPage() {
   useEffect(() => {
     if (!isPlatformAdmin || usuarios.length === 0) return
     let cancelled = false
-    ;(async () => {
-      try {
-        const results = await Promise.all(
-          usuarios.map(async (usuario) => {
+    void (async () => {
+      const entries = await Promise.all(
+        usuarios.map(async (usuario) => {
+          try {
             const acessos = await api.get<WorkspaceAcesso[]>(`/users/${usuario.id}/workspaces`)
             return [usuario.id, acessos.filter((a) => a.ativo)] as const
-          }),
-        )
-        if (cancelled) return
-        setWorkspacesPorUsuario(Object.fromEntries(results))
-      } catch (err) {
-        console.error('[usuarios-admin] falha ao carregar workspaces por usuário', err)
-      }
+          } catch {
+            return [usuario.id, [] as WorkspaceAcesso[]] as const
+          }
+        }),
+      )
+      if (cancelled) return
+      setWorkspacesPorUsuario(Object.fromEntries(entries))
     })()
     return () => {
       cancelled = true
