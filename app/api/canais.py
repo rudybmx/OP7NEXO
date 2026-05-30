@@ -29,6 +29,12 @@ from app.models.user import RoleUsuario, User
 from app.models.workspace import Workspace
 from app.services import evolution as evo_service
 from app.services.object_storage import download_and_put, put_bytes, public_url
+from app.services.webhook_api_ingestion import (
+    WebhookAPIError,
+    prepare_webhook_config,
+    process_webhook_api_ingestion,
+    sanitize_webhook_config,
+)
 from app.services.redis_pub import publish_whatsapp_event
 from app.services.whatsapp_crm_persistence import process_evolution_message
 from app.services.whatsapp_event_queue import enqueue_evolution_event
@@ -78,6 +84,7 @@ class CanalOut(BaseModel):
     config: dict
     mensagem_boas_vindas: str | None
     webhook_token: str | None
+    webhook_secret: str | None = None
     status: str
     numero_telefone: str | None
     conectado_em: str | None
@@ -97,15 +104,16 @@ class ConectarOut(BaseModel):
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-def _canal_out(c: CanalEntrada) -> CanalOut:
+def _canal_out(c: CanalEntrada, *, webhook_secret: str | None = None) -> CanalOut:
     return CanalOut(
         id=str(c.id),
         workspace_id=str(c.workspace_id),
         tipo=c.tipo,
         nome=c.nome,
-        config=c.config or {},
+        config=sanitize_webhook_config(c.config or {}),
         mensagem_boas_vindas=c.mensagem_boas_vindas,
         webhook_token=c.webhook_token,
+        webhook_secret=webhook_secret,
         status=c.status,
         numero_telefone=c.numero_telefone,
         conectado_em=c.conectado_em.isoformat() if c.conectado_em else None,
@@ -419,7 +427,7 @@ def _evolution_text_and_mentions(payload: dict | None, canal: CanalEntrada) -> t
 
 # ── CRUD ─────────────────────────────────────────────────────────────
 
-@router.get("/canais", response_model=list[CanalOut])
+@router.get("/canais", response_model=list[CanalOut], response_model_exclude_none=True)
 def listar_todos_canais(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
@@ -435,7 +443,7 @@ def listar_todos_canais(
     return [_canal_out(c) for c in q.all()]
 
 
-@router.get("/workspaces/{workspace_id}/canais", response_model=list[CanalOut])
+@router.get("/workspaces/{workspace_id}/canais", response_model=list[CanalOut], response_model_exclude_none=True)
 def listar_canais(
     workspace_id: uuid.UUID,
     db: Session = Depends(get_db),
@@ -451,6 +459,7 @@ def listar_canais(
     "/workspaces/{workspace_id}/canais",
     response_model=CanalOut,
     status_code=status.HTTP_201_CREATED,
+    response_model_exclude_none=True,
 )
 def criar_canal(
     workspace_id: uuid.UUID,
@@ -462,12 +471,19 @@ def criar_canal(
     verificar_acesso_workspace(usuario, workspace_id, db)
 
     webhook_token = secrets.token_hex(32) if payload.tipo == "webhook" else None
+    stored_config = payload.config or {}
+    webhook_secret: str | None = None
+    if payload.tipo == "webhook":
+        stored_config, webhook_secret, _ = prepare_webhook_config(
+            stored_config,
+            generate_secret=True,
+        )
 
     c = CanalEntrada(
         workspace_id=workspace_id,
         tipo=payload.tipo,
         nome=payload.nome,
-        config=payload.config,
+        config=stored_config,
         mensagem_boas_vindas=payload.mensagem_boas_vindas,
         webhook_token=webhook_token,
         status=payload.status,
@@ -476,10 +492,10 @@ def criar_canal(
     db.commit()
     db.refresh(c)
 
-    return _canal_out(c)
+    return _canal_out(c, webhook_secret=webhook_secret)
 
 
-@router.get("/canais/{canal_id}", response_model=CanalOut)
+@router.get("/canais/{canal_id}", response_model=CanalOut, response_model_exclude_none=True)
 def detalhar_canal(
     canal_id: uuid.UUID,
     db: Session = Depends(get_db),
@@ -490,7 +506,7 @@ def detalhar_canal(
     return _canal_out(c)
 
 
-@router.put("/canais/{canal_id}", response_model=CanalOut)
+@router.put("/canais/{canal_id}", response_model=CanalOut, response_model_exclude_none=True)
 def atualizar_canal(
     canal_id: uuid.UUID,
     payload: CanalUpdate,
@@ -499,13 +515,21 @@ def atualizar_canal(
 ):
     c = _get_canal_or_404(canal_id, db)
     _exigir_admin_canal(usuario, c, db)
+    stored_config = payload.config or {}
+    webhook_secret: str | None = None
+    if c.tipo == "webhook":
+        stored_config, webhook_secret, _ = prepare_webhook_config(
+            stored_config,
+            existing_config=c.config,
+            generate_secret=True,
+        )
     c.nome = payload.nome
-    c.config = payload.config
+    c.config = stored_config
     c.mensagem_boas_vindas = payload.mensagem_boas_vindas
     c.status = payload.status
     db.commit()
     db.refresh(c)
-    return _canal_out(c)
+    return _canal_out(c, webhook_secret=webhook_secret)
 
 
 @router.delete("/canais/{canal_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1622,17 +1646,34 @@ async def receber_webhook(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
+    raw_body = await request.body()
+    if len(raw_body) > 1_048_576:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={"code": "webhook_payload_too_large", "message": "Payload excede 1 MB"},
+        )
 
     canal = db.query(CanalEntrada).filter(CanalEntrada.webhook_token == token).first()
-    if not canal:
+    if not canal or canal.tipo != "webhook":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token inválido")
 
-    logger.info("[webhook-generic] canal=%s payload=%s", canal.nome, payload)
-    return {"recebido": True}
+    try:
+        result = process_webhook_api_ingestion(
+            db,
+            canal,
+            raw_body,
+            timestamp_header=request.headers.get("X-OP7-Timestamp"),
+            signature_header=request.headers.get("X-OP7-Signature"),
+        )
+    except WebhookAPIError as exc:
+        db.rollback()
+        raise exc.to_http_exception()
+    except Exception:
+        db.rollback()
+        logger.exception("[webhook-generic] falha no processamento canal=%s", canal.id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Falha ao processar webhook")
+
+    return result.to_dict()
 
 
 @router.post("/webhook/evolution/test")
