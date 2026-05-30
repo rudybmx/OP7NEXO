@@ -25,6 +25,46 @@ function redirectToLogin(): void {
   }
 }
 
+function formatApiError(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail.trim()) return detail
+
+  if (Array.isArray(detail)) {
+    const mensagens = detail
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object') {
+          const registro = item as Record<string, unknown>
+          const mensagem = typeof registro.msg === 'string'
+            ? registro.msg
+            : typeof registro.message === 'string'
+              ? registro.message
+              : typeof registro.detail === 'string'
+                ? registro.detail
+                : null
+          if (!mensagem) return null
+
+          const local = Array.isArray(registro.loc)
+            ? registro.loc.filter((parte) => typeof parte === 'string' || typeof parte === 'number').join('.')
+            : null
+          return local ? `${local}: ${mensagem}` : mensagem
+        }
+        return null
+      })
+      .filter((mensagem): mensagem is string => Boolean(mensagem))
+
+    if (mensagens.length > 0) return mensagens.join('; ')
+  }
+
+  if (detail && typeof detail === 'object') {
+    const registro = detail as Record<string, unknown>
+    const msg = formatApiError(registro.detail, fallback)
+    if (msg !== fallback) return msg
+    if (typeof registro.message === 'string' && registro.message.trim()) return registro.message
+  }
+
+  return fallback
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -52,8 +92,20 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail ?? err.message ?? `Erro ${res.status}`)
+    const body = await res.text()
+    if (body) {
+      try {
+        const parsed = JSON.parse(body) as Record<string, unknown>
+        throw new Error(formatApiError(parsed.detail ?? parsed.message ?? parsed.error, `Erro ${res.status}`))
+      } catch (parseErr) {
+        if (parseErr instanceof SyntaxError) {
+          throw new Error(body || `Erro ${res.status}`)
+        }
+        if (parseErr instanceof Error) throw parseErr
+        throw new Error(body || `Erro ${res.status}`)
+      }
+    }
+    throw new Error(`Erro ${res.status}`)
   }
 
   if (res.status === 204) return undefined as T

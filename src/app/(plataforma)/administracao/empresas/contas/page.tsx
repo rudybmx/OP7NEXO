@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
 import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
 import { WSTable, WSTableActions, WSTableShell } from '@/components/ui/ws-table'
 import { useAuth } from '@/hooks/use-auth'
@@ -86,7 +87,14 @@ function emptyForm() {
     cnpj: '',
     endereco: { logradouro: '', numero: '', complemento: '', bairro: '', municipio: '', uf: '', cep: '' },
     modulos: [] as string[],
+    ativo: true,
   }
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  return fallback
 }
 
 export default function ClientesPage() {
@@ -107,21 +115,38 @@ export default function ClientesPage() {
     if (!authLoading && user && user.role !== 'platform_admin') router.push('/')
   }, [authLoading, user, router])
 
-  const loadClientes = useCallback(async () => {
-    setCarregando(true)
-    try {
-      const data = await api.get<Workspace[]>('/workspaces')
-      setClientes(data)
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao carregar clientes')
-    } finally {
-      setCarregando(false)
-    }
+  const refreshClientes = useCallback(async () => {
+    const data = await api.get<Workspace[]>('/workspaces')
+    setClientes(data)
+    return data
   }, [])
 
   useEffect(() => {
-    if (user?.role === 'platform_admin') loadClientes()
-  }, [user, loadClientes])
+    if (user?.role !== 'platform_admin') return
+
+    let ativo = true
+
+    const carregar = async () => {
+      setCarregando(true)
+      try {
+        await refreshClientes()
+      } catch (err: unknown) {
+        if (ativo) {
+          toast.error(getErrorMessage(err, 'Erro ao carregar clientes'))
+        }
+      } finally {
+        if (ativo) {
+          setCarregando(false)
+        }
+      }
+    }
+
+    void carregar()
+
+    return () => {
+      ativo = false
+    }
+  }, [user, refreshClientes])
 
   async function buscarCNPJ(cnpj: string) {
     const digits = cnpj.replace(/\D/g, '')
@@ -145,8 +170,8 @@ export default function ClientesPage() {
         },
       }))
       toast.success('Dados preenchidos via Receita Federal')
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao buscar CNPJ')
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Erro ao buscar CNPJ'))
     } finally {
       setBuscandoCNPJ(false)
     }
@@ -165,18 +190,26 @@ export default function ClientesPage() {
     try {
       if (editandoId) {
         const atualizado = await api.put<Workspace>(`/workspaces/${editandoId}`, payload)
-        setClientes(prev => prev.map(c => c.id === editandoId ? atualizado : c))
+        const workspaceFinal = form.ativo === atualizado.ativo
+          ? atualizado
+          : await api.patch<Workspace>(`/workspaces/${editandoId}/status`, { ativo: form.ativo })
+        setClientes(prev => prev.map(c => c.id === editandoId ? workspaceFinal : c))
+        void refreshClientes().catch(() => {})
         fecharDrawer()
         toast.success('Cliente atualizado com sucesso!')
       } else {
         const criado = await api.post<Workspace>('/workspaces', payload)
-        setClienteSalvo(criado)
-        setClientes(prev => [criado, ...prev])
+        const workspaceFinal = form.ativo === criado.ativo
+          ? criado
+          : await api.patch<Workspace>(`/workspaces/${criado.id}/status`, { ativo: form.ativo })
+        setClienteSalvo(workspaceFinal)
+        setClientes(prev => [workspaceFinal, ...prev.filter(c => c.id !== workspaceFinal.id)])
+        void refreshClientes().catch(() => {})
         setForm(emptyForm())
         toast.success('Cliente criado com sucesso!')
       }
-    } catch (err: any) {
-      toast.error(err.message || (editandoId ? 'Erro ao atualizar cliente' : 'Erro ao criar cliente'))
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, editandoId ? 'Erro ao atualizar cliente' : 'Erro ao criar cliente'))
     } finally {
       setSalvando(false)
     }
@@ -198,6 +231,7 @@ export default function ClientesPage() {
         cep: c.endereco?.cep || '',
       },
       modulos: c.modulos || [],
+      ativo: c.ativo,
     })
     setDrawerAberto(true)
   }
@@ -388,23 +422,41 @@ export default function ClientesPage() {
                         <Pencil size={12} />
                         Editar
                       </button>
-                      <button style={{
-                        padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 500,
-                        background: 'rgba(62,91,255,0.10)', color: 'var(--ws-blue)',
-                        border: '1px solid rgba(62,91,255,0.20)', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 4,
-                      }}>
+                      <button
+                        type="button"
+                        disabled
+                        title="Em breve"
+                        style={{
+                          padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 500,
+                          background: 'rgba(62,91,255,0.10)', color: 'var(--ws-blue)',
+                          border: '1px solid rgba(62,91,255,0.20)', cursor: 'not-allowed',
+                          opacity: 0.72,
+                          display: 'flex', alignItems: 'center', gap: 4,
+                        }}
+                      >
                         <CreditCard size={12} />
                         Conta Ads
+                        <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', opacity: 0.85 }}>
+                          Em breve
+                        </span>
                       </button>
-                      <button style={{
-                        padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 500,
-                        background: 'rgba(122,90,248,0.10)', color: 'var(--ws-purple)',
-                        border: '1px solid rgba(122,90,248,0.20)', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 4,
-                      }}>
+                      <button
+                        type="button"
+                        disabled
+                        title="Em breve"
+                        style={{
+                          padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 500,
+                          background: 'rgba(122,90,248,0.10)', color: 'var(--ws-purple)',
+                          border: '1px solid rgba(122,90,248,0.20)', cursor: 'not-allowed',
+                          opacity: 0.72,
+                          display: 'flex', alignItems: 'center', gap: 4,
+                        }}
+                      >
                         <Users size={12} />
                         Usuário
+                        <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', opacity: 0.85 }}>
+                          Em breve
+                        </span>
                       </button>
                     </WSTableActions>
                   </td>
@@ -452,26 +504,51 @@ export default function ClientesPage() {
                 {([
                   { icon: <CreditCard size={18} style={{ color: 'var(--ws-blue)' }} />, titulo: 'Adicionar Conta Ads', sub: 'Meta, Google, LinkedIn, TikTok', href: '/administracao/contas-ads' },
                   { icon: <Users size={18} style={{ color: 'var(--ws-purple)' }} />, titulo: 'Adicionar Usuário', sub: 'Vincular usuário ao workspace', href: null },
-                ] as const).map(item => (
+                ] as const).map(item => {
+                  const desabilitado = item.href == null
+                  return (
                     <button
-                    key={item.titulo}
-                    onClick={() => { if (item.href) { fecharDrawer(); router.push(item.href) } }}
-                    style={{
-                      padding: '14px 16px', borderRadius: 12,
-                      background: wsSheetCreamTokens.surface,
-                      border: `1px solid ${wsSheetCreamTokens.border}`,
-                      color: 'var(--ws-text-1)', cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left',
-                    }}
-                  >
-                    {item.icon}
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500 }}>{item.titulo}</div>
-                      <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 2 }}>{item.sub}</div>
-                    </div>
-                    <ChevronRight size={16} style={{ color: 'var(--ws-text-3)' }} />
-                  </button>
-                ))}
+                      key={item.titulo}
+                      type="button"
+                      disabled={desabilitado}
+                      title={desabilitado ? 'Em breve' : undefined}
+                      onClick={() => { if (item.href) { fecharDrawer(); router.push(item.href) } }}
+                      style={{
+                        padding: '14px 16px', borderRadius: 12,
+                        background: wsSheetCreamTokens.surface,
+                        border: `1px solid ${wsSheetCreamTokens.border}`,
+                        color: 'var(--ws-text-1)',
+                        cursor: desabilitado ? 'not-allowed' : 'pointer',
+                        opacity: desabilitado ? 0.72 : 1,
+                        display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left',
+                      }}
+                    >
+                      {item.icon}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: 14, fontWeight: 500 }}>{item.titulo}</div>
+                          {desabilitado && (
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              letterSpacing: '0.04em',
+                              textTransform: 'uppercase',
+                              color: 'var(--ws-text-3)',
+                              background: 'rgba(255,255,255,0.05)',
+                              border: '1px solid rgba(255,255,255,0.10)',
+                              padding: '2px 6px',
+                              borderRadius: 999,
+                            }}>
+                              Em breve
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 2 }}>{item.sub}</div>
+                      </div>
+                      <ChevronRight size={16} style={{ color: 'var(--ws-text-3)' }} />
+                    </button>
+                  )
+                })}
               </div>
 
               <button
@@ -619,6 +696,34 @@ export default function ClientesPage() {
                       style={inputStyle}
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div>
+                <label style={labelStyle}>Status</label>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 16,
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  background: wsSheetCreamTokens.surface,
+                  border: `1px solid ${wsSheetCreamTokens.border}`,
+                }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ws-text-1)' }}>
+                      {form.ativo ? 'Ativo' : 'Inativo'}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 2 }}>
+                      Define se o cliente aparece como ativo na plataforma
+                    </div>
+                  </div>
+                  <Switch
+                    checked={form.ativo}
+                    onCheckedChange={(checked) => setForm(prev => ({ ...prev, ativo: checked }))}
+                  />
                 </div>
               </div>
 
