@@ -442,21 +442,17 @@ export default function ClientesPage() {
                       </button>
                       <button
                         type="button"
-                        disabled
-                        title="Em breve"
+                        onClick={() => router.push(`/administracao/usuarios?workspace_id=${c.id}`)}
+                        title={`Ver usuários do workspace ${c.nome}`}
                         style={{
                           padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 500,
                           background: 'rgba(122,90,248,0.10)', color: 'var(--ws-purple)',
-                          border: '1px solid rgba(122,90,248,0.20)', cursor: 'not-allowed',
-                          opacity: 0.72,
+                          border: '1px solid rgba(122,90,248,0.20)', cursor: 'pointer',
                           display: 'flex', alignItems: 'center', gap: 4,
                         }}
                       >
                         <Users size={12} />
-                        Usuário
-                        <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', opacity: 0.85 }}>
-                          Em breve
-                        </span>
+                        Usuários
                       </button>
                     </WSTableActions>
                   </td>
@@ -503,7 +499,7 @@ export default function ClientesPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {([
                   { icon: <CreditCard size={18} style={{ color: 'var(--ws-blue)' }} />, titulo: 'Adicionar Conta Ads', sub: 'Meta, Google, LinkedIn, TikTok', href: '/administracao/contas-ads' },
-                  { icon: <Users size={18} style={{ color: 'var(--ws-purple)' }} />, titulo: 'Adicionar Usuário', sub: 'Vincular usuário ao workspace', href: null },
+                  { icon: <Users size={18} style={{ color: 'var(--ws-purple)' }} />, titulo: 'Usuários', sub: 'Ver e vincular usuários do workspace', href: `/administracao/usuarios?workspace_id=${clienteSalvo.id}` },
                 ] as const).map(item => {
                   const desabilitado = item.href == null
                   return (
