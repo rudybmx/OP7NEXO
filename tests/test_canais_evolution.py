@@ -125,7 +125,7 @@ class _OutboundDb:
 def _fake_canal(connection_status: str = "disconnected"):
     canal_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
-    instance_name = f"op7-{workspace_id}-{canal_id}"
+    instance_name = f"op7-{workspace_id.hex[:8]}-{canal_id.hex[:8]}"
     return SimpleNamespace(
         id=canal_id,
         workspace_id=workspace_id,
@@ -136,6 +136,8 @@ def _fake_canal(connection_status: str = "disconnected"):
                 "instance_name": instance_name,
                 "instance_id": "instance-id-1",
                 "instance_token": "instance-token-1",
+                "managed_by": "op7nexo",
+                "created_by_connect_flow": True,
             }
         },
         mensagem_boas_vindas=None,
@@ -144,6 +146,25 @@ def _fake_canal(connection_status: str = "disconnected"):
         numero_telefone=None,
         conectado_em=None,
         evolution_instance_id=instance_name,
+        connection_status=connection_status,
+    )
+
+
+def _fake_canal_sem_instancia(nome: str = "Canal WhatsApp", connection_status: str = "disconnected"):
+    canal_id = uuid.uuid4()
+    workspace_id = uuid.uuid4()
+    return SimpleNamespace(
+        id=canal_id,
+        workspace_id=workspace_id,
+        tipo="whatsapp_evolution",
+        nome=nome,
+        config={},
+        mensagem_boas_vindas=None,
+        webhook_token="webhook-token-1",
+        status="inativo",
+        numero_telefone=None,
+        conectado_em=None,
+        evolution_instance_id=None,
         connection_status=connection_status,
     )
 
@@ -208,16 +229,94 @@ class CanaisEvolutionTests(unittest.TestCase):
         self.assertTrue(any("/instance/connect/instance-name" in url for url, _ in calls))
         mock_sleep.assert_called_once()
 
+    def test_obter_qr_code_reconhece_pairing_code_em_payload(self):
+        responses = [_FakeResponse(200, {"pairingCode": "123-456"})]
+        calls = []
+
+        class _ClientFactory:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self_inner):
+                return _FakeHttpxClient(responses, calls)
+
+            def __exit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("app.services.evolution.httpx.Client", _ClientFactory):
+            result = evo_service.obter_qr_code("instance-name", instance_id="instance-id", instance_token="token", retries=1)
+
+        self.assertIsNone(result["base64"])
+        self.assertEqual(result["pairing_code"], "123-456")
+        self.assertEqual(result["code"], "123-456")
+        self.assertEqual(len(calls), 1)
+
     @patch("app.api.canais._get_canal_or_404")
     @patch("app.api.canais._exigir_admin_canal")
-    @patch("app.api.canais.evo_service.conectar_instancia")
-    @patch("app.api.canais.evo_service.estado_conexao")
+    @patch("app.api.canais._configurar_webhook_evolution")
     @patch("app.api.canais.evo_service.obter_qr_code")
-    def test_conectar_canal_retorna_qr_code_quando_evolution_ainda_estah_connecting(
+    @patch("app.api.canais.evo_service.estado_conexao")
+    @patch("app.api.canais.evo_service.criar_instancia")
+    @patch("app.api.canais._instancia_evolution_exata")
+    def test_conectar_canal_cria_instancia_gerenciada_e_retorna_qr_code(
         self,
-        mock_obter_qr_code,
+        mock_instancia_exata,
+        mock_criar_instancia,
         mock_estado_conexao,
-        mock_conectar_instancia,
+        mock_obter_qr_code,
+        mock_configurar_webhook,
+        mock_exigir_admin,
+        mock_get_canal,
+    ):
+        canal = _fake_canal_sem_instancia()
+        db = _FakeDb()
+        usuario = SimpleNamespace(role="platform_admin", id=uuid.uuid4())
+        instance_name = f"op7-{canal.workspace_id.hex[:8]}-{canal.id.hex[:8]}"
+
+        mock_get_canal.return_value = canal
+        mock_instancia_exata.return_value = None
+        mock_criar_instancia.return_value = {
+            "instance_id": "instance-id-created",
+            "instance_token": "instance-token-created",
+        }
+        mock_estado_conexao.return_value = {"state": "connecting", "instance": {"state": "connecting"}}
+        mock_obter_qr_code.return_value = {"base64": "abc123"}
+        mock_configurar_webhook.return_value = None
+
+        resposta = canais.conectar_canal(canal.id, db=db, usuario=usuario)
+
+        self.assertEqual(resposta.connection_status, "connecting")
+        self.assertEqual(resposta.qr_code, "abc123")
+        self.assertIsNone(resposta.pairing_code)
+        self.assertEqual(resposta.instance_id, "instance-id-created")
+        self.assertEqual(db.commits, 2)
+        self.assertEqual(canal.evolution_instance_id, instance_name)
+        self.assertEqual(canal.config["evolution"]["managed_by"], "op7nexo")
+        self.assertTrue(canal.config["evolution"]["created_by_connect_flow"])
+        mock_instancia_exata.assert_not_called()
+        mock_criar_instancia.assert_called_once()
+        mock_configurar_webhook.assert_called_once_with(canal, db, forcar=True)
+        mock_obter_qr_code.assert_called_once_with(
+            instance_name,
+            instance_id="instance-id-created",
+            instance_token="instance-token-created",
+            retries=4,
+        )
+
+    @patch("app.api.canais._get_canal_or_404")
+    @patch("app.api.canais._exigir_admin_canal")
+    @patch("app.api.canais._configurar_webhook_evolution")
+    @patch("app.api.canais.evo_service.obter_qr_code")
+    @patch("app.api.canais.evo_service.estado_conexao")
+    @patch("app.api.canais.evo_service.criar_instancia")
+    @patch("app.api.canais._instancia_evolution_exata")
+    def test_conectar_canal_reaproveita_instancia_e_retorna_pairing_code(
+        self,
+        mock_instancia_exata,
+        mock_criar_instancia,
+        mock_estado_conexao,
+        mock_obter_qr_code,
+        mock_configurar_webhook,
         mock_exigir_admin,
         mock_get_canal,
     ):
@@ -226,18 +325,27 @@ class CanaisEvolutionTests(unittest.TestCase):
         usuario = SimpleNamespace(role="platform_admin", id=uuid.uuid4())
 
         mock_get_canal.return_value = canal
-        mock_conectar_instancia.return_value = {"status": "OK"}
+        mock_instancia_exata.return_value = {
+            "instance_name": canal.config["evolution"]["instance_name"],
+            "instance_id": canal.config["evolution"]["instance_id"],
+            "instance_token": canal.config["evolution"]["instance_token"],
+            "raw": {},
+        }
         mock_estado_conexao.return_value = {"state": "connecting", "instance": {"state": "connecting"}}
-        mock_obter_qr_code.return_value = {"base64": "abc123"}
+        mock_obter_qr_code.return_value = {"pairing_code": "123-456"}
+        mock_configurar_webhook.return_value = None
 
         resposta = canais.conectar_canal(canal.id, db=db, usuario=usuario)
 
         self.assertEqual(resposta.connection_status, "connecting")
-        self.assertEqual(resposta.qr_code, "abc123")
-        self.assertEqual(db.commits, 1)
-        mock_conectar_instancia.assert_called_once()
+        self.assertIsNone(resposta.qr_code)
+        self.assertEqual(resposta.pairing_code, "123-456")
+        self.assertEqual(resposta.instance_id, "instance-id-1")
+        self.assertEqual(db.commits, 2)
+        mock_criar_instancia.assert_not_called()
+        mock_configurar_webhook.assert_called_once_with(canal, db, forcar=True)
         mock_obter_qr_code.assert_called_once_with(
-            canal.evolution_instance_id,
+            canal.config["evolution"]["instance_name"],
             instance_id="instance-id-1",
             instance_token="instance-token-1",
             retries=4,
@@ -245,9 +353,33 @@ class CanaisEvolutionTests(unittest.TestCase):
 
     @patch("app.api.canais._get_canal_or_404")
     @patch("app.api.canais._exigir_admin_canal")
+    @patch("app.api.canais.evo_service.criar_instancia")
+    @patch("app.api.canais._instancia_evolution_exata")
+    def test_conectar_canal_protegido_nao_recria_instancia_legada(
+        self,
+        mock_instancia_exata,
+        mock_criar_instancia,
+        mock_exigir_admin,
+        mock_get_canal,
+    ):
+        canal = _fake_canal_sem_instancia(nome="rudy_zap")
+        db = _FakeDb()
+        usuario = SimpleNamespace(role="platform_admin", id=uuid.uuid4())
+
+        mock_get_canal.return_value = canal
+        mock_instancia_exata.return_value = None
+
+        with self.assertRaises(canais.HTTPException) as ctx:
+            canais.conectar_canal(canal.id, db=db, usuario=usuario)
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        mock_criar_instancia.assert_not_called()
+
+    @patch("app.api.canais._get_canal_or_404")
+    @patch("app.api.canais._exigir_admin_canal")
     @patch("app.api.canais.evo_service.estado_conexao")
     @patch("app.api.canais.evo_service.obter_qr_code")
-    def test_status_evolution_inclui_qr_code_em_conexao(
+    def test_status_evolution_inclui_pairing_code_em_conexao(
         self,
         mock_obter_qr_code,
         mock_estado_conexao,
@@ -260,13 +392,14 @@ class CanaisEvolutionTests(unittest.TestCase):
 
         mock_get_canal.return_value = canal
         mock_estado_conexao.return_value = {"state": "connecting", "instance": {"state": "connecting"}}
-        mock_obter_qr_code.return_value = {"base64": "abc123"}
+        mock_obter_qr_code.return_value = {"pairing_code": "654-321"}
 
         resposta = canais.status_evolution(canal.id, db=db, usuario=usuario)
 
         self.assertEqual(resposta["connection_status"], "connecting")
         self.assertEqual(resposta["evolution_state"], "connecting")
-        self.assertEqual(resposta["qr_code"], "abc123")
+        self.assertIsNone(resposta["qr_code"])
+        self.assertEqual(resposta["pairing_code"], "654-321")
         self.assertEqual(db.commits, 1)
         mock_obter_qr_code.assert_called_once_with(
             canal.evolution_instance_id,

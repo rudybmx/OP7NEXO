@@ -89,7 +89,9 @@ class CanalOut(BaseModel):
 
 class ConectarOut(BaseModel):
     qr_code: str | None
+    pairing_code: str | None
     connection_status: str
+    instance_id: str | None
     message: str
 
 
@@ -145,17 +147,31 @@ def _exigir_admin_canal(usuario: User, canal: CanalEntrada, db: Session) -> None
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para editar este canal")
 
 
+def _uuid_curto(valor: uuid.UUID | str) -> str:
+    return uuid.UUID(str(valor)).hex[:8]
+
+
 def _nome_instancia_evo(canal: CanalEntrada) -> str:
-    return f"op7-{canal.workspace_id}-{canal.id}"
+    return f"op7-{_uuid_curto(canal.workspace_id)}-{_uuid_curto(canal.id)}"
 
 
 def _webhook_base_url() -> str:
     return (settings.SERVER_URL or "https://api.op7franquia.com.br").rstrip("/")
 
 
-def _configurar_webhook_evolution(canal: CanalEntrada, db: Session) -> None:
+def _evolution_protected_name(canal: CanalEntrada) -> bool:
+    evolution = _evolution_config(canal)
+    candidates = {
+        str(canal.nome or "").strip().lower(),
+        str(canal.evolution_instance_id or "").strip().lower(),
+        str(evolution.get("instance_name") or "").strip().lower(),
+    }
+    return "rudy_zap" in candidates
+
+
+def _configurar_webhook_evolution(canal: CanalEntrada, db: Session, *, forcar: bool = False) -> dict | None:
     if canal.tipo != "whatsapp_evolution":
-        return
+        return None
 
     if not canal.webhook_token:
         canal.webhook_token = secrets.token_hex(32)
@@ -164,15 +180,15 @@ def _configurar_webhook_evolution(canal: CanalEntrada, db: Session) -> None:
 
     instance_name, instance_id, instance_token = _evolution_meta(canal)
     if not instance_id and not instance_token:
-        return
+        return None
 
-    if canal.connection_status not in {"connecting", "connected"} and canal.status != "ativo":
-        return
+    if not forcar and canal.connection_status not in {"connecting", "connected"} and canal.status != "ativo":
+        return None
 
     webhook_base = _webhook_base_url()
     webhook_url = f"{webhook_base}/webhook/evolution/{canal.webhook_token}"
     try:
-        evo_service.configurar_webhook(
+        return evo_service.configurar_webhook(
             instance_name,
             webhook_url,
             instance_id=instance_id,
@@ -182,6 +198,107 @@ def _configurar_webhook_evolution(canal: CanalEntrada, db: Session) -> None:
         )
     except evo_service.EvolutionError as exc:
         logger.error("[canais] falha ao configurar webhook Evolution: %s", exc)
+        return None
+
+
+def _instancia_evolution_exata(
+    canal: CanalEntrada,
+    db: Session,
+    instance_name: str,
+    instance_id: str | None,
+    instance_token: str | None,
+) -> dict | None:
+    if not instance_name:
+        return None
+
+    try:
+        instancia = evo_service.obter_instancia(instance_name, instance_id=instance_id)
+    except evo_service.EvolutionError:
+        return None
+
+    if not instancia:
+        return None
+
+    resolved_instance_id = instancia.get("instance_id") or instancia.get("id") or instance_id
+    resolved_instance_token = instancia.get("instance_token") or instancia.get("token") or instance_token
+
+    updates: dict[str, str] = {"instance_name": instance_name}
+    if resolved_instance_id:
+        updates["instance_id"] = str(resolved_instance_id)
+    if resolved_instance_token:
+        updates["instance_token"] = str(resolved_instance_token)
+
+    _persistir_evolution_meta(canal, db, **updates)
+    return {
+        "instance_name": instance_name,
+        "instance_id": resolved_instance_id,
+        "instance_token": resolved_instance_token,
+        "raw": instancia,
+    }
+
+
+def _extrair_qr_e_pairing_evolution(payload: object) -> tuple[str | None, str | None]:
+    qr_code = None
+    pairing_code = None
+
+    def _looks_like_qr(valor: str) -> bool:
+        bruto = valor.strip()
+        if not bruto:
+            return False
+        if bruto.startswith("data:image") or bruto.startswith("http://") or bruto.startswith("https://"):
+            return True
+        if bruto.startswith("iVBOR"):
+            return True
+        return len(bruto) > 80 and any(ch in bruto for ch in ("=", "/", "+"))
+
+    def _visit(valor: object) -> None:
+        nonlocal qr_code, pairing_code
+        if qr_code and pairing_code:
+            return
+        if isinstance(valor, str):
+            texto = valor.strip()
+            if not texto:
+                return
+            if _looks_like_qr(texto):
+                qr_code = qr_code or texto
+            elif texto:
+                pairing_code = pairing_code or texto
+            return
+        if isinstance(valor, dict):
+            for chave in ("base64", "qrcode", "qrCode", "qr_code"):
+                nested = valor.get(chave)
+                if isinstance(nested, str) and nested.strip():
+                    qr_code = qr_code or nested.strip()
+                elif nested is not None:
+                    _visit(nested)
+            for chave in ("pairingCode", "pairing_code", "code", "Code"):
+                nested = valor.get(chave)
+                if isinstance(nested, str) and nested.strip():
+                    pairing_code = pairing_code or nested.strip()
+                elif nested is not None:
+                    _visit(nested)
+            qr_or_code = valor.get("qrOrCode") or valor.get("qr_or_code")
+            if isinstance(qr_or_code, str) and qr_or_code.strip():
+                texto = qr_or_code.strip()
+                if _looks_like_qr(texto):
+                    qr_code = qr_code or texto
+                else:
+                    pairing_code = pairing_code or texto
+            elif qr_or_code is not None:
+                _visit(qr_or_code)
+            for nested in valor.values():
+                if qr_code and pairing_code:
+                    break
+                _visit(nested)
+            return
+        if isinstance(valor, list):
+            for item in valor:
+                if qr_code and pairing_code:
+                    break
+                _visit(item)
+
+    _visit(payload)
+    return qr_code, pairing_code
 
 
 def reaplicar_webhooks_evolution_ativos(db: Session) -> int:
@@ -271,29 +388,13 @@ def _evolution_meta(canal: CanalEntrada) -> tuple[str, str | None, str | None]:
 
 
 def _extrair_qr_code_evolution(payload: object) -> str | None:
-    if isinstance(payload, str):
-        valor = payload.strip()
-        return valor or None
-    if isinstance(payload, dict):
-        for chave in ("base64", "qrcode", "qrCode", "code"):
-            valor = payload.get(chave)
-            if isinstance(valor, str):
-                valor = valor.strip()
-                if valor:
-                    return valor
-            if isinstance(valor, dict):
-                nested = valor.get("base64") or valor.get("qrcode") or valor.get("code")
-                if isinstance(nested, str):
-                    nested = nested.strip()
-                    if nested:
-                        return nested
-        for chave in ("data", "response"):
-            nested = payload.get(chave)
-            if nested is not None:
-                valor = _extrair_qr_code_evolution(nested)
-                if valor:
-                    return valor
-    return None
+    qr_code, _ = _extrair_qr_e_pairing_evolution(payload)
+    return qr_code
+
+
+def _extrair_pairing_code_evolution(payload: object) -> str | None:
+    _, pairing_code = _extrair_qr_e_pairing_evolution(payload)
+    return pairing_code
 
 
 def _persistir_evolution_meta(
@@ -308,6 +409,8 @@ def _persistir_evolution_meta(
             evolution[chave] = valor
     config["evolution"] = evolution
     canal.config = config
+    if updates.get("instance_name") is not None:
+        canal.evolution_instance_id = str(updates["instance_name"])
     db.commit()
     db.refresh(canal)
     return evolution
@@ -411,26 +514,6 @@ def criar_canal(
     db.commit()
     db.refresh(c)
 
-    # Se for WhatsApp Evolution, criar instância na Evolution API
-    if c.tipo == "whatsapp_evolution":
-        instance_name = _nome_instancia_evo(c)
-        instance_token = str(uuid.uuid4())
-        try:
-            instancia = evo_service.criar_instancia(instance_name, token=instance_token)
-            c.evolution_instance_id = instance_name
-            _persistir_evolution_meta(
-                c,
-                db,
-                instance_name=instance_name,
-                instance_id=instancia.get("instance_id") or instancia.get("id"),
-                instance_token=instancia.get("instance_token") or instancia.get("token") or instance_token,
-            )
-            # Mantém o token do webhook do canal, mas só sincroniza com a Evolution quando houver conexão.
-            _configurar_webhook_evolution(c, db)
-        except evo_service.EvolutionError as exc:
-            logger.error("[canais] falha ao criar instância Evolution: %s", exc)
-            # Não quebra — canal já foi criado no banco
-
     return _canal_out(c)
 
 
@@ -474,11 +557,16 @@ def remover_canal(
 
     # Se for Evolution, deletar instância na Evolution API
     if c.tipo == "whatsapp_evolution":
-        instance_name, instance_id, instance_token = _evolution_meta(c)
-        try:
-            evo_service.deletar_instancia(c.evolution_instance_id or instance_name, instance_id=instance_id, instance_token=instance_token)
-        except evo_service.EvolutionError as exc:
-            logger.error("[canais] falha ao deletar instância Evolution: %s", exc)
+        evolution = _evolution_config(c)
+        pode_deletar = evolution.get("managed_by") == "op7nexo" or evolution.get("created_by_connect_flow") is True
+        if pode_deletar and not _evolution_protected_name(c):
+            instance_name, instance_id, instance_token = _evolution_meta(c)
+            try:
+                evo_service.deletar_instancia(c.evolution_instance_id or instance_name, instance_id=instance_id, instance_token=instance_token)
+            except evo_service.EvolutionError as exc:
+                logger.error("[canais] falha ao deletar instância Evolution: %s", exc)
+        else:
+            logger.info("[canais] preservando instância Evolution legada/protegida canal=%s", c.nome)
 
     db.delete(c)
     db.commit()
@@ -497,67 +585,74 @@ def conectar_canal(
 
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
+    if _evolution_protected_name(c):
+        raise HTTPException(
+            status_code=409,
+            detail="Canal legado protegido não participa do fluxo automático de desconexão",
+        )
 
     instance_name, instance_id, instance_token = _evolution_meta(c)
+    connect_data: dict | None = None
 
-    if not instance_id:
+    if _evolution_protected_name(c):
+        raise HTTPException(
+            status_code=409,
+            detail="Canal legado protegido não participa do fluxo automático de conexão",
+        )
+
+    existe_exato = False
+    if instance_name:
+        exacta = _instancia_evolution_exata(c, db, instance_name, instance_id, instance_token)
+        if exacta:
+            existe_exato = True
+            instance_name = exacta["instance_name"]
+            instance_id = exacta["instance_id"] or instance_id
+            instance_token = exacta["instance_token"] or instance_token
+
+    if not existe_exato:
+        instance_name = _nome_instancia_evo(c)
+        instance_token = instance_token or str(uuid.uuid4())
         try:
-            instancia = evo_service.criar_instancia(instance_name, token=instance_token or str(uuid.uuid4()))
+            instancia = evo_service.criar_instancia(instance_name, token=instance_token)
             instance_id = instancia.get("instance_id") or instancia.get("id") or instance_id
             instance_token = instancia.get("instance_token") or instancia.get("token") or instance_token
-            c.evolution_instance_id = instance_name
             _persistir_evolution_meta(
                 c,
                 db,
+                managed_by="op7nexo",
+                created_by_connect_flow=True,
                 instance_name=instance_name,
                 instance_id=instance_id,
                 instance_token=instance_token,
             )
         except evo_service.EvolutionError as exc:
-            logger.warning("[canais] instância Evolution não pôde ser recriada: %s", exc)
-            instancia_existente = evo_service.obter_instancia(instance_name)
-            if instancia_existente:
-                instance_id = instancia_existente.get("instance_id") or instancia_existente.get("id") or instance_id
-                instance_token = instancia_existente.get("instance_token") or instancia_existente.get("token") or instance_token
-                _persistir_evolution_meta(
-                    c,
-                    db,
-                    instance_name=instance_name,
-                    instance_id=instance_id,
-                    instance_token=instance_token,
-                )
+            logger.warning("[canais] instância Evolution não pôde ser criada: %s", exc)
+            raise HTTPException(status_code=502, detail=str(exc))
 
-    _configurar_webhook_evolution(c, db)
-    webhook_base = settings.SERVER_URL or "https://api.op7franquia.com.br"
-    webhook_url = f"{webhook_base}/webhook/evolution/{c.webhook_token}"
+    connect_data = _configurar_webhook_evolution(c, db, forcar=True)
 
     try:
-        connect_data = evo_service.conectar_instancia(
-            instance_name,
-            webhook_url,
-            instance_id=instance_id,
-            instance_token=instance_token,
-            subscribe=["ALL"],
-            immediate=True,
-        )
         state = evo_service.estado_conexao(instance_name, instance_id=instance_id, instance_token=instance_token)
         conn_state = state.get("state") or state.get("instance", {}).get("state", "close")
         if conn_state == "open":
             c.status = "ativo"
             c.connection_status = "connected"
+            c.conectado_em = datetime.now(timezone.utc)
             numero = _extrair_numero_evolution(state)
             if numero:
                 c.numero_telefone = numero
             db.commit()
-            _configurar_webhook_evolution(c, db)
+            _configurar_webhook_evolution(c, db, forcar=True)
             return ConectarOut(
                 qr_code=None,
+                pairing_code=None,
                 connection_status="connected",
+                instance_id=instance_id,
                 message="Instância já está conectada",
             )
 
-        qr_code = _extrair_qr_code_evolution(connect_data)
-        if not qr_code:
+        qr_code, pairing_code = _extrair_qr_e_pairing_evolution(connect_data)
+        if not qr_code and not pairing_code:
             qr_data = evo_service.obter_qr_code(
                 instance_name,
                 instance_id=instance_id,
@@ -565,12 +660,21 @@ def conectar_canal(
                 retries=4,
             )
             qr_code = _extrair_qr_code_evolution(qr_data)
+            pairing_code = _extrair_pairing_code_evolution(qr_data)
         c.connection_status = "connecting"
         db.commit()
         return ConectarOut(
             qr_code=qr_code,
+            pairing_code=pairing_code,
             connection_status="connecting",
-            message="Escaneie o QR code com seu WhatsApp" if qr_code else "Aguardando geração do QR code pela Evolution",
+            instance_id=instance_id,
+            message=(
+                "Escaneie o QR code com seu WhatsApp"
+                if qr_code
+                else "Digite o código de pareamento no WhatsApp"
+                if pairing_code
+                else "Aguardando geração do QR code pela Evolution"
+            ),
         )
     except evo_service.EvolutionError as exc:
         # Verificar se já está conectado
@@ -585,12 +689,14 @@ def conectar_canal(
                     c.numero_telefone = numero
                 db.commit()
                 try:
-                    _configurar_webhook_evolution(c, db)
+                    _configurar_webhook_evolution(c, db, forcar=True)
                 except evo_service.EvolutionError as exc:
                     logger.error("[canais] falha ao reconfigurar webhook Evolution: %s", exc)
                 return ConectarOut(
                     qr_code=None,
+                    pairing_code=None,
                     connection_status="connected",
+                    instance_id=instance_id,
                     message="Instância já está conectada",
                 )
         except Exception:
@@ -617,6 +723,7 @@ def status_evolution(
         state_data = evo_service.estado_conexao(instance_name, instance_id=instance_id, instance_token=instance_token)
         conn_state = str(state_data.get("state") or state_data.get("instance", {}).get("state", "close")).lower()
         qr_code = None
+        pairing_code = None
 
         if conn_state == "open":
             c.status = "ativo"
@@ -628,7 +735,7 @@ def status_evolution(
                 c.numero_telefone = numero
             db.commit()
             try:
-                _configurar_webhook_evolution(c, db)
+                _configurar_webhook_evolution(c, db, forcar=True)
             except evo_service.EvolutionError as exc:
                 logger.error("[canais] falha ao reconfigurar webhook Evolution: %s", exc)
         elif conn_state == "connecting":
@@ -643,21 +750,26 @@ def status_evolution(
             try:
                 qr_data = evo_service.obter_qr_code(instance_name, instance_id=instance_id, instance_token=instance_token, retries=1)
                 qr_code = _extrair_qr_code_evolution(qr_data)
+                pairing_code = _extrair_pairing_code_evolution(qr_data)
             except evo_service.EvolutionError:
                 qr_code = None
+                pairing_code = None
 
         db.refresh(c)
         return {
             "connection_status": c.connection_status,
             "evolution_state": conn_state,
+            "instance_id": instance_id,
             "numero_telefone": c.numero_telefone,
             "conectado_em": c.conectado_em.isoformat() if c.conectado_em else None,
             "qr_code": qr_code,
+            "pairing_code": pairing_code,
         }
     except evo_service.EvolutionError as exc:
         return {
             "connection_status": c.connection_status,
             "evolution_state": "unknown",
+            "instance_id": instance_id,
             "error": str(exc),
         }
 
