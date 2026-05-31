@@ -52,13 +52,14 @@ export interface QualityRanking {
 }
 
 export interface VideoMetrics {
-  hookRate: number
-  holdRate: number
+  hookRate: number | null
+  holdRate: number | null
   ctrLink: number
   retention: {
     checkpoint: string
     value: number
   }[]
+  retentionUnavailable?: boolean
 }
 
 export interface TrendPoint {
@@ -315,7 +316,15 @@ function qualityVisual(rank: QualityRanking['rank']) {
   }
 }
 
-function videoMetricVisual(metric: VideoMetricKey, value: number) {
+function videoMetricVisual(metric: VideoMetricKey, value: number | null) {
+  if (value === null) {
+    return {
+      bg: 'var(--ws-surface-2)',
+      border: 'var(--ws-divider)',
+      color: 'var(--ws-text-3)',
+      label: 'Indisponível',
+    }
+  }
   if (metric === 'hookRate') {
     if (value < 5) {
       return {
@@ -787,7 +796,7 @@ function VideoMetricTile({
   tone,
 }: {
   label: string
-  value: number
+  value: number | null
   tone: ReturnType<typeof videoMetricVisual>
 }) {
   return (
@@ -824,7 +833,7 @@ function VideoMetricTile({
             wordBreak: 'break-word',
           }}
         >
-          {formatPercent(value)}
+          {value === null ? '—' : formatPercent(value)}
         </div>
         <BadgePill label={tone.label} bg={tone.bg} border={tone.border} color={tone.color} />
       </div>
@@ -846,6 +855,24 @@ export function VideoMetricsPanel({ videoMetrics }: { videoMetrics?: VideoMetric
           <div style={{ fontSize: 12, color: 'var(--ws-text-2)', lineHeight: 1.5 }}>
             Gráfico de retenção
           </div>
+          {videoMetrics.retentionUnavailable || videoMetrics.retention.length === 0 ? (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: 160,
+              fontSize: 12,
+              color: 'var(--ws-text-3)',
+              fontStyle: 'italic',
+              background: 'var(--ws-surface-2)',
+              borderRadius: 'var(--ws-radius-sm)',
+              border: '1px solid var(--ws-divider)',
+              padding: '0 16px',
+              textAlign: 'center',
+            }}>
+              Retenção indisponível: métrica de 3 segundos ainda não coletada.
+            </div>
+          ) : (
           <ChartSurface height={160}>
             <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <RechartsLineChart
@@ -894,6 +921,7 @@ export function VideoMetricsPanel({ videoMetrics }: { videoMetrics?: VideoMetric
               </RechartsLineChart>
             </ResponsiveContainer>
           </ChartSurface>
+          )}
         </div>
 
         <div style={{ display: 'grid', gap: 8 }}>

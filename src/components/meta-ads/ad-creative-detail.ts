@@ -182,19 +182,30 @@ function buildVideoMetrics(data: AdCreativeDetailApi): AdCreativeModalOverviewDa
   const impressions = data.impressions || 0
   const linkClicks = data.link_click || data.clicks || 0
   const video3Sec = data.video_metrics.video_3_sec || 0
-  const hookRate = impressions > 0 ? (video3Sec / impressions) * 100 : 0
-  const holdRate = video3Sec > 0 ? (data.video_metrics.p50 / video3Sec) * 100 : 0
   const ctrLink = impressions > 0 ? (linkClicks / impressions) * 100 : 0
+
+  if (video3Sec <= 0) {
+    return {
+      hookRate: null,
+      holdRate: null,
+      ctrLink: round2(ctrLink),
+      retention: [],
+      retentionUnavailable: true,
+    }
+  }
+
+  const hookRate = impressions > 0 ? (video3Sec / impressions) * 100 : 0
+  const holdRate = (data.video_metrics.p50 / video3Sec) * 100
   return {
     hookRate: round2(hookRate),
     holdRate: round2(holdRate),
     ctrLink: round2(ctrLink),
     retention: [
       { checkpoint: '3s', value: round2(hookRate) },
-      { checkpoint: '25%', value: video3Sec > 0 ? round2((data.video_metrics.p25 / video3Sec) * 100) : 0 },
-      { checkpoint: '50%', value: video3Sec > 0 ? round2((data.video_metrics.p50 / video3Sec) * 100) : 0 },
-      { checkpoint: '75%', value: video3Sec > 0 ? round2((data.video_metrics.p75 / video3Sec) * 100) : 0 },
-      { checkpoint: '100%', value: video3Sec > 0 ? round2((data.video_metrics.p100 / video3Sec) * 100) : 0 },
+      { checkpoint: '25%', value: round2((data.video_metrics.p25 / video3Sec) * 100) },
+      { checkpoint: '50%', value: round2((data.video_metrics.p50 / video3Sec) * 100) },
+      { checkpoint: '75%', value: round2((data.video_metrics.p75 / video3Sec) * 100) },
+      { checkpoint: '100%', value: round2((data.video_metrics.p100 / video3Sec) * 100) },
     ],
   }
 }
@@ -266,16 +277,20 @@ function buildSignals(data: AdCreativeDetailApi, videoMetrics?: NonNullable<AdCr
   })
 
   if (videoMetrics) {
-    signals.push({
-      label: 'Hook rate',
-      value: formatarPorcentagem(videoMetrics.hookRate),
-      status: videoMetrics.hookRate >= 15 ? 'Saudável' : videoMetrics.hookRate >= 5 ? 'Atenção' : 'Crítico',
-    })
-    signals.push({
-      label: 'Hold rate',
-      value: formatarPorcentagem(videoMetrics.holdRate),
-      status: videoMetrics.holdRate >= 25 ? 'Saudável' : videoMetrics.holdRate >= 15 ? 'Atenção' : 'Crítico',
-    })
+    if (videoMetrics.hookRate !== null) {
+      signals.push({
+        label: 'Hook rate',
+        value: formatarPorcentagem(videoMetrics.hookRate),
+        status: videoMetrics.hookRate >= 15 ? 'Saudável' : videoMetrics.hookRate >= 5 ? 'Atenção' : 'Crítico',
+      })
+    }
+    if (videoMetrics.holdRate !== null) {
+      signals.push({
+        label: 'Hold rate',
+        value: formatarPorcentagem(videoMetrics.holdRate),
+        status: videoMetrics.holdRate >= 25 ? 'Saudável' : videoMetrics.holdRate >= 15 ? 'Atenção' : 'Crítico',
+      })
+    }
   }
 
   return signals
