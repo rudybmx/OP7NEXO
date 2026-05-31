@@ -26,6 +26,12 @@ const CONN_BADGE: Record<string, { label: string; bg: string; color: string }> =
   disconnected: { label: 'Desconectado', bg: 'rgba(163,45,45,0.15)',  color: '#a32d2d' },
 }
 
+const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = {
+  ativo:   { label: 'Ativo',   bg: 'rgba(15,168,86,0.15)', color: 'var(--ws-green)' },
+  inativo: { label: 'Inativo', bg: 'rgba(163,45,45,0.15)', color: '#a32d2d' },
+  erro:    { label: 'Erro',    bg: 'rgba(245,158,11,0.15)', color: '#F59E0B' },
+}
+
 function isDark() {
   if (typeof window === 'undefined') return false
   return document.documentElement.classList.contains('dark')
@@ -38,6 +44,18 @@ function emptyEditForm(): EditCanalForm {
     status: 'inativo',
     config: {},
   }
+}
+
+function getChannelBadge(canal: Canal) {
+  if (canal.tipo === 'webhook') {
+    return STATUS_BADGE[(canal.status || 'inativo').toLowerCase()] ?? STATUS_BADGE.inativo
+  }
+
+  return CONN_BADGE[(canal.connection_status || 'disconnected').toLowerCase()] ?? CONN_BADGE.disconnected
+}
+
+function defaultNewChannelStatus(tipo: TipoCanal): string {
+  return tipo === 'webhook' ? 'ativo' : 'inativo'
 }
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -121,7 +139,7 @@ export default function CanaisOmnichannelPage() {
         nome: form.nome.trim(),
         mensagem_boas_vindas: form.mensagem_boas_vindas.trim() || null,
         config: form.config,
-        status: 'inativo',
+        status: defaultNewChannelStatus(form.tipo),
       })
       setCanais(prev => [criado, ...prev])
       if (form.tipo === 'webhook' && criado.webhook_token) {
@@ -474,7 +492,7 @@ export default function CanaisOmnichannelPage() {
             <tbody>
               {filtrados.map(c => {
                 const info = tipoInfo(c.tipo)
-                const conn = CONN_BADGE[c.connection_status ?? 'disconnected'] ?? CONN_BADGE.disconnected
+                const badge = getChannelBadge(c)
                 return (
                   <tr
                     key={c.id}
@@ -524,11 +542,11 @@ export default function CanaisOmnichannelPage() {
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6,
                         padding: '4px 10px', borderRadius: 6,
-                        background: conn.bg, color: conn.color,
+                        background: badge.bg, color: badge.color,
                         fontSize: 12, fontWeight: 600,
                       }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: conn.color, flexShrink: 0 }} />
-                        {conn.label}
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: badge.color, flexShrink: 0 }} />
+                        {badge.label}
                       </span>
                     </td>
                     <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>

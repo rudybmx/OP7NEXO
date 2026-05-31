@@ -187,6 +187,17 @@ export function EditarCanalDialog({
                   </option>
                 ))}
               </select>
+              {canal?.tipo === 'webhook' && (
+                <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--ws-text-3)', lineHeight: 1.5 }}>
+                  Controla se o canal deve ficar operacional. Não depende de conexão como WhatsApp Evolution.
+                </p>
+              )}
+              {canal?.tipo === 'whatsapp_evolution' && (
+                <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--ws-text-3)', lineHeight: 1.5 }}>
+                  Em Evolution, a conexão é mostrada acima via connection_status; este status segue como flag
+                  administrativa.
+                </p>
+              )}
             </div>
 
             {isWebhookChannel(canal) && (
