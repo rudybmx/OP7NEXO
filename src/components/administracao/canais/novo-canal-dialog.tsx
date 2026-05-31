@@ -14,6 +14,23 @@ import {
   type Workspace,
 } from './canal-shared'
 
+type WebhookCfg = {
+  provider?: string
+  security_mode?: string
+  helena?: { api_token_ref?: string; from_phone?: string }
+}
+
+// Providers de Webhook/API. `disponivel:false` => visível como "em breve", não cria.
+const WEBHOOK_PROVIDERS: { id: string; label: string; disponivel: boolean }[] = [
+  { id: 'generic',           label: 'Webhook Genérico (HMAC)',  disponivel: true },
+  { id: 'helena',            label: 'Helena CRM (inbound)',     disponivel: true },
+  { id: 'crm_externo_zapi',  label: 'Qozt/Helena via Z-API',    disponivel: true },
+  { id: 'custom',            label: 'Custom/Futuro (em breve)', disponivel: false },
+]
+
+// Macro-tipos criáveis nesta rodada. Os demais aparecem como "em breve".
+const TIPOS_CRIAVEIS = new Set<string>(['whatsapp_evolution', 'webhook'])
+
 interface NovoCanalDialogProps {
   open: boolean
   onClose: () => void
@@ -41,6 +58,48 @@ export function NovoCanalDialog({
   copiarWebhook,
   copiado,
 }: NovoCanalDialogProps) {
+  const webhookCfg: WebhookCfg = ((form.config as { webhook?: WebhookCfg }).webhook) ?? {}
+  const provider = webhookCfg.provider ?? 'generic'
+  const helenaCfg = webhookCfg.helena ?? {}
+
+  // leitura segura de campos planos do config (instancia, numero, token_meta...)
+  const readStr = (key: string): string => {
+    const v = (form.config as Record<string, unknown>)[key]
+    return typeof v === 'string' ? v : ''
+  }
+
+  const selecionarTipo = (id: Exclude<typeof form.tipo, never>) => {
+    if (!TIPOS_CRIAVEIS.has(id)) return
+    setForm(prev => ({
+      ...prev,
+      tipo: id,
+      config: id === 'webhook' ? { webhook: { provider: 'generic', security_mode: 'hmac' } } : {},
+    }))
+  }
+
+  const setProvider = (p: string) => {
+    setForm(prev => ({
+      ...prev,
+      config: { webhook: { provider: p, security_mode: p === 'generic' ? 'hmac' : 'provider_token' } as WebhookCfg },
+    }))
+  }
+
+  const setHelenaField = (key: 'api_token_ref' | 'from_phone', value: string) => {
+    setForm(prev => {
+      const wc = (prev.config as { webhook?: WebhookCfg }).webhook ?? {}
+      return { ...prev, config: { webhook: { ...wc, helena: { ...(wc.helena ?? {}), [key]: value } } } }
+    })
+  }
+
+  // Bloqueia salvar para tipos/providers ainda não disponíveis ou config Z-API incompleta.
+  const tipoCriavel = TIPOS_CRIAVEIS.has(form.tipo)
+  const providerDisponivel =
+    form.tipo !== 'webhook' || (WEBHOOK_PROVIDERS.find(p => p.id === provider)?.disponivel ?? false)
+  const zapiCompleto =
+    !(form.tipo === 'webhook' && provider === 'crm_externo_zapi') ||
+    Boolean(helenaCfg.api_token_ref?.trim() && helenaCfg.from_phone?.trim())
+  const podeSalvar = tipoCriavel && providerDisponivel && zapiCompleto
+
   return (
     <Dialog open={open} onOpenChange={next => !next && onClose()}>
       <DialogContent
@@ -168,16 +227,22 @@ export function NovoCanalDialog({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   {TIPOS.map(t => {
                     const sel = form.tipo === t.id
+                    const criavel = TIPOS_CRIAVEIS.has(t.id)
                     return (
                       <button
                         key={t.id}
-                        onClick={() => setForm(prev => ({ ...prev, tipo: t.id, config: {} }))}
+                        type="button"
+                        disabled={!criavel}
+                        title={criavel ? undefined : 'Em breve'}
+                        onClick={() => selecionarTipo(t.id)}
                         style={{
                           padding: '12px 10px',
                           borderRadius: 10,
                           border: sel ? `1px solid ${t.cor}` : '1px solid var(--ws-glass-border)',
                           background: sel ? t.corBg : 'transparent',
-                          cursor: 'pointer', transition: 'all 0.15s',
+                          cursor: criavel ? 'pointer' : 'not-allowed',
+                          opacity: criavel ? 1 : 0.5,
+                          transition: 'all 0.15s',
                           display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4,
                         }}
                       >
@@ -185,6 +250,11 @@ export function NovoCanalDialog({
                         <span style={{ fontSize: 11, fontWeight: 600, color: sel ? t.cor : 'var(--ws-text-2)', lineHeight: 1.3 }}>
                           {t.label}
                         </span>
+                        {!criavel && (
+                          <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--ws-text-3)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Em breve
+                          </span>
+                        )}
                       </button>
                     )
                   })}
@@ -222,7 +292,7 @@ export function NovoCanalDialog({
                   <input
                     type="text"
                     placeholder="ex: minha-instancia"
-                    value={form.config.instancia ?? ''}
+                    value={readStr('instancia')}
                     onChange={e => setConfig('instancia', e.target.value)}
                     style={inputStyle}
                   />
@@ -236,7 +306,7 @@ export function NovoCanalDialog({
                     <input
                       type="text"
                       placeholder="ex: 5511999999999"
-                      value={form.config.numero ?? ''}
+                      value={readStr('numero')}
                       onChange={e => setConfig('numero', e.target.value)}
                       style={inputStyle}
                     />
@@ -246,7 +316,7 @@ export function NovoCanalDialog({
                     <input
                       type="text"
                       placeholder="Token de acesso Meta"
-                      value={form.config.token_meta ?? ''}
+                      value={readStr('token_meta')}
                       onChange={e => setConfig('token_meta', e.target.value)}
                       style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }}
                     />
@@ -261,7 +331,7 @@ export function NovoCanalDialog({
                     <input
                       type="text"
                       placeholder="ID da página"
-                      value={form.config.page_id ?? ''}
+                      value={readStr('page_id')}
                       onChange={e => setConfig('page_id', e.target.value)}
                       style={inputStyle}
                     />
@@ -271,7 +341,7 @@ export function NovoCanalDialog({
                     <input
                       type="text"
                       placeholder="Token de acesso"
-                      value={form.config.token ?? ''}
+                      value={readStr('token')}
                       onChange={e => setConfig('token', e.target.value)}
                       style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }}
                     />
@@ -280,15 +350,80 @@ export function NovoCanalDialog({
               )}
 
               {form.tipo === 'webhook' && (
-                <div style={{
-                  background: 'rgba(245,158,11,0.08)',
-                  border: '1px solid rgba(245,158,11,0.25)',
-                  borderRadius: 10, padding: '14px 16px',
-                }}>
-                  <p style={{ margin: 0, fontSize: 12, color: '#F59E0B', lineHeight: 1.5 }}>
-                    🔗 Um token único será gerado automaticamente ao salvar. Você receberá a URL completa para configurar no sistema externo.
-                  </p>
-                </div>
+                <>
+                  {/* Provider do webhook/API */}
+                  <div>
+                    <label style={labelStyle}>Provider *</label>
+                    <select
+                      value={provider}
+                      onChange={e => setProvider(e.target.value)}
+                      style={{ ...inputStyle, cursor: 'pointer' }}
+                    >
+                      {WEBHOOK_PROVIDERS.map(p => (
+                        <option key={p.id} value={p.id} disabled={!p.disponivel}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Genérico (HMAC) */}
+                  {provider === 'generic' && (
+                    <div style={{
+                      background: 'rgba(245,158,11,0.08)',
+                      border: '1px solid rgba(245,158,11,0.25)',
+                      borderRadius: 10, padding: '14px 16px',
+                    }}>
+                      <p style={{ margin: 0, fontSize: 12, color: '#F59E0B', lineHeight: 1.5 }}>
+                        🔗 Um token único será gerado automaticamente ao salvar. Você receberá a URL completa
+                        para configurar no sistema externo. A validação usa assinatura HMAC.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Helena CRM (inbound-only) */}
+                  {provider === 'helena' && (
+                    <div style={{
+                      background: 'rgba(62,91,255,0.08)',
+                      border: '1px solid rgba(62,91,255,0.25)',
+                      borderRadius: 10, padding: '14px 16px',
+                    }}>
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--ws-blue)', lineHeight: 1.5 }}>
+                        Canal de entrada Helena CRM (inbound). Uma URL de webhook será gerada ao salvar.
+                        O envio (outbound) não é habilitado por este provider nesta etapa.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Qozt/Helena via Z-API (inbound + outbound via Helena Chat) */}
+                  {provider === 'crm_externo_zapi' && (
+                    <>
+                      <div>
+                        <label style={labelStyle}>Referência do token (env var) *</label>
+                        <input
+                          type="text"
+                          placeholder="ex: HELENA_CHAT_TOKEN_QOZT"
+                          value={helenaCfg.api_token_ref ?? ''}
+                          onChange={e => setHelenaField('api_token_ref', e.target.value)}
+                          style={inputStyle}
+                        />
+                        <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--ws-text-3)', lineHeight: 1.4 }}>
+                          Apenas o <strong>nome</strong> da variável de ambiente. O token real é lido do servidor — nunca digite o token aqui.
+                        </p>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Número de origem (from_phone) *</label>
+                        <input
+                          type="text"
+                          placeholder="ex: 5547999999999"
+                          value={helenaCfg.from_phone ?? ''}
+                          onChange={e => setHelenaField('from_phone', e.target.value)}
+                          style={inputStyle}
+                        />
+                      </div>
+                    </>
+                  )}
+                </>
               )}
 
             </div>
@@ -316,15 +451,15 @@ export function NovoCanalDialog({
           {!canalCriado && (
             <button
               onClick={salvar}
-              disabled={salvando}
+              disabled={salvando || !podeSalvar}
               style={{
                 flex: 2, height: 42, borderRadius: 10,
-                background: salvando ? 'rgba(62,91,255,0.5)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
+                background: (salvando || !podeSalvar) ? 'rgba(62,91,255,0.5)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
                 border: 'none',
                 fontSize: 14, fontWeight: 600,
-                color: 'white', cursor: salvando ? 'not-allowed' : 'pointer',
+                color: 'white', cursor: (salvando || !podeSalvar) ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                boxShadow: salvando ? 'none' : '0 4px 12px rgba(62,91,255,0.30)',
+                boxShadow: (salvando || !podeSalvar) ? 'none' : '0 4px 12px rgba(62,91,255,0.30)',
               }}
             >
               {salvando ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}

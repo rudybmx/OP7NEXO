@@ -36,7 +36,8 @@ export interface NovoCanalForm {
   tipo: Exclude<TipoCanal, 'todos'>
   nome: string
   mensagem_boas_vindas: string
-  config: Record<string, string>
+  // valores planos (instancia, numero...) ou bloco aninhado `webhook` para tipo=webhook
+  config: Record<string, unknown>
 }
 
 export const TIPOS: {
