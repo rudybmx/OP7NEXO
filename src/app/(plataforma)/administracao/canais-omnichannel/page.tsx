@@ -2,16 +2,15 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Plus, Search, X, Check, Link2, Smartphone, Calendar, Power, PowerOff, Pencil, Trash2 } from 'lucide-react'
+import { Loader2, Plus, Search, Link2, Smartphone, Calendar, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
-import { wsSheetCreamCloseButtonStyle, wsSheetCreamStyle } from '@/components/ui/ws-sheet'
 import { useAuth } from '@/hooks/use-auth'
 import api from '@/lib/api-client'
 import { getCanalProviderLabel } from '@/lib/whatsapp-canal'
+import { EditarCanalDialog, type EditCanalForm } from '@/components/administracao/canais/editar-canal-dialog'
 import { NovoCanalDialog } from '@/components/administracao/canais/novo-canal-dialog'
 import {
-  TIPOS, WEBHOOK_BASE, inputStyle, labelStyle, emptyForm, tipoInfo,
+  TIPOS, WEBHOOK_BASE, emptyForm, tipoInfo,
   type Canal, type TipoCanal, type Workspace,
 } from '@/components/administracao/canais/canal-shared'
 
@@ -19,12 +18,6 @@ const FILTROS: { id: TipoCanal; label: string }[] = [
   { id: 'todos', label: 'Todos' },
   ...TIPOS.map(t => ({ id: t.id, label: t.label })),
 ]
-
-const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = {
-  ativo:   { label: 'Ativo',   bg: 'rgba(15,168,86,0.15)',  color: 'var(--ws-green)' },
-  inativo: { label: 'Inativo', bg: 'rgba(255,255,255,0.08)', color: 'var(--ws-text-2)' },
-  erro:    { label: 'Erro',    bg: 'rgba(255,92,141,0.15)', color: 'var(--ws-coral)' },
-}
 
 const CONN_BADGE: Record<string, { label: string; bg: string; color: string }> = {
   connected:    { label: 'Conectado',    bg: 'rgba(15,168,86,0.15)',  color: 'var(--ws-green)' },
@@ -35,6 +28,21 @@ const CONN_BADGE: Record<string, { label: string; bg: string; color: string }> =
 function isDark() {
   if (typeof window === 'undefined') return false
   return document.documentElement.classList.contains('dark')
+}
+
+function emptyEditForm(): EditCanalForm {
+  return {
+    nome: '',
+    mensagem_boas_vindas: '',
+    status: 'inativo',
+    config: {},
+  }
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message
+  if (typeof err === 'string' && err.trim()) return err
+  return fallback
 }
 
 export default function CanaisOmnichannelPage() {
@@ -55,7 +63,7 @@ export default function CanaisOmnichannelPage() {
   // Edição
   const [editDrawerAberto, setEditDrawerAberto] = useState(false)
   const [canalEditando, setCanalEditando] = useState<Canal | null>(null)
-  const [editForm, setEditForm] = useState({ nome: '', mensagem_boas_vindas: '', config: {} as Record<string, string> })
+  const [editForm, setEditForm] = useState<EditCanalForm>(emptyEditForm())
   const [editSalvando, setEditSalvando] = useState(false)
 
   // QR Code / Conexão
@@ -76,8 +84,8 @@ export default function CanaisOmnichannelPage() {
     try {
       const data = await api.get<Canal[]>('/canais')
       setCanais(data)
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao carregar canais')
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Erro ao carregar canais'))
     } finally {
       setCarregando(false)
     }
@@ -93,10 +101,11 @@ export default function CanaisOmnichannelPage() {
   }, [])
 
   useEffect(() => {
-    if (user?.role === 'platform_admin') {
+    if (user?.role !== 'platform_admin') return
+    void Promise.resolve().then(() => {
       loadCanais()
       loadWorkspaces()
-    }
+    })
   }, [user, loadCanais, loadWorkspaces])
 
   const workspaceNome = (id: string) => workspaces.find(w => w.id === id)?.nome ?? '—'
@@ -120,8 +129,8 @@ export default function CanaisOmnichannelPage() {
         fecharDrawer()
         toast.success('Canal criado com sucesso!')
       }
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao criar canal')
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Erro ao criar canal'))
     } finally {
       setSalvando(false)
     }
@@ -152,6 +161,7 @@ export default function CanaisOmnichannelPage() {
     setEditForm({
       nome: canal.nome,
       mensagem_boas_vindas: canal.mensagem_boas_vindas ?? '',
+      status: canal.status,
       config: canal.config ?? {},
     })
     setQrCode(null)
@@ -163,7 +173,7 @@ export default function CanaisOmnichannelPage() {
   function fecharEdicao() {
     setEditDrawerAberto(false)
     setCanalEditando(null)
-    setEditForm({ nome: '', mensagem_boas_vindas: '', config: {} })
+    setEditForm(emptyEditForm())
     setQrCode(null)
     setPairingCode(null)
     setConectando(false)
@@ -182,8 +192,8 @@ export default function CanaisOmnichannelPage() {
       await api.delete(`/canais/${canal.id}`)
       setCanais(prev => prev.filter(c => c.id !== canal.id))
       toast.success('Canal excluído com sucesso')
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao excluir canal')
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Erro ao excluir canal'))
     } finally {
       setExcluindoId(null)
     }
@@ -198,13 +208,13 @@ export default function CanaisOmnichannelPage() {
         nome: editForm.nome.trim(),
         config: editForm.config,
         mensagem_boas_vindas: editForm.mensagem_boas_vindas.trim() || null,
-        status: canalEditando.status,
+        status: editForm.status,
       })
       setCanais(prev => prev.map(c => c.id === atualizado.id ? atualizado : c))
       setCanalEditando(atualizado)
       toast.success('Canal atualizado')
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao atualizar canal')
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Erro ao atualizar canal'))
     } finally {
       setEditSalvando(false)
     }
@@ -272,8 +282,8 @@ export default function CanaisOmnichannelPage() {
         setConectando(false)
         toast.info(resp.message)
       }
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao conectar')
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Erro ao conectar'))
       setConectando(false)
     }
   }
@@ -292,8 +302,8 @@ export default function CanaisOmnichannelPage() {
       setQrCode(null)
       setPairingCode(null)
       toast.success('Desconectado')
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao desconectar')
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Erro ao desconectar'))
     }
   }
 
@@ -440,7 +450,7 @@ export default function CanaisOmnichannelPage() {
             </p>
             {!busca && filtroTipo === 'todos' && (
               <p style={{ fontSize: 12, color: 'var(--ws-text-3)', marginTop: 4 }}>
-                Clique em "Novo Canal" para começar
+                Clique em &quot;Novo Canal&quot; para começar
               </p>
             )}
           </div>
@@ -463,7 +473,6 @@ export default function CanaisOmnichannelPage() {
             <tbody>
               {filtrados.map(c => {
                 const info = tipoInfo(c.tipo)
-                const stat = STATUS_BADGE[c.status] ?? STATUS_BADGE.inativo
                 const conn = CONN_BADGE[c.connection_status ?? 'disconnected'] ?? CONN_BADGE.disconnected
                 return (
                   <tr
@@ -576,224 +585,20 @@ export default function CanaisOmnichannelPage() {
         copiado={copiado}
       />
 
-      {/* Drawer Editar Canal */}
-      <Sheet open={editDrawerAberto} onOpenChange={open => !open && fecharEdicao()}>
-        <SheetContent
-          side="right"
-          style={{
-            width: 500,
-            ...wsSheetCreamStyle,
-            padding: 0,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          {/* Header */}
-          <div style={{
-            padding: '24px 28px 20px',
-            borderBottom: '1px solid var(--ws-glass-border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          }}>
-            <div>
-              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--ws-text-1)' }}>
-                Editar Canal
-              </h2>
-              <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0' }}>
-                {canalEditando?.nome}
-              </p>
-            </div>
-            <button
-              onClick={fecharEdicao}
-              style={{
-                ...wsSheetCreamCloseButtonStyle,
-                borderRadius: 8, width: 32, height: 32,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', color: 'var(--ws-text-2)',
-              }}
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {/* Body */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-              {/* Nome */}
-              <div>
-                <label style={labelStyle}>Nome do Canal *</label>
-                <input
-                  type="text"
-                  value={editForm.nome}
-                  onChange={e => setEditForm(prev => ({ ...prev, nome: e.target.value }))}
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* Mensagem de boas-vindas */}
-              <div>
-                <label style={labelStyle}>Mensagem de Boas-Vindas</label>
-                <textarea
-                  value={editForm.mensagem_boas_vindas}
-                  onChange={e => setEditForm(prev => ({ ...prev, mensagem_boas_vindas: e.target.value }))}
-                  rows={3}
-                  style={{ ...inputStyle, resize: 'vertical' }}
-                />
-              </div>
-
-              {/* Status de conexão (Evolution apenas) */}
-              {canalEditando?.tipo === 'whatsapp_evolution' && (
-                <div style={{
-                  background: 'rgba(37,211,102,0.06)',
-                  border: '1px solid rgba(37,211,102,0.20)',
-                  borderRadius: 12, padding: '16px 18px',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 20 }}>📱</span>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>
-                          WhatsApp Evolution
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--ws-text-3)', marginTop: 2 }}>
-                          {canalEditando.numero_telefone ?? 'Nenhum número conectado'}
-                        </div>
-                      </div>
-                    </div>
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      padding: '3px 10px', borderRadius: 6,
-                      background: CONN_BADGE[canalEditando.connection_status ?? 'disconnected']?.bg,
-                      color: CONN_BADGE[canalEditando.connection_status ?? 'disconnected']?.color,
-                      fontSize: 11, fontWeight: 600,
-                    }}>
-                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: CONN_BADGE[canalEditando.connection_status ?? 'disconnected']?.color }} />
-                      {CONN_BADGE[canalEditando.connection_status ?? 'disconnected']?.label ?? 'Desconectado'}
-                    </span>
-                  </div>
-
-                  {/* QR Code */}
-                  {qrCode && (
-                    <div style={{ textAlign: 'center', marginBottom: 12 }}>
-                      <img
-                        src={qrCode.startsWith('data:') ? qrCode : `data:image/png;base64,${qrCode}`}
-                        alt="QR Code WhatsApp"
-                        style={{ width: 200, height: 200, borderRadius: 8, border: '1px solid var(--ws-glass-border)' }}
-                      />
-                      <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>
-                        Escaneie com seu WhatsApp
-                      </p>
-                    </div>
-                  )}
-
-                  {!qrCode && pairingCode && (
-                    <div style={{
-                      textAlign: 'center',
-                      marginBottom: 12,
-                      padding: '14px 16px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(37,211,102,0.22)',
-                      background: 'rgba(37,211,102,0.06)',
-                    }}>
-                      <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginBottom: 8 }}>
-                        Código de pareamento
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 20,
-                          fontWeight: 700,
-                          letterSpacing: '0.16em',
-                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                          color: 'var(--ws-text-1)',
-                          wordBreak: 'break-word',
-                        }}
-                      >
-                        {pairingCode}
-                      </div>
-                      <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 8 }}>
-                        Digite esse código no WhatsApp para concluir a conexão
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Botões Conectar / Desconectar */}
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    {canalEditando.connection_status === 'connected' ? (
-                      <button
-                        onClick={desconectarEvolution}
-                        style={{
-                          flex: 1, height: 38, borderRadius: 8,
-                          background: 'rgba(163,45,45,0.12)',
-                          border: '1px solid rgba(163,45,45,0.30)',
-                          fontSize: 13, fontWeight: 600,
-                          color: '#a32d2d', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        }}
-                      >
-                        <PowerOff size={14} />
-                        Desconectar
-                      </button>
-                    ) : (
-                      <button
-                        onClick={conectarEvolution}
-                        disabled={conectando}
-                        style={{
-                          flex: 1, height: 38, borderRadius: 8,
-                          background: conectando ? 'rgba(37,211,102,0.30)' : 'rgba(37,211,102,0.15)',
-                          border: '1px solid rgba(37,211,102,0.40)',
-                          fontSize: 13, fontWeight: 600,
-                          color: '#25D366', cursor: conectando ? 'not-allowed' : 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        }}
-                      >
-                        {conectando ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} />}
-                        {conectando ? 'Conectando...' : 'Conectar'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div style={{
-            padding: '20px 28px',
-            borderTop: '1px solid var(--ws-glass-border)',
-            display: 'flex', gap: 12,
-          }}>
-            <button
-              onClick={fecharEdicao}
-              style={{
-                flex: 1, height: 42, borderRadius: 10,
-                background: 'transparent',
-                border: '1px solid var(--ws-glass-border)',
-                fontSize: 14, fontWeight: 500,
-                color: 'var(--ws-text-2)', cursor: 'pointer',
-              }}
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={salvarEdicao}
-              disabled={editSalvando}
-              style={{
-                flex: 2, height: 42, borderRadius: 10,
-                background: editSalvando ? 'rgba(62,91,255,0.5)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
-                border: 'none',
-                fontSize: 14, fontWeight: 600,
-                color: 'white', cursor: editSalvando ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                boxShadow: editSalvando ? 'none' : '0 4px 12px rgba(62,91,255,0.30)',
-              }}
-            >
-              {editSalvando ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-              {editSalvando ? 'Salvando...' : 'Salvar'}
-            </button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      <EditarCanalDialog
+        open={editDrawerAberto}
+        onClose={fecharEdicao}
+        canal={canalEditando}
+        form={editForm}
+        setForm={setEditForm}
+        salvar={salvarEdicao}
+        salvando={editSalvando}
+        qrCode={qrCode}
+        pairingCode={pairingCode}
+        conectando={conectando}
+        onConectar={conectarEvolution}
+        onDesconectar={desconectarEvolution}
+      />
     </div>
   )
 }
