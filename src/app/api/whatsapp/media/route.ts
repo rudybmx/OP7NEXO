@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getSql } from '@/lib/db'
-import { getUserFromRequest, unauthorized } from '@/lib/api-auth'
+import { resolveWhatsappWorkspaceAccess } from '@/lib/whatsapp-workspace-access'
 
 // ---------------------------------------------------------------------------
 // GET /api/whatsapp/media?conversa_id=<UUID>
@@ -21,9 +21,9 @@ type DbMidia = {
 
 export async function GET(request: NextRequest) {
   try {
-    // --- Autenticação ---
-    const user = await getUserFromRequest(request)
-    if (!user) return unauthorized()
+    // --- Autenticação + workspaces autorizados (fonte forte via /me/workspaces = UWA) ---
+    const access = await resolveWhatsappWorkspaceAccess(request)
+    if (access instanceof Response) return access
 
     // --- Parâmetros ---
     const url = new URL(request.url)
@@ -52,20 +52,40 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // --- Monta query ---
     const db = getSql()
 
+    // --- Guard de tenant: a conversa precisa pertencer a um workspace autorizado ---
+    // Resolve o workspace da conversa e valida ANTES de retornar qualquer mídia.
+    // 404 tanto para inexistente quanto para sem-acesso (evita enumeração de conversa_id).
+    const conversaRows = await db<{ workspace_id: string }[]>`
+      SELECT workspace_id::text AS workspace_id
+      FROM public.crm_whatsapp_conversas
+      WHERE id = ${conversaId}::uuid
+      LIMIT 1
+    `
+    if (
+      conversaRows.length === 0 ||
+      !access.allowedWorkspaceIds.has(conversaRows[0].workspace_id)
+    ) {
+      return NextResponse.json(
+        { error: 'Conversa não encontrada.' },
+        { status: 404 },
+      )
+    }
+    const workspaceId = conversaRows[0].workspace_id
+
+    // --- Monta query (JOIN com conversa + escopo de workspace como defesa em profundidade) ---
     let query = db<
       DbMidia[]
-    >`SELECT id::text, conversa_id::text, tipo, minio_path, url_publica, mimetype, tamanho, created_at FROM public.crm_whatsapp_midia WHERE conversa_id = ${conversaId}::uuid`
+    >`SELECT m.id::text, m.conversa_id::text, m.tipo, m.minio_path, m.url_publica, m.mimetype, m.tamanho, m.created_at FROM public.crm_whatsapp_midia m JOIN public.crm_whatsapp_conversas c ON c.id = m.conversa_id WHERE m.conversa_id = ${conversaId}::uuid AND c.workspace_id = ${workspaceId}::uuid`
 
     // Filtro opcional por tipo
     if (tipo) {
-      query = db`${query} AND tipo = ${tipo}`
+      query = db`${query} AND m.tipo = ${tipo}`
     }
 
     // Ordenação e limite
-    query = db`${query} ORDER BY created_at DESC LIMIT ${limit}`
+    query = db`${query} ORDER BY m.created_at DESC LIMIT ${limit}`
 
     const rows = await query
 
@@ -93,8 +113,8 @@ export async function GET(request: NextRequest) {
       conversaId,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro inesperado'
+    // Loga o detalhe no servidor, mas NÃO expõe mensagem interna (path/bucket/SQL) ao cliente.
     console.error('[API /whatsapp/media] erro:', error)
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
