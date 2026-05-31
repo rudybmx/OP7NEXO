@@ -122,7 +122,7 @@ def _canal_out(c: CanalEntrada, *, webhook_secret: str | None = None) -> CanalOu
         nome=c.nome,
         provider=canal_provider(c.tipo, c.config or {}),
         provider_label=canal_provider_label(c.tipo, c.config or {}),
-        config=sanitize_webhook_config(c.config or {}),
+        config=_sanitize_canal_config(c.config or {}),
         mensagem_boas_vindas=c.mensagem_boas_vindas,
         webhook_token=c.webhook_token,
         webhook_secret=webhook_secret,
@@ -132,6 +132,15 @@ def _canal_out(c: CanalEntrada, *, webhook_secret: str | None = None) -> CanalOu
         evolution_instance_id=c.evolution_instance_id,
         connection_status=c.connection_status,
     )
+
+
+def _sanitize_canal_config(config: dict | None) -> dict:
+    sanitized = sanitize_webhook_config(config)
+    evolution = sanitized.get("evolution")
+    if isinstance(evolution, dict):
+        evolution.pop("instance_token", None)
+        sanitized["evolution"] = evolution
+    return sanitized
 
 
 def _get_canal_or_404(canal_id: uuid.UUID, db: Session) -> CanalEntrada:
