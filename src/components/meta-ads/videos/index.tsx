@@ -4,7 +4,7 @@ import { type ReactNode } from 'react'
 import { useMetaVideos } from '@/hooks/use-meta-videos'
 import { AlertTriangle, Loader2, Video } from 'lucide-react'
 
-interface Props { workspaceId: string | null; dataInicio: string; dataFim: string; contaIds?: string[] }
+interface Props { workspaceId: string | null; dataInicio: string; dataFim: string; contaIds?: string[]; campaignId?: string | null }
 
 function EstadoVideos({
   titulo,
@@ -77,8 +77,8 @@ function formatarStatus(status: string | null): string {
   }
 }
 
-export function AbaVideos({ workspaceId, dataInicio, dataFim, contaIds = [] }: Props) {
-  const { rows, isLoading, error } = useMetaVideos({ workspaceId, dataInicio, dataFim, contaIds })
+export function AbaVideos({ workspaceId, dataInicio, dataFim, contaIds = [], campaignId }: Props) {
+  const { rows, isLoading, error } = useMetaVideos({ workspaceId, dataInicio, dataFim, contaIds, campaignId })
   const items = rows
 
   if (isLoading) {
@@ -139,7 +139,9 @@ export function AbaVideos({ workspaceId, dataInicio, dataFim, contaIds = [] }: P
             <tr style={{ background: 'var(--ws-bg-subtle)' }}>
               <th style={{ padding: 8, textAlign: 'left' }}>Vídeo</th>
               <th style={{ padding: 8, textAlign: 'left' }}>Status</th>
+              <th style={{ padding: 8, textAlign: 'left' }}>Conjunto</th>
               <th style={{ padding: 8, textAlign: 'right' }}>Visualizações</th>
+              <th style={{ padding: 8, textAlign: 'right' }}>Plays</th>
               <th style={{ padding: 8, textAlign: 'right' }}>Retenção 25%</th>
               <th style={{ padding: 8, textAlign: 'right' }}>Retenção 50%</th>
               <th style={{ padding: 8, textAlign: 'right' }}>Retenção 75%</th>
@@ -154,6 +156,7 @@ export function AbaVideos({ workspaceId, dataInicio, dataFim, contaIds = [] }: P
               <tr key={`${v.video_id}-${v.ad_id}`} style={{ borderTop: '1px solid var(--ws-divider)' }}>
                 <td style={{ padding: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     {v.thumbnail_url ? <img src={v.thumbnail_url} alt={v.video_id} style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4 }} /> : null}
                     <div>
                       <div>{v.anuncio_nome ?? v.video_id}</div>
@@ -162,7 +165,9 @@ export function AbaVideos({ workspaceId, dataInicio, dataFim, contaIds = [] }: P
                   </div>
                 </td>
                 <td style={{ padding: 8 }}>{formatarStatus(v.status)}</td>
+                <td style={{ padding: 8 }}>{v.adset_nome ?? '—'}</td>
                 <td style={{ padding: 8, textAlign: 'right' }}>{v.video_views ?? 0}</td>
+                <td style={{ padding: 8, textAlign: 'right' }}>{v.video_play_actions ?? 0}</td>
                 <td style={{ padding: 8, textAlign: 'right' }}>{v.video_p25 ?? 0}</td>
                 <td style={{ padding: 8, textAlign: 'right' }}>{v.video_p50 ?? 0}</td>
                 <td style={{ padding: 8, textAlign: 'right' }}>{v.video_p75 ?? 0}</td>
