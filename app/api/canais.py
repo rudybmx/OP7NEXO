@@ -42,6 +42,7 @@ from app.services.webhook_api_ingestion import (
     webhook_provider_from_config,
 )
 from app.services import helena_chat as helena_service
+from app.services.canal_labels import canal_provider, canal_provider_label
 from app.services.redis_pub import publish_whatsapp_event
 from app.services.whatsapp_crm_persistence import process_evolution_message
 from app.services.whatsapp_event_queue import enqueue_evolution_event
@@ -88,6 +89,8 @@ class CanalOut(BaseModel):
     workspace_id: str
     tipo: str
     nome: str
+    provider: str
+    provider_label: str
     config: dict
     mensagem_boas_vindas: str | None
     webhook_token: str | None
@@ -117,6 +120,8 @@ def _canal_out(c: CanalEntrada, *, webhook_secret: str | None = None) -> CanalOu
         workspace_id=str(c.workspace_id),
         tipo=c.tipo,
         nome=c.nome,
+        provider=canal_provider(c.tipo, c.config or {}),
+        provider_label=canal_provider_label(c.tipo, c.config or {}),
         config=sanitize_webhook_config(c.config or {}),
         mensagem_boas_vindas=c.mensagem_boas_vindas,
         webhook_token=c.webhook_token,
