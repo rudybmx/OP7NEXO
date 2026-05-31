@@ -8,6 +8,7 @@ import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { wsSheetCreamCloseButtonStyle, wsSheetCreamStyle } from '@/components/ui/ws-sheet'
 import { useAuth } from '@/hooks/use-auth'
 import api from '@/lib/api-client'
+import { getCanalProviderLabel } from '@/lib/whatsapp-canal'
 import { NovoCanalDialog } from '@/components/administracao/canais/novo-canal-dialog'
 import {
   TIPOS, WEBHOOK_BASE, inputStyle, labelStyle, emptyForm, tipoInfo,
@@ -482,7 +483,7 @@ export default function CanaisOmnichannelPage() {
                           background: info.corBg, color: info.cor,
                           fontSize: 12, fontWeight: 600,
                         }}>
-                          {info.emoji} {info.label}
+                          {info.emoji} {getCanalProviderLabel({ provider_label: c.provider_label, tipo: c.tipo })}
                         </span>
                       )}
                     </td>
