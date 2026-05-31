@@ -9,6 +9,7 @@ import api from '@/lib/api-client'
 import { getCanalProviderLabel } from '@/lib/whatsapp-canal'
 import { EditarCanalDialog, type EditCanalForm } from '@/components/administracao/canais/editar-canal-dialog'
 import { NovoCanalDialog } from '@/components/administracao/canais/novo-canal-dialog'
+import { sanitizeCanalConfigForEdit } from '@/components/administracao/canais/webhook-config'
 import {
   TIPOS, WEBHOOK_BASE, emptyForm, tipoInfo,
   type Canal, type TipoCanal, type Workspace,
@@ -162,7 +163,7 @@ export default function CanaisOmnichannelPage() {
       nome: canal.nome,
       mensagem_boas_vindas: canal.mensagem_boas_vindas ?? '',
       status: canal.status,
-      config: canal.config ?? {},
+      config: sanitizeCanalConfigForEdit(canal.config),
     })
     setQrCode(null)
     setPairingCode(null)

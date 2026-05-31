@@ -6,12 +6,21 @@ import { Check, Loader2, Power, PowerOff, X } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { wsSheetCreamCloseButtonStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
 import { inputStyle, labelStyle, type Canal } from './canal-shared'
+import {
+  getWebhookHelenaConfig,
+  getWebhookProvider,
+  hasWebhookHelenaField,
+  setWebhookHelenaField,
+  setWebhookProvider,
+  type CanalConfig,
+  type WebhookProvider,
+} from './webhook-config'
 
 export interface EditCanalForm {
   nome: string
   mensagem_boas_vindas: string
   status: string
-  config: Record<string, string>
+  config: CanalConfig
 }
 
 interface EditarCanalDialogProps {
@@ -41,6 +50,16 @@ const CONN_BADGE: Record<string, { label: string; bg: string; color: string }> =
   disconnected: { label: 'Desconectado', bg: 'rgba(163,45,45,0.15)', color: '#a32d2d' },
 }
 
+const WEBHOOK_PROVIDER_OPTIONS: { value: WebhookProvider; label: string }[] = [
+  { value: 'generic', label: 'Webhook Genérico' },
+  { value: 'helena', label: 'Helena' },
+  { value: 'crm_externo_zapi', label: 'CRM externo / Z-API' },
+]
+
+function isWebhookChannel(canal: Canal | null): boolean {
+  return canal?.tipo === 'webhook'
+}
+
 export function EditarCanalDialog({
   open,
   onClose,
@@ -55,6 +74,29 @@ export function EditarCanalDialog({
   onConectar,
   onDesconectar,
 }: EditarCanalDialogProps) {
+  const provider = getWebhookProvider(form.config)
+  const helenaCfg = getWebhookHelenaConfig(form.config)
+  const showFromPhone =
+    provider === 'crm_externo_zapi' ||
+    (provider === 'helena' && hasWebhookHelenaField(form.config, 'from_phone'))
+
+  const atualizarProvider = (nextProvider: WebhookProvider) => {
+    setForm((prev) => ({
+      ...prev,
+      config: setWebhookProvider(prev.config, nextProvider),
+    }))
+  }
+
+  const atualizarHelenaField = (
+    key: 'api_token_ref' | 'from_phone',
+    value: string,
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      config: setWebhookHelenaField(prev.config, key, value),
+    }))
+  }
+
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
@@ -146,6 +188,100 @@ export function EditarCanalDialog({
                 ))}
               </select>
             </div>
+
+            {isWebhookChannel(canal) && (
+              <>
+                <div>
+                  <label style={labelStyle}>Provider *</label>
+                  <select
+                    value={provider}
+                    onChange={(event) => atualizarProvider(event.target.value as WebhookProvider)}
+                    style={{ ...inputStyle, cursor: 'pointer' }}
+                  >
+                    {WEBHOOK_PROVIDER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {provider === 'generic' && (
+                  <div
+                    style={{
+                      background: 'rgba(37,211,102,0.06)',
+                      border: '1px solid rgba(37,211,102,0.20)',
+                      borderRadius: 10,
+                      padding: '14px 16px',
+                    }}
+                  >
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--ws-text-2)', lineHeight: 1.5 }}>
+                      Webhook genérico com assinatura HMAC. O segredo fica preservado no backend e não aparece na UI.
+                    </p>
+                  </div>
+                )}
+
+                {provider === 'helena' && (
+                  <div
+                    style={{
+                      background: 'rgba(62,91,255,0.08)',
+                      border: '1px solid rgba(62,91,255,0.25)',
+                      borderRadius: 10,
+                      padding: '14px 16px',
+                    }}
+                  >
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--ws-blue)', lineHeight: 1.5 }}>
+                      Helena é inbound-only nesta etapa. Nenhum token real é solicitado aqui.
+                    </p>
+                  </div>
+                )}
+
+                {provider === 'crm_externo_zapi' && (
+                  <div
+                    style={{
+                      background: 'rgba(62,91,255,0.08)',
+                      border: '1px solid rgba(62,91,255,0.18)',
+                      borderRadius: 10,
+                      padding: '14px 16px',
+                    }}
+                  >
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--ws-blue)', lineHeight: 1.5 }}>
+                      Informe apenas o nome da variável de ambiente e os campos operacionais existentes. Tokens reais
+                      nunca devem ser digitados aqui.
+                    </p>
+                  </div>
+                )}
+
+                {provider === 'crm_externo_zapi' && (
+                  <div>
+                    <label style={labelStyle}>Referência do token (env var) *</label>
+                    <input
+                      type="text"
+                      value={helenaCfg.api_token_ref ?? ''}
+                      onChange={(event) => atualizarHelenaField('api_token_ref', event.target.value)}
+                      placeholder="ex: HELENA_CHAT_TOKEN_QOZT"
+                      style={inputStyle}
+                    />
+                    <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--ws-text-3)', lineHeight: 1.4 }}>
+                      Apenas o nome da variável de ambiente. O token real é resolvido no servidor.
+                    </p>
+                  </div>
+                )}
+
+                {showFromPhone && (
+                  <div>
+                    <label style={labelStyle}>Número de origem (from_phone)</label>
+                    <input
+                      type="text"
+                      value={helenaCfg.from_phone ?? ''}
+                      onChange={(event) => atualizarHelenaField('from_phone', event.target.value)}
+                      placeholder="ex: 5547999999999"
+                      style={inputStyle}
+                    />
+                  </div>
+                )}
+              </>
+            )}
 
             {canal?.tipo === 'whatsapp_evolution' && (
               <div
@@ -289,6 +425,21 @@ export function EditarCanalDialog({
                     </button>
                   )}
                 </div>
+              </div>
+            )}
+
+            {canal?.tipo !== 'whatsapp_evolution' && canal?.tipo !== 'webhook' && (
+              <div
+                style={{
+                  background: 'rgba(15,23,42,0.04)',
+                  border: '1px solid rgba(15,23,42,0.08)',
+                  borderRadius: 12,
+                  padding: '16px 18px',
+                }}
+              >
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--ws-text-2)', lineHeight: 1.5 }}>
+                  A configuração deste tipo permanece preservada automaticamente.
+                </p>
               </div>
             )}
           </div>

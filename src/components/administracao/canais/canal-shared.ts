@@ -1,5 +1,6 @@
 import React from 'react'
 import { wsSheetCreamInputStyle } from '@/components/ui/ws-sheet'
+import type { CanalConfig } from './webhook-config'
 
 export type TipoCanal =
   | 'whatsapp_evolution'
@@ -21,7 +22,7 @@ export interface Canal {
   nome: string
   provider?: string
   provider_label?: string
-  config: Record<string, string>
+  config: CanalConfig
   mensagem_boas_vindas: string | null
   webhook_token: string | null
   status: string
@@ -37,7 +38,7 @@ export interface NovoCanalForm {
   nome: string
   mensagem_boas_vindas: string
   // valores planos (instancia, numero...) ou bloco aninhado `webhook` para tipo=webhook
-  config: Record<string, unknown>
+  config: CanalConfig
 }
 
 export const TIPOS: {
