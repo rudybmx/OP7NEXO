@@ -2032,7 +2032,7 @@ def _sync_video_metrics(
                     "ad_id,date_start,video_play_actions,video_avg_time_watched_actions,"
                     "video_30_sec_watched_actions,video_p25_watched_actions,video_p50_watched_actions,"
                     "video_p75_watched_actions,video_p95_watched_actions,video_p100_watched_actions,"
-                    "video_thruplay_watched_actions,cost_per_thruplay,actions"
+                    "video_thruplay_watched_actions,video_3_sec_watched_actions,cost_per_thruplay,actions"
                 ),
                 "level": "ad",
                 "time_range": time_range,
@@ -2084,7 +2084,7 @@ def _sync_video_metrics(
                 "video_p95": _valor_video_action(r.get("video_p95_watched_actions") or []),
                 "video_p100": _valor_video_action(r.get("video_p100_watched_actions") or []),
                 "thruplay": _valor_video_action(r.get("video_thruplay_watched_actions") or []),
-                "video_3_sec": 0,
+                "video_3_sec": _valor_video_action(r.get("video_3_sec_watched_actions") or []),
                 "cost_per_thruplay": _safe_float((r.get("cost_per_thruplay") or [{}])[0].get("value") if r.get("cost_per_thruplay") else 0.0),
             })
         db.commit()
