@@ -8,6 +8,8 @@ export interface WhatsappCanal {
   workspace_id: string
   tipo: string
   nome: string
+  provider?: string
+  provider_label?: string
   status: string
   numero_telefone?: string | null
   evolution_instance_id?: string | null

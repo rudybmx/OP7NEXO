@@ -19,6 +19,8 @@ interface Canal {
   workspace_id: string
   tipo: TipoCanal
   nome: string
+  provider?: string
+  provider_label?: string
   config: Record<string, string>
   mensagem_boas_vindas: string | null
   webhook_token: string | null
