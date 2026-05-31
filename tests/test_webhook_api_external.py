@@ -616,6 +616,64 @@ def test_atualizar_canal_webhook_nao_reexibe_secret_e_preserva_secret_existente(
     assert canal.config["webhook"]["hmac_secret"] == secret
 
 
+def test_atualizar_canal_webhook_preserva_sub_blocos_e_gera_secret_generico(monkeypatch):
+    db = _CrudDb()
+    workspace_id = uuid.uuid4()
+    canal = CanalEntrada(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        tipo="webhook",
+        nome="Canal Helena",
+        config={
+            "webhook": {
+                "provider": "helena",
+                "security_mode": "provider_token",
+                "helena": {
+                    "api_token_ref": "HELENA_CHAT_TOKEN_QOZT",
+                    "from_phone": "+5547992828458",
+                    "custom_field": "keep-me",
+                },
+            },
+            "evolution": {
+                "instance_name": "rudy_zap",
+                "instance_id": "instance-id-1",
+                "instance_token": "instance-token-secret",
+            },
+        },
+        webhook_token="token-legado",
+        status="ativo",
+    )
+    app = _build_app(db)
+    client = TestClient(app)
+
+    monkeypatch.setattr(canais, "_get_canal_or_404", lambda *_args, **_kwargs: canal)
+
+    payload = {
+        "nome": "Canal Helena",
+        "config": {"webhook": {"provider": "generic", "security_mode": "hmac"}},
+        "mensagem_boas_vindas": "Olá",
+        "status": "ativo",
+    }
+
+    response = client.put(f"/canais/{canal.id}", json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["config"]["webhook"]["provider"] == "generic"
+    assert data["config"]["webhook"]["security_mode"] == "hmac"
+    assert data["config"]["webhook"]["helena"]["api_token_ref"] == "HELENA_CHAT_TOKEN_QOZT"
+    assert data["config"]["webhook"]["helena"]["from_phone"] == "+5547992828458"
+    assert data["config"]["webhook"]["helena"]["custom_field"] == "keep-me"
+    assert "hmac_secret" not in data["config"]["webhook"]
+    assert data["config"]["evolution"]["instance_name"] == "rudy_zap"
+    assert "instance_token" not in data["config"]["evolution"]
+    assert canal.config["webhook"]["provider"] == "generic"
+    assert canal.config["webhook"]["security_mode"] == "hmac"
+    assert len(canal.config["webhook"]["hmac_secret"]) == 64
+    assert canal.config["webhook"]["helena"]["api_token_ref"] == "HELENA_CHAT_TOKEN_QOZT"
+    assert canal.config["evolution"]["instance_token"] == "instance-token-secret"
+
+
 def test_rotacionar_secret_webhook_retorna_secret_uma_vez(monkeypatch):
     db = _WebhookDb(None)
     workspace_id = uuid.uuid4()

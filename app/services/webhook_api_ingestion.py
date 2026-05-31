@@ -112,34 +112,40 @@ def prepare_webhook_config(
     webhook = dict(config.get("webhook") or {})
     _redact_webhook_tokens(webhook)
     existing_secret = webhook_secret_from_config(existing_config)
-    provider = webhook_provider_from_config(config)
-    if provider == "generic" and existing_config is not None:
+    provider_raw = webhook.get("provider")
+    provider = str(provider_raw).strip().lower() if provider_raw is not None else ""
+    if not provider and existing_config is not None:
         existing_provider = webhook_provider_from_config(existing_config)
-        if existing_provider != "generic":
+        if existing_provider:
             provider = existing_provider
+    if not provider:
+        provider = "generic"
+    webhook["provider"] = provider
     generated = False
     secret_to_return: str | None = None
 
-    if provider == "helena":
+    if provider == "generic":
+        webhook["security_mode"] = "hmac"
+        if force_new_secret:
+            secret_to_return = secrets.token_hex(32)
+            webhook["hmac_secret"] = secret_to_return
+            generated = True
+        elif existing_secret:
+            webhook["hmac_secret"] = existing_secret
+        elif generate_secret:
+            secret_to_return = secrets.token_hex(32)
+            webhook["hmac_secret"] = secret_to_return
+            generated = True
+        else:
+            webhook.pop("hmac_secret", None)
+    elif provider == "helena":
         webhook.pop("hmac_secret", None)
         webhook["provider"] = "helena"
-        webhook.setdefault("security_mode", "provider_token")
+        webhook["security_mode"] = "provider_token"
     elif provider == CRM_EXTERNO_ZAPI_PROVIDER:
         webhook.pop("hmac_secret", None)
         webhook["provider"] = CRM_EXTERNO_ZAPI_PROVIDER
-        webhook.setdefault("security_mode", "provider_token")
-    elif force_new_secret:
-        secret_to_return = secrets.token_hex(32)
-        webhook["hmac_secret"] = secret_to_return
-        generated = True
-    elif existing_secret:
-        webhook["hmac_secret"] = existing_secret
-    elif generate_secret:
-        secret_to_return = secrets.token_hex(32)
-        webhook["hmac_secret"] = secret_to_return
-        generated = True
-    else:
-        webhook.pop("hmac_secret", None)
+        webhook["security_mode"] = "provider_token"
 
     config["webhook"] = webhook
     return config, secret_to_return, generated

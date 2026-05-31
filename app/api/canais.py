@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import base64
 import hashlib
 import json
@@ -141,6 +142,19 @@ def _sanitize_canal_config(config: dict | None) -> dict:
         evolution.pop("instance_token", None)
         sanitized["evolution"] = evolution
     return sanitized
+
+
+def _merge_config(existing_config: dict | None, incoming_config: dict | None) -> dict:
+    existing = existing_config if isinstance(existing_config, dict) else {}
+    incoming = incoming_config if isinstance(incoming_config, dict) else {}
+
+    merged = copy.deepcopy(existing)
+    for key, value in incoming.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_config(merged.get(key), value)  # type: ignore[arg-type]
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
 
 
 def _get_canal_or_404(canal_id: uuid.UUID, db: Session) -> CanalEntrada:
@@ -802,12 +816,12 @@ def atualizar_canal(
 ):
     c = _get_canal_or_404(canal_id, db)
     _exigir_admin_canal(usuario, c, db)
-    stored_config = payload.config or {}
+    stored_config = _merge_config(c.config or {}, payload.config or {})
     if c.tipo == "webhook":
         stored_config, _, _ = prepare_webhook_config(
             stored_config,
             existing_config=c.config,
-            generate_secret=False,
+            generate_secret=True,
         )
     c.nome = payload.nome
     c.config = stored_config
