@@ -43,14 +43,6 @@ function agruparMensagensPorData(mensagens: MensagemApi[]) {
   }, [])
 }
 
-function statusIcon(status?: string | null) {
-  if (status === 'failed') return <AlertCircle size={12} color="#ffb4b4" />
-  if (status === 'read' || status === 'played') return <CheckCheck size={13} color="#00F5FF" />
-  if (status === 'delivered') return <CheckCheck size={13} />
-  if (status === 'sent' || status === 'enviada') return <Check size={12} />
-  return <Clock size={12} />
-}
-
 function onlyDigits(value?: string | null) {
   return value ? value.replace(/\D/g, '') : ''
 }
@@ -77,6 +69,91 @@ function formatHeaderTitle(conversa: ConversaApi) {
 
 function formatStatusLabel(status: string) {
   return status.replaceAll('_', ' ')
+}
+
+function formatMessageTime(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function getMessageStatusMeta(status?: string | null) {
+  const normalized = (status || '').toLowerCase()
+  if (!normalized) return null
+
+  if (normalized === 'failed') {
+    return {
+      label: 'Falhou',
+      icon: <AlertCircle size={11} />,
+      style: {
+        background: 'rgba(239, 68, 68, 0.10)',
+        color: '#B91C1C',
+        border: '1px solid rgba(239, 68, 68, 0.18)',
+      } satisfies CSSProperties,
+    }
+  }
+
+  if (normalized === 'read' || normalized === 'played') {
+    return {
+      label: normalized === 'played' ? 'Visualizada' : 'Lida',
+      icon: <CheckCheck size={11} />,
+      style: {
+        background: 'rgba(29, 158, 117, 0.10)',
+        color: '#1D9E75',
+        border: '1px solid rgba(29, 158, 117, 0.18)',
+      } satisfies CSSProperties,
+    }
+  }
+
+  if (normalized === 'delivered') {
+    return {
+      label: 'Entregue',
+      icon: <CheckCheck size={11} />,
+      style: {
+        background: 'rgba(100, 116, 139, 0.10)',
+        color: '#475569',
+        border: '1px solid rgba(100, 116, 139, 0.16)',
+      } satisfies CSSProperties,
+    }
+  }
+
+  if (normalized === 'sent' || normalized === 'enviada') {
+    return {
+      label: 'Enviada',
+      icon: <Check size={11} />,
+      style: {
+        background: 'rgba(62, 91, 255, 0.10)',
+        color: 'var(--ws-blue)',
+        border: '1px solid rgba(62, 91, 255, 0.18)',
+      } satisfies CSSProperties,
+    }
+  }
+
+  if (normalized === 'pending') {
+    return {
+      label: 'Pendente',
+      icon: <Clock size={11} />,
+      style: {
+        background: 'rgba(245, 158, 11, 0.12)',
+        color: '#B45309',
+        border: '1px solid rgba(245, 158, 11, 0.20)',
+      } satisfies CSSProperties,
+    }
+  }
+
+  return {
+    label: formatStatusLabel(status),
+    icon: <Clock size={11} />,
+    style: {
+      background: 'rgba(15, 23, 42, 0.06)',
+      color: 'var(--ws-text-2)',
+      border: '1px solid rgba(15, 23, 42, 0.10)',
+    } satisfies CSSProperties,
+  }
 }
 
 function getStatusTone(status?: string | null): CSSProperties {
@@ -456,6 +533,36 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
               const isEntrada = msg.direcao === 'entrada'
               const isIA = AI_HANDOFF_ENABLED && msg.remetenteTipo === 'ia'
               const participantLabel = msg.participantName || msg.remetenteNome || 'Contato'
+              const messageStatus = getMessageStatusMeta(msg.waStatus || msg.mediaStatus)
+              const messageTime = formatMessageTime(msg.recebidaEm || msg.enviadaEm || msg.criadaEm)
+              const isOutgoing = !isEntrada
+              const bubbleStyle: CSSProperties = isEntrada
+                ? {
+                    background: msg.isMentioned
+                      ? 'linear-gradient(180deg, rgba(255, 248, 220, 0.98), rgba(255, 244, 197, 0.96))'
+                      : 'rgba(255, 255, 255, 0.96)',
+                    color: '#0f172a',
+                    border: `1px solid ${msg.isMentioned ? 'rgba(201, 168, 76, 0.28)' : 'rgba(15, 23, 42, 0.08)'}`,
+                    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.06)',
+                  }
+                : isIA
+                  ? {
+                      background: 'linear-gradient(135deg, #0f2744, #1a3a6b)',
+                      color: '#ffffff',
+                      border: '1px solid rgba(15, 39, 68, 0.18)',
+                      boxShadow: '0 10px 22px rgba(15, 39, 68, 0.12)',
+                    }
+                  : {
+                      background: 'linear-gradient(180deg, rgba(222, 248, 198, 0.98), rgba(209, 245, 190, 0.96))',
+                      color: '#0f172a',
+                      border: '1px solid rgba(29, 158, 117, 0.16)',
+                      boxShadow: '0 10px 22px rgba(29, 158, 117, 0.08)',
+                    }
+              const footerColor = isEntrada
+                ? '#64748b'
+                : isIA
+                  ? 'rgba(255,255,255,0.72)'
+                  : 'rgba(15, 23, 42, 0.62)'
               return (
                 <div
                   key={msg.id}
@@ -481,17 +588,17 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
                       : (isIA ? 'IA Agente' : 'Atendente')}
                   </div>
                   <div style={{
-                    padding: '10px 14px',
-                    borderRadius: isEntrada ? '0 12px 12px 12px' : '12px 0 12px 12px',
+                    padding: '10px 14px 9px',
+                    borderRadius: isEntrada ? '0 16px 16px 16px' : '16px 0 16px 16px',
                     fontSize: 13,
                     lineHeight: 1.5,
-                    background: isEntrada
-                      ? (msg.isMentioned ? 'rgba(201,168,76,0.18)' : 'rgba(255,255,255,0.85)')
-                      : (isIA ? 'linear-gradient(135deg, #0f2744, #1a3a6b)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)'),
-                    color: isEntrada ? '#0f2744' : '#ffffff',
-                    border: isEntrada ? `1px solid ${msg.isMentioned ? '#c9a84c' : 'var(--ws-glass-border)'}` : 'none',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                    background: bubbleStyle.background,
+                    color: bubbleStyle.color,
+                    border: bubbleStyle.border,
+                    boxShadow: bubbleStyle.boxShadow,
                     wordBreak: 'break-word',
+                    overflowWrap: 'anywhere',
+                    minWidth: 120,
                   }}>
                     {msg.isMentioned && (
                       <div style={{ fontSize: 10, fontWeight: 700, color: '#c9a84c', marginBottom: 4 }}>
@@ -499,18 +606,40 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
                       </div>
                     )}
                     {renderMidia(msg, isEntrada)}
-                    {msg.conteudo}
+                    {msg.conteudo && (
+                      <div style={{ whiteSpace: 'pre-wrap' }}>
+                        {msg.conteudo}
+                      </div>
+                    )}
                     <div style={{
-                      fontSize: 9,
-                      color: isEntrada ? '#64748b' : 'rgba(255,255,255,0.7)',
-                      marginTop: 4,
+                      fontSize: 10,
+                      color: footerColor,
+                      marginTop: 6,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'flex-end',
-                      gap: 4,
+                      gap: 6,
+                      fontVariantNumeric: 'tabular-nums',
                     }}>
-                      <span>{(msg.recebidaEm || msg.enviadaEm || msg.criadaEm) ? new Date(msg.recebidaEm || msg.enviadaEm || msg.criadaEm || '').toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-                      {!isEntrada && statusIcon(msg.waStatus)}
+                      <span>{messageTime}</span>
+                      {isOutgoing && messageStatus && (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          padding: '2px 7px',
+                          borderRadius: 999,
+                          fontSize: 9,
+                          fontWeight: 700,
+                          letterSpacing: '0.02em',
+                          textTransform: 'uppercase',
+                          whiteSpace: 'nowrap',
+                          ...messageStatus.style,
+                        }}>
+                          {messageStatus.icon}
+                          <span>{messageStatus.label}</span>
+                        </span>
+                      )}
                     </div>
                     {msg.failedReason && (
                       <div style={{ fontSize: 10, color: isEntrada ? '#a32d2d' : '#ffb4b4', marginTop: 4 }}>
