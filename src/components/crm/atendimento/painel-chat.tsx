@@ -8,6 +8,7 @@ import { CardRastreamento } from './card-rastreamento'
 import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
 
 const AI_HANDOFF_ENABLED = false
+const CHAT_PATTERN_URL = 'https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7_dash_odc/Pattern%20OP7.svg'
 
 interface PainelChatProps {
   conversa: ConversaApi
@@ -102,9 +103,9 @@ function getMessageStatusMeta(status?: string | null) {
       label: normalized === 'played' ? 'Visualizada' : 'Lida',
       icon: <CheckCheck size={11} />,
       style: {
-        background: 'rgba(29, 158, 117, 0.10)',
-        color: '#1D9E75',
-        border: '1px solid rgba(29, 158, 117, 0.18)',
+        background: 'rgba(62, 91, 255, 0.10)',
+        color: 'var(--ws-blue)',
+        border: '1px solid rgba(62, 91, 255, 0.16)',
       } satisfies CSSProperties,
     }
   }
@@ -126,9 +127,9 @@ function getMessageStatusMeta(status?: string | null) {
       label: 'Enviada',
       icon: <Check size={11} />,
       style: {
-        background: 'rgba(62, 91, 255, 0.10)',
-        color: 'var(--ws-blue)',
-        border: '1px solid rgba(62, 91, 255, 0.18)',
+        background: 'rgba(100, 116, 139, 0.08)',
+        color: '#475569',
+        border: '1px solid rgba(100, 116, 139, 0.14)',
       } satisfies CSSProperties,
     }
   }
@@ -203,7 +204,7 @@ function getAvatarFallback(label: string) {
   return 'OP'
 }
 
-function renderMidia(msg: MensagemApi, isEntrada: boolean) {
+function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean) {
   const midias = msg.midias?.length
     ? msg.midias
     : msg.mediaUrl ? [{ id: `${msg.id}-media`, tipo: msg.messageType || 'document', url: msg.mediaUrl }] : []
@@ -217,7 +218,13 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean) {
         const url = media.url
         if (!url) {
           return (
-            <div key={media.id} style={{ fontSize: 12, color: isEntrada ? '#64748b' : 'rgba(255,255,255,0.78)' }}>
+            <div
+              key={media.id}
+              style={{
+                fontSize: 12,
+                color: isEntrada ? '#64748b' : (isIA ? 'rgba(255,255,255,0.78)' : '#10203a'),
+              }}
+            >
               Mídia em processamento
             </div>
           )
@@ -250,7 +257,7 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean) {
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              color: isEntrada ? '#3E5BFF' : '#ffffff',
+              color: isEntrada ? '#3E5BFF' : (isIA ? '#ffffff' : '#0f2744'),
               textDecoration: 'none',
               fontSize: 12,
               fontWeight: 600,
@@ -276,6 +283,18 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
   const canalLabel = getCanalBadgeLabel(conversa.canalTipo)
   const canalDetalhe = [conversa.canalNome, conversa.canalNumero].filter(Boolean).join(' · ')
   const statusTone = getStatusTone(conversa.status)
+  const patternOverlayStyle: CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    pointerEvents: 'none',
+    backgroundImage: `url(${CHAT_PATTERN_URL})`,
+    backgroundRepeat: 'repeat',
+    backgroundPosition: 'center top',
+    backgroundSize: '440px auto',
+    opacity: 0.065,
+    mixBlendMode: 'multiply',
+    filter: 'saturate(0.8)',
+  }
 
   return (
     <div style={{
@@ -493,167 +512,180 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
 
       {/* Mensagens */}
       <div style={{
+        position: 'relative',
         minHeight: 0,
-        overflowY: 'scroll',
-        scrollbarGutter: 'stable',
-        WebkitOverflowScrolling: 'touch',
-        padding: 20,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 24,
-        background: 'linear-gradient(to bottom, transparent, rgba(62,91,255,0.02))',
-        scrollbarWidth: 'thin',
+        overflow: 'hidden',
+        background: 'linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(244, 247, 255, 0.98) 100%)',
       }}>
-        <CardRastreamento
-          metaHeadline={conversa.contato.metaHeadline}
-          metaBody={conversa.contato.metaBody}
-          metaImageUrl={conversa.contato.metaImageUrl}
-          metaSourceUrl={conversa.contato.metaSourceUrl}
-          campanhaOrigem={conversa.contato.campanhaOrigem}
-          utmSource={conversa.contato.utmSource}
-          utmMedium={conversa.contato.utmMedium}
-          primeiraConversaAt={conversa.contato.primeiraConversaAt}
-        />
-        {grupos.map(grupo => (
-          <div key={grupo.data}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-              <span style={{
-                fontSize: 11,
-                color: 'var(--ws-text-3)',
-                background: 'rgba(255,255,255,0.05)',
-                padding: '4px 12px',
-                borderRadius: 99,
-                border: '1px solid var(--ws-glass-border)',
-              }}>
-                {grupo.data}
-              </span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {grupo.mensagens.map(msg => {
-              const isEntrada = msg.direcao === 'entrada'
-              const isIA = AI_HANDOFF_ENABLED && msg.remetenteTipo === 'ia'
-              const participantLabel = msg.participantName || msg.remetenteNome || 'Contato'
-              const messageStatus = getMessageStatusMeta(msg.waStatus || msg.mediaStatus)
-              const messageTime = formatMessageTime(msg.recebidaEm || msg.enviadaEm || msg.criadaEm)
-              const isOutgoing = !isEntrada
-              const bubbleStyle: CSSProperties = isEntrada
-                ? {
-                    background: msg.isMentioned
-                      ? 'linear-gradient(180deg, rgba(255, 248, 220, 0.98), rgba(255, 244, 197, 0.96))'
-                      : 'rgba(255, 255, 255, 0.96)',
-                    color: '#0f172a',
-                    border: `1px solid ${msg.isMentioned ? 'rgba(201, 168, 76, 0.28)' : 'rgba(15, 23, 42, 0.08)'}`,
-                    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.06)',
-                  }
-                : isIA
+        <div aria-hidden style={patternOverlayStyle} />
+        <div style={{
+          position: 'relative',
+          zIndex: 1,
+          minHeight: 0,
+          height: '100%',
+          overflowY: 'scroll',
+          scrollbarGutter: 'stable',
+          WebkitOverflowScrolling: 'touch',
+          padding: 20,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 24,
+          background: 'linear-gradient(to bottom, transparent, rgba(62,91,255,0.02))',
+          scrollbarWidth: 'thin',
+        }}>
+          <CardRastreamento
+            metaHeadline={conversa.contato.metaHeadline}
+            metaBody={conversa.contato.metaBody}
+            metaImageUrl={conversa.contato.metaImageUrl}
+            metaSourceUrl={conversa.contato.metaSourceUrl}
+            campanhaOrigem={conversa.contato.campanhaOrigem}
+            utmSource={conversa.contato.utmSource}
+            utmMedium={conversa.contato.utmMedium}
+            primeiraConversaAt={conversa.contato.primeiraConversaAt}
+          />
+          {grupos.map(grupo => (
+            <div key={grupo.data}>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                <span style={{
+                  fontSize: 11,
+                  color: 'var(--ws-text-3)',
+                  background: 'rgba(255,255,255,0.20)',
+                  padding: '4px 12px',
+                  borderRadius: 99,
+                  border: '1px solid rgba(15, 23, 42, 0.08)',
+                  backdropFilter: 'blur(8px)',
+                }}>
+                  {grupo.data}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {grupo.mensagens.map(msg => {
+                const isEntrada = msg.direcao === 'entrada'
+                const isIA = AI_HANDOFF_ENABLED && msg.remetenteTipo === 'ia'
+                const participantLabel = msg.participantName || msg.remetenteNome || 'Contato'
+                const messageStatus = getMessageStatusMeta(msg.waStatus || msg.mediaStatus)
+                const messageTime = formatMessageTime(msg.recebidaEm || msg.enviadaEm || msg.criadaEm)
+                const isOutgoing = !isEntrada
+                const bubbleStyle: CSSProperties = isEntrada
                   ? {
-                      background: 'linear-gradient(135deg, #0f2744, #1a3a6b)',
-                      color: '#ffffff',
-                      border: '1px solid rgba(15, 39, 68, 0.18)',
-                      boxShadow: '0 10px 22px rgba(15, 39, 68, 0.12)',
-                    }
-                  : {
-                      background: 'linear-gradient(180deg, rgba(222, 248, 198, 0.98), rgba(209, 245, 190, 0.96))',
+                      background: msg.isMentioned
+                        ? 'linear-gradient(180deg, rgba(255, 248, 220, 0.98), rgba(255, 244, 197, 0.96))'
+                        : 'rgba(255, 255, 255, 0.96)',
                       color: '#0f172a',
-                      border: '1px solid rgba(29, 158, 117, 0.16)',
-                      boxShadow: '0 10px 22px rgba(29, 158, 117, 0.08)',
+                      border: `1px solid ${msg.isMentioned ? 'rgba(201, 168, 76, 0.28)' : 'rgba(15, 23, 42, 0.08)'}`,
+                      boxShadow: '0 8px 20px rgba(15, 23, 42, 0.06)',
                     }
-              const footerColor = isEntrada
-                ? '#64748b'
-                : isIA
-                  ? 'rgba(255,255,255,0.72)'
-                  : 'rgba(15, 23, 42, 0.62)'
-              return (
-                <div
-                  key={msg.id}
-                  style={{
-                    alignSelf: isEntrada ? 'flex-start' : 'flex-end',
-                    maxWidth: '70%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 4,
-                    marginBottom: 12,
-                  }}
-                >
-                  <div style={{
-                    fontSize: 9,
-                    color: 'var(--ws-text-3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    justifyContent: isEntrada ? 'flex-start' : 'flex-end',
-                  }}>
-                    {isEntrada
-                      ? (conversa.isGroup ? participantLabel : (msg.remetenteNome || 'Contato'))
-                      : (isIA ? 'IA Agente' : 'Atendente')}
-                  </div>
-                  <div style={{
-                    padding: '10px 14px 9px',
-                    borderRadius: isEntrada ? '0 16px 16px 16px' : '16px 0 16px 16px',
-                    fontSize: 13,
-                    lineHeight: 1.5,
-                    background: bubbleStyle.background,
-                    color: bubbleStyle.color,
-                    border: bubbleStyle.border,
-                    boxShadow: bubbleStyle.boxShadow,
-                    wordBreak: 'break-word',
-                    overflowWrap: 'anywhere',
-                    minWidth: 120,
-                  }}>
-                    {msg.isMentioned && (
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#c9a84c', marginBottom: 4 }}>
-                        @mention
-                      </div>
-                    )}
-                    {renderMidia(msg, isEntrada)}
-                    {msg.conteudo && (
-                      <div style={{ whiteSpace: 'pre-wrap' }}>
-                        {msg.conteudo}
-                      </div>
-                    )}
+                  : isIA
+                    ? {
+                        background: 'linear-gradient(135deg, #0f2744, #1a3a6b)',
+                        color: '#ffffff',
+                        border: '1px solid rgba(15, 39, 68, 0.18)',
+                        boxShadow: '0 10px 22px rgba(15, 39, 68, 0.12)',
+                      }
+                    : {
+                        background: 'linear-gradient(180deg, #E9EEFD 0%, #DDE3FA 100%)',
+                        color: '#10203a',
+                        border: '1px solid rgba(62, 91, 255, 0.12)',
+                        boxShadow: '0 10px 22px rgba(62, 91, 255, 0.08)',
+                      }
+                const footerColor = isEntrada
+                  ? '#64748b'
+                  : isIA
+                    ? 'rgba(255,255,255,0.72)'
+                    : 'rgba(16, 32, 58, 0.70)'
+                return (
+                  <div
+                    key={msg.id}
+                    style={{
+                      alignSelf: isEntrada ? 'flex-start' : 'flex-end',
+                      maxWidth: '70%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                      marginBottom: 12,
+                    }}
+                  >
                     <div style={{
-                      fontSize: 10,
-                      color: footerColor,
-                      marginTop: 6,
+                      fontSize: 9,
+                      color: 'var(--ws-text-3)',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      gap: 6,
-                      fontVariantNumeric: 'tabular-nums',
+                      gap: 4,
+                      justifyContent: isEntrada ? 'flex-start' : 'flex-end',
                     }}>
-                      <span>{messageTime}</span>
-                      {isOutgoing && messageStatus && (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '2px 7px',
-                          borderRadius: 999,
-                          fontSize: 9,
-                          fontWeight: 700,
-                          letterSpacing: '0.02em',
-                          textTransform: 'uppercase',
-                          whiteSpace: 'nowrap',
-                          ...messageStatus.style,
-                        }}>
-                          {messageStatus.icon}
-                          <span>{messageStatus.label}</span>
-                        </span>
+                      {isEntrada
+                        ? (conversa.isGroup ? participantLabel : (msg.remetenteNome || 'Contato'))
+                        : (isIA ? 'IA Agente' : 'Atendente')}
+                    </div>
+                    <div style={{
+                      padding: '10px 14px 9px',
+                      borderRadius: isEntrada ? '0 16px 16px 16px' : '16px 0 16px 16px',
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                      background: bubbleStyle.background,
+                      color: bubbleStyle.color,
+                      border: bubbleStyle.border,
+                      boxShadow: bubbleStyle.boxShadow,
+                      wordBreak: 'break-word',
+                      overflowWrap: 'anywhere',
+                      minWidth: 120,
+                    }}>
+                      {msg.isMentioned && (
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#c9a84c', marginBottom: 4 }}>
+                          @mention
+                        </div>
+                      )}
+                      {renderMidia(msg, isEntrada, isIA)}
+                      {msg.conteudo && (
+                        <div style={{ whiteSpace: 'pre-wrap' }}>
+                          {msg.conteudo}
+                        </div>
+                      )}
+                      <div style={{
+                        fontSize: 10,
+                        color: footerColor,
+                        marginTop: 6,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        gap: 6,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}>
+                        <span>{messageTime}</span>
+                        {isOutgoing && messageStatus && (
+                          <span
+                            title={messageStatus.label}
+                            aria-label={messageStatus.label}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minWidth: 14,
+                              height: 14,
+                              padding: 0,
+                              borderRadius: 999,
+                              whiteSpace: 'nowrap',
+                              ...messageStatus.style,
+                            }}
+                          >
+                            {messageStatus.icon}
+                          </span>
+                        )}
+                      </div>
+                      {msg.failedReason && (
+                        <div style={{ fontSize: 10, color: isEntrada ? '#a32d2d' : '#b91c1c', marginTop: 4 }}>
+                          {msg.failedReason}
+                        </div>
                       )}
                     </div>
-                    {msg.failedReason && (
-                      <div style={{ fontSize: 10, color: isEntrada ? '#a32d2d' : '#ffb4b4', marginTop: 4 }}>
-                        {msg.failedReason}
-                      </div>
-                    )}
                   </div>
-                </div>
-              )
-            })}
+                )
+              })}
+              </div>
             </div>
-          </div>
-        ))}
-        <div ref={mensagensEndRef} />
+          ))}
+          <div ref={mensagensEndRef} />
+        </div>
       </div>
     </div>
   )

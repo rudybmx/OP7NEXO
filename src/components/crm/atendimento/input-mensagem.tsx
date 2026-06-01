@@ -62,12 +62,13 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
 
   return (
     <div style={{
-      padding: '12px 20px',
+      padding: '12px 20px 16px',
       borderTop: '1px solid var(--ws-divider)',
-      background: 'rgba(255,255,255,0.01)',
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(247,249,252,0.98) 100%)',
       width: '100%',
       minWidth: 0,
       boxSizing: 'border-box',
+      boxShadow: '0 -10px 24px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255,255,255,0.72)',
     }}>
       {conversa.campanha && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12 }}>
@@ -142,10 +143,11 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
           display: 'flex',
           alignItems: 'flex-end',
           gap: 8,
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid var(--ws-glass-border)',
-          borderRadius: 12,
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)',
+          border: '1px solid rgba(15, 23, 42, 0.08)',
+          borderRadius: 14,
           padding: '8px 12px',
+          boxShadow: '0 8px 18px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255,255,255,0.75)',
         }}>
           <div style={{ display: 'flex', gap: 8, paddingBottom: 6 }}>
             <button style={iconBtnStyle} disabled={isEnviando}><Smile size={18} /></button>

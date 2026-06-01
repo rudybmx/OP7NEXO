@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Search, RefreshCw, MessageCircle, AtSign, Paperclip } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
@@ -34,6 +34,24 @@ function formatConversationTime(value?: string | null) {
   const data = new Date(value)
   if (Number.isNaN(data.getTime())) return ''
   return data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatConversationRelativeTime(value?: string | null, now = Date.now()) {
+  if (!value) return ''
+  const data = new Date(value)
+  if (Number.isNaN(data.getTime())) return ''
+
+  const diffMs = Math.max(0, now - data.getTime())
+  const diffMinutes = Math.floor(diffMs / 60_000)
+
+  if (diffMinutes < 1) return 'AGORA'
+  if (diffMinutes < 60) return `${diffMinutes} MINUTO${diffMinutes === 1 ? '' : 'S'}`
+
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours} HORA${diffHours === 1 ? '' : 'S'}`
+
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays} DIA${diffDays === 1 ? '' : 'S'}`
 }
 
 function formatConversationTitle(conversa: ConversaApi) {
@@ -177,6 +195,15 @@ export function PainelInbox({
     () => new Map<string, WhatsappCanal>(canais.map(canal => [canal.id, canal] as const)),
     [canais],
   )
+  const [agora, setAgora] = useState(() => Date.now())
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setAgora(Date.now())
+    }, 60_000)
+
+    return () => window.clearInterval(interval)
+  }, [])
 
   const containerStyle: CSSProperties = {
     display: 'grid',
@@ -271,7 +298,7 @@ export function PainelInbox({
     scrollbarGutter: 'stable',
     scrollbarWidth: 'thin',
     WebkitOverflowScrolling: 'touch',
-    background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.65) 0%, rgba(248, 250, 252, 0.88) 100%)',
+    background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.70) 0%, rgba(242, 246, 255, 0.96) 100%)',
   }
 
   return (
@@ -407,6 +434,7 @@ export function PainelInbox({
           const titulo = formatConversationTitle(conversa)
           const preview = formatConversationPreview(conversa)
           const horario = formatConversationTime(conversa.ultimaMensagemAt)
+          const tempoRelativo = formatConversationRelativeTime(conversa.ultimaMensagemAt, agora)
           const providerLabel = canal ? getCanalProviderLabel(canal) : getCanalBadgeLabel(conversa.canalTipo)
           const channelLabel = formatChannelLabel(canal, conversa)
           const avatarSrc = conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato.avatarUrl
@@ -421,20 +449,21 @@ export function PainelInbox({
               style={{
                 cursor: 'pointer',
                 background: conversaAtivaId === conversa.id
-                  ? 'linear-gradient(90deg, rgba(37, 211, 102, 0.12) 0%, rgba(37, 211, 102, 0.06) 100%)'
-                  : 'transparent',
+                  ? 'linear-gradient(90deg, rgba(62, 91, 255, 0.16) 0%, rgba(37, 211, 102, 0.08) 100%)'
+                  : 'linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(243, 247, 255, 0.95) 100%)',
                 boxShadow: conversaAtivaId === conversa.id
                   ? 'inset 3px 0 0 #25D366'
                   : 'inset 3px 0 0 transparent',
-                borderBottom: '1px solid rgba(15, 23, 42, 0.06)',
+                borderBottom: '1px solid rgba(62, 91, 255, 0.06)',
                 transition: 'background 0.2s ease, box-shadow 0.2s ease',
-                padding: '12px 14px',
+                padding: '16px 14px',
+                minHeight: 92,
               }}
             >
-              <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr) auto', gap: 12, alignItems: 'start' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '48px minmax(0, 1fr) auto', gap: 12, alignItems: 'start' }}>
                 <div style={{
-                  width: 44,
-                  height: 44,
+                  width: 48,
+                  height: 48,
                   borderRadius: '50%',
                   overflow: 'hidden',
                   background: avatarSrc
@@ -464,10 +493,10 @@ export function PainelInbox({
                 </div>
 
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                     <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <span style={{
-                        fontSize: 13.5,
+                        fontSize: 14,
                         fontWeight: 700,
                         color: 'var(--ws-text-1)',
                         overflow: 'hidden',
@@ -486,14 +515,27 @@ export function PainelInbox({
                         </span>
                       )}
                     </div>
-                    <span style={{
-                      fontSize: 10.5,
-                      color: 'var(--ws-text-3)',
-                      flexShrink: 0,
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {horario}
-                    </span>
+                    <div style={{ display: 'grid', justifyItems: 'end', gap: 2, flexShrink: 0 }}>
+                      <span style={{
+                        fontSize: 10.5,
+                        color: 'var(--ws-text-3)',
+                        whiteSpace: 'nowrap',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}>
+                        {horario}
+                      </span>
+                      {tempoRelativo && (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: '0.04em',
+                          color: 'var(--ws-text-3)',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {tempoRelativo}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div style={{
