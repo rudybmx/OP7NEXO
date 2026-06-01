@@ -57,6 +57,7 @@ export interface DetailVideoMetricsApi {
   p75: number
   p100: number
   video_3_sec: number
+  avg_watch_time?: number | null
   hook_rate?: number | null
   hold_rate?: number | null
   ctr_link?: number | null
@@ -182,6 +183,7 @@ function buildVideoMetrics(data: AdCreativeDetailApi): AdCreativeModalOverviewDa
   const impressions = data.impressions || 0
   const linkClicks = data.link_click || data.clicks || 0
   const video3Sec = data.video_metrics.video_3_sec || 0
+  const avgWatchTime = data.video_metrics.avg_watch_time ?? null
   const ctrLink = impressions > 0 ? (linkClicks / impressions) * 100 : 0
 
   if (video3Sec <= 0) {
@@ -191,6 +193,7 @@ function buildVideoMetrics(data: AdCreativeDetailApi): AdCreativeModalOverviewDa
       ctrLink: round2(ctrLink),
       retention: [],
       retentionUnavailable: true,
+      avgWatchTime,
     }
   }
 
@@ -200,6 +203,7 @@ function buildVideoMetrics(data: AdCreativeDetailApi): AdCreativeModalOverviewDa
     hookRate: round2(hookRate),
     holdRate: round2(holdRate),
     ctrLink: round2(ctrLink),
+    avgWatchTime,
     retention: [
       { checkpoint: '3s', value: round2(hookRate) },
       { checkpoint: '25%', value: round2((data.video_metrics.p25 / video3Sec) * 100) },

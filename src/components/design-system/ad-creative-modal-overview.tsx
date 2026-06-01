@@ -56,6 +56,7 @@ export interface VideoMetrics {
   hookRate: number | null
   holdRate: number | null
   ctrLink: number
+  avgWatchTime?: number | null
   retention: {
     checkpoint: string
     value: number
@@ -406,6 +407,15 @@ function videoMetricVisual(metric: VideoMetricKey, value: number | null) {
   }
 }
 
+function neutralVideoMetricVisual() {
+  return {
+    bg: 'var(--ws-blue-soft)',
+    border: 'rgba(62,91,255,0.22)',
+    color: 'var(--ws-blue)',
+    label: 'Média',
+  }
+}
+
 function recommendationVisual(recommendation: AIInsight['recommendation']) {
   switch (recommendation) {
     case 'Escalar':
@@ -465,6 +475,20 @@ function formatPercent(value: number) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })}%`
+}
+
+function formatVideoDuration(seconds?: number | null) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) {
+    return '—'
+  }
+
+  const rounded = Math.round(seconds)
+  if (rounded <= 0) return '—'
+  if (rounded < 60) return `${rounded}s`
+
+  const minutes = Math.floor(rounded / 60)
+  const secs = String(rounded % 60).padStart(2, '0')
+  return `${minutes}m ${secs}s`
 }
 
 function Panel({
@@ -795,13 +819,20 @@ function VideoMetricTile({
   label,
   value,
   tone,
+  title,
+  valueFormatter,
 }: {
   label: string
   value: number | null
   tone: ReturnType<typeof videoMetricVisual>
+  title?: string
+  valueFormatter?: (value: number | null) => string
 }) {
+  const displayValue = valueFormatter ? valueFormatter(value) : (value === null ? '—' : formatPercent(value))
+
   return (
     <div
+      title={title}
       style={{
         background: 'var(--ws-glass-bg)',
         border: '1px solid var(--ws-glass-border)',
@@ -834,7 +865,7 @@ function VideoMetricTile({
             wordBreak: 'break-word',
           }}
         >
-          {value === null ? '—' : formatPercent(value)}
+          {displayValue}
         </div>
         <BadgePill label={tone.label} bg={tone.bg} border={tone.border} color={tone.color} />
       </div>
@@ -848,6 +879,7 @@ export function VideoMetricsPanel({ videoMetrics }: { videoMetrics?: VideoMetric
   const hookTone = videoMetricVisual('hookRate', videoMetrics.hookRate)
   const holdTone = videoMetricVisual('holdRate', videoMetrics.holdRate)
   const ctrTone = videoMetricVisual('ctrLink', videoMetrics.ctrLink)
+  const avgWatchTone = neutralVideoMetricVisual()
   const retentionUnavailable = videoMetrics.retentionUnavailable || videoMetrics.retention.length === 0
 
   return (
@@ -958,11 +990,18 @@ export function VideoMetricsPanel({ videoMetrics }: { videoMetrics?: VideoMetric
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
               gap: 8,
               alignItems: 'stretch',
             }}
           >
+            <VideoMetricTile
+              label="Tempo médio assistido"
+              value={videoMetrics.avgWatchTime ?? null}
+              tone={avgWatchTone}
+              title="Tempo médio que o vídeo foi reproduzido, conforme métrica retornada pela Meta."
+              valueFormatter={formatVideoDuration}
+            />
             <VideoMetricTile label="Taxa de gancho" value={videoMetrics.hookRate} tone={hookTone} />
             <VideoMetricTile label="Taxa de retenção" value={videoMetrics.holdRate} tone={holdTone} />
             <VideoMetricTile label="CTR do link" value={videoMetrics.ctrLink} tone={ctrTone} />
