@@ -358,6 +358,7 @@ export function PaginaAtendimento() {
               conversa={conversaAtiva}
               mensagens={mensagens}
               onTogglePainel={() => setPainelAberto(v => !v)}
+              painelAberto={painelAberto}
               onTransferir={() => setMostrarModalTransferir(true)}
               onResolver={() => setMostrarModalResolver(true)}
               mensagensEndRef={mensagensEndRef}
@@ -379,13 +380,25 @@ export function PaginaAtendimento() {
         minWidth: 0,
         minHeight: 0,
         width: painelAberto ? 300 : 0,
-        borderLeft: '1px solid var(--ws-divider)',
+        borderLeft: painelAberto ? '1px solid var(--ws-divider)' : 'none',
         overflow: 'hidden',
-        transition: 'width 300ms ease',
+        opacity: painelAberto ? 1 : 0,
+        pointerEvents: painelAberto ? 'auto' : 'none',
+        transition: 'width 300ms ease, opacity 180ms ease, border-color 180ms ease',
       }}>
         {conversaAtiva && (
-          <div style={{ minWidth: 300, height: '100%', minHeight: 0 }}>
-            <PainelContato conversa={conversaAtiva} workspaceId={workspaceAtual ?? undefined} onAtualizar={refetch} />
+          <div style={{
+            minWidth: 300,
+            height: '100%',
+            minHeight: 0,
+            transition: 'transform 300ms ease',
+          }}>
+            <PainelContato
+              conversa={conversaAtiva}
+              workspaceId={workspaceAtual ?? undefined}
+              onAtualizar={refetch}
+              onTogglePainel={() => setPainelAberto(false)}
+            />
           </div>
         )}
       </div>

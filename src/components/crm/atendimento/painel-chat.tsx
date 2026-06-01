@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import type { CSSProperties } from 'react'
-import { ArrowRightLeft, Check, CheckCheck, Clock, FileText, PlayCircle, AlertCircle, User } from 'lucide-react'
+import { ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, Clock, FileText, PlayCircle, AlertCircle, User } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { CardRastreamento } from './card-rastreamento'
 import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
@@ -14,6 +14,7 @@ interface PainelChatProps {
   conversa: ConversaApi
   mensagens: MensagemApi[]
   onTogglePainel: () => void
+  painelAberto: boolean
   onTransferir: () => void
   onResolver: () => void
   mensagensEndRef: React.RefObject<HTMLDivElement | null>
@@ -274,7 +275,7 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean) {
   )
 }
 
-export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, onResolver, mensagensEndRef }: PainelChatProps) {
+export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef }: PainelChatProps) {
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
   const titulo = formatHeaderTitle(conversa)
   const telefone = formatPhoneLabel(conversa.contato.numeroEvo || conversa.contato.telefone || conversa.remoteJid)
@@ -444,23 +445,35 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, 
             type="button"
             onClick={onTogglePainel}
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 10,
-              background: 'rgba(255, 255, 255, 0.90)',
-              border: '1px solid rgba(15, 23, 42, 0.08)',
-              color: 'var(--ws-text-3)',
+              minHeight: 32,
+              padding: '0 12px',
+              borderRadius: 999,
+              background: painelAberto
+                ? 'rgba(62, 91, 255, 0.10)'
+                : 'rgba(255, 255, 255, 0.90)',
+              border: painelAberto
+                ? '1px solid rgba(62, 91, 255, 0.18)'
+                : '1px solid rgba(15, 23, 42, 0.08)',
+              color: painelAberto ? 'var(--ws-blue)' : 'var(--ws-text-2)',
               cursor: 'pointer',
-              padding: 0,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 1px 2px rgba(15, 23, 42, 0.05)',
+              gap: 6,
+              boxShadow: painelAberto
+                ? '0 4px 12px rgba(62, 91, 255, 0.10)'
+                : '0 1px 2px rgba(15, 23, 42, 0.05)',
+              whiteSpace: 'nowrap',
             }}
-            title="Painel do contato"
-            aria-label="Painel do contato"
+            title={painelAberto ? 'Fechar painel do contato' : 'Abrir painel do contato'}
+            aria-label={painelAberto ? 'Fechar painel do contato' : 'Abrir painel do contato'}
+            aria-expanded={painelAberto}
           >
             <User size={14} />
+            <span style={{ fontSize: 12, fontWeight: 600 }}>
+              {painelAberto ? 'Fechar contato' : 'Abrir contato'}
+            </span>
+            {painelAberto ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
           </button>
           <button
             type="button"
