@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import {
   Clock3,
+  Info,
   Image as ImageIcon,
   Layers3,
   LineChart,
@@ -847,6 +848,7 @@ export function VideoMetricsPanel({ videoMetrics }: { videoMetrics?: VideoMetric
   const hookTone = videoMetricVisual('hookRate', videoMetrics.hookRate)
   const holdTone = videoMetricVisual('holdRate', videoMetrics.holdRate)
   const ctrTone = videoMetricVisual('ctrLink', videoMetrics.ctrLink)
+  const retentionUnavailable = videoMetrics.retentionUnavailable || videoMetrics.retention.length === 0
 
   return (
     <Panel title="Métricas de vídeo" icon={<Video size={14} />} accent="var(--ws-purple)">
@@ -855,72 +857,97 @@ export function VideoMetricsPanel({ videoMetrics }: { videoMetrics?: VideoMetric
           <div style={{ fontSize: 12, color: 'var(--ws-text-2)', lineHeight: 1.5 }}>
             Gráfico de retenção
           </div>
-          {videoMetrics.retentionUnavailable || videoMetrics.retention.length === 0 ? (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: 160,
-              fontSize: 12,
-              color: 'var(--ws-text-3)',
-              fontStyle: 'italic',
-              background: 'var(--ws-surface-2)',
-              borderRadius: 'var(--ws-radius-sm)',
-              border: '1px solid var(--ws-divider)',
-              padding: '0 16px',
-              textAlign: 'center',
-            }}>
-              Retenção indisponível: métrica de 3 segundos ainda não coletada.
+          {retentionUnavailable ? (
+            <div
+              style={{
+                minHeight: 160,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '16px',
+                background: 'linear-gradient(180deg, rgba(122,90,248,0.07), rgba(62,91,255,0.03))',
+                borderRadius: 'var(--ws-radius-sm)',
+                border: '1px solid rgba(122,90,248,0.16)',
+              }}
+            >
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 9999,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  color: 'var(--ws-purple)',
+                  background: 'rgba(122,90,248,0.12)',
+                  border: '1px solid rgba(122,90,248,0.18)',
+                }}
+              >
+                <Info size={16} />
+              </div>
+
+              <div style={{ minWidth: 0, display: 'grid', gap: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)', lineHeight: 1.4 }}>
+                  Retenção indisponível
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ws-text-2)', lineHeight: 1.6 }}>
+                  A Meta não retornou a base de visualizações de 3s para este criativo.
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ws-text-3)', lineHeight: 1.55 }}>
+                  Visualizações, Plays, ThruPlays e quartis podem continuar disponíveis na aba Vídeo.
+                </div>
+              </div>
             </div>
           ) : (
-          <ChartSurface height={160}>
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-              <RechartsLineChart
-                data={videoMetrics.retention}
-                margin={{ top: 4, right: 6, left: 0, bottom: 0 }}
-              >
-                <CartesianGrid stroke="rgba(122,90,248,0.07)" strokeDasharray="3 3" vertical={false} />
-                <XAxis
-                  dataKey="checkpoint"
-                  tick={{ fill: 'var(--ws-text-3)', fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  domain={[0, 100]}
-                  tickCount={6}
-                  tickFormatter={(value) => `${value}%`}
-                  tick={{ fill: 'var(--ws-text-3)', fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={34}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: 'rgba(14,20,42,0.94)',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: 8,
-                    color: '#ffffff',
-                    fontSize: 12,
-                    boxShadow: '0 10px 24px rgba(0,0,0,0.30)',
-                  }}
-                  labelStyle={{ color: '#ffffff', fontWeight: 600 }}
-                  itemStyle={{ color: '#ffffff' }}
-                  formatter={(value: number) => [`${value}%`, 'Retenção']}
-                  labelFormatter={(label: string) => `Marcação ${label}`}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="var(--ws-purple)"
-                  strokeWidth={2.4}
-                  dot={{ r: 3.4, fill: 'var(--ws-purple)' }}
-                  activeDot={{ r: 4, fill: 'var(--ws-purple)' }}
-                  isAnimationActive={false}
-                />
-              </RechartsLineChart>
-            </ResponsiveContainer>
-          </ChartSurface>
+            <ChartSurface height={160}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <RechartsLineChart
+                  data={videoMetrics.retention}
+                  margin={{ top: 4, right: 6, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid stroke="rgba(122,90,248,0.07)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="checkpoint"
+                    tick={{ fill: 'var(--ws-text-3)', fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    domain={[0, 100]}
+                    tickCount={6}
+                    tickFormatter={(value) => `${value}%`}
+                    tick={{ fill: 'var(--ws-text-3)', fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={34}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: 'rgba(14,20,42,0.94)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 8,
+                      color: '#ffffff',
+                      fontSize: 12,
+                      boxShadow: '0 10px 24px rgba(0,0,0,0.30)',
+                    }}
+                    labelStyle={{ color: '#ffffff', fontWeight: 600 }}
+                    itemStyle={{ color: '#ffffff' }}
+                    formatter={(value: number) => [`${value}%`, 'Retenção']}
+                    labelFormatter={(label: string) => `Marcação ${label}`}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="var(--ws-purple)"
+                    strokeWidth={2.4}
+                    dot={{ r: 3.4, fill: 'var(--ws-purple)' }}
+                    activeDot={{ r: 4, fill: 'var(--ws-purple)' }}
+                    isAnimationActive={false}
+                  />
+                </RechartsLineChart>
+              </ResponsiveContainer>
+            </ChartSurface>
           )}
         </div>
 
