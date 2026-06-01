@@ -1,9 +1,11 @@
 'use client'
 
+import { useMemo } from 'react'
 import { Search, RefreshCw, MessageCircle, AtSign, Paperclip } from 'lucide-react'
+import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import type { WhatsappCanal } from '@/hooks/use-whatsapp-canais'
-import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
+import { getCanalBadgeLabel, getCanalProviderLabel } from '@/lib/whatsapp-canal'
 
 interface PainelInboxProps {
   conversas: ConversaApi[]
@@ -21,6 +23,127 @@ interface PainelInboxProps {
   onBuscaChange: (busca: string) => void
   onRefetch: () => void
   onIniciarConversa?: () => void
+}
+
+function onlyDigits(value?: string | null) {
+  return value ? value.replace(/\D/g, '') : ''
+}
+
+function formatConversationTime(value?: string | null) {
+  if (!value) return ''
+  const data = new Date(value)
+  if (Number.isNaN(data.getTime())) return ''
+  return data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatConversationTitle(conversa: ConversaApi) {
+  const contactName = conversa.contato.nome?.trim()
+  const groupName = conversa.groupName?.trim()
+  const phone = conversa.contato.telefone?.trim()
+  const remote = conversa.remoteJid ? onlyDigits(conversa.remoteJid) : ''
+  return (conversa.isGroup ? groupName : contactName) || contactName || groupName || phone || remote || 'Contato'
+}
+
+function formatConversationPreview(conversa: ConversaApi) {
+  const message = conversa.ultimaMensagem?.trim()
+  if (message) return message
+  if (conversa.badges?.hasMedia) return 'Mídia'
+  return conversa.status === 'resolvido' ? 'Conversa resolvida' : 'Sem mensagens'
+}
+
+function getAvatarFallback(label: string) {
+  const initials = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part.match(/[A-Za-zÀ-ÿ0-9]/)?.[0] || '')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part.toUpperCase())
+    .join('')
+
+  if (initials) return initials
+
+  const digits = onlyDigits(label)
+  if (digits) return digits.slice(-2)
+
+  return 'OP'
+}
+
+function formatChannelLabel(canal?: WhatsappCanal | null, conversa?: ConversaApi) {
+  const label = canal
+    ? [canal.nome, canal.numero_telefone].filter(Boolean).join(' · ')
+    : [conversa?.canalNome, conversa?.canalNumero].filter(Boolean).join(' · ')
+  return label || null
+}
+
+function getProviderTone(tipo?: string | null): CSSProperties {
+  if (tipo === 'webhook') {
+    return {
+      background: 'rgba(245, 158, 11, 0.12)',
+      color: '#B45309',
+      border: '1px solid rgba(245, 158, 11, 0.24)',
+    }
+  }
+  if (tipo === 'whatsapp_oficial') {
+    return {
+      background: 'rgba(24, 95, 165, 0.12)',
+      color: '#185FA5',
+      border: '1px solid rgba(24, 95, 165, 0.22)',
+    }
+  }
+  return {
+    background: 'rgba(37, 211, 102, 0.12)',
+    color: '#1D9E75',
+    border: '1px solid rgba(29, 158, 117, 0.20)',
+  }
+}
+
+function getSoftChipStyle(): CSSProperties {
+  return {
+    background: 'rgba(15, 23, 42, 0.04)',
+    color: 'var(--ws-text-2)',
+    border: '1px solid rgba(15, 23, 42, 0.08)',
+  }
+}
+
+function getStatusChipStyle(status?: string | null): CSSProperties {
+  if (status === 'resolvido') {
+    return {
+      background: 'rgba(100, 116, 139, 0.10)',
+      color: 'var(--ws-text-2)',
+      border: '1px solid rgba(100, 116, 139, 0.16)',
+    }
+  }
+  if (status === 'resgate') {
+    return {
+      background: 'rgba(245, 158, 11, 0.12)',
+      color: '#B45309',
+      border: '1px solid rgba(245, 158, 11, 0.20)',
+    }
+  }
+  if (status === 'nova') {
+    return {
+      background: 'rgba(62, 91, 255, 0.10)',
+      color: 'var(--ws-blue)',
+      border: '1px solid rgba(62, 91, 255, 0.18)',
+    }
+  }
+  if (status === 'aguardando' || status === 'processando') {
+    return {
+      background: 'rgba(15, 23, 42, 0.05)',
+      color: 'var(--ws-text-2)',
+      border: '1px solid rgba(15, 23, 42, 0.10)',
+    }
+  }
+  return {
+    background: 'rgba(37, 211, 102, 0.10)',
+    color: '#1D9E75',
+    border: '1px solid rgba(29, 158, 117, 0.18)',
+  }
+}
+
+function formatStatusLabel(status: string) {
+  return status.replaceAll('_', ' ')
 }
 
 export function PainelInbox({
@@ -50,12 +173,112 @@ export function PainelInbox({
     { id: 'resolvidos', label: 'Resolvidos' },
   ]
 
+  const canaisPorId = useMemo(
+    () => new Map<string, WhatsappCanal>(canais.map(canal => [canal.id, canal] as const)),
+    [canais],
+  )
+
+  const containerStyle: CSSProperties = {
+    display: 'grid',
+    gridTemplateRows: 'auto minmax(0, 1fr)',
+    height: '100%',
+    width: '100%',
+    minWidth: 0,
+    minHeight: 0,
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    background: 'rgba(255, 255, 255, 0.72)',
+    backdropFilter: 'blur(12px)',
+  }
+
+  const headerStyle: CSSProperties = {
+    padding: 16,
+    borderBottom: '1px solid rgba(15, 23, 42, 0.08)',
+    background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.92) 100%)',
+  }
+
+  const actionButtonStyle: CSSProperties = {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    border: '1px solid rgba(15, 23, 42, 0.08)',
+    background: 'rgba(255, 255, 255, 0.88)',
+    color: 'var(--ws-text-2)',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.05)',
+  }
+
+  const newConversationButtonStyle: CSSProperties = {
+    ...actionButtonStyle,
+    background: 'rgba(37, 211, 102, 0.14)',
+    color: '#1D9E75',
+    border: '1px solid rgba(29, 158, 117, 0.18)',
+  }
+
+  const searchShellStyle: CSSProperties = {
+    position: 'relative',
+    marginTop: 12,
+  }
+
+  const searchInputStyle: CSSProperties = {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '10px 14px 10px 40px',
+    borderRadius: 999,
+    background: 'rgba(255, 255, 255, 0.92)',
+    border: '1px solid rgba(15, 23, 42, 0.08)',
+    color: 'var(--ws-text-1)',
+    fontSize: 13,
+    outline: 'none',
+    boxShadow: 'inset 0 1px 2px rgba(15, 23, 42, 0.04)',
+  }
+
+  const selectStyle: CSSProperties = {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '10px 14px',
+    borderRadius: 14,
+    background: 'rgba(255, 255, 255, 0.92)',
+    border: '1px solid rgba(15, 23, 42, 0.08)',
+    color: 'var(--ws-text-1)',
+    fontSize: 12,
+    outline: 'none',
+    boxShadow: 'inset 0 1px 2px rgba(15, 23, 42, 0.04)',
+  }
+
+  const chipBaseStyle: CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 999,
+    padding: '2px 8px',
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: '0.03em',
+    textTransform: 'uppercase',
+    maxWidth: '100%',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  }
+
+  const listStyle: CSSProperties = {
+    minHeight: 0,
+    overflowY: 'auto',
+    scrollbarGutter: 'stable',
+    scrollbarWidth: 'thin',
+    WebkitOverflowScrolling: 'touch',
+    background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.65) 0%, rgba(248, 250, 252, 0.88) 100%)',
+  }
+
   return (
-    <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', height: '100%', width: '100%', minWidth: 0, minHeight: 0, boxSizing: 'border-box', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{ padding: 16, borderBottom: '1px solid var(--ws-divider)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <div style={containerStyle}>
+      <div style={headerStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ws-text-1)', margin: 0 }}>Conversas</h2>
             {aoVivo && (
               <span style={{
@@ -64,10 +287,11 @@ export function PainelInbox({
                 gap: 4,
                 fontSize: 10,
                 color: '#1D9E75',
-                background: 'rgba(29,158,117,0.12)',
+                background: 'rgba(29, 158, 117, 0.12)',
                 padding: '2px 8px',
-                borderRadius: 99,
-                fontWeight: 600,
+                borderRadius: 999,
+                fontWeight: 700,
+                border: '1px solid rgba(29, 158, 117, 0.16)',
               }}>
                 <span style={{
                   width: 6,
@@ -81,119 +305,87 @@ export function PainelInbox({
               </span>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             {onIniciarConversa && (
               <button
+                type="button"
                 onClick={onIniciarConversa}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#3E5BFF',
-                  padding: 4,
-                  display: 'flex',
-                  alignItems: 'center',
-                  transition: 'color 0.2s',
-                }}
+                style={newConversationButtonStyle}
                 title="Iniciar nova conversa"
+                aria-label="Iniciar nova conversa"
               >
                 <MessageCircle size={16} />
               </button>
             )}
             <button
+              type="button"
               onClick={onRefetch}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--ws-text-3)',
-                padding: 4,
-                display: 'flex',
-                alignItems: 'center',
-              }}
+              style={actionButtonStyle}
               title="Atualizar"
+              aria-label="Atualizar lista"
             >
               <RefreshCw size={14} />
             </button>
           </div>
         </div>
 
-        {/* Busca */}
-        <div style={{ position: 'relative', marginBottom: 12 }}>
-          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ws-text-3)' }} />
-            <input
-              value={busca}
-              onChange={e => onBuscaChange(e.target.value)}
-              placeholder="Buscar..."
-              style={{
-                width: '100%',
-                boxSizing: 'border-box',
-                padding: '8px 12px 8px 34px',
-                borderRadius: 8,
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid var(--ws-glass-border)',
-              color: 'var(--ws-text-1)',
-              fontSize: 13,
-              outline: 'none',
-            }}
+        <div style={searchShellStyle}>
+          <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--ws-text-3)' }} />
+          <input
+            value={busca}
+            onChange={e => onBuscaChange(e.target.value)}
+            placeholder="Buscar conversa"
+            style={searchInputStyle}
           />
         </div>
 
-        {/* Canal */}
         {onCanalChange && canais.length > 0 && (
-          <select
-            value={canalSelecionadoId}
-            onChange={e => onCanalChange(e.target.value)}
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              marginBottom: 12,
-              padding: '8px 10px',
-              borderRadius: 8,
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid var(--ws-glass-border)',
-              color: 'var(--ws-text-1)',
-              fontSize: 12,
-              outline: 'none',
-            }}
-          >
-            <option value="todos">Todos os números</option>
-            {canais.map(canal => (
-              <option key={canal.id} value={canal.id}>
-                {canal.tipo === 'webhook'
-                  ? `${getCanalBadgeLabel(canal.tipo)} · ${canal.nome}`
-                  : `${canal.nome}${canal.numero_telefone ? ` · ${canal.numero_telefone}` : ''}`}
-              </option>
-            ))}
-          </select>
+          <div style={{ marginTop: 12 }}>
+            <select
+              value={canalSelecionadoId}
+              onChange={e => onCanalChange(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="todos">Todos os números</option>
+              {canais.map(canal => (
+                <option key={canal.id} value={canal.id}>
+                  {canal.tipo === 'webhook'
+                    ? `${getCanalProviderLabel(canal)} · ${canal.nome}`
+                    : `${canal.nome}${canal.numero_telefone ? ` · ${canal.numero_telefone}` : ''}`}
+                </option>
+              ))}
+            </select>
+          </div>
         )}
 
-        {/* Abas */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {filtros.map(f => (
-            <button
-              key={f.id}
-              onClick={() => onFiltroChange(f.id)}
-              style={{
-                padding: '4px 10px',
-                borderRadius: 99,
-                fontSize: 11,
-                fontWeight: 500,
-                cursor: 'pointer',
-                border: '1px solid var(--ws-glass-border)',
-                background: filtroAtivo === f.id ? 'var(--ws-blue)' : 'rgba(255,255,255,0.05)',
-                color: filtroAtivo === f.id ? 'white' : 'var(--ws-text-3)',
-                transition: 'all 0.2s',
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+          {filtros.map(filtro => {
+            const ativo = filtroAtivo === filtro.id
+            return (
+              <button
+                key={filtro.id}
+                type="button"
+                onClick={() => onFiltroChange(filtro.id)}
+                style={{
+                  padding: '6px 11px',
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid rgba(15, 23, 42, 0.08)',
+                  background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'rgba(255, 255, 255, 0.88)',
+                  color: ativo ? '#1D9E75' : 'var(--ws-text-2)',
+                  boxShadow: ativo ? '0 4px 10px rgba(29, 158, 117, 0.10)' : 'none',
+                }}
+              >
+                {filtro.label}
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Lista */}
-      <div style={{ minHeight: 0, overflowY: 'scroll', scrollbarGutter: 'stable', scrollbarWidth: 'thin', WebkitOverflowScrolling: 'touch' }}>
+      <div style={listStyle}>
         {isLoading && conversas.length === 0 && (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--ws-text-3)', fontSize: 12 }}>
             Carregando conversas...
@@ -209,139 +401,189 @@ export function PainelInbox({
             Nenhuma conversa encontrada
           </div>
         )}
-        {conversas.map(conversa => (
-          <div
-            key={conversa.id}
-            onClick={() => onSelectConversa(conversa.id)}
-            style={{
-              padding: '12px 16px',
-              cursor: 'pointer',
-              background: conversaAtivaId === conversa.id ? 'rgba(62,91,255,0.08)' : 'transparent',
-              borderLeft: conversaAtivaId === conversa.id ? '3px solid var(--ws-blue)' : '3px solid transparent',
-              borderBottom: '1px solid rgba(255,255,255,0.05)',
-              transition: 'all 0.2s',
-            }}
-          >
-            <div style={{ display: 'flex', gap: 12, marginBottom: 4 }}>
-              {/* Avatar */}
-              <div style={{
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
-                background: (conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato.avatarUrl) ? 'none' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 11,
-                fontWeight: 700,
-                color: 'white',
-                flexShrink: 0,
-              }}>
-                {(() => {
-                  const avatarSrc = conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato.avatarUrl
-                  const nome = conversa.isGroup ? (conversa.groupName || conversa.contato.nome) : conversa.contato.nome
-                  return avatarSrc ? (
-                    <img src={avatarSrc} alt={nome} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
-                  ) : (
-                    nome.slice(0, 2).toUpperCase()
-                  )
-                })()}
-              </div>
 
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {conversa.isGroup ? `Grupo · ${conversa.groupName || conversa.contato.nome}` : conversa.contato.nome}
-                  </span>
-                  <span style={{ fontSize: 10, color: 'var(--ws-text-3)', flexShrink: 0 }}>
-                    {conversa.ultimaMensagemAt ? new Date(conversa.ultimaMensagemAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}
-                  </span>
-                </div>
+        {conversas.map(conversa => {
+          const canal = conversa.canalId ? canaisPorId.get(conversa.canalId) : null
+          const titulo = formatConversationTitle(conversa)
+          const preview = formatConversationPreview(conversa)
+          const horario = formatConversationTime(conversa.ultimaMensagemAt)
+          const providerLabel = canal ? getCanalProviderLabel(canal) : getCanalBadgeLabel(conversa.canalTipo)
+          const channelLabel = formatChannelLabel(canal, conversa)
+          const avatarSrc = conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato.avatarUrl
+          const avatarFallback = getAvatarFallback(titulo)
+          const unreadCount = conversa.naoLidas > 99 ? '99+' : String(conversa.naoLidas)
+          const showStatus = conversa.status !== 'em_atendimento'
+
+          return (
+            <div
+              key={conversa.id}
+              onClick={() => onSelectConversa(conversa.id)}
+              style={{
+                cursor: 'pointer',
+                background: conversaAtivaId === conversa.id
+                  ? 'linear-gradient(90deg, rgba(37, 211, 102, 0.12) 0%, rgba(37, 211, 102, 0.06) 100%)'
+                  : 'transparent',
+                boxShadow: conversaAtivaId === conversa.id
+                  ? 'inset 3px 0 0 #25D366'
+                  : 'inset 3px 0 0 transparent',
+                borderBottom: '1px solid rgba(15, 23, 42, 0.06)',
+                transition: 'background 0.2s ease, box-shadow 0.2s ease',
+                padding: '12px 14px',
+              }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr) auto', gap: 12, alignItems: 'start' }}>
                 <div style={{
-                  fontSize: 12,
-                  color: 'var(--ws-text-3)',
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
                   overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  fontWeight: conversa.naoLidas > 0 ? 600 : 400,
-                }}>
-                  {conversa.badges?.mentioned && <AtSign size={11} style={{ display: 'inline', marginRight: 4, color: '#c9a84c', verticalAlign: '-1px' }} />}
-                  {conversa.badges?.hasMedia && <Paperclip size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />}
-                  {conversa.ultimaMensagem}
-                </div>
-              </div>
-
-              {conversa.naoLidas > 0 && (
-                <div style={{
-                  background: 'var(--ws-blue)',
+                  background: avatarSrc
+                    ? 'linear-gradient(135deg, rgba(37, 211, 102, 0.16), rgba(15, 23, 42, 0.08))'
+                    : 'linear-gradient(135deg, #25D366 0%, #1D9E75 100%)',
+                  boxShadow: '0 6px 16px rgba(15, 23, 42, 0.10)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                   color: 'white',
-                  fontSize: 9,
-                  fontWeight: 700,
-                  padding: '2px 6px',
-                  borderRadius: 99,
-                  height: 'fit-content',
+                  fontSize: 12,
+                  fontWeight: 800,
                   flexShrink: 0,
                 }}>
-                  {conversa.naoLidas}
+                  {avatarSrc ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={avatarSrc}
+                        alt={titulo}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                    </>
+                  ) : (
+                    avatarFallback
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* Tags */}
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginLeft: 48 }}>
-              <span style={{
-                fontSize: 9,
-                padding: '1px 6px',
-                borderRadius: 4,
-                background: conversa.canalTipo === 'webhook' ? 'rgba(245,158,11,0.12)' : 'rgba(37,211,102,0.12)',
-                color: conversa.canalTipo === 'webhook' ? '#F59E0B' : '#25D366',
-                border: `1px solid ${conversa.canalTipo === 'webhook' ? 'rgba(245,158,11,0.20)' : 'rgba(37,211,102,0.18)'}`,
-                textTransform: 'uppercase',
-                fontWeight: 700,
-              }}>
-                {getCanalBadgeLabel(conversa.canalTipo)}
-              </span>
-              {conversa.canalNome && (
-                <span style={{
-                  fontSize: 9,
-                  padding: '1px 6px',
-                  borderRadius: 4,
-                  background: 'rgba(62,91,255,0.10)',
-                  color: 'var(--ws-blue)',
-                  border: '1px solid rgba(62,91,255,0.18)',
-                  fontWeight: 700,
-                }}>
-                  {conversa.canalNome}
-                </span>
-              )}
-              {conversa.badges?.overdueFollowup && (
-                <span style={{
-                  fontSize: 9,
-                  padding: '1px 6px',
-                  borderRadius: 4,
-                  background: 'rgba(163,45,45,0.10)',
-                  color: '#a32d2d',
-                  border: '1px solid rgba(163,45,45,0.20)',
-                  fontWeight: 700,
-                }}>
-                  Follow-up vencido
-                </span>
-              )}
-              <span style={{
-                fontSize: 9,
-                padding: '1px 6px',
-                borderRadius: 4,
-                background: conversa.status === 'em_atendimento' ? 'rgba(62,91,255,0.10)' : 'rgba(255,255,255,0.05)',
-                color: conversa.status === 'em_atendimento' ? 'var(--ws-blue)' : 'var(--ws-text-3)',
-                border: '1px solid var(--ws-glass-border)',
-                textTransform: 'uppercase',
-                fontWeight: 700,
-              }}>
-                {conversa.status.replace('_', ' ')}
-              </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontSize: 13.5,
+                        fontWeight: 700,
+                        color: 'var(--ws-text-1)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '100%',
+                      }}>
+                        {titulo}
+                      </span>
+                      {conversa.isGroup && (
+                        <span style={{
+                          ...chipBaseStyle,
+                          ...getSoftChipStyle(),
+                        }}>
+                          Grupo
+                        </span>
+                      )}
+                    </div>
+                    <span style={{
+                      fontSize: 10.5,
+                      color: 'var(--ws-text-3)',
+                      flexShrink: 0,
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {horario}
+                    </span>
+                  </div>
+
+                  <div style={{
+                    marginTop: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    minWidth: 0,
+                    color: conversa.naoLidas > 0 ? 'var(--ws-text-1)' : 'var(--ws-text-3)',
+                    fontSize: 12,
+                    fontWeight: conversa.naoLidas > 0 ? 600 : 400,
+                  }}>
+                    {conversa.badges?.mentioned && <AtSign size={11} style={{ flexShrink: 0, color: '#c9a84c' }} />}
+                    {conversa.badges?.hasMedia && <Paperclip size={11} style={{ flexShrink: 0 }} />}
+                    <span style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      minWidth: 0,
+                    }}>
+                      {preview}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                    <span
+                      title={providerLabel}
+                      style={{
+                        ...chipBaseStyle,
+                        ...getProviderTone(canal?.tipo || conversa.canalTipo),
+                      }}
+                    >
+                      {providerLabel}
+                    </span>
+                    {channelLabel && (
+                      <span
+                        title={channelLabel}
+                        style={{
+                          ...chipBaseStyle,
+                          ...getSoftChipStyle(),
+                        }}
+                      >
+                        {channelLabel}
+                      </span>
+                    )}
+                    {conversa.badges?.overdueFollowup && (
+                      <span style={{
+                        ...chipBaseStyle,
+                        background: 'rgba(245, 158, 11, 0.12)',
+                        color: '#B45309',
+                        border: '1px solid rgba(245, 158, 11, 0.20)',
+                      }}>
+                        Follow-up vencido
+                      </span>
+                    )}
+                    {showStatus && (
+                      <span style={{
+                        ...chipBaseStyle,
+                        ...getStatusChipStyle(conversa.status),
+                      }}>
+                        {formatStatusLabel(conversa.status)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ minWidth: 34, display: 'flex', justifyContent: 'flex-end' }}>
+                  {conversa.naoLidas > 0 && (
+                    <span style={{
+                      minWidth: 22,
+                      height: 22,
+                      borderRadius: 999,
+                      background: '#25D366',
+                      color: 'white',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 6px',
+                      boxShadow: '0 4px 12px rgba(37, 211, 102, 0.25)',
+                    }}>
+                      {unreadCount}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

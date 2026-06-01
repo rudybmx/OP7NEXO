@@ -268,16 +268,24 @@ export function PaginaAtendimento() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: painelAberto ? '320px minmax(0, 1fr) 300px' : '320px minmax(0, 1fr) 0px',
+      gridTemplateColumns: painelAberto
+        ? 'minmax(320px, 360px) minmax(0, 1fr) minmax(0, 320px)'
+        : 'minmax(320px, 360px) minmax(0, 1fr) 0px',
       width: '100%',
       height: '100%',
       minHeight: 0,
       maxWidth: '100%',
       minWidth: 0,
       overflow: 'hidden',
-      background: 'var(--ws-glass-bg)',
-      backdropFilter: 'blur(16px)',
+      padding: 12,
+      background: 'radial-gradient(circle at top left, rgba(37, 211, 102, 0.10), transparent 28%), linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(238, 242, 247, 0.98) 100%)',
+      backdropFilter: 'blur(18px)',
       boxSizing: 'border-box',
+      border: '1px solid rgba(15, 23, 42, 0.08)',
+      borderRadius: 28,
+      boxShadow: '0 24px 80px rgba(15, 23, 42, 0.12)',
+      position: 'relative',
+      isolation: 'isolate',
     }}>
       {!workspaceResolvido ? (
         <div style={{

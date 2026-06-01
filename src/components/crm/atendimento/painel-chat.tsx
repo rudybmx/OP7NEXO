@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import type { CSSProperties } from 'react'
 import { ArrowRightLeft, Check, CheckCheck, Clock, FileText, PlayCircle, AlertCircle, User } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { CardRastreamento } from './card-rastreamento'
@@ -50,6 +51,81 @@ function statusIcon(status?: string | null) {
   return <Clock size={12} />
 }
 
+function onlyDigits(value?: string | null) {
+  return value ? value.replace(/\D/g, '') : ''
+}
+
+function formatPhoneLabel(value?: string | null) {
+  if (!value) return 'Telefone indisponível'
+  const digits = onlyDigits(value)
+  if (!digits) return value
+  if (digits.startsWith('55') && digits.length >= 12) {
+    const ddd = digits.slice(2, 4)
+    const local = digits.slice(4)
+    if (local.length > 8) {
+      return `+55 ${ddd} ${local.slice(0, local.length - 4)}-${local.slice(-4)}`
+    }
+    return `+55 ${ddd} ${local}`
+  }
+  return digits || value
+}
+
+function formatHeaderTitle(conversa: ConversaApi) {
+  const name = conversa.isGroup ? conversa.groupName : conversa.contato.nome
+  return (name?.trim() || conversa.contato.nome?.trim() || formatPhoneLabel(conversa.contato.telefone) || onlyDigits(conversa.remoteJid) || 'Contato')
+}
+
+function formatStatusLabel(status: string) {
+  return status.replaceAll('_', ' ')
+}
+
+function getStatusTone(status?: string | null): CSSProperties {
+  if (status === 'resolvido') {
+    return {
+      background: 'rgba(100, 116, 139, 0.10)',
+      color: 'var(--ws-text-2)',
+      border: '1px solid rgba(100, 116, 139, 0.16)',
+    }
+  }
+  if (status === 'resgate') {
+    return {
+      background: 'rgba(245, 158, 11, 0.12)',
+      color: '#B45309',
+      border: '1px solid rgba(245, 158, 11, 0.20)',
+    }
+  }
+  if (status === 'nova') {
+    return {
+      background: 'rgba(62, 91, 255, 0.10)',
+      color: 'var(--ws-blue)',
+      border: '1px solid rgba(62, 91, 255, 0.18)',
+    }
+  }
+  return {
+    background: 'rgba(37, 211, 102, 0.10)',
+    color: '#1D9E75',
+    border: '1px solid rgba(29, 158, 117, 0.18)',
+  }
+}
+
+function getAvatarFallback(label: string) {
+  const initials = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part.match(/[A-Za-zÀ-ÿ0-9]/)?.[0] || '')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part.toUpperCase())
+    .join('')
+
+  if (initials) return initials
+
+  const digits = onlyDigits(label)
+  if (digits) return digits.slice(-2)
+
+  return 'OP'
+}
+
 function renderMidia(msg: MensagemApi, isEntrada: boolean) {
   const midias = msg.midias?.length
     ? msg.midias
@@ -72,6 +148,7 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean) {
         if (tipo.includes('image') || tipo.includes('imagem')) {
           return (
             <a key={media.id} href={url} target="_blank" rel="noopener noreferrer">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={url}
                 alt={media.caption || media.filename || 'Imagem da conversa'}
@@ -115,111 +192,222 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean) {
 
 export function PainelChat({ conversa, mensagens, onTogglePainel, onTransferir, onResolver, mensagensEndRef }: PainelChatProps) {
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
+  const titulo = formatHeaderTitle(conversa)
+  const telefone = formatPhoneLabel(conversa.contato.numeroEvo || conversa.contato.telefone || conversa.remoteJid)
+  const avatarSrc = conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato.avatarUrl
+  const avatarFallback = getAvatarFallback(titulo)
+  const canalLabel = getCanalBadgeLabel(conversa.canalTipo)
+  const canalDetalhe = [conversa.canalNome, conversa.canalNumero].filter(Boolean).join(' · ')
+  const statusTone = getStatusTone(conversa.status)
 
   return (
-    <div style={{ flex: 1, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', minWidth: 0, minHeight: 0, height: '100%', overflow: 'hidden' }}>
+    <div style={{
+      flex: 1,
+      display: 'grid',
+      gridTemplateRows: 'auto minmax(0, 1fr)',
+      minWidth: 0,
+      minHeight: 0,
+      height: '100%',
+      overflow: 'hidden',
+      background: 'rgba(255, 255, 255, 0.72)',
+      backdropFilter: 'blur(12px)',
+    }}>
       {/* Header */}
       <div style={{
-        padding: '12px 20px',
-        borderBottom: '1px solid var(--ws-divider)',
+        padding: '14px 20px',
+        borderBottom: '1px solid rgba(15, 23, 42, 0.08)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        background: 'rgba(255,255,255,0.02)',
+        gap: 16,
+        background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.92) 100%)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
           <div style={{
-            width: 36,
-            height: 36,
+            width: 44,
+            height: 44,
             borderRadius: '50%',
-            background: (conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato.avatarUrl) ? 'none' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
+            background: avatarSrc
+              ? 'linear-gradient(135deg, rgba(37, 211, 102, 0.16), rgba(15, 23, 42, 0.08))'
+              : 'linear-gradient(135deg, #25D366 0%, #1D9E75 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 11,
-            fontWeight: 700,
+            fontSize: 12,
+            fontWeight: 800,
             color: 'white',
             overflow: 'hidden',
+            flexShrink: 0,
+            boxShadow: '0 6px 16px rgba(15, 23, 42, 0.10)',
           }}>
-            {(() => {
-              const avatarSrc = conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato.avatarUrl
-              const nome = conversa.isGroup ? (conversa.groupName || conversa.contato.nome) : conversa.contato.nome
-              return avatarSrc ? (
-                <img src={avatarSrc} alt={nome} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
-              ) : (
-                nome.slice(0, 2).toUpperCase()
-              )
-            })()}
+            {avatarSrc ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={avatarSrc} alt={titulo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </>
+            ) : avatarFallback}
           </div>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ws-text-1)' }}>
-              {conversa.isGroup ? `👥 ${conversa.groupName || conversa.contato.nome}` : conversa.contato.nome}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--ws-text-3)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span>{conversa.status.replace('_', ' ')}</span>
-              {conversa.canalTipo === 'webhook' && (
+
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ws-text-1)', lineHeight: 1.2 }}>
+                {titulo}
+              </span>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 8px',
+                borderRadius: 999,
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.03em',
+                textTransform: 'uppercase',
+                maxWidth: '100%',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                ...statusTone,
+              }}>
+                {formatStatusLabel(conversa.status)}
+              </span>
+              {conversa.isGroup && (
                 <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 8px',
+                  borderRadius: 999,
                   fontSize: 9,
-                  padding: '1px 6px',
-                  borderRadius: 4,
-                  background: 'rgba(245,158,11,0.12)',
-                  color: '#F59E0B',
-                  border: '1px solid rgba(245,158,11,0.20)',
-                  textTransform: 'uppercase',
                   fontWeight: 700,
+                  letterSpacing: '0.03em',
+                  textTransform: 'uppercase',
+                  background: 'rgba(15, 23, 42, 0.05)',
+                  color: 'var(--ws-text-2)',
+                  border: '1px solid rgba(15, 23, 42, 0.10)',
                 }}>
-                  {getCanalBadgeLabel(conversa.canalTipo)}
+                  Grupo
+                </span>
+              )}
+            </div>
+
+            <div style={{ fontSize: 11.5, color: 'var(--ws-text-3)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+              <span style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: '100%',
+              }}>
+                {telefone}
+              </span>
+              <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(100, 116, 139, 0.45)' }} />
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 8px',
+                borderRadius: 999,
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.03em',
+                textTransform: 'uppercase',
+                background: conversa.canalTipo === 'webhook' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(37, 211, 102, 0.12)',
+                color: conversa.canalTipo === 'webhook' ? '#B45309' : '#1D9E75',
+                border: `1px solid ${conversa.canalTipo === 'webhook' ? 'rgba(245, 158, 11, 0.20)' : 'rgba(29, 158, 117, 0.18)'}`,
+              }}>
+                {canalLabel}
+              </span>
+              {canalDetalhe && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.03em',
+                  textTransform: 'uppercase',
+                  background: 'rgba(15, 23, 42, 0.04)',
+                  color: 'var(--ws-text-2)',
+                  border: '1px solid rgba(15, 23, 42, 0.08)',
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {canalDetalhe}
                 </span>
               )}
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
           <button
+            type="button"
             onClick={onTogglePainel}
             style={{
-              background: 'none',
-              border: 'none',
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              background: 'rgba(255, 255, 255, 0.90)',
+              border: '1px solid rgba(15, 23, 42, 0.08)',
               color: 'var(--ws-text-3)',
               cursor: 'pointer',
-              padding: 6,
+              padding: 0,
               display: 'flex',
               alignItems: 'center',
-              fontSize: 13,
+              justifyContent: 'center',
+              boxShadow: '0 1px 2px rgba(15, 23, 42, 0.05)',
             }}
             title="Painel do contato"
+            aria-label="Painel do contato"
           >
             <User size={14} />
           </button>
           <button
+            type="button"
             onClick={onTransferir}
             style={{
-              background: 'none',
-              border: 'none',
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              background: 'rgba(255, 255, 255, 0.90)',
+              border: '1px solid rgba(15, 23, 42, 0.08)',
               color: 'var(--ws-text-3)',
               cursor: 'pointer',
-              padding: 6,
+              padding: 0,
               display: 'flex',
               alignItems: 'center',
-              fontSize: 13,
-            }} title="Transferir">
+              justifyContent: 'center',
+              boxShadow: '0 1px 2px rgba(15, 23, 42, 0.05)',
+            }}
+            title="Transferir"
+            aria-label="Transferir conversa"
+          >
             <ArrowRightLeft size={14} />
           </button>
           <button
+            type="button"
             onClick={onResolver}
             style={{
-              background: 'none',
-              border: 'none',
+              border: '1px solid rgba(29, 158, 117, 0.18)',
+              background: 'rgba(37, 211, 102, 0.12)',
               color: '#1D9E75',
               cursor: 'pointer',
-              padding: '6px 12px',
+              padding: '8px 12px',
+              borderRadius: 999,
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: 600,
-            }} title="Resolver">
+              boxShadow: '0 4px 12px rgba(29, 158, 117, 0.10)',
+            }}
+            title="Resolver"
+            aria-label="Resolver conversa"
+          >
             <Check size={14} />
             Resolver
           </button>
