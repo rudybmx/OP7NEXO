@@ -1450,6 +1450,40 @@ def _janela_insights_para_conta(conta: AdsAccount, modo_sync: str) -> str:
     return json.dumps({"since": since.isoformat(), "until": hoje.isoformat()})
 
 
+def _campanhas_publicos_relevantes(db: Session, ads_account_uuid: Any, *, limit: int) -> list[str]:
+    rows = db.execute(text("""
+        WITH recent AS (
+            SELECT campaign_id,
+                   COALESCE(SUM(spend), 0) AS spend,
+                   COALESCE(SUM(leads), 0) AS leads
+            FROM meta_campanhas_insights
+            WHERE ads_account_id = CAST(:ads_account_id AS uuid)
+              AND data >= CURRENT_DATE - INTERVAL '2 days'
+            GROUP BY campaign_id
+        )
+        SELECT c.campaign_id
+        FROM meta_campaigns_catalog c
+        LEFT JOIN recent r ON r.campaign_id = c.campaign_id
+        WHERE c.ads_account_id = CAST(:ads_account_id AS uuid)
+          AND c.campaign_id IS NOT NULL
+          AND (
+            c.effective_status = 'ACTIVE'
+            OR COALESCE(r.spend, 0) > 0
+            OR COALESCE(r.leads, 0) > 0
+          )
+        ORDER BY
+          CASE WHEN c.effective_status = 'ACTIVE' THEN 0 ELSE 1 END,
+          COALESCE(r.spend, 0) DESC,
+          COALESCE(r.leads, 0) DESC,
+          c.campaign_id
+        LIMIT :limit
+    """), {
+        "ads_account_id": str(ads_account_uuid),
+        "limit": max(int(limit), 0),
+    }).fetchall()
+    return [cid for (cid,) in rows if cid]
+
+
 def _parse_meta_datetime(raw: Any) -> datetime | None:
     if not raw:
         return None
@@ -2297,6 +2331,8 @@ def _sincronizar_conta_impl(
         "campanhas": 0,
         "anuncios": 0,
         "publicos": 0,
+        "publicos_campanhas_processadas": 0,
+        "publicos_campanhas_puladas": 0,
     }
 
     with httpx.Client(timeout=60.0) as raw_client:
@@ -2412,12 +2448,22 @@ def _sincronizar_conta_impl(
         _sync_publicos_region(client, db, meta_account_id, token, time_range, conta.id, totais)
         _progress("publicos", 80)
 
-        camp_rows = db.execute(text(
-            "SELECT DISTINCT campaign_id FROM meta_campanhas_insights "
-            "WHERE ads_account_id = :uuid"
-        ), {"uuid": str(conta.id)}).fetchall()
-
-        valid_camps = [cid for (cid,) in camp_rows if cid]
+        total_camp_rows = db.execute(text("""
+            SELECT COUNT(DISTINCT campaign_id)
+            FROM meta_campaigns_catalog
+            WHERE ads_account_id = CAST(:uuid AS uuid)
+              AND campaign_id IS NOT NULL
+        """), {"uuid": str(conta.id)}).scalar() or 0
+        if modo_sync == "backfill" and not settings.META_SYNC_PUBLICOS_CAMPANHA_BACKFILL:
+            valid_camps = []
+        else:
+            valid_camps = _campanhas_publicos_relevantes(
+                db,
+                conta.id,
+                limit=settings.META_SYNC_PUBLICOS_CAMPANHA_LIMIT,
+            )
+        totais["publicos_campanhas_processadas"] = len(valid_camps)
+        totais["publicos_campanhas_puladas"] = max(int(total_camp_rows) - len(valid_camps), 0)
         for i, cid in enumerate(valid_camps):
             _sync_publicos_demograficos(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
             _sync_publicos_placement(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
@@ -2427,7 +2473,12 @@ def _sincronizar_conta_impl(
             pct = 80 + int(15 * (i + 1) / max(len(valid_camps), 1))
             _progress("publicos_campanha", pct)
 
-        log.info("Sync por campanha concluído: %d campanhas", len(valid_camps))
+        log.info(
+            "Sync públicos por campanha concluído: processadas=%d puladas=%d modo=%s",
+            totais["publicos_campanhas_processadas"],
+            totais["publicos_campanhas_puladas"],
+            modo_sync,
+        )
         _progress("finalizando", 98)
 
     conta.sincronizado_em = datetime.now(tz=timezone.utc)
