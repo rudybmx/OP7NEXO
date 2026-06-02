@@ -294,21 +294,21 @@ export function EditarCanalDialog({
               </>
             )}
 
-            {canal?.tipo === 'whatsapp_evolution' && (
+            {(canal?.tipo === 'whatsapp_evolution' || canal?.tipo === 'whatsapp_waha') && (
               <div
                 style={{
-                  background: 'rgba(37,211,102,0.06)',
-                  border: '1px solid rgba(37,211,102,0.20)',
+                  background: canal?.tipo === 'whatsapp_waha' ? 'rgba(122,90,248,0.06)' : 'rgba(37,211,102,0.06)',
+                  border: canal?.tipo === 'whatsapp_waha' ? '1px solid rgba(122,90,248,0.20)' : '1px solid rgba(37,211,102,0.20)',
                   borderRadius: 12,
                   padding: '16px 18px',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 20 }}>📱</span>
+                    <span style={{ fontSize: 20 }}>{canal?.tipo === 'whatsapp_waha' ? '⚡' : '📱'}</span>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>
-                        WhatsApp Evolution
+                        {canal?.tipo === 'whatsapp_waha' ? 'WhatsApp WAHA' : 'WhatsApp Evolution'}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--ws-text-3)', marginTop: 2 }}>
                         {canal.numero_telefone ?? 'Nenhum número conectado'}
@@ -419,11 +419,13 @@ export function EditarCanalDialog({
                         flex: 1,
                         height: 38,
                         borderRadius: 8,
-                        background: conectando ? 'rgba(37,211,102,0.30)' : 'rgba(37,211,102,0.15)',
-                        border: '1px solid rgba(37,211,102,0.40)',
+                        background: canal?.tipo === 'whatsapp_waha'
+                          ? (conectando ? 'rgba(122,90,248,0.30)' : 'rgba(122,90,248,0.15)')
+                          : (conectando ? 'rgba(37,211,102,0.30)' : 'rgba(37,211,102,0.15)'),
+                        border: canal?.tipo === 'whatsapp_waha' ? '1px solid rgba(122,90,248,0.40)' : '1px solid rgba(37,211,102,0.40)',
                         fontSize: 13,
                         fontWeight: 600,
-                        color: '#25D366',
+                        color: canal?.tipo === 'whatsapp_waha' ? '#7A5AF8' : '#25D366',
                         cursor: conectando ? 'not-allowed' : 'pointer',
                         display: 'flex',
                         alignItems: 'center',
@@ -439,7 +441,7 @@ export function EditarCanalDialog({
               </div>
             )}
 
-            {canal?.tipo !== 'whatsapp_evolution' && canal?.tipo !== 'webhook' && (
+            {canal?.tipo !== 'whatsapp_evolution' && canal?.tipo !== 'whatsapp_waha' && canal?.tipo !== 'webhook' && (
               <div
                 style={{
                   background: 'rgba(15,23,42,0.04)',
