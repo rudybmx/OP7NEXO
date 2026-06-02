@@ -930,6 +930,7 @@ def process_evolution_webhook_event(
             conversa_id = str(result.get("conversa_id") or "")
             evolution_msg_id = str(result.get("evolution_msg_id") or "")
             if mensagem_id and conversa_id and evolution_msg_id:
+                _waha_cfg = (canal.config or {}).get("waha", {}) if canal.tipo == "whatsapp_waha" else {}
                 enqueue_inbound_media_download(
                     db,
                     workspace_id=str(result.get("workspace_id") or canal.workspace_id),
@@ -944,6 +945,9 @@ def process_evolution_webhook_event(
                     media_url=result.get("media_url"),
                     media_mime_type=result.get("media_mime_type"),
                     media_filename=result.get("media_filename"),
+                    waha_session=_waha_cfg.get("session"),
+                    waha_api_base_url=_waha_cfg.get("api_base_url"),
+                    waha_api_key_ref=_waha_cfg.get("api_key_ref"),
                 )
                 db.commit()
             else:

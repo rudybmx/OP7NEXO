@@ -294,8 +294,8 @@ def _load_inbound_media(payload: dict[str, Any]) -> tuple[bytes, str, str]:
         with httpx.Client(timeout=60, follow_redirects=True) as client:
             resp = client.get(str(media_url))
             resp.raise_for_status()
-            content_type = resp.headers.get("content-type") or mimetype
-            return resp.content, content_type.split(";", 1)[0], filename
+            response_ct = (resp.headers.get("content-type") or "").split(";", 1)[0].strip()
+            return resp.content, _prefer_specific_mimetype(response_ct, mimetype), filename
 
     instance_name = str(payload.get("instance_name") or "")
     evolution_msg_id = str(payload.get("evolution_msg_id") or "")
