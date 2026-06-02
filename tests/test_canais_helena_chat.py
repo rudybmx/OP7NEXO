@@ -208,10 +208,70 @@ def test_get_helena_session_by_id_usa_include_details_repetido_e_token_ref(monke
     assert result == payload
     assert captured["timeout"] == 7.5
     assert captured["url"] == "https://api.helena.run/chat/v2/session/session-123"
-    assert captured["headers"]["Authorization"] == "Bearer token-de-teste"
+    assert captured["headers"]["Authorization"] == "token-de-teste"
     assert captured["params"] == [
         ("includeDetails", "ContactDetails"),
-        ("includeDetails", "ChannelDetails"),
+        ("includeDetails", "ChannelTypeDetails"),
+        ("includeDetails", "ClassificationDetails"),
+    ]
+
+
+def test_get_helena_session_by_id_aceita_config_em_objetos_aninhados(monkeypatch):
+    monkeypatch.setenv("HELENA_CHAT_TOKEN_QOZT", "token-de-teste")
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        tipo="webhook",
+        nome="Canal Helena",
+        config=SimpleNamespace(
+            webhook=SimpleNamespace(
+                provider="helena",
+                helena=SimpleNamespace(
+                    api_token_ref="HELENA_CHAT_TOKEN_QOZT",
+                    api_base_url="https://api.helena.run/chat",
+                ),
+            )
+        ),
+        status="ativo",
+        webhook_token="token-webhook",
+    )
+
+    payload = {"sessionId": "session-999", "contactDetails": {"name": "Cliente"}}
+
+    class _Response:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return payload
+
+    captured: dict[str, object] = {}
+
+    class _Client:
+        def __init__(self, timeout=None):
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, url, headers=None, params=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["params"] = params
+            return _Response()
+
+    monkeypatch.setattr(helena_chat.httpx, "Client", _Client)
+
+    result = helena_chat.get_helena_session_by_id(canal, "session-999", timeout=4.5)
+
+    assert result == payload
+    assert captured["headers"]["Authorization"] == "token-de-teste"
+    assert captured["params"] == [
+        ("includeDetails", "ContactDetails"),
+        ("includeDetails", "ChannelTypeDetails"),
         ("includeDetails", "ClassificationDetails"),
     ]
 

@@ -22,33 +22,61 @@ class HelenaChatError(Exception):
         self.status_code = status_code
 
 
-def _webhook_config(source: CanalEntrada | dict[str, Any]) -> dict[str, Any]:
+def _get_field(container: Any, key: str) -> Any:
+    if isinstance(container, dict):
+        return container.get(key)
+    return getattr(container, key, None)
+
+
+def _has_any_field(container: Any, keys: tuple[str, ...]) -> bool:
+    if isinstance(container, dict):
+        return any(key in container for key in keys)
+    return any(hasattr(container, key) for key in keys)
+
+
+def _resolve_config_container(source: CanalEntrada | dict[str, Any] | Any) -> Any:
     if isinstance(source, CanalEntrada):
-        config = source.config or {}
-    elif isinstance(source, dict):
-        config = source
-    else:
+        config = source.config
+        if config is not None:
+            return config
         return {}
 
-    if not isinstance(config, dict):
+    if isinstance(source, dict):
+        if _has_any_field(source, ("webhook", "api_token_ref", "api_base_url", "from_phone", "helena")):
+            return source
+        nested_config = source.get("config")
+        if nested_config is not None:
+            return nested_config
         return {}
 
-    webhook = config.get("webhook")
-    if isinstance(webhook, dict):
+    config = getattr(source, "config", None)
+    if config is not None:
+        return config
+
+    if _has_any_field(source, ("webhook", "api_token_ref", "api_base_url", "from_phone", "helena")):
+        return source
+
+    return {}
+
+
+def _webhook_config(source: CanalEntrada | dict[str, Any] | Any) -> Any:
+    config = _resolve_config_container(source)
+    webhook = _get_field(config, "webhook")
+    if webhook is not None:
         return webhook
 
-    if any(key in config for key in ("api_token_ref", "api_base_url", "from_phone", "helena")):
+    if _has_any_field(config, ("api_token_ref", "api_base_url", "from_phone", "helena")):
         return config
 
     return {}
 
 
-def _helena_config(source: CanalEntrada | dict[str, Any]) -> dict[str, Any]:
+def _helena_config(source: CanalEntrada | dict[str, Any] | Any) -> Any:
     webhook = _webhook_config(source)
-    helena = webhook.get("helena")
-    if isinstance(helena, dict):
+    helena = _get_field(webhook, "helena")
+    if helena is not None:
         return helena
-    if any(key in webhook for key in ("api_token_ref", "api_base_url", "from_phone")):
+    if _has_any_field(webhook, ("api_token_ref", "api_base_url", "from_phone")):
         return webhook
     return {}
 
@@ -96,7 +124,7 @@ def _handle_error(resp: httpx.Response, ctx: str) -> None:
 
 def _resolve_api_token(source: CanalEntrada | dict[str, Any]) -> tuple[str, str]:
     helena = _helena_config(source)
-    token_ref = str(helena.get("api_token_ref") or "").strip()
+    token_ref = str(_get_field(helena, "api_token_ref") or "").strip()
     if not token_ref:
         raise HelenaChatError("Canal sem config.webhook.helena.api_token_ref", status_code=400)
 
@@ -113,7 +141,7 @@ def _resolve_api_token(source: CanalEntrada | dict[str, Any]) -> tuple[str, str]
 def _resolve_api_base_url(source: CanalEntrada | dict[str, Any]) -> str:
     helena = _helena_config(source)
     base_url = str(
-        helena.get("api_base_url")
+        _get_field(helena, "api_base_url")
         or HELENA_CHAT_DEFAULT_BASE_URL
     ).strip()
     return base_url.rstrip("/")
@@ -121,7 +149,7 @@ def _resolve_api_base_url(source: CanalEntrada | dict[str, Any]) -> str:
 
 def resolve_from_phone(source: CanalEntrada | dict[str, Any]) -> str:
     helena = _helena_config(source)
-    from_phone = _normalize_phone(helena.get("from_phone"))
+    from_phone = _normalize_phone(_get_field(helena, "from_phone"))
     if not from_phone:
         raise HelenaChatError("Canal sem config.webhook.helena.from_phone", status_code=400)
     return from_phone
@@ -181,7 +209,7 @@ def send_text_message(
         body["refId"] = ref_id
 
     headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization": token,
         "Content-Type": "application/json",
     }
 
@@ -234,12 +262,12 @@ def get_helena_session_by_id(
     base_url = _resolve_api_base_url(source)
     url = f"{base_url}{HELENA_CHAT_SESSION_PATH}/{session_id_clean}"
     headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization": token,
         "Content-Type": "application/json",
     }
     params = [
         ("includeDetails", "ContactDetails"),
-        ("includeDetails", "ChannelDetails"),
+        ("includeDetails", "ChannelTypeDetails"),
         ("includeDetails", "ClassificationDetails"),
     ]
 
