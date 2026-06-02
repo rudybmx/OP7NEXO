@@ -75,7 +75,6 @@ export function useEnviarMensagem(): UseEnviarMensagemReturn {
         }
         mediaUrl = uploadData.media_url
         tipo = uploadData.tipo || tipo || 'document'
-        caption = caption || uploadData.filename || filename
       }
 
       const res = await fetch('/api/whatsapp/send', {
