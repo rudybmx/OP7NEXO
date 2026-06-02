@@ -16,6 +16,7 @@ from app.services.webhook_helena import HELENA_PROVIDER
 # provider "macro" para tipos que não são webhook
 _TIPO_PROVIDER = {
     "whatsapp_evolution": "evolution",
+    "whatsapp_waha": "waha",
     "whatsapp_oficial": "meta_whatsapp",
     "instagram": "instagram_graph",
     "facebook": "facebook",
@@ -23,6 +24,7 @@ _TIPO_PROVIDER = {
 
 _TIPO_LABEL = {
     "whatsapp_evolution": "WhatsApp Evolution",
+    "whatsapp_waha": "WhatsApp WAHA",
     "whatsapp_oficial": "WhatsApp Oficial",
     "instagram": "Instagram",
     "facebook": "Facebook",

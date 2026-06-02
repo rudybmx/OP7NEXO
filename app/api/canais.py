@@ -44,6 +44,7 @@ from app.services.webhook_api_ingestion import (
 )
 from app.services import helena_chat as helena_service
 from app.services.canal_labels import canal_provider, canal_provider_label
+from app.services.waha_normalizer import adapt_waha_to_evolution
 from app.services.redis_pub import publish_whatsapp_event
 from app.services.whatsapp_crm_persistence import process_evolution_message
 from app.services.whatsapp_event_queue import enqueue_evolution_event
@@ -64,7 +65,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["canais"])
 
 TIPOS_VALIDOS = Literal[
-    "whatsapp_evolution", "whatsapp_oficial", "instagram", "facebook", "webhook"
+    "whatsapp_evolution", "whatsapp_waha", "whatsapp_oficial", "instagram", "facebook", "webhook"
 ]
 
 
@@ -771,7 +772,7 @@ def criar_canal(
     _get_workspace_or_404(workspace_id, db)
     verificar_acesso_workspace(usuario, workspace_id, db)
 
-    webhook_token = secrets.token_hex(32) if payload.tipo == "webhook" else None
+    webhook_token = secrets.token_hex(32) if payload.tipo in ("webhook", "whatsapp_waha") else None
     stored_config = payload.config or {}
     webhook_secret: str | None = None
     if payload.tipo == "webhook":
@@ -2107,6 +2108,40 @@ async def receber_webhook_evolution(
         "queued": queued.get("queued", False),
         "duplicate": not queued.get("inserted", False),
     }
+
+
+@router.post("/webhook/waha/{token}")
+async def receber_webhook_waha(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        raw = await request.json()
+    except Exception:
+        raw = {}
+
+    canal = db.query(CanalEntrada).filter(
+        CanalEntrada.webhook_token == token,
+        CanalEntrada.tipo == "whatsapp_waha",
+    ).first()
+    if not canal:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token inválido")
+
+    adapted = adapt_waha_to_evolution(raw)
+    event = adapted.get("event", "messages.upsert")
+
+    logger.info("[webhook-waha] canal=%s event=%s", canal.nome, event)
+
+    try:
+        queued = enqueue_evolution_event(db, canal, event, adapted)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("[webhook-waha] falha ao enfileirar canal=%s", canal.nome)
+        raise HTTPException(status_code=500, detail="Falha ao enfileirar webhook")
+
+    return {"ok": True, "queued": queued.get("queued", False)}
 
 
 def _processar_evento_evolution(
