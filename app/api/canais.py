@@ -33,6 +33,7 @@ from app.models.user import RoleUsuario, User
 from app.models.user_workspace_access import UserWorkspaceAccess
 from app.models.workspace import Workspace
 from app.services import evolution as evo_service
+from app.services import waha_service
 from app.services.object_storage import download_and_put, put_bytes, public_url
 from app.services.webhook_api_ingestion import (
     CRM_EXTERNO_ZAPI_PROVIDER,
@@ -887,6 +888,173 @@ def remover_canal(
     db.commit()
 
 
+# ── Helpers WAHA ─────────────────────────────────────────────────────
+
+def _waha_cfg(canal: CanalEntrada) -> tuple[str, dict]:
+    """Retorna (session_name, waha_config) para canal whatsapp_waha."""
+    cfg = (canal.config or {}).get("waha", {})
+    session = cfg.get("session") or canal.nome or "default"
+    return session, cfg
+
+
+def _conectar_waha(canal: CanalEntrada, db: Session) -> ConectarOut:
+    import time as _time
+
+    session, cfg = _waha_cfg(canal)
+
+    if not canal.webhook_token:
+        canal.webhook_token = secrets.token_hex(32)
+        db.commit()
+        db.refresh(canal)
+
+    # Estado atual
+    try:
+        state = waha_service.estado_sessao(session, cfg)
+        waha_status = state.get("status", "STOPPED")
+    except waha_service.WahaError:
+        state = None
+        waha_status = "STOPPED"
+
+    # Criar/iniciar se parada
+    if waha_status in ("STOPPED", "FAILED") or state is None:
+        try:
+            waha_service.criar_sessao(session, cfg)
+        except waha_service.WahaError as exc:
+            logger.warning("[canais] WAHA criar_sessao: %s", exc)
+        try:
+            waha_service.iniciar_sessao(session, cfg)
+        except waha_service.WahaError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+
+    # Configurar webhook
+    webhook_url = f"{_webhook_base_url()}/webhook/waha/{canal.webhook_token}"
+    try:
+        waha_service.configurar_webhook(session, webhook_url, cfg)
+    except waha_service.WahaError as exc:
+        logger.warning("[canais] WAHA configurar_webhook: %s", exc)
+
+    # Aguardar init e reler estado
+    _time.sleep(1)
+    try:
+        state = waha_service.estado_sessao(session, cfg)
+        waha_status = state.get("status", "STARTING")
+    except waha_service.WahaError:
+        waha_status = "STARTING"
+
+    conn_status = waha_service.STATUS_MAP.get(waha_status, "connecting")
+
+    if conn_status == "connected":
+        canal.connection_status = "connected"
+        canal.status = "ativo"
+        canal.conectado_em = datetime.now(timezone.utc)
+        me = (state or {}).get("me") or {}
+        jid = me.get("id") or ""
+        if jid:
+            canal.numero_telefone = jid.split("@")[0]
+        db.commit()
+        return ConectarOut(
+            qr_code=None,
+            pairing_code=None,
+            connection_status="connected",
+            instance_id=None,
+            message="Sessão WAHA já está conectada",
+        )
+
+    canal.connection_status = "connecting"
+    db.commit()
+
+    try:
+        qr_data = waha_service.obter_qr(session, cfg)
+    except waha_service.WahaError as exc:
+        logger.warning("[canais] WAHA obter_qr: %s", exc)
+        qr_data = None
+
+    if qr_data is None:
+        return ConectarOut(
+            qr_code=None,
+            pairing_code=None,
+            connection_status="connecting",
+            instance_id=None,
+            message=f"Aguardando WAHA gerar QR — estado: {waha_status}",
+        )
+
+    qr_b64 = qr_data.get("data") or qr_data.get("base64")
+    return ConectarOut(
+        qr_code=qr_b64,
+        pairing_code=None,
+        connection_status="connecting",
+        instance_id=None,
+        message="Escaneie o QR code com seu WhatsApp",
+    )
+
+
+def _status_waha(canal: CanalEntrada, db: Session) -> dict:
+    session, cfg = _waha_cfg(canal)
+    try:
+        state = waha_service.estado_sessao(session, cfg)
+        waha_status = state.get("status", "STOPPED")
+        conn_status = waha_service.STATUS_MAP.get(waha_status, "disconnected")
+
+        qr_b64 = None
+        if conn_status == "connecting":
+            try:
+                qr_data = waha_service.obter_qr(session, cfg)
+                if qr_data:
+                    qr_b64 = qr_data.get("data") or qr_data.get("base64")
+            except waha_service.WahaError:
+                pass
+
+        if conn_status == "connected":
+            canal.connection_status = "connected"
+            canal.status = "ativo"
+            if not canal.conectado_em:
+                canal.conectado_em = datetime.now(timezone.utc)
+            me = state.get("me") or {}
+            jid = me.get("id") or ""
+            if jid:
+                canal.numero_telefone = jid.split("@")[0]
+            db.commit()
+        elif conn_status == "connecting":
+            if canal.connection_status != "connecting":
+                canal.connection_status = "connecting"
+                db.commit()
+        else:
+            if canal.connection_status != "disconnected":
+                canal.connection_status = "disconnected"
+                db.commit()
+
+        db.refresh(canal)
+        return {
+            "connection_status": canal.connection_status,
+            "evolution_state": waha_status,
+            "instance_id": None,
+            "numero_telefone": canal.numero_telefone,
+            "conectado_em": canal.conectado_em.isoformat() if canal.conectado_em else None,
+            "qr_code": qr_b64,
+            "pairing_code": None,
+        }
+    except waha_service.WahaError as exc:
+        return {
+            "connection_status": canal.connection_status,
+            "evolution_state": "unknown",
+            "instance_id": None,
+            "error": str(exc),
+        }
+
+
+def _desconectar_waha(canal: CanalEntrada, db: Session) -> dict:
+    session, cfg = _waha_cfg(canal)
+    try:
+        waha_service.parar_sessao(session, cfg)
+    except waha_service.WahaError as exc:
+        logger.warning("[canais] WAHA parar_sessao: %s", exc)
+    canal.connection_status = "disconnected"
+    canal.numero_telefone = None
+    canal.conectado_em = None
+    db.commit()
+    return {"status": "disconnected", "message": "Sessão WAHA parada."}
+
+
 # ── Conectar / Desconectar (Evolution) ───────────────────────────────
 
 @router.post("/canais/{canal_id}/conectar", response_model=ConectarOut)
@@ -898,6 +1066,8 @@ def conectar_canal(
     c = _get_canal_or_404(canal_id, db)
     _exigir_admin_canal(usuario, c, db)
 
+    if c.tipo == "whatsapp_waha":
+        return _conectar_waha(c, db)
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
     if _evolution_protected_name(c):
@@ -1022,10 +1192,12 @@ def status_evolution(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    """Consulta o status real da instância na Evolution e atualiza o banco."""
+    """Consulta o status real da instância na Evolution/WAHA e atualiza o banco."""
     c = _get_canal_or_404(canal_id, db)
     _exigir_admin_canal(usuario, c, db)
 
+    if c.tipo == "whatsapp_waha":
+        return _status_waha(c, db)
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
 
@@ -1095,6 +1267,8 @@ def desconectar_canal(
     c = _get_canal_or_404(canal_id, db)
     _exigir_admin_canal(usuario, c, db)
 
+    if c.tipo == "whatsapp_waha":
+        return _desconectar_waha(c, db)
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
 
