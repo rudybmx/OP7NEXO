@@ -8,7 +8,7 @@ export function getCanalBadgeLabel(tipo?: CanalAtendimentoTipo) {
 // (CanalOut). O fallback deriva de tipo/config caso o campo ainda não venha.
 const WEBHOOK_PROVIDER_LABEL_FALLBACK: Record<string, string> = {
   helena: 'Webhook Helena',
-  crm_externo_zapi: 'Webhook Qozt/Helena (Z-API)',
+  crm_externo_zapi: 'Qozt Enterprise',
   generic: 'Webhook Genérico',
 }
 

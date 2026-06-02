@@ -53,7 +53,7 @@ const CONN_BADGE: Record<string, { label: string; bg: string; color: string }> =
 const WEBHOOK_PROVIDER_OPTIONS: { value: WebhookProvider; label: string }[] = [
   { value: 'generic', label: 'Webhook Genérico' },
   { value: 'helena', label: 'Helena' },
-  { value: 'crm_externo_zapi', label: 'CRM externo / Z-API' },
+  { value: 'crm_externo_zapi', label: 'Qozt Enterprise' },
 ]
 
 function isWebhookChannel(canal: Canal | null): boolean {

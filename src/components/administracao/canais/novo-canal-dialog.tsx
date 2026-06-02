@@ -24,7 +24,7 @@ type WebhookCfg = {
 const WEBHOOK_PROVIDERS: { id: string; label: string; disponivel: boolean }[] = [
   { id: 'generic',           label: 'Webhook Genérico (HMAC)',  disponivel: true },
   { id: 'helena',            label: 'Helena CRM (inbound)',     disponivel: true },
-  { id: 'crm_externo_zapi',  label: 'Qozt/Helena via Z-API',    disponivel: true },
+  { id: 'crm_externo_zapi',  label: 'Qozt Enterprise',          disponivel: true },
   { id: 'custom',            label: 'Custom/Futuro (em breve)', disponivel: false },
 ]
 
@@ -91,7 +91,7 @@ export function NovoCanalDialog({
     })
   }
 
-  // Bloqueia salvar para tipos/providers ainda não disponíveis ou config Z-API incompleta.
+  // Bloqueia salvar para tipos/providers ainda não disponíveis ou config do Qozt Enterprise incompleta.
   const tipoCriavel = TIPOS_CRIAVEIS.has(form.tipo)
   const providerDisponivel =
     form.tipo !== 'webhook' || (WEBHOOK_PROVIDERS.find(p => p.id === provider)?.disponivel ?? false)
@@ -395,7 +395,7 @@ export function NovoCanalDialog({
                     </div>
                   )}
 
-                  {/* Qozt/Helena via Z-API (inbound + outbound via Helena Chat) */}
+                  {/* Qozt Enterprise (inbound + outbound via Helena Chat) */}
                   {provider === 'crm_externo_zapi' && (
                     <>
                       <div>
