@@ -180,6 +180,27 @@ def enviar_mensagem_texto(session: str, cfg: dict, chat_id: str, texto: str) -> 
         raise WahaError(f"WAHA sendText: {exc}") from exc
 
 
+def baixar_midia(url: str, cfg: dict) -> tuple[bytes, str]:
+    """GET autenticado para download de mídia WAHA. Retorna (conteúdo, content_type)."""
+    _, headers = _headers(cfg)
+    try:
+        with httpx.Client(timeout=60, follow_redirects=True) as client:
+            resp = client.get(url, headers={"X-Api-Key": headers["X-Api-Key"]})
+            resp.raise_for_status()
+            content_type = (
+                resp.headers.get("content-type", "application/octet-stream")
+                .split(";")[0]
+                .strip()
+            )
+            return resp.content, content_type
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA baixar_midia: {exc.response.status_code} {exc.response.text[:200]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA baixar_midia: {exc}") from exc
+
+
 def parar_sessao(session: str, cfg: dict) -> dict[str, Any]:
     """POST /api/sessions/{session}/stop"""
     base_url, headers = _headers(cfg)

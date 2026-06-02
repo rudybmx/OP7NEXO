@@ -2530,6 +2530,7 @@ def _processar_evento_evolution(
         try:
             resultado = _processar_mensagem_evolution(db, canal, instance_data, raw_event_id=raw_event_id)
             if resultado and resultado.get("is_media"):
+                _waha_inner = (canal.config or {}).get("waha", {}) if canal.tipo == "whatsapp_waha" else {}
                 enqueue_inbound_media_download(
                     db,
                     workspace_id=resultado.get("workspace_id", ""),
@@ -2544,6 +2545,9 @@ def _processar_evento_evolution(
                     media_url=resultado.get("media_url"),
                     media_mime_type=resultado.get("media_mime_type"),
                     media_filename=resultado.get("media_filename"),
+                    waha_session=_waha_inner.get("session"),
+                    waha_api_base_url=_waha_inner.get("api_base_url"),
+                    waha_api_key_ref=_waha_inner.get("api_key_ref"),
                 )
                 db.commit()
             if resultado:

@@ -55,6 +55,9 @@ def enqueue_inbound_media_download(
     media_url: str | None = None,
     media_mime_type: str | None = None,
     media_filename: str | None = None,
+    waha_session: str | None = None,
+    waha_api_base_url: str | None = None,
+    waha_api_key_ref: str | None = None,
 ) -> bool:
     db.execute(
         text("""
@@ -100,6 +103,9 @@ def enqueue_inbound_media_download(
                     "media_url": media_url,
                     "media_mime_type": media_mime_type,
                     "media_filename": media_filename,
+                    "waha_session": waha_session,
+                    "waha_api_base_url": waha_api_base_url,
+                    "waha_api_key_ref": waha_api_key_ref,
                 }
             ),
         },
@@ -275,6 +281,15 @@ def _load_inbound_media(payload: dict[str, Any]) -> tuple[bytes, str, str]:
     if media_base64:
         raw_b64 = media_base64.split(",", 1)[1] if isinstance(media_base64, str) and media_base64.startswith("data:") and "," in media_base64 else media_base64
         return base64.b64decode(raw_b64), mimetype, filename
+    waha_api_key_ref = payload.get("waha_api_key_ref")
+    if media_url and waha_api_key_ref:
+        from app.services import waha_service
+        waha_cfg = {
+            "api_base_url": payload.get("waha_api_base_url") or "http://waha:3000",
+            "api_key_ref":  waha_api_key_ref,
+        }
+        content, content_type = waha_service.baixar_midia(str(media_url), waha_cfg)
+        return content, content_type or mimetype, filename
     if media_url:
         with httpx.Client(timeout=60, follow_redirects=True) as client:
             resp = client.get(str(media_url))
