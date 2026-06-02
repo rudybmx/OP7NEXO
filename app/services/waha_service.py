@@ -125,7 +125,11 @@ def configurar_webhook(session: str, webhook_url: str, cfg: dict) -> dict[str, A
 
 
 def obter_qr(session: str, cfg: dict) -> dict[str, Any] | None:
-    """GET /api/{session}/auth/qr — retorna None se 404 (QR ainda não disponível)."""
+    """GET /api/{session}/auth/qr
+    WAHA Plus retorna PNG binário (image/png); versões mais antigas retornam JSON.
+    Normaliza sempre para {'data': '<base64>'}.
+    """
+    import base64 as _b64
     base_url, headers = _headers(cfg)
     try:
         resp = httpx.get(
@@ -136,7 +140,15 @@ def obter_qr(session: str, cfg: dict) -> dict[str, Any] | None:
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
+
+        content_type = resp.headers.get("content-type", "")
+        # PNG detectado por Content-Type ou assinatura de bytes (magic bytes \x89PNG)
+        if "image/" in content_type or resp.content[:4] == b"\x89PNG":
+            return {"data": _b64.b64encode(resp.content).decode("ascii")}
+
+        # Fallback: resposta JSON (versões antigas do WAHA)
         return resp.json()
+
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             return None
