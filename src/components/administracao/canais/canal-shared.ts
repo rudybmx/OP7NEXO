@@ -4,6 +4,7 @@ import type { CanalConfig } from './webhook-config'
 
 export type TipoCanal =
   | 'whatsapp_evolution'
+  | 'whatsapp_waha'
   | 'whatsapp_oficial'
   | 'instagram'
   | 'facebook'
@@ -49,6 +50,7 @@ export const TIPOS: {
   corBg: string
 }[] = [
   { id: 'whatsapp_evolution', label: 'WhatsApp Evolution', emoji: '📱', cor: '#25D366', corBg: 'rgba(37,211,102,0.15)' },
+  { id: 'whatsapp_waha',      label: 'WhatsApp WAHA',      emoji: '⚡', cor: '#7A5AF8', corBg: 'rgba(122,90,248,0.15)' },
   { id: 'whatsapp_oficial',   label: 'WhatsApp Oficial',   emoji: '💬', cor: '#075E54', corBg: 'rgba(7,94,84,0.18)' },
   { id: 'instagram',          label: 'Instagram',          emoji: '📷', cor: '#E1306C', corBg: 'rgba(225,48,108,0.15)' },
   { id: 'facebook',           label: 'Facebook',           emoji: '👤', cor: '#1877F2', corBg: 'rgba(24,119,242,0.15)' },

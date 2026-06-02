@@ -109,6 +109,13 @@ function getProviderTone(tipo?: string | null): CSSProperties {
       border: '1px solid rgba(24, 95, 165, 0.22)',
     }
   }
+  if (tipo === 'whatsapp_waha') {
+    return {
+      background: 'rgba(122, 90, 248, 0.12)',
+      color: '#7A5AF8',
+      border: '1px solid rgba(122, 90, 248, 0.22)',
+    }
+  }
   return {
     background: 'rgba(37, 211, 102, 0.12)',
     color: '#1D9E75',

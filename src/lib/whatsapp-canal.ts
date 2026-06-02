@@ -14,6 +14,7 @@ const WEBHOOK_PROVIDER_LABEL_FALLBACK: Record<string, string> = {
 
 const TIPO_LABEL_FALLBACK: Record<string, string> = {
   whatsapp_evolution: 'WhatsApp Evolution',
+  whatsapp_waha: 'WhatsApp WAHA',
   whatsapp_oficial: 'WhatsApp Oficial',
   instagram: 'Instagram',
   facebook: 'Facebook',
@@ -41,6 +42,8 @@ export function getCanalTags(tipo?: CanalAtendimentoTipo) {
       return ['WhatsApp', 'Oficial']
     case 'whatsapp_evolution':
       return ['WhatsApp', 'Evolution']
+    case 'whatsapp_waha':
+      return ['WhatsApp', 'WAHA']
     default:
       return []
   }

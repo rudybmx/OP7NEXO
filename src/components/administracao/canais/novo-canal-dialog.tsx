@@ -29,7 +29,7 @@ const WEBHOOK_PROVIDERS: { id: string; label: string; disponivel: boolean }[] = 
 ]
 
 // Macro-tipos criáveis nesta rodada. Os demais aparecem como "em breve".
-const TIPOS_CRIAVEIS = new Set<string>(['whatsapp_evolution', 'webhook'])
+const TIPOS_CRIAVEIS = new Set<string>(['whatsapp_evolution', 'whatsapp_waha', 'webhook'])
 
 interface NovoCanalDialogProps {
   open: boolean
@@ -298,6 +298,49 @@ export function NovoCanalDialog({
                   />
                 </div>
               )}
+
+              {form.tipo === 'whatsapp_waha' && (() => {
+                const wahaCfg = ((form.config as Record<string, unknown>).waha ?? {}) as Record<string, string>
+                const setWaha = (key: string, value: string) =>
+                  setForm(prev => ({
+                    ...prev,
+                    config: { ...prev.config, waha: { ...((prev.config as Record<string, unknown>).waha as object ?? {}), [key]: value } },
+                  }))
+                return (
+                  <>
+                    <div>
+                      <label style={labelStyle}>URL Base do WAHA</label>
+                      <input
+                        type="text"
+                        placeholder="ex: https://waha.op7franquia.com.br"
+                        value={wahaCfg.api_base_url ?? ''}
+                        onChange={e => setWaha('api_base_url', e.target.value)}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Nome da Env Var da API Key</label>
+                      <input
+                        type="text"
+                        placeholder="ex: WAHA_API_KEY"
+                        value={wahaCfg.api_key_ref ?? ''}
+                        onChange={e => setWaha('api_key_ref', e.target.value)}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Nome da Sessão</label>
+                      <input
+                        type="text"
+                        placeholder="ex: teste"
+                        value={wahaCfg.session ?? ''}
+                        onChange={e => setWaha('session', e.target.value)}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </>
+                )
+              })()}
 
               {form.tipo === 'whatsapp_oficial' && (
                 <>

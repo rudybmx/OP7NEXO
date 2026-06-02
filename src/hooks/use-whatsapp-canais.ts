@@ -16,7 +16,7 @@ export interface WhatsappCanal {
   connection_status?: string | null
 }
 
-const TIPOS_CANAL_ATENDIMENTO = new Set(['whatsapp_evolution', 'whatsapp_oficial', 'webhook'])
+const TIPOS_CANAL_ATENDIMENTO = new Set(['whatsapp_evolution', 'whatsapp_waha', 'whatsapp_oficial', 'webhook'])
 
 interface UseWhatsappCanaisReturn {
   canais: WhatsappCanal[]
