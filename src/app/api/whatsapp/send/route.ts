@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
           SELECT id::text AS canal_id
           FROM public.canais_entrada
           WHERE workspace_id = ${conversa.workspace_id}::uuid
-            AND tipo = 'whatsapp_evolution'
+            AND tipo IN ('whatsapp_evolution', 'whatsapp_waha')
             AND (connection_status = 'connected' OR status = 'ativo')
           ORDER BY
             CASE
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       const canalRows = await db`
           SELECT id::text AS canal_id
           FROM public.canais_entrada
-          WHERE tipo = 'whatsapp_evolution'
+          WHERE tipo IN ('whatsapp_evolution', 'whatsapp_waha')
             AND workspace_id = ${workspaceId}::uuid
             AND (connection_status = 'connected' OR status = 'ativo')
           ORDER BY
