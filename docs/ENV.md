@@ -19,6 +19,15 @@ Todas as variáveis são lidas via `pydantic-settings` do arquivo `.env` na raiz
 | `openai_api_key` | `""` | API key para geração de insights IA. Se vazio, `/meta/insights/ia` retorna `[]` |
 | `openai_base_url` | `""` | Base URL da API OpenAI-compatível. Ex: `https://opencode.ai/zen/go/v1` |
 | `openai_model` | `gpt-4o-mini` | Nome do modelo a usar. Em produção: `deepseek-v4-flash` |
+| `META_SYNC_REQUEST_DELAY_SECONDS` | `0.5` | Delay mínimo entre chamadas Graph API quando não há header de uso |
+| `META_SYNC_ACCOUNT_DELAY_SECONDS` | `5` | Delay entre contas no scheduler Meta Ads |
+| `META_SYNC_RATE_LIMIT_MAX_RETRIES` | `5` | Tentativas máximas para rate limit/429 da Graph API |
+| `META_SYNC_RATE_LIMIT_BASE_DELAY_SECONDS` | `30` | Base do backoff exponencial com jitter |
+| `META_SYNC_RATE_LIMIT_MAX_DELAY_SECONDS` | `900` | Teto do cooldown/backoff por rate limit |
+| `META_SYNC_PUBLICOS_CAMPANHA_LIMIT` | `50` | Máximo de campanhas relevantes para públicos por campanha no sync padrão |
+| `META_SYNC_PUBLICOS_CAMPANHA_BACKFILL` | `false` | Se `true`, permite públicos por campanha também em backfill |
+| `META_SYNC_USAGE_SOFT_THRESHOLD_PERCENT` | `80` | Uso Graph API a partir do qual o throttle aumenta cooldown |
+| `META_SYNC_USAGE_HARD_THRESHOLD_PERCENT` | `95` | Uso Graph API que força cooldown máximo |
 
 ## Outbound Helena Chat
 
@@ -50,6 +59,17 @@ OPENAI_MODEL=deepseek-v4-flash
 
 # Helena Chat outbound para crm_externo_zapi
 HELENA_CHAT_TOKEN_QOZT=
+
+# Meta Ads sync throttling
+META_SYNC_REQUEST_DELAY_SECONDS=0.5
+META_SYNC_ACCOUNT_DELAY_SECONDS=5
+META_SYNC_RATE_LIMIT_MAX_RETRIES=5
+META_SYNC_RATE_LIMIT_BASE_DELAY_SECONDS=30
+META_SYNC_RATE_LIMIT_MAX_DELAY_SECONDS=900
+META_SYNC_PUBLICOS_CAMPANHA_LIMIT=50
+META_SYNC_PUBLICOS_CAMPANHA_BACKFILL=false
+META_SYNC_USAGE_SOFT_THRESHOLD_PERCENT=80
+META_SYNC_USAGE_HARD_THRESHOLD_PERCENT=95
 ```
 
 ## Observações

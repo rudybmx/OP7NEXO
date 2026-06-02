@@ -30,6 +30,10 @@ Implementado e em produção. Sync manual + automático. Insights com 4 níveis 
 - O scheduler expõe estado e próximo disparo via `GET /meta/sync/scheduler`
 - Upsert por dia: `UNIQUE(ads_account_id, data)` em todas as tabelas de insights
 - Se `bm_token` expirado → conta pulada com log de aviso
+- Chamadas à Graph API usam throttle adaptativo por headers de uso (`X-App-Usage`, `X-Ad-Account-Usage`, `X-Business-Use-Case-Usage`) e backoff exponencial com jitter quando a Meta retorna rate limit.
+- Rate limit é erro temporário: não pausa a conta; o sync manual finaliza o job com mensagem de rate limit e o scheduler registra cooldown por conta e segue para a próxima.
+- `sync_paused` é reservado para erro permanente de permissão/acesso/token.
+- Públicos por campanha no sync padrão rodam apenas para campanhas relevantes (ativas ou com gasto/leads nos últimos 3 dias), limitadas por configuração; backfill pesado fica desabilitado por padrão.
 
 ### Anúncios
 - A listagem de anúncios segue o mesmo conjunto de campanhas visíveis na aba `Campanhas`
