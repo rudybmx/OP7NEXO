@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     MINIO_BUCKET_CRIATIVOS: str = "criativos-meta"
     MINIO_PUBLIC_BASE_URL: str = "https://minio.op7franquia.com.br"
     META_APP_SECRET: str = ""  # para verificar assinatura de webhooks da Meta Cloud API
+    META_SYNC_REQUEST_DELAY_SECONDS: float = 0.5
+    META_SYNC_ACCOUNT_DELAY_SECONDS: float = 5.0
+    META_SYNC_RATE_LIMIT_MAX_RETRIES: int = 5
+    META_SYNC_RATE_LIMIT_BASE_DELAY_SECONDS: float = 30.0
+    META_SYNC_RATE_LIMIT_MAX_DELAY_SECONDS: float = 900.0
+    META_SYNC_PUBLICOS_CAMPANHA_LIMIT: int = 50
+    META_SYNC_PUBLICOS_CAMPANHA_BACKFILL: bool = False
+    META_SYNC_USAGE_SOFT_THRESHOLD_PERCENT: int = 80
+    META_SYNC_USAGE_HARD_THRESHOLD_PERCENT: int = 95
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
