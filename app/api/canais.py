@@ -909,6 +909,22 @@ def _waha_cfg(canal: CanalEntrada) -> tuple[str, dict]:
     return session, cfg
 
 
+def _waha_chat_id(remote_jid: str) -> str:
+    """Deriva chatId para WAHA a partir do remote_jid armazenado.
+
+    Se já contém @ (qualquer sufixo: @c.us, @g.us, @lid, @s.whatsapp.net…):
+    usa como está — não converte sufixo.
+    Se é número/dígitos puros: acrescenta @c.us.
+    """
+    jid = (remote_jid or "").strip()
+    if "@" in jid:
+        return jid
+    digits = re.sub(r"\D", "", jid)
+    if digits:
+        return f"{digits}@c.us"
+    return jid
+
+
 def _conectar_waha(canal: CanalEntrada, db: Session) -> ConectarOut:
     import time as _time
 
@@ -1065,6 +1081,145 @@ def _desconectar_waha(canal: CanalEntrada, db: Session) -> dict:
     canal.conectado_em = None
     db.commit()
     return {"status": "disconnected", "message": "Sessão WAHA parada."}
+
+
+def _enviar_mensagem_waha(
+    canal: CanalEntrada,
+    payload: "EnviarMensagemIn",
+    db: Session,
+    usuario: "User",
+) -> "EnviarMensagemOut":
+    """Envia mensagem de texto via WAHA Plus."""
+    texto = (payload.texto or "").strip()
+
+    if payload.tipo != "texto" or payload.media_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="WAHA suporta apenas mensagens de texto neste momento.",
+        )
+    if not texto:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Texto obrigatório.")
+    if not payload.conversa_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="conversa_id obrigatório para envio WAHA.",
+        )
+
+    # Resolve conversa + contato com verificação de multi-tenancy em ambas as tabelas
+    conv_result = db.execute(
+        text("""
+            SELECT c.id, c.contato_id, c.remote_jid, ct.telefone
+            FROM public.crm_whatsapp_conversas c
+            JOIN public.crm_whatsapp_contatos ct
+              ON ct.id = c.contato_id
+             AND ct.workspace_id = CAST(:workspace_id AS uuid)
+            WHERE c.id           = CAST(:cid AS uuid)
+              AND c.workspace_id = CAST(:workspace_id AS uuid)
+              AND c.canal_id     = CAST(:canal_id AS uuid)
+        """),
+        {
+            "cid":          payload.conversa_id,
+            "workspace_id": str(canal.workspace_id),
+            "canal_id":     str(canal.id),
+        },
+    )
+    conv_row = conv_result.fetchone()
+    if not conv_row:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+
+    conversa_id = conv_row[0]
+    contato_id  = conv_row[1]
+    remote_jid  = str(conv_row[2] or conv_row[3] or "").strip()
+
+    if not remote_jid:
+        raise HTTPException(status_code=400, detail="Conversa sem destinatário configurado.")
+
+    chat_id      = _waha_chat_id(remote_jid)
+    session, cfg = _waha_cfg(canal)
+    instance     = session  # config.waha.session — espelha o inbound
+
+    try:
+        waha_resp = waha_service.enviar_mensagem_texto(session, cfg, chat_id, texto)
+    except waha_service.WahaError as exc:
+        logger.error("[canais] falha ao enviar mensagem WAHA canal=%s", canal.id)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    provider_msg_id = str(waha_resp.get("id") or "").strip()
+
+    # Atualiza conversa com multi-tenancy no WHERE
+    db.execute(
+        text("""
+            UPDATE public.crm_whatsapp_conversas
+            SET ultima_mensagem  = :msg,
+                ultima_direcao   = 'saida',
+                ultima_msg_at    = NOW(),
+                last_outbound_at = NOW(),
+                updated_at       = NOW()
+            WHERE id           = CAST(:cid AS uuid)
+              AND workspace_id = CAST(:workspace_id AS uuid)
+              AND canal_id     = CAST(:canal_id AS uuid)
+        """),
+        {
+            "msg":          texto[:500],
+            "cid":          str(conversa_id),
+            "workspace_id": str(canal.workspace_id),
+            "canal_id":     str(canal.id),
+        },
+    )
+
+    # Persiste mensagem — espelha padrão Evolution outbound (canais.py:1821-1822)
+    msg_result = db.execute(
+        text("""
+            INSERT INTO public.crm_whatsapp_mensagens (
+                workspace_id, canal_id, conversa_id, contato_id,
+                evolution_msg_id, instance, remote_jid,
+                direcao, from_me, remetente_tipo, remetente_nome,
+                conteudo, message_type, status, media_status,
+                recebida_em, created_at, updated_at
+            ) VALUES (
+                CAST(:ws   AS uuid), CAST(:canal AS uuid),
+                CAST(:cid  AS uuid), CAST(:ct   AS uuid),
+                :evid, :inst, :jid,
+                'saida', true, 'agente', :rn,
+                :msg, 'conversation', 'enviada', NULL,
+                NOW(), NOW(), NOW()
+            ) RETURNING id
+        """),
+        {
+            "ws":    str(canal.workspace_id),
+            "canal": str(canal.id),
+            "cid":   str(conversa_id),
+            "ct":    str(contato_id),
+            "evid":  provider_msg_id,
+            "inst":  instance,
+            "jid":   remote_jid,
+            "rn":    usuario.nome or usuario.email or "agente",
+            "msg":   texto,
+        },
+    )
+    mensagem_id = msg_result.scalar()
+    db.commit()
+
+    try:
+        publish_whatsapp_event({
+            "type":        "message.upsert",
+            "workspaceId": str(canal.workspace_id),
+            "conversaId":  str(conversa_id),
+            "remoteJid":   remote_jid,
+            "direction":   "saida",
+            "text":        texto,
+            "instance":    instance,
+            "messageType": "conversation",
+            "timestamp":   datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as exc:
+        logger.info("[enviar-waha] REDIS FALHOU: %s", exc)
+
+    return EnviarMensagemOut(
+        ok=True,
+        mensagem_id=str(mensagem_id),
+        evolution_response={"id": provider_msg_id},
+    )
 
 
 # ── Conectar / Desconectar (Evolution) ───────────────────────────────
@@ -1597,6 +1752,9 @@ def enviar_mensagem_canal(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Canal webhook sem outbound configurado. Configure provider crm_externo_zapi para enviar via Helena Chat.",
         )
+
+    if c.tipo == "whatsapp_waha":
+        return _enviar_mensagem_waha(c, payload, db, usuario)
 
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")

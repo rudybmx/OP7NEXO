@@ -159,6 +159,27 @@ def obter_qr(session: str, cfg: dict) -> dict[str, Any] | None:
         raise WahaError(f"WAHA {session}/auth/qr: {exc}") from exc
 
 
+def enviar_mensagem_texto(session: str, cfg: dict, chat_id: str, texto: str) -> dict[str, Any]:
+    """POST /api/sendText — envia mensagem de texto via WAHA Plus."""
+    base_url, headers = _headers(cfg)
+    body = {"session": session, "chatId": chat_id, "text": texto}
+    try:
+        resp = httpx.post(
+            f"{base_url}/api/sendText",
+            headers=headers,
+            json=body,
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA sendText: {exc.response.status_code} {exc.response.text[:200]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA sendText: {exc}") from exc
+
+
 def parar_sessao(session: str, cfg: dict) -> dict[str, Any]:
     """POST /api/sessions/{session}/stop"""
     base_url, headers = _headers(cfg)
