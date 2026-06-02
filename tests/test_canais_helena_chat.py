@@ -159,6 +159,63 @@ def test_send_text_message_rejeita_sem_from_phone(monkeypatch):
     assert "from_phone" in str(exc_info.value)
 
 
+def test_get_helena_session_by_id_usa_include_details_repetido_e_token_ref(monkeypatch):
+    monkeypatch.setenv("HELENA_CHAT_TOKEN_QOZT", "token-de-teste")
+    canal = _make_helena_canal()
+
+    payload = {
+        "sessionId": "session-123",
+        "status": "PENDING",
+        "contactDetails": {
+            "name": "Cliente Teste",
+            "phonenumber": "+55 47 98888-0002",
+            "pictureUrl": "https://cdn.example.test/avatar.jpg",
+        },
+        "lastMessageText": "Olá",
+        "lastInteractionDate": "2026-05-30T12:34:56Z",
+        "unreadCount": 2,
+    }
+
+    class _Response:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return payload
+
+    captured: dict[str, object] = {}
+
+    class _Client:
+        def __init__(self, timeout=None):
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, url, headers=None, params=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["params"] = params
+            return _Response()
+
+    monkeypatch.setattr(helena_chat.httpx, "Client", _Client)
+
+    result = helena_chat.get_helena_session_by_id(canal, "session-123", timeout=7.5)
+
+    assert result == payload
+    assert captured["timeout"] == 7.5
+    assert captured["url"] == "https://api.helena.run/chat/v2/session/session-123"
+    assert captured["headers"]["Authorization"] == "Bearer token-de-teste"
+    assert captured["params"] == [
+        ("includeDetails", "ContactDetails"),
+        ("includeDetails", "ChannelDetails"),
+        ("includeDetails", "ClassificationDetails"),
+    ]
+
+
 def test_enviar_mensagem_canal_crm_externo_zapi_usa_helena_e_persiste(monkeypatch):
     monkeypatch.setenv("HELENA_CHAT_TOKEN_QOZT", "token-de-teste")
 

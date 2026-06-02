@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.canal_entrada import CanalEntrada
+from app.services.helena_session_enrichment import enqueue_helena_session_enrichment
 
 logger = logging.getLogger(__name__)
 
@@ -816,6 +817,21 @@ def _process_crm_externo_zapi_wrapper(
                     """),
                     {"origin_event_id": origin_event_id, "contato_id": str(contato_id)},
                 )
+
+        session_id = str(envelope.get("provider_session_id") or envelope.get("conversation_key") or "").strip()
+        if session_id:
+            enqueue_helena_session_enrichment(
+                db,
+                workspace_id=str(canal.workspace_id),
+                canal_id=str(canal.id),
+                session_id=session_id,
+                conversation_id=str(conversa_id),
+                contact_id=str(contato_id),
+                source_event_id=str(raw_event_id),
+                provider_message_id=provider_message_id,
+                occurred_at=received_at.isoformat(),
+                provider=CRM_EXTERNO_ZAPI_PROVIDER,
+            )
 
         db.commit()
         logger.info(

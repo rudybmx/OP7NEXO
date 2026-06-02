@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 HELENA_CHAT_DEFAULT_BASE_URL = "https://api.helena.run/chat"
 HELENA_CHAT_SEND_PATH = "/v1/message/send"
+HELENA_CHAT_SESSION_PATH = "/v2/session"
 
 
 class HelenaChatError(Exception):
@@ -21,16 +22,35 @@ class HelenaChatError(Exception):
         self.status_code = status_code
 
 
-def _webhook_config(canal: CanalEntrada) -> dict[str, Any]:
-    config = canal.config or {}
+def _webhook_config(source: CanalEntrada | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(source, CanalEntrada):
+        config = source.config or {}
+    elif isinstance(source, dict):
+        config = source
+    else:
+        return {}
+
+    if not isinstance(config, dict):
+        return {}
+
     webhook = config.get("webhook")
-    return webhook if isinstance(webhook, dict) else {}
+    if isinstance(webhook, dict):
+        return webhook
+
+    if any(key in config for key in ("api_token_ref", "api_base_url", "from_phone", "helena")):
+        return config
+
+    return {}
 
 
-def _helena_config(canal: CanalEntrada) -> dict[str, Any]:
-    webhook = _webhook_config(canal)
+def _helena_config(source: CanalEntrada | dict[str, Any]) -> dict[str, Any]:
+    webhook = _webhook_config(source)
     helena = webhook.get("helena")
-    return helena if isinstance(helena, dict) else {}
+    if isinstance(helena, dict):
+        return helena
+    if any(key in webhook for key in ("api_token_ref", "api_base_url", "from_phone")):
+        return webhook
+    return {}
 
 
 def _normalize_phone(value: Any) -> str | None:
@@ -74,8 +94,8 @@ def _handle_error(resp: httpx.Response, ctx: str) -> None:
     raise HelenaChatError(f"{ctx}: {message}", status_code=502)
 
 
-def _resolve_api_token(canal: CanalEntrada) -> tuple[str, str]:
-    helena = _helena_config(canal)
+def _resolve_api_token(source: CanalEntrada | dict[str, Any]) -> tuple[str, str]:
+    helena = _helena_config(source)
     token_ref = str(helena.get("api_token_ref") or "").strip()
     if not token_ref:
         raise HelenaChatError("Canal sem config.webhook.helena.api_token_ref", status_code=400)
@@ -90,8 +110,8 @@ def _resolve_api_token(canal: CanalEntrada) -> tuple[str, str]:
     return token_ref, str(token).strip()
 
 
-def _resolve_api_base_url(canal: CanalEntrada) -> str:
-    helena = _helena_config(canal)
+def _resolve_api_base_url(source: CanalEntrada | dict[str, Any]) -> str:
+    helena = _helena_config(source)
     base_url = str(
         helena.get("api_base_url")
         or HELENA_CHAT_DEFAULT_BASE_URL
@@ -99,8 +119,8 @@ def _resolve_api_base_url(canal: CanalEntrada) -> str:
     return base_url.rstrip("/")
 
 
-def resolve_from_phone(canal: CanalEntrada) -> str:
-    helena = _helena_config(canal)
+def resolve_from_phone(source: CanalEntrada | dict[str, Any]) -> str:
+    helena = _helena_config(source)
     from_phone = _normalize_phone(helena.get("from_phone"))
     if not from_phone:
         raise HelenaChatError("Canal sem config.webhook.helena.from_phone", status_code=400)
@@ -198,3 +218,67 @@ def send_text_message(
         "provider_failure_reason": str(data.get("failureReason") or "").strip() or None,
         "raw": data,
     }
+
+
+def get_helena_session_by_id(
+    source: CanalEntrada | dict[str, Any],
+    session_id: str,
+    *,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    session_id_clean = str(session_id or "").strip()
+    if not session_id_clean:
+        raise HelenaChatError("session_id inválido para consulta de sessão Helena", status_code=400)
+
+    token_ref, token = _resolve_api_token(source)
+    base_url = _resolve_api_base_url(source)
+    url = f"{base_url}{HELENA_CHAT_SESSION_PATH}/{session_id_clean}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    params = [
+        ("includeDetails", "ContactDetails"),
+        ("includeDetails", "ChannelDetails"),
+        ("includeDetails", "ClassificationDetails"),
+    ]
+
+    with httpx.Client(timeout=timeout) as client:
+        try:
+            resp = client.get(url, headers=headers, params=params)
+        except httpx.TimeoutException as exc:
+            raise HelenaChatError(
+                f"Timeout ao consultar sessão Helena {session_id_clean}",
+                status_code=504,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise HelenaChatError(
+                f"Falha ao consultar sessão Helena {session_id_clean}: {exc}",
+                status_code=502,
+            ) from exc
+
+    if resp.status_code == 404:
+        raise HelenaChatError(
+            f"Sessão Helena {session_id_clean} não encontrada",
+            status_code=404,
+        )
+
+    if resp.status_code >= 400:
+        message = _error_message(resp)
+        logger.warning(
+            "[helena-chat] consultar_sessao session_id=%s token_ref=%s — HTTP %s: %s",
+            session_id_clean,
+            token_ref,
+            resp.status_code,
+            message,
+        )
+        raise HelenaChatError(
+            f"consultar_sessao: {message}",
+            status_code=resp.status_code if resp.status_code < 500 else 502,
+        )
+
+    data = _json_or_text(resp)
+    if not isinstance(data, dict):
+        raise HelenaChatError("Resposta inválida da Helena Session API", status_code=502)
+
+    return data

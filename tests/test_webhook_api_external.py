@@ -81,6 +81,7 @@ class _WebhookDb:
         self.messages_by_id: dict[str, dict[str, str]] = {}
         self.messages_by_provider_id: dict[str, dict[str, str]] = {}
         self.lead_origin_by_raw_event_id: dict[str, dict[str, str]] = {}
+        self.jobs_by_session: dict[tuple[str, str, str], dict[str, str]] = {}
 
     def query(self, _model):
         return _WebhookQuery(self._canal)
@@ -135,6 +136,30 @@ class _WebhookDb:
                 if row["raw_event_id"] == event["id"]:
                     return _Result(mapping=row)
             return _Result()
+
+        if "select id from public.crm_message_jobs" in sql_lower and "payload->>'session_id'" in sql_lower:
+            key = (params["workspace_id"], params["canal_id"], params["session_id"])
+            row = self.jobs_by_session.get(key)
+            if not row:
+                return _Result()
+            return _Result(row=(row["id"],))
+
+        if "insert into public.crm_message_jobs" in sql_lower and params and params.get("job_type") == "helena_session_enrichment":
+            payload = json.loads(params["payload"])
+            key = (params["workspace_id"], params["canal_id"], payload["session_id"])
+            if key in self.jobs_by_session:
+                return _Result()
+            job_id = str(uuid.uuid4())
+            row = {
+                "id": job_id,
+                "workspace_id": params["workspace_id"],
+                "canal_id": params["canal_id"],
+                "job_type": "helena_session_enrichment",
+                "status": "pending",
+                "payload": payload,
+            }
+            self.jobs_by_session[key] = row
+            return _Result(row=(job_id,))
 
         if "insert into public.crm_whatsapp_contatos" in sql_lower:
             jid = params["jid"]
@@ -1060,6 +1085,45 @@ def test_webhook_crm_externo_zapi_wrapper_array_cria_mensagem_de_entrada_textual
     assert conversation_row["ultima_direcao"] == "entrada"
     assert conversation_row["nao_lidas"] == 1
     assert len(db.lead_origin_by_raw_event_id) == 1
+
+
+def test_webhook_crm_externo_zapi_wrapper_enfileira_enrichment_da_sessao():
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        webhook_token="token-webhook",
+        tipo="webhook",
+        nome="CRM Externo ZAPI",
+        config={"webhook": {"provider": "crm_externo_zapi", "security_mode": "provider_token"}},
+    )
+    db = _WebhookDb(canal)
+    app = _build_app(db)
+    client = TestClient(app)
+    body = _json_body(
+        _crm_externo_wrapper_payload(
+            event_type="MESSAGE_RECEIVED",
+            direction="FROM_HUB",
+            content_id="msg-enrich",
+            session_id="sess-enrich",
+            text="preciso de ajuda",
+            content_type="TEXT",
+            status="SENT",
+            phone_from="+55 47 99999-0001",
+            phone_to="+55 47 98888-0002",
+        )
+    )
+
+    response = client.post("/webhook/token-webhook", content=body)
+    assert response.status_code == 200
+    assert response.json()["status"] == "processed"
+    assert len(db.jobs_by_session) == 1
+    job_row = next(iter(db.jobs_by_session.values()))
+    assert job_row["job_type"] == "helena_session_enrichment"
+    assert job_row["payload"]["session_id"] == "sess-enrich"
+    assert job_row["payload"]["provider"] == "crm_externo_zapi"
+    assert job_row["payload"]["source_event_id"] == response.json()["event_id"]
+    assert job_row["payload"]["conversation_id"] == response.json()["conversa_id"]
+    assert job_row["payload"]["contact_id"] == response.json()["contato_id"]
 
 
 def test_webhook_crm_externo_zapi_wrapper_object_message_sent_atualiza_status_sem_duplica():

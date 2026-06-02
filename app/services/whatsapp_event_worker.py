@@ -8,6 +8,8 @@ from sqlalchemy import text
 
 from app.core.database import SessionLocal
 from app.models.canal_entrada import CanalEntrada
+from app.services.helena_session_enrichment import process_helena_session_enrichment_job
+from app.services.redis_pub import publish_whatsapp_event
 from app.services.whatsapp_crm_persistence import process_evolution_webhook_event
 
 log = logging.getLogger(__name__)
@@ -98,6 +100,26 @@ def _process_job(job_id: str) -> str:
                 process_media_download_job(db, media_job)
                 _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
                 return "processed"
+
+            if job_type == "helena_session_enrichment":
+                enrichment_job = dict(job)
+                result = process_helena_session_enrichment_job(db, enrichment_job)
+                status = str(result.get("status") or "done")
+                _mark_done(db, job_id, str(job["event_id"] or ""), status=status)
+                if status != "skipped":
+                    job_payload = enrichment_job.get("job_payload")
+                    if not isinstance(job_payload, dict):
+                        job_payload = enrichment_job.get("payload") if isinstance(enrichment_job.get("payload"), dict) else {}
+                    publish_whatsapp_event(
+                        {
+                            "type": "conversation.refresh",
+                            "workspaceId": str(enrichment_job["workspace_id"]),
+                            "conversaId": str(job_payload.get("conversation_id") or ""),
+                            "remoteJid": str(job_payload.get("session_id") or ""),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                return "skipped" if status == "skipped" else "processed"
 
             canal = db.query(CanalEntrada).filter(CanalEntrada.id == job["canal_id"]).first()
             if not canal:
