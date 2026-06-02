@@ -795,6 +795,18 @@ def criar_canal(
     db.commit()
     db.refresh(c)
 
+    if c.tipo == "whatsapp_waha":
+        waha = (c.config or {}).get("waha", {})
+        if not waha.get("api_base_url"):
+            waha["api_base_url"] = os.getenv("WAHA_API_BASE_URL", "http://waha:3000")
+        if not waha.get("api_key_ref"):
+            waha["api_key_ref"] = os.getenv("WAHA_API_KEY_REF", "WAHA_API_KEY")
+        if not waha.get("session"):
+            waha["session"] = f"op7-{str(c.id).replace('-', '')[:12]}"
+        c.config = {**(c.config or {}), "waha": waha}
+        db.commit()
+        db.refresh(c)
+
     return _canal_out(c, webhook_secret=webhook_secret)
 
 
