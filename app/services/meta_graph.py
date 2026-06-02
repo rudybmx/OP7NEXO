@@ -203,6 +203,7 @@ class MetaGraphClient:
                 )
 
             cooldown = self._backoff_seconds(attempt)
+            self.last_cooldown_seconds = 0.0
             self.rate_limit_retries += 1
             self._log_rate_limit(endpoint, error_code, attempt + 1, cooldown)
             self.sleep(cooldown)

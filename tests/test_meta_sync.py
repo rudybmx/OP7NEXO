@@ -4,14 +4,18 @@ from unittest.mock import patch
 from app.core.config import settings
 from app.services.object_storage import public_url, reescrever_carousel_urls
 from app.services.meta_sync import (
+    _campanhas_publicos_relevantes,
     _carregar_objetivos_catalogo,
     _merge_hq_image_data,
+    _meta_erro_terminal,
     _resolver_mapa_adimages_hq,
     _fetch_videos_by_ids,
     _sync_video_metrics,
     MetaContaInacessivelError,
+    registrar_rate_limit_cooldown,
     sincronizar_conta,
 )
+from app.services.meta_graph import MetaGraphClient, MetaRateLimitError
 
 
 class _MappingResult:
@@ -23,6 +27,17 @@ class _MappingResult:
 
     def all(self):
         return self._rows
+
+    def fetchall(self):
+        return self._rows
+
+    def scalar(self):
+        if not self._rows:
+            return None
+        first = self._rows[0]
+        if isinstance(first, tuple):
+            return first[0]
+        return first
 
 
 class _FakeDbWithRows:
@@ -63,10 +78,12 @@ class _FakeDb:
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int, payload: dict | None = None, text: str = ""):
+    def __init__(self, status_code: int, payload: dict | None = None, text: str = "", headers: dict | None = None):
         self.status_code = status_code
         self._payload = payload or {}
         self.text = text
+        self.headers = headers or {}
+        self.content = b""
 
     def json(self):
         return self._payload
@@ -121,6 +138,11 @@ class _FakeDbSync:
 
     def execute(self, stmt, params=None):
         self.calls.append((stmt, params))
+        sql = str(stmt)
+        if "pg_try_advisory_lock" in sql:
+            return _MappingResult([(True,)])
+        if "pg_advisory_unlock" in sql:
+            return _MappingResult([(True,)])
         return _MappingResult([])
 
     def commit(self):
@@ -128,6 +150,11 @@ class _FakeDbSync:
 
     def rollback(self):
         self.rollbacks += 1
+
+
+class _FakeContaConfig:
+    def __init__(self):
+        self.config = {"existing": {"keep": True}, "meta_sync": {"previous": "value"}}
 
 
 class MetaSyncTests(unittest.TestCase):
@@ -316,6 +343,109 @@ class MetaSyncTests(unittest.TestCase):
         with patch("app.services.meta_sync.httpx.Client", return_value=client):
             with self.assertRaises(MetaContaInacessivelError):
                 sincronizar_conta("uuid-1", db)
+
+    def test_rate_limit_nao_e_terminal(self):
+        resp = _FakeResponse(
+            400,
+            {"error": {"message": "User request limit reached", "code": 17}},
+            text="User request limit reached",
+        )
+
+        terminal, _ = _meta_erro_terminal(resp)
+
+        self.assertFalse(terminal)
+
+    def test_meta_graph_client_retry_rate_limit_com_backoff(self):
+        responses = [
+            _FakeResponse(400, {"error": {"message": "too many calls", "code": 17}}, text="too many calls"),
+            _FakeResponse(200, {"data": []}),
+        ]
+        raw_client = _FakeClient(responses)
+        sleeps = []
+        graph = MetaGraphClient(raw_client, sleep=sleeps.append)
+
+        resp = graph.get("https://graph.facebook.com/v21.0/act_1/insights", params={"access_token": "secret"})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(graph.rate_limit_retries, 1)
+        self.assertEqual(len(sleeps), 1)
+        self.assertGreaterEqual(sleeps[0], 30)
+
+    def test_meta_graph_client_header_alto_gera_cooldown_antes_da_proxima_chamada(self):
+        responses = [
+            _FakeResponse(
+                200,
+                {"data": []},
+                headers={"x-app-usage": '{"call_count": 85, "total_cputime": 10, "total_time": 10}'},
+            ),
+            _FakeResponse(200, {"data": []}),
+        ]
+        raw_client = _FakeClient(responses)
+        sleeps = []
+        graph = MetaGraphClient(raw_client, sleep=sleeps.append)
+
+        graph.get("https://graph.facebook.com/v21.0/act_1/campaigns", params={"access_token": "secret"})
+        graph.get("https://graph.facebook.com/v21.0/act_1/adsets", params={"access_token": "secret"})
+
+        self.assertEqual(graph.last_usage_percent, 85)
+        self.assertEqual(len(sleeps), 1)
+        self.assertGreaterEqual(sleeps[0], 30)
+
+    def test_meta_graph_client_rate_limit_persistente_levanta_erro_temporario(self):
+        raw_client = _FakeClient([
+            _FakeResponse(429, {"error": {"message": "Application request limit", "code": 4}}, text="Application request limit")
+            for _ in range(6)
+        ])
+        sleeps = []
+        graph = MetaGraphClient(raw_client, sleep=sleeps.append)
+
+        with self.assertRaises(MetaRateLimitError):
+            graph.get("https://graph.facebook.com/v21.0/act_1/insights", params={"access_token": "secret"})
+
+        self.assertEqual(graph.rate_limit_retries, 5)
+
+    def test_registrar_rate_limit_cooldown_preserva_config_existente(self):
+        conta = _FakeContaConfig()
+        db = _FakeDb()
+        exc = MetaRateLimitError(
+            "limit",
+            endpoint="/v21.0/act_1/insights",
+            error_code=17,
+            cooldown_seconds=60,
+            usage_percent=96,
+        )
+
+        cooldown_until = registrar_rate_limit_cooldown(db, conta, exc)
+
+        self.assertEqual(conta.config["existing"], {"keep": True})
+        self.assertEqual(conta.config["meta_sync"]["previous"], "value")
+        self.assertEqual(conta.config["meta_sync"]["cooldown_reason"], "rate_limited")
+        self.assertEqual(conta.config["meta_sync"]["last_rate_limit_error_code"], 17)
+        self.assertEqual(db.commits, 1)
+        self.assertIsNotNone(cooldown_until)
+
+    def test_campanhas_publicos_relevantes_respeita_limite(self):
+        rows = [(f"camp-{i}",) for i in range(3)]
+        db = _FakeDbWithRows(rows)
+
+        result = _campanhas_publicos_relevantes(db, "uuid-1", limit=3)
+
+        self.assertEqual(result, ["camp-0", "camp-1", "camp-2"])
+        _, params = db.calls[0]
+        self.assertEqual(params["limit"], 3)
+
+    def test_logs_meta_graph_nao_expoem_token(self):
+        raw_client = _FakeClient([
+            _FakeResponse(400, {"error": {"message": "too many calls", "code": 17}}, text="too many calls"),
+            _FakeResponse(200, {"data": []}),
+        ])
+        graph = MetaGraphClient(raw_client, sleep=lambda _: None)
+
+        with self.assertLogs("app.services.meta_graph", level="WARNING") as logs:
+            graph.get("https://graph.facebook.com/v21.0/act_1/insights", params={"access_token": "secret-token"})
+
+        output = "\n".join(logs.output)
+        self.assertNotIn("secret-token", output)
 
 
 if __name__ == "__main__":
