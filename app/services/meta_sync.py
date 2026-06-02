@@ -21,6 +21,13 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models.ads_account import AdsAccount
 from app.core.config import settings
+from app.services.meta_graph import (
+    MetaGraphClient,
+    MetaRateLimitError,
+    MetaRequestContext,
+    is_rate_limit_response,
+    meta_error_payload,
+)
 from app.services.object_storage import put_bytes, public_url
 from app.services.meta_tracking import extrair_tracking_info
 
@@ -194,6 +201,9 @@ def _extrair_leads_por_canal(actions: list[dict]) -> tuple[int, int, int, int]:
 
 def _paginar(client: httpx.Client, url: str, params: dict, raise_on_terminal: bool = True) -> list[dict]:
     """Busca todas as páginas de um endpoint Meta."""
+    if hasattr(client, "paginate"):
+        return client.paginate(url, params, raise_on_terminal=raise_on_terminal)
+
     resultados: list[dict] = []
     current_url: str | None = url
     current_params: dict | None = params
@@ -547,14 +557,7 @@ def _fetch_adimages_by_hashes(
 
 def _e_throttle_meta(resp: httpx.Response) -> bool:
     """Detecta rate-limit da Graph API (por ad-account/usuário)."""
-    try:
-        err = resp.json().get("error", {})
-    except Exception:
-        return False
-    if int(err.get("code") or 0) in {17, 80004, 80000, 4}:
-        return True
-    msg = (err.get("message") or "").lower()
-    return any(s in msg for s in ("too many calls", "reduce the amount", "request limit reached"))
+    return is_rate_limit_response(resp)
 
 
 def _fetch_creative_thumbnails_hq_by_ids(
@@ -1310,13 +1313,7 @@ def _normalizar_status_meta(raw: Any, default: str = "ACTIVE") -> str:
 
 
 def _meta_erro_payload(resp: httpx.Response) -> tuple[dict[str, Any], str]:
-    try:
-        body = resp.json()
-        err = body.get("error", {}) if isinstance(body, dict) else {}
-    except Exception:
-        err = {}
-    mensagem = str(err.get("message") or resp.text[:200] or "").strip()
-    return err, mensagem
+    return meta_error_payload(resp)
 
 
 def _meta_erro_terminal(resp: httpx.Response) -> tuple[bool, str]:
@@ -2212,7 +2209,14 @@ def sincronizar_conta(
         "publicos": 0,
     }
 
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=60.0) as raw_client:
+        client = MetaGraphClient(
+            raw_client,
+            context=MetaRequestContext(
+                workspace_id=str(conta.workspace_id),
+                ad_account_id=meta_account_id,
+            ),
+        )
         _progress("balance", 5)
         resp_saldo = client.get(
             f"{META_BASE}/{meta_account_id}",
