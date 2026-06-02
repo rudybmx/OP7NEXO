@@ -56,6 +56,20 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
     media_obj  = inner.get("media") or {}
     caption    = inner.get("caption") or ""
 
+    # WAHA NOWEB não envia campo "type" — inferir pelo mimetype quando ausente
+    if has_media and (not waha_type or waha_type not in _WAHA_TYPE_TO_MSG_KEY):
+        mimetype_str = (media_obj.get("mimetype") or "").lower()
+        if mimetype_str.startswith("image/webp"):
+            waha_type = "sticker"
+        elif mimetype_str.startswith("image/"):
+            waha_type = "image"
+        elif mimetype_str.startswith("audio/"):
+            waha_type = "ptt"
+        elif mimetype_str.startswith("video/"):
+            waha_type = "video"
+        elif mimetype_str:
+            waha_type = "document"
+
     if has_media and waha_type in _WAHA_TYPE_TO_MSG_KEY:
         msg_key = _WAHA_TYPE_TO_MSG_KEY[waha_type]
         raw_url = media_obj.get("url") or inner.get("mediaUrl") or ""

@@ -167,6 +167,86 @@ def test_url_localhost_no_adapter(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Fallback por mimetype — WAHA NOWEB não envia campo "type"
+# ---------------------------------------------------------------------------
+
+def _make_waha_no_type(*, mimetype: str, url: str, filename: str | None = None) -> dict:
+    """Payload WAHA NOWEB real: hasMedia=True, media presente, campo type ausente."""
+    return {
+        "event": "message",
+        "session": "qozt",
+        "payload": {
+            "id": "FAKE002",
+            "from": "5511XXXXXXXX@s.whatsapp.net",
+            "fromMe": False,
+            "body": None,
+            "hasMedia": True,
+            # sem campo "type"
+            "media": {
+                "url": url,
+                "mimetype": mimetype,
+                "filename": filename,
+            },
+            "timestamp": 1_700_000_000,
+            "pushName": "Lead",
+        },
+    }
+
+
+def test_imagem_sem_type_usa_mimetype():
+    waha = _make_waha_no_type(mimetype="image/jpeg", url="http://minio:9000/waha/s/MSGID.jpeg")
+    adapted = adapt_waha_to_evolution(waha)
+    msg = adapted["data"]["message"]
+    assert "imageMessage" in msg, f"esperado imageMessage, got {list(msg.keys())}"
+    assert msg["imageMessage"]["mimetype"] == "image/jpeg"
+
+
+def test_audio_sem_type_usa_mimetype():
+    waha = _make_waha_no_type(mimetype="audio/ogg; codecs=opus", url="http://minio:9000/waha/s/MSGID.oga")
+    adapted = adapt_waha_to_evolution(waha)
+    msg = adapted["data"]["message"]
+    assert "audioMessage" in msg, f"esperado audioMessage, got {list(msg.keys())}"
+
+
+def test_documento_sem_type_usa_mimetype():
+    waha = _make_waha_no_type(
+        mimetype="application/pdf",
+        url="http://minio:9000/waha/s/MSGID.pdf",
+        filename="relatorio.pdf",
+    )
+    adapted = adapt_waha_to_evolution(waha)
+    msg = adapted["data"]["message"]
+    assert "documentMessage" in msg, f"esperado documentMessage, got {list(msg.keys())}"
+    assert msg["documentMessage"]["fileName"] == "relatorio.pdf"
+
+
+def test_webp_sem_type_vira_sticker():
+    waha = _make_waha_no_type(mimetype="image/webp", url="http://minio:9000/waha/s/MSGID.webp")
+    adapted = adapt_waha_to_evolution(waha)
+    msg = adapted["data"]["message"]
+    assert "stickerMessage" in msg, f"esperado stickerMessage, got {list(msg.keys())}"
+
+
+def test_video_sem_type_usa_mimetype():
+    waha = _make_waha_no_type(mimetype="video/mp4", url="http://minio:9000/waha/s/MSGID.mp4")
+    adapted = adapt_waha_to_evolution(waha)
+    msg = adapted["data"]["message"]
+    assert "videoMessage" in msg, f"esperado videoMessage, got {list(msg.keys())}"
+
+
+def test_type_presente_tem_prioridade_sobre_mimetype():
+    """Quando type está presente, ele tem prioridade (compatibilidade com versões que enviam type)."""
+    waha = _make_waha(
+        type_="document",
+        mimetype="image/jpeg",  # mimetype discrepante — type deve vencer
+        url="http://waha:3000/api/files/qozt/file.jpg",
+    )
+    adapted = adapt_waha_to_evolution(waha)
+    msg = adapted["data"]["message"]
+    assert "documentMessage" in msg
+
+
+# ---------------------------------------------------------------------------
 # Estrutura base (instância, remoteJid, fromMe)
 # ---------------------------------------------------------------------------
 
