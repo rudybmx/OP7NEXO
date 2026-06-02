@@ -19,7 +19,13 @@ from app.core.deps import exigir_platform_admin
 from app.models.ads_account import AdsAccount
 from app.models.sync_job import SyncJob
 from app.models.user import User
-from app.services.meta_sync import MetaContaInacessivelError, sincronizar_conta, reprocessar_imagens_hq_conta
+from app.services.meta_graph import MetaRateLimitError
+from app.services.meta_sync import (
+    MetaContaInacessivelError,
+    registrar_rate_limit_cooldown,
+    sincronizar_conta,
+    reprocessar_imagens_hq_conta,
+)
 from app.services.scheduler import scheduler
 from app.services.object_storage import get_object, stat_object
 from app.core.config import settings
@@ -353,6 +359,22 @@ def _run_sync_background(ads_account_id: str, job_id: str, modo_sync: str) -> No
             result = sincronizar_conta(ads_account_id, db, on_progress=_set, modo_sync=modo_sync)
             totais = result.get("totais") or {}
             _finalizar("done", totais=totais)
+        except MetaRateLimitError as exc:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            conta = db.get(AdsAccount, uuid.UUID(ads_account_id))
+            cooldown_until = None
+            if conta:
+                cooldown_until = registrar_rate_limit_cooldown(db, conta, exc)
+            _finalizar(
+                "error",
+                erro=(
+                    "Rate limit temporário da Meta. "
+                    f"Tente novamente após {cooldown_until.isoformat() if cooldown_until else 'o cooldown'}."
+                ),
+            )
         except MetaContaInacessivelError as exc:
             try:
                 db.rollback()

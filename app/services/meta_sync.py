@@ -67,10 +67,73 @@ RESULTADO_TRAFFIC_ACTIONS = {
 }
 
 SYNC_JOB_INTERRUPTED_ERROR = "Job interrompido por reinicialização do serviço"
+SYNC_LOCK_NOT_ACQUIRED = "sync já em execução para esta conta"
 
 
 class MetaContaInacessivelError(RuntimeError):
     """Erro terminal quando a conta Meta deixou de responder ao sync."""
+
+
+def _merge_meta_sync_config(conta: AdsAccount, updates: dict[str, Any]) -> None:
+    config = dict(conta.config or {})
+    meta_sync = dict(config.get("meta_sync") or {})
+    meta_sync.update(updates)
+    config["meta_sync"] = meta_sync
+    conta.config = config
+
+
+def registrar_rate_limit_cooldown(db: Session, conta: AdsAccount, exc: MetaRateLimitError) -> datetime:
+    now = datetime.now(timezone.utc)
+    seconds = max(
+        float(exc.cooldown_seconds or 0),
+        float(settings.META_SYNC_RATE_LIMIT_BASE_DELAY_SECONDS),
+    )
+    seconds = min(seconds, float(settings.META_SYNC_RATE_LIMIT_MAX_DELAY_SECONDS))
+    cooldown_until = now + timedelta(seconds=seconds)
+    _merge_meta_sync_config(
+        conta,
+        {
+            "cooldown_until": cooldown_until.isoformat(),
+            "cooldown_reason": "rate_limited",
+            "last_rate_limit_at": now.isoformat(),
+            "last_rate_limit_endpoint": exc.endpoint,
+            "last_rate_limit_error_code": exc.error_code,
+            "last_rate_limit_usage_percent": exc.usage_percent,
+        },
+    )
+    db.commit()
+    return cooldown_until
+
+
+def _cooldown_until(conta: AdsAccount) -> datetime | None:
+    meta_sync = (conta.config or {}).get("meta_sync") or {}
+    raw = meta_sync.get("cooldown_until")
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except Exception:
+        return None
+
+
+def _try_sync_lock(db: Session, ads_account_id: str) -> bool:
+    return bool(db.execute(
+        text("SELECT pg_try_advisory_lock(hashtext(:key))"),
+        {"key": f"meta_sync:{ads_account_id}"},
+    ).scalar())
+
+
+def _release_sync_lock(db: Session, ads_account_id: str) -> None:
+    try:
+        db.execute(
+            text("SELECT pg_advisory_unlock(hashtext(:key))"),
+            {"key": f"meta_sync:{ads_account_id}"},
+        )
+    except Exception:
+        pass
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -2167,6 +2230,33 @@ def sincronizar_conta(
     ads_account_id: str,
     db: Session,
     on_progress=None,  # callable(etapa: str, progresso: int) | None
+    modo_sync: str = "recorrente",
+) -> dict:
+    conta: AdsAccount | None = db.get(AdsAccount, ads_account_id)
+    if not conta:
+        raise ValueError(f"AdsAccount {ads_account_id} não encontrada")
+
+    if not _try_sync_lock(db, ads_account_id):
+        return {"skipped": True, "reason": SYNC_LOCK_NOT_ACQUIRED}
+
+    try:
+        cooldown_until = _cooldown_until(conta)
+        now = datetime.now(timezone.utc)
+        if cooldown_until and cooldown_until > now:
+            return {
+                "skipped": True,
+                "reason": "rate limit em cooldown",
+                "cooldown_until": cooldown_until.isoformat(),
+            }
+        return _sincronizar_conta_impl(ads_account_id, db, on_progress=on_progress, modo_sync=modo_sync)
+    finally:
+        _release_sync_lock(db, ads_account_id)
+
+
+def _sincronizar_conta_impl(
+    ads_account_id: str,
+    db: Session,
+    on_progress=None,
     modo_sync: str = "recorrente",
 ) -> dict:
     conta: AdsAccount | None = db.get(AdsAccount, ads_account_id)

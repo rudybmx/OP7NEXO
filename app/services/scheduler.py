@@ -1,5 +1,6 @@
 """APScheduler — roda sincronização Meta Ads 3x/dia."""
 import logging
+import time
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -7,7 +8,9 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.core.database import SessionLocal
 from app.models.ads_account import AdsAccount
-from app.services.meta_sync import MetaContaInacessivelError, sincronizar_conta
+from app.core.config import settings
+from app.services.meta_graph import MetaRateLimitError
+from app.services.meta_sync import MetaContaInacessivelError, registrar_rate_limit_cooldown, sincronizar_conta
 from app.services.whatsapp_event_worker import process_next_whatsapp_jobs
 
 log = logging.getLogger(__name__)
@@ -33,6 +36,17 @@ def _job_sync_todas_contas() -> None:
             try:
                 resultado = sincronizar_conta(str(conta.id), db)
                 log.info("Conta %s: %s", conta.account_id, resultado)
+            except MetaRateLimitError as exc:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                cooldown_until = registrar_rate_limit_cooldown(db, conta, exc)
+                log.warning(
+                    "Conta %s em cooldown por rate limit Meta até %s",
+                    conta.account_id,
+                    cooldown_until.isoformat(),
+                )
             except MetaContaInacessivelError as exc:
                 try:
                     db.rollback()
@@ -43,6 +57,10 @@ def _job_sync_todas_contas() -> None:
                 log.warning("Conta %s pausada após erro terminal no sync: %s", conta.account_id, exc)
             except Exception as exc:
                 log.exception("Erro sync conta %s: %s", conta.account_id, exc)
+            finally:
+                delay = max(float(settings.META_SYNC_ACCOUNT_DELAY_SECONDS), 0.0)
+                if delay:
+                    time.sleep(delay)
 
     log.info("Scheduler: sync concluído")
 
