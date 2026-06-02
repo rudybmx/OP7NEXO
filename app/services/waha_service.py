@@ -201,6 +201,42 @@ def baixar_midia(url: str, cfg: dict) -> tuple[bytes, str]:
         raise WahaError(f"WAHA baixar_midia: {exc}") from exc
 
 
+def enviar_mensagem_midia(
+    session: str,
+    cfg: dict,
+    chat_id: str,
+    tipo: str,
+    media_url: str,
+    mimetype: str,
+    filename: str | None = None,
+    caption: str | None = None,
+) -> dict[str, Any]:
+    """POST /api/sendImage (imagem) ou /api/sendFile (documento) via WAHA Plus."""
+    base_url, headers = _headers(cfg)
+    endpoint = "/api/sendImage" if tipo == "image" else "/api/sendFile"
+    file_body: dict[str, Any] = {"url": media_url, "mimetype": mimetype}
+    if filename:
+        file_body["filename"] = filename
+    body: dict[str, Any] = {"session": session, "chatId": chat_id, "file": file_body}
+    if caption:
+        body["caption"] = caption
+    try:
+        resp = httpx.post(
+            f"{base_url}{endpoint}",
+            headers=headers,
+            json=body,
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA {endpoint}: {exc.response.status_code} {exc.response.text[:200]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA {endpoint}: {exc}") from exc
+
+
 def parar_sessao(session: str, cfg: dict) -> dict[str, Any]:
     """POST /api/sessions/{session}/stop"""
     base_url, headers = _headers(cfg)

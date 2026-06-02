@@ -1089,20 +1089,27 @@ def _enviar_mensagem_waha(
     db: Session,
     usuario: "User",
 ) -> "EnviarMensagemOut":
-    """Envia mensagem de texto via WAHA Plus."""
+    """Envia mensagem de texto, imagem ou documento via WAHA Plus."""
+    from urllib.parse import urlparse, unquote
+    from datetime import timedelta
+    from app.services.object_storage import get_minio_client
+
     texto = (payload.texto or "").strip()
 
-    if payload.tipo != "texto" or payload.media_url:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="WAHA suporta apenas mensagens de texto neste momento.",
-        )
-    if not texto:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Texto obrigatório.")
+    # Validações de entrada
     if not payload.conversa_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="conversa_id obrigatório para envio WAHA.",
+        )
+    if payload.tipo == "texto" and not texto:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Texto obrigatório.")
+    if payload.tipo in ("image", "document") and not payload.media_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="media_url obrigatório para envio de mídia.")
+    if payload.tipo not in ("texto", "image", "document"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"WAHA: tipo '{payload.tipo}' não suportado nesta fase.",
         )
 
     # Resolve conversa + contato com verificação de multi-tenancy em ambas as tabelas
@@ -1138,13 +1145,82 @@ def _enviar_mensagem_waha(
     session, cfg = _waha_cfg(canal)
     instance     = session  # config.waha.session — espelha o inbound
 
-    try:
-        waha_resp = waha_service.enviar_mensagem_texto(session, cfg, chat_id, texto)
-    except waha_service.WahaError as exc:
-        logger.error("[canais] falha ao enviar mensagem WAHA canal=%s", canal.id)
-        raise HTTPException(status_code=502, detail=str(exc))
+    # ── Branch mídia (image / document) ──────────────────────────────────
+    if payload.media_url and payload.tipo in ("image", "document"):
+        BUCKET = "whatsapp-media"
+        URL_PREFIX = f"/meta/storage/{BUCKET}/"
 
-    provider_msg_id = str(waha_resp.get("id") or "").strip()
+        parsed    = urlparse(payload.media_url)
+        raw_path  = unquote(parsed.path)
+        if not raw_path.startswith(URL_PREFIX):
+            raise HTTPException(400, f"media_url deve ter path iniciando em {URL_PREFIX}")
+        object_key = raw_path[len(URL_PREFIX):]
+        if not object_key:
+            raise HTTPException(400, "object_key vazio extraído de media_url.")
+
+        minio_client = get_minio_client()
+
+        # Metadados reais via stat_object
+        try:
+            stat      = minio_client.stat_object(BUCKET, object_key)
+            real_size = stat.size or 0
+            stat_ct   = (stat.content_type or "").split(";")[0].strip()
+        except Exception:
+            real_size = 0
+            stat_ct   = ""
+
+        # Prioridade de mimetype
+        if stat_ct and stat_ct not in ("application/octet-stream", "binary/octet-stream", ""):
+            mimetype = stat_ct
+        else:
+            guessed, _ = mimetypes.guess_type(object_key)
+            if guessed:
+                mimetype = guessed
+            elif payload.tipo == "image":
+                mimetype = "image/jpeg"
+            else:
+                mimetype = "application/pdf" if object_key.lower().endswith(".pdf") else "application/octet-stream"
+
+        filename = os.path.basename(object_key)
+
+        # Presigned URL interna acessível pelo container WAHA (http://minio:9000)
+        presigned = minio_client.presigned_get_object(
+            BUCKET, object_key, expires=timedelta(minutes=10)
+        )
+
+        try:
+            waha_resp = waha_service.enviar_mensagem_midia(
+                session, cfg, chat_id, payload.tipo,
+                media_url=presigned,
+                mimetype=mimetype,
+                filename=filename,
+                caption=payload.caption or None,
+            )
+        except waha_service.WahaError as exc:
+            logger.error("[canais] falha ao enviar mídia WAHA canal=%s tipo=%s", canal.id, payload.tipo)
+            raise HTTPException(status_code=502, detail=str(exc))
+
+        provider_msg_id = str(waha_resp.get("id") or "").strip()
+        message_type    = "imageMessage" if payload.tipo == "image" else "documentMessage"
+        msg_conteudo    = payload.caption or "[mídia]"
+        media_status_val = "ready"
+
+    # ── Branch texto ──────────────────────────────────────────────────────
+    else:
+        try:
+            waha_resp = waha_service.enviar_mensagem_texto(session, cfg, chat_id, texto)
+        except waha_service.WahaError as exc:
+            logger.error("[canais] falha ao enviar mensagem WAHA canal=%s", canal.id)
+            raise HTTPException(status_code=502, detail=str(exc))
+
+        provider_msg_id  = str(waha_resp.get("id") or "").strip()
+        message_type     = "conversation"
+        msg_conteudo     = texto
+        media_status_val = None
+        object_key       = None
+        mimetype         = None
+        filename         = None
+        real_size        = 0
 
     # Atualiza conversa com multi-tenancy no WHERE
     db.execute(
@@ -1160,14 +1236,14 @@ def _enviar_mensagem_waha(
               AND canal_id     = CAST(:canal_id AS uuid)
         """),
         {
-            "msg":          texto[:500],
+            "msg":          msg_conteudo[:500],
             "cid":          str(conversa_id),
             "workspace_id": str(canal.workspace_id),
             "canal_id":     str(canal.id),
         },
     )
 
-    # Persiste mensagem — espelha padrão Evolution outbound (canais.py:1821-1822)
+    # Persiste mensagem
     msg_result = db.execute(
         text("""
             INSERT INTO public.crm_whatsapp_mensagens (
@@ -1181,7 +1257,7 @@ def _enviar_mensagem_waha(
                 CAST(:cid  AS uuid), CAST(:ct   AS uuid),
                 :evid, :inst, :jid,
                 'saida', true, 'agente', :rn,
-                :msg, 'conversation', 'enviada', NULL,
+                :msg, :mt, 'enviada', :ms,
                 NOW(), NOW(), NOW()
             ) RETURNING id
         """),
@@ -1194,10 +1270,36 @@ def _enviar_mensagem_waha(
             "inst":  instance,
             "jid":   remote_jid,
             "rn":    usuario.nome or usuario.email or "agente",
-            "msg":   texto,
+            "msg":   msg_conteudo,
+            "mt":    message_type,
+            "ms":    media_status_val,
         },
     )
     mensagem_id = msg_result.scalar()
+
+    # Persiste mídia (somente image/document)
+    if payload.media_url and payload.tipo in ("image", "document") and object_key:
+        stored_like = StoredMedia(
+            bucket="whatsapp-media",
+            object_key=object_key,
+            url=payload.media_url,
+            mimetype=mimetype or "application/octet-stream",
+            size=real_size,
+            sha256="",
+            filename=filename or object_key,
+            media_type=payload.tipo,
+        )
+        register_media_record(
+            db,
+            workspace_id=str(canal.workspace_id),
+            canal_id=str(canal.id),
+            conversa_id=str(conversa_id),
+            mensagem_id=str(mensagem_id),
+            stored=stored_like,
+            caption=payload.caption,
+            storage_status="ready",
+        )
+
     db.commit()
 
     try:
@@ -1207,9 +1309,9 @@ def _enviar_mensagem_waha(
             "conversaId":  str(conversa_id),
             "remoteJid":   remote_jid,
             "direction":   "saida",
-            "text":        texto,
+            "text":        msg_conteudo,
             "instance":    instance,
-            "messageType": "conversation",
+            "messageType": message_type,
             "timestamp":   datetime.now(timezone.utc).isoformat(),
         })
     except Exception as exc:
