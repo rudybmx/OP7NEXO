@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, Clock, FileText, PlayCircle, AlertCircle, User } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { CardRastreamento } from './card-rastreamento'
 import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
 
@@ -205,7 +206,95 @@ function getAvatarFallback(label: string) {
   return 'OP'
 }
 
-function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean) {
+function MediaImagem({
+  url,
+  alt,
+  onOpen,
+}: {
+  url: string
+  alt: string
+  onOpen: (url: string) => void
+}) {
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState(false)
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(url)}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onOpen(url) }}
+      style={{
+        position: 'relative',
+        cursor: 'pointer',
+        width: 260,
+        maxWidth: '100%',
+        borderRadius: 10,
+        overflow: 'hidden',
+        background: 'rgba(15,23,42,0.06)',
+        aspectRatio: loaded && !error ? 'auto' : '4/3',
+      }}
+    >
+      {!loaded && !error && (
+        <>
+          <div
+            className="animate-pulse"
+            style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.08)' }}
+          />
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <div
+              className="animate-spin"
+              style={{
+                width: 24,
+                height: 24,
+                border: '2.5px solid rgba(62,91,255,0.20)',
+                borderTopColor: 'rgba(62,91,255,0.80)',
+                borderRadius: '50%',
+              }}
+            />
+          </div>
+        </>
+      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt={alt}
+        onLoad={() => setLoaded(true)}
+        onError={() => { setLoaded(true); setError(true) }}
+        style={{
+          display: 'block',
+          width: '100%',
+          maxHeight: 260,
+          objectFit: 'cover',
+          borderRadius: 10,
+          opacity: loaded && !error ? 1 : 0,
+          transition: 'opacity 0.25s ease',
+        }}
+      />
+      {error && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 12,
+          color: 'rgba(15,23,42,0.45)',
+        }}>
+          Imagem indisponível
+        </div>
+      )}
+    </div>
+  )
+}
+
+function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpenLightbox: (url: string) => void) {
   const midias = msg.midias?.length
     ? msg.midias
     : msg.mediaUrl ? [{ id: `${msg.id}-media`, tipo: msg.messageType || 'document', url: msg.mediaUrl }] : []
@@ -232,14 +321,18 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean) {
         }
         if (tipo.includes('image') || tipo.includes('imagem')) {
           return (
-            <a key={media.id} href={url} target="_blank" rel="noopener noreferrer">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={url}
+            <div key={media.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <MediaImagem
+                url={url}
                 alt={media.caption || media.filename || 'Imagem da conversa'}
-                style={{ display: 'block', maxWidth: 260, maxHeight: 260, borderRadius: 10, objectFit: 'cover' }}
+                onOpen={onOpenLightbox}
               />
-            </a>
+              {media.caption && (
+                <span style={{ fontSize: 12, color: isEntrada ? '#64748b' : (isIA ? 'rgba(255,255,255,0.78)' : '#10203a') }}>
+                  {media.caption}
+                </span>
+              )}
+            </div>
           )
         }
         if (tipo.includes('audio')) {
@@ -276,6 +369,7 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean) {
 }
 
 export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef }: PainelChatProps) {
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
   const titulo = formatHeaderTitle(conversa)
   const telefone = formatPhoneLabel(conversa.contato.numeroEvo || conversa.contato.telefone || conversa.remoteJid)
@@ -648,12 +742,13 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                           @mention
                         </div>
                       )}
-                      {renderMidia(msg, isEntrada, isIA)}
-                      {msg.conteudo && (
-                        <div style={{ whiteSpace: 'pre-wrap' }}>
-                          {msg.conteudo}
-                        </div>
-                      )}
+                      {renderMidia(msg, isEntrada, isIA, setLightboxUrl)}
+                      {(() => {
+                        const temMidia = (msg.midias?.length ?? 0) > 0 || !!msg.mediaUrl
+                        const isPlaceholder = msg.conteudo?.trim() === '[mídia]'
+                        if (!msg.conteudo || (temMidia && isPlaceholder)) return null
+                        return <div style={{ whiteSpace: 'pre-wrap' }}>{msg.conteudo}</div>
+                      })()}
                       <div style={{
                         fontSize: 10,
                         color: footerColor,
@@ -700,6 +795,39 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
           <div ref={mensagensEndRef} />
         </div>
       </div>
+
+      <Dialog open={!!lightboxUrl} onOpenChange={open => { if (!open) setLightboxUrl(null) }}>
+        <DialogContent
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(10,14,26,0.96)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 16,
+            padding: 16,
+            maxWidth: '90vw',
+            width: 'fit-content',
+          }}
+        >
+          <DialogTitle className="sr-only">Visualização de imagem</DialogTitle>
+          <DialogDescription className="sr-only">Imagem ampliada da conversa</DialogDescription>
+          {lightboxUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={lightboxUrl}
+              alt="Visualização ampliada"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '80vh',
+                objectFit: 'contain',
+                borderRadius: 10,
+                display: 'block',
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
