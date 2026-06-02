@@ -289,7 +289,7 @@ def _load_inbound_media(payload: dict[str, Any]) -> tuple[bytes, str, str]:
             "api_key_ref":  waha_api_key_ref,
         }
         content, content_type = waha_service.baixar_midia(str(media_url), waha_cfg)
-        return content, content_type or mimetype, filename
+        return content, _prefer_specific_mimetype(content_type, mimetype), filename
     if media_url:
         with httpx.Client(timeout=60, follow_redirects=True) as client:
             resp = client.get(str(media_url))
@@ -307,6 +307,17 @@ def _load_inbound_media(payload: dict[str, Any]) -> tuple[bytes, str, str]:
         raise ValueError("Base64 de mídia vazio")
     raw_b64 = b64_data.split(",", 1)[1] if isinstance(b64_data, str) and b64_data.startswith("data:") and "," in b64_data else b64_data
     return base64.b64decode(raw_b64), info.get("mimetype") or mimetype, filename
+
+
+_GENERIC_CONTENT_TYPES = {"application/octet-stream", "binary/octet-stream"}
+
+
+def _prefer_specific_mimetype(response_ct: str | None, payload_mime: str | None) -> str:
+    """Return payload_mime when response Content-Type is generic or absent."""
+    ct = (response_ct or "").split(";", 1)[0].strip()
+    if ct and ct.lower() not in _GENERIC_CONTENT_TYPES:
+        return ct
+    return payload_mime or "application/octet-stream"
 
 
 def _safe_filename(filename: str) -> str:

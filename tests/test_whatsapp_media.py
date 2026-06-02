@@ -101,6 +101,23 @@ def test_enqueue_inbound_media_download_persists_pending_job():
     assert insert_params["payload"]
 
 
+def test_prefer_specific_mimetype_generic_response_uses_payload():
+    assert whatsapp_media._prefer_specific_mimetype("application/octet-stream", "image/jpeg") == "image/jpeg"
+
+
+def test_prefer_specific_mimetype_specific_response_wins():
+    assert whatsapp_media._prefer_specific_mimetype("image/png", "image/jpeg") == "image/png"
+
+
+def test_prefer_specific_mimetype_empty_response_uses_payload():
+    assert whatsapp_media._prefer_specific_mimetype(None, "application/pdf") == "application/pdf"
+    assert whatsapp_media._prefer_specific_mimetype("", "application/pdf") == "application/pdf"
+
+
+def test_prefer_specific_mimetype_specific_response_beats_generic_payload():
+    assert whatsapp_media._prefer_specific_mimetype("audio/ogg", "application/octet-stream") == "audio/ogg"
+
+
 class MediaQueueTests(unittest.TestCase):
     def test_enqueue_inbound_media_download_persists_pending_job(self):
         db = _MediaQueueDb()
