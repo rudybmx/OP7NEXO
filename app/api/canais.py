@@ -925,6 +925,11 @@ def _waha_chat_id(remote_jid: str) -> str:
     return jid
 
 
+def _waha_webhook_base_url() -> str:
+    """URL interna acessível pelo container WAHA (Docker bridge) para entrega de webhooks."""
+    return os.getenv("WAHA_INTERNAL_WEBHOOK_BASE_URL", "http://op7nexo-api:8000")
+
+
 def _extract_waha_message_id(resp: dict) -> str:
     """Extrai o ID da mensagem da resposta WAHA, tentando múltiplos caminhos."""
     if not isinstance(resp, dict):
@@ -977,7 +982,7 @@ def _conectar_waha(canal: CanalEntrada, db: Session) -> ConectarOut:
             raise HTTPException(status_code=502, detail=str(exc))
 
     # Configurar webhook
-    webhook_url = f"{_webhook_base_url()}/webhook/waha/{canal.webhook_token}"
+    webhook_url = f"{_waha_webhook_base_url()}/webhook/waha/{canal.webhook_token}"
     try:
         waha_service.configurar_webhook(session, webhook_url, cfg)
     except waha_service.WahaError as exc:
