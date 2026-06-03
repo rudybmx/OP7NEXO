@@ -310,6 +310,32 @@ def buscar_nome_grupo(session: str, group_jid: str, cfg: dict, timeout: float = 
         raise WahaError(f"WAHA groups: {type(exc).__name__}") from exc
 
 
+def buscar_lid_phone(session: str, lid_number: str, cfg: dict, timeout: float = 5.0) -> str | None:
+    """GET /api/{session}/lids/{lid_number} → telefone '55XXXXXXXXXX' ou None.
+    lid_number = parte numérica do JID @lid sem sufixo (ex: '108701612544046').
+    Requer NOWEB Store ativo na sessão.
+    """
+    base_url, headers = _headers(cfg)
+    try:
+        resp = httpx.get(
+            f"{base_url}/api/{session}/lids/{lid_number}",
+            headers=headers,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        if not resp.content:
+            return None
+        data = resp.json()
+        pn = (data.get("pn") or "").split("@")[0]
+        return pn if pn else None
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA lids: status={exc.response.status_code} endpoint=lids/{{lid}}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA lids: {type(exc).__name__}") from exc
+
+
 def parar_sessao(session: str, cfg: dict) -> dict[str, Any]:
     """POST /api/sessions/{session}/stop"""
     base_url, headers = _headers(cfg)

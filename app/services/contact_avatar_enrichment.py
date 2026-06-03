@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -17,8 +19,15 @@ logger = logging.getLogger(__name__)
 
 CONTACT_AVATAR_JOB_TYPE = "contact_avatar_enrichment"
 GROUP_ENRICHMENT_JOB_TYPE = "group_enrichment"
+LID_PHONE_ENRICHMENT_JOB_TYPE = "lid_phone_enrichment"
 AVATAR_TTL_DAYS = 7
 WAHA_STORE_DISABLED_MSG = "Enable NOWEB store"
+
+
+def _store_sessions() -> frozenset[str]:
+    """Sessões com NOWEB Store ativo (allowlist via env WAHA_STORE_SESSIONS)."""
+    raw = os.environ.get("WAHA_STORE_SESSIONS", "")
+    return frozenset(s.strip() for s in raw.split(",") if s.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -352,3 +361,135 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
     db.commit()
 
     return {"status": "done", "group_name": nome, "has_avatar": avatar_url is not None}
+
+
+# ---------------------------------------------------------------------------
+# LID phone enrichment — enqueue + process
+# ---------------------------------------------------------------------------
+
+
+def enqueue_lid_phone_enrichment(
+    db: Session,
+    *,
+    workspace_id: str,
+    canal_id: str,
+    contact_id: str,
+    jid: str,
+    instance: str,
+) -> bool:
+    """Enfileira busca de telefone BR real para contato @lid via WAHA Store.
+    Só enfileira se: jid @lid + session na allowlist + contato sem telefone BR real.
+    """
+    if "@lid" not in jid:
+        return False
+    if instance not in _store_sessions():
+        return False
+    if not (workspace_id and canal_id and contact_id):
+        return False
+    try:
+        row = db.execute(
+            text("""
+                SELECT telefone FROM public.crm_whatsapp_contatos
+                WHERE id = CAST(:cid AS uuid) AND workspace_id = CAST(:ws AS uuid)
+            """),
+            {"cid": contact_id, "ws": workspace_id},
+        ).mappings().first()
+        if row:
+            digits = re.sub(r"\D", "", row["telefone"] or "")
+            if digits.startswith("55") and len(digits) in (12, 13):
+                return False  # já tem telefone BR real
+        existing = db.execute(
+            text("""
+                SELECT 1 FROM public.crm_message_jobs
+                WHERE workspace_id = CAST(:ws AS uuid)
+                  AND job_type = :jt
+                  AND status IN ('pending', 'running')
+                  AND payload->>'contact_id' = :cid
+                  AND created_at >= NOW() - INTERVAL '7 days'
+                LIMIT 1
+            """),
+            {"ws": workspace_id, "jt": LID_PHONE_ENRICHMENT_JOB_TYPE, "cid": contact_id},
+        ).fetchone()
+        if existing:
+            return False
+        payload_json = json.dumps(
+            {"contact_id": contact_id, "jid": jid, "instance": instance, "canal_id": canal_id},
+            separators=(",", ":"),
+        )
+        db.execute(
+            text("""
+                INSERT INTO public.crm_message_jobs (
+                    workspace_id, canal_id, raw_event_id, related_message_id,
+                    job_type, status, priority, payload, created_at, updated_at, next_run_at
+                ) VALUES (
+                    CAST(:ws AS uuid), CAST(:canal AS uuid), NULL, NULL,
+                    :jt, 'pending', 1, CAST(:payload AS jsonb), NOW(), NOW(), NOW()
+                )
+            """),
+            {"ws": workspace_id, "canal": canal_id, "jt": LID_PHONE_ENRICHMENT_JOB_TYPE, "payload": payload_json},
+        )
+        return True
+    except Exception:
+        logger.exception("[lid-enqueue] falha workspace=%s", str(workspace_id)[:8])
+        return False
+
+
+def process_lid_phone_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, Any]:
+    payload = job.get("job_payload") or job.get("payload") or {}
+    workspace_id = str(job.get("workspace_id") or "")
+    contact_id = str(payload.get("contact_id") or "")
+    jid = str(payload.get("jid") or "")
+    canal_id = str(payload.get("canal_id") or "")
+    instance = str(payload.get("instance") or "")
+
+    if not (workspace_id and contact_id and jid and canal_id):
+        raise RuntimeError("Job lid_phone_enrichment incompleto")
+    if "@lid" not in jid:
+        return {"status": "skipped"}
+    if instance not in _store_sessions():
+        logger.info("[lid-enrich] skipped store_disabled session=%s", instance)
+        return {"status": "skipped"}
+
+    cfg = _load_canal_cfg(db, workspace_id=workspace_id, canal_id=canal_id)
+    if cfg is None:
+        raise RuntimeError(f"Canal não encontrado workspace={str(workspace_id)[:8]}")
+    session = cfg.get("session") or instance
+    if not session:
+        raise RuntimeError(f"Sessão WAHA não encontrada workspace={str(workspace_id)[:8]}")
+
+    lid_number = jid.split("@")[0]
+    try:
+        pn_digits = waha_service.buscar_lid_phone(session, lid_number, cfg, timeout=8.0)
+    except WahaError as exc:
+        logger.warning(
+            "[lid-enrich] falha session=%s workspace=%s err=%s",
+            session, str(workspace_id)[:8], type(exc).__name__,
+        )
+        raise
+
+    if not pn_digits:
+        return {"status": "skipped"}  # store não mapeou ainda — retry via worker
+
+    digits = re.sub(r"\D", "", pn_digits)
+    if not (digits.startswith("55") and len(digits) in (12, 13)):
+        logger.warning("[lid-enrich] pn_invalido session=%s len=%d", session, len(digits))
+        return {"status": "skipped"}
+
+    result = db.execute(
+        text("""
+            UPDATE public.crm_whatsapp_contatos
+            SET telefone = :tel, updated_at = NOW()
+            WHERE id = CAST(:cid AS uuid)
+              AND workspace_id = CAST(:ws AS uuid)
+              AND (telefone IS NULL OR NOT (telefone ~ '^55[0-9]{10,11}$'))
+        """),
+        {"tel": digits, "cid": contact_id, "ws": workspace_id},
+    )
+    updated_phone = (result.rowcount or 0) > 0
+    db.commit()
+
+    logger.info(
+        "[lid-enrich] done session=%s workspace=%s updated_phone=%s",
+        session, str(workspace_id)[:8], updated_phone,
+    )
+    return {"status": "done", "updated_phone": updated_phone}

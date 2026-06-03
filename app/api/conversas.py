@@ -46,6 +46,7 @@ class ConversaOut(BaseModel):
     group_avatar_url: str | None
     contato_nome: str | None
     contato_avatar_url: str | None
+    contato_telefone: str | None
     contato_campanha_origem: str | None
     contato_meta_headline: str | None
     contato_meta_body: str | None
@@ -165,6 +166,7 @@ def _conversa_out(c: Conversa) -> ConversaOut:
         group_avatar_url=c.group_avatar_url,
         contato_nome=c.contato.nome if c.contato else None,
         contato_avatar_url=c.contato.avatar_url if c.contato else None,
+        contato_telefone=c.contato.telefone if c.contato else None,
         contato_campanha_origem=c.contato.campanha_origem if c.contato else None,
         contato_meta_headline=c.contato.meta_headline if c.contato else None,
         contato_meta_body=c.contato.meta_body if c.contato else None,

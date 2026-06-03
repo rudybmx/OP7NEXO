@@ -139,6 +139,15 @@ def _process_job(job_id: str) -> str:
                     )
                 return "skipped" if status == "skipped" else "processed"
 
+            if job_type == "lid_phone_enrichment":
+                from app.services.contact_avatar_enrichment import process_lid_phone_enrichment_job
+                enrichment_job = dict(job)
+                enrichment_job["job_payload"] = enrichment_job.get("job_payload") or {}
+                result = process_lid_phone_enrichment_job(db, enrichment_job)
+                status = str(result.get("status") or "done")
+                _mark_done(db, job_id, str(job["event_id"] or ""), status=status)
+                return "skipped" if status == "skipped" else "processed"
+
             canal = db.query(CanalEntrada).filter(CanalEntrada.id == job["canal_id"]).first()
             if not canal:
                 raise RuntimeError(f"Canal não encontrado para job {job_id}")

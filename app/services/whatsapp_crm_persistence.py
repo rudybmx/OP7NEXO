@@ -47,6 +47,17 @@ def process_evolution_message(
     recebida_em = normalized.received_at
     instance = canal.evolution_instance_id or normalized.instance or "opcl"
     media_payload = normalized.media.model_dump()
+    has_media_file = bool(normalized.media.base64 or normalized.media.url)
+    is_waha_channel = getattr(canal, "tipo", "") == "whatsapp_waha"
+    should_enqueue_media = bool(normalized.media.is_media and (has_media_file or not is_waha_channel))
+    media_status = None
+    media_error = None
+    if normalized.media.is_media:
+        if should_enqueue_media:
+            media_status = "pending"
+        else:
+            media_status = "error"
+            media_error = normalized.media.error or "Mídia sem URL/base64 no payload do provedor"
     is_group = normalized.is_group
     sender_name = push_name
     msg_text = normalized.text
@@ -92,9 +103,21 @@ def process_evolution_message(
         message_hash=message_hash,
     )
     if duplicate and not from_me:
+        if normalized.media.is_media:
+            _merge_message_media_fields(
+                db,
+                mensagem_id=str(duplicate["id"]),
+                raw_event_id=raw_event_id_str,
+                message_type=message_type,
+                text_value=msg_text,
+                payload=data,
+                media_status=media_status,
+                media_error=media_error,
+            )
+            db.commit()
         logger.info("[webhook-process] Mensagem duplicada ignorada antes de atualizar conversa: %s", evolution_msg_id or message_hash)
         return _result(
-            is_media=False,
+            is_media=should_enqueue_media,
             mensagem_id=str(duplicate["id"]),
             conversa_id=str(duplicate["conversa_id"]),
             evolution_msg_id=evolution_msg_id,
@@ -138,9 +161,12 @@ def process_evolution_message(
         existing_contact_id=contato_id_existente,
     )
 
-    # Enfileirar busca de avatar (best-effort, fora do fluxo crítico)
+    # Enfileirar busca de avatar e telefone @lid (best-effort, fora do fluxo crítico)
     try:
-        from app.services.contact_avatar_enrichment import enqueue_contact_avatar_enrichment
+        from app.services.contact_avatar_enrichment import (
+            enqueue_contact_avatar_enrichment,
+            enqueue_lid_phone_enrichment,
+        )
         enqueue_contact_avatar_enrichment(
             db,
             workspace_id=workspace_id,
@@ -149,6 +175,15 @@ def process_evolution_message(
             jid=resolved_remote_jid,
             instance=instance,
         )
+        if "@lid" in resolved_remote_jid:
+            enqueue_lid_phone_enrichment(
+                db,
+                workspace_id=workspace_id,
+                canal_id=canal_id,
+                contact_id=str(contato_id),
+                jid=resolved_remote_jid,
+                instance=instance,
+            )
     except Exception:
         logger.warning("[avatar-enqueue] falha ao enfileirar workspace=%s", str(workspace_id)[:8])
 
@@ -202,7 +237,8 @@ def process_evolution_message(
         message_type=message_type,
         payload=data,
         received_at=recebida_em,
-        media_status="pending" if normalized.media.is_media and not from_me else None,
+        media_status=media_status,
+        media_error=media_error,
     )
 
     if has_lead_origin(lead_origem):
@@ -240,7 +276,7 @@ def process_evolution_message(
         logger.info("[webhook-process] REDIS FALHOU: %s", exc)
 
     return _result(
-        is_media=(normalized.media.is_media and not from_me),
+        is_media=should_enqueue_media,
         mensagem_id=str(mensagem_id) if mensagem_id else None,
         conversa_id=str(conversa_id),
         evolution_msg_id=evolution_msg_id,
@@ -341,6 +377,53 @@ def _find_existing_message(
         {"workspace_id": workspace_id, "canal_id": canal_id, "message_hash": message_hash},
     ).mappings().first()
     return dict(row) if row else None
+
+
+def _merge_message_media_fields(
+    db: Session,
+    *,
+    mensagem_id: str,
+    raw_event_id: str | None,
+    message_type: str,
+    text_value: str,
+    payload: dict[str, Any],
+    media_status: str | None,
+    media_error: str | None,
+) -> None:
+    if media_status is None and media_error is None:
+        return
+    db.execute(
+        text("""
+            UPDATE public.crm_whatsapp_mensagens
+            SET raw_event_id = COALESCE(CAST(:raw_event_id AS uuid), raw_event_id),
+                message_type = COALESCE(NULLIF(:message_type, ''), message_type),
+                conteudo = CASE
+                    WHEN COALESCE(conteudo, '') IN ('', '[mídia]') THEN COALESCE(NULLIF(:text_value, ''), conteudo)
+                    ELSE conteudo
+                END,
+                payload = CAST(:payload AS jsonb),
+                media_status = CASE
+                    WHEN media_status = 'ready' THEN media_status
+                    WHEN :media_status IS NOT NULL THEN :media_status
+                    ELSE media_status
+                END,
+                media_error = CASE
+                    WHEN media_status = 'ready' THEN media_error
+                    ELSE :media_error
+                END,
+                updated_at = NOW()
+            WHERE id = CAST(:mensagem_id AS uuid)
+        """),
+        {
+            "mensagem_id": mensagem_id,
+            "raw_event_id": raw_event_id,
+            "message_type": message_type,
+            "text_value": text_value,
+            "payload": json.dumps(payload),
+            "media_status": media_status,
+            "media_error": media_error,
+        },
+    )
 
 
 def _record_lead_origin_event(
@@ -662,6 +745,7 @@ def _upsert_message(
     payload: dict[str, Any],
     received_at: Any,
     media_status: str | None,
+    media_error: str | None,
 ) -> Any | None:
     if from_me:
         if evolution_msg_id:
@@ -701,6 +785,20 @@ def _upsert_message(
                         message_hash = :message_hash,
                         status = 'entregue',
                         payload = CAST(:payload AS jsonb),
+                        message_type = COALESCE(NULLIF(:mt, ''), message_type),
+                        conteudo = CASE
+                            WHEN COALESCE(conteudo, '') IN ('', '[mídia]') THEN COALESCE(NULLIF(:msg, ''), conteudo)
+                            ELSE conteudo
+                        END,
+                        media_status = CASE
+                            WHEN media_status = 'ready' THEN media_status
+                            WHEN :media_status IS NOT NULL THEN :media_status
+                            ELSE media_status
+                        END,
+                        media_error = CASE
+                            WHEN media_status = 'ready' THEN media_error
+                            ELSE :media_error
+                        END,
                         enviada_em = :ts,
                         updated_at = NOW()
                     WHERE id = :mid
@@ -710,6 +808,10 @@ def _upsert_message(
                     "raw_event_id": raw_event_id,
                     "message_hash": message_hash,
                     "payload": json.dumps(payload),
+                    "mt": message_type,
+                    "msg": text_value,
+                    "media_status": media_status,
+                    "media_error": media_error,
                     "ts": received_at,
                     "mid": str(msg_existente[0]),
                 },
@@ -725,14 +827,14 @@ def _upsert_message(
                 workspace_id, canal_id, raw_event_id, conversa_id, contato_id,
                 evolution_msg_id, message_hash, instance, remote_jid, direcao,
                 from_me, remetente_tipo, remetente_nome, conteudo, message_type,
-                status, payload, recebida_em, media_status, participant_jid, participant_name,
+                status, payload, recebida_em, media_status, media_error, participant_jid, participant_name,
                 is_mentioned, enviada_em, created_at, updated_at
             )
             VALUES (
                 CAST(:ws AS uuid), CAST(:canal AS uuid), CAST(:raw_event_id AS uuid), CAST(:cid AS uuid), CAST(:ct AS uuid),
                 :evid, :message_hash, :inst, :jid, :direction,
                 :from_me, :remetente_tipo, :rn, :msg, :mt,
-                :status, CAST(:payload AS jsonb), :ts, :media_status, :part_jid, :part_name,
+                :status, CAST(:payload AS jsonb), :ts, :media_status, :media_error, :part_jid, :part_name,
                 :is_mentioned, :sent_ts, NOW(), NOW()
             )
             ON CONFLICT DO NOTHING
@@ -759,6 +861,7 @@ def _upsert_message(
             "ts": None if from_me else received_at,
             "sent_ts": received_at if from_me else None,
             "media_status": media_status,
+            "media_error": media_error,
             "part_jid": participant_jid if is_group else None,
             "part_name": sender_name if is_group else None,
             "is_mentioned": is_mentioned,
@@ -774,6 +877,17 @@ def _upsert_message(
             evolution_msg_id=evolution_msg_id,
             message_hash=message_hash,
         )
+        if existing:
+            _merge_message_media_fields(
+                db,
+                mensagem_id=str(existing["id"]),
+                raw_event_id=raw_event_id,
+                message_type=message_type,
+                text_value=text_value,
+                payload=payload,
+                media_status=media_status,
+                media_error=media_error,
+            )
         return existing["id"] if existing else None
     return mensagem_id
 
@@ -841,6 +955,8 @@ def _result(
         "media_url": media_payload.get("url"),
         "media_mime_type": media_payload.get("mimetype"),
         "media_filename": media_payload.get("filename"),
+        "media_caption": media_payload.get("caption"),
+        "media_error": media_payload.get("error"),
     }
 
 
@@ -1000,6 +1116,7 @@ def process_evolution_webhook_event(
                     media_url=result.get("media_url"),
                     media_mime_type=result.get("media_mime_type"),
                     media_filename=result.get("media_filename"),
+                    media_caption=result.get("media_caption"),
                     waha_session=_waha_cfg.get("session"),
                     waha_api_base_url=_waha_cfg.get("api_base_url"),
                     waha_api_key_ref=_waha_cfg.get("api_key_ref"),
