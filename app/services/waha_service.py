@@ -211,9 +211,14 @@ def enviar_mensagem_midia(
     filename: str | None = None,
     caption: str | None = None,
 ) -> dict[str, Any]:
-    """POST /api/sendImage (imagem) ou /api/sendFile (documento) via WAHA Plus."""
+    """POST /api/sendImage (imagem), /api/sendVideo (vídeo) ou /api/sendFile (documento) via WAHA Plus."""
     base_url, headers = _headers(cfg)
-    endpoint = "/api/sendImage" if tipo == "image" else "/api/sendFile"
+    if tipo == "image":
+        endpoint = "/api/sendImage"
+    elif tipo == "video":
+        endpoint = "/api/sendVideo"
+    else:
+        endpoint = "/api/sendFile"
     file_body: dict[str, Any] = {"url": media_url, "mimetype": mimetype}
     if filename:
         file_body["filename"] = filename

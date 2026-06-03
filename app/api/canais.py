@@ -1104,9 +1104,9 @@ def _enviar_mensagem_waha(
         )
     if payload.tipo == "texto" and not texto:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Texto obrigatório.")
-    if payload.tipo in ("image", "document") and not payload.media_url:
+    if payload.tipo in ("image", "document", "video") and not payload.media_url:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="media_url obrigatório para envio de mídia.")
-    if payload.tipo not in ("texto", "image", "document"):
+    if payload.tipo not in ("texto", "image", "document", "video"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"WAHA: tipo '{payload.tipo}' não suportado nesta fase.",
@@ -1145,8 +1145,8 @@ def _enviar_mensagem_waha(
     session, cfg = _waha_cfg(canal)
     instance     = session  # config.waha.session — espelha o inbound
 
-    # ── Branch mídia (image / document) ──────────────────────────────────
-    if payload.media_url and payload.tipo in ("image", "document"):
+    # ── Branch mídia (image / document / video) ──────────────────────────
+    if payload.media_url and payload.tipo in ("image", "document", "video"):
         BUCKET = "whatsapp-media"
         URL_PREFIX = f"/meta/storage/{BUCKET}/"
 
@@ -1178,6 +1178,8 @@ def _enviar_mensagem_waha(
                 mimetype = guessed
             elif payload.tipo == "image":
                 mimetype = "image/jpeg"
+            elif payload.tipo == "video":
+                mimetype = "video/mp4"
             else:
                 mimetype = "application/pdf" if object_key.lower().endswith(".pdf") else "application/octet-stream"
 
@@ -1201,7 +1203,12 @@ def _enviar_mensagem_waha(
             raise HTTPException(status_code=502, detail=str(exc))
 
         provider_msg_id = str(waha_resp.get("id") or "").strip()
-        message_type    = "imageMessage" if payload.tipo == "image" else "documentMessage"
+        if payload.tipo == "image":
+            message_type = "imageMessage"
+        elif payload.tipo == "video":
+            message_type = "videoMessage"
+        else:
+            message_type = "documentMessage"
         msg_conteudo    = payload.caption or "[mídia]"
         media_status_val = "ready"
 
@@ -1278,7 +1285,7 @@ def _enviar_mensagem_waha(
     mensagem_id = msg_result.scalar()
 
     # Persiste mídia (somente image/document)
-    if payload.media_url and payload.tipo in ("image", "document") and object_key:
+    if payload.media_url and payload.tipo in ("image", "document", "video") and object_key:
         stored_like = StoredMedia(
             bucket="whatsapp-media",
             object_key=object_key,
