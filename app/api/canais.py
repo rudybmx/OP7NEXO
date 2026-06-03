@@ -925,6 +925,28 @@ def _waha_chat_id(remote_jid: str) -> str:
     return jid
 
 
+def _extract_waha_message_id(resp: dict) -> str:
+    """Extrai o ID da mensagem da resposta WAHA, tentando múltiplos caminhos."""
+    if not isinstance(resp, dict):
+        return ""
+    candidates = [
+        resp.get("id"),
+        (resp.get("key") or {}).get("id") if isinstance(resp.get("key"), dict) else None,
+        (resp.get("_data") or {}).get("id") if isinstance(resp.get("_data"), dict) else None,
+        (resp.get("message") or {}).get("id") if isinstance(resp.get("message"), dict) else None,
+    ]
+    data = resp.get("data")
+    if isinstance(data, dict):
+        key = data.get("key")
+        if isinstance(key, dict):
+            candidates.append(key.get("id"))
+    for value in candidates:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
 def _conectar_waha(canal: CanalEntrada, db: Session) -> ConectarOut:
     import time as _time
 
@@ -1203,7 +1225,7 @@ def _enviar_mensagem_waha(
             logger.error("[canais] falha ao enviar mídia WAHA canal=%s tipo=%s", canal.id, payload.tipo)
             raise HTTPException(status_code=502, detail=str(exc))
 
-        provider_msg_id = str(waha_resp.get("id") or "").strip()
+        provider_msg_id = _extract_waha_message_id(waha_resp)
         if payload.tipo == "image":
             message_type = "imageMessage"
         elif payload.tipo == "video":
@@ -1223,7 +1245,7 @@ def _enviar_mensagem_waha(
             logger.error("[canais] falha ao enviar mensagem WAHA canal=%s", canal.id)
             raise HTTPException(status_code=502, detail=str(exc))
 
-        provider_msg_id  = str(waha_resp.get("id") or "").strip()
+        provider_msg_id  = _extract_waha_message_id(waha_resp)
         message_type     = "conversation"
         msg_conteudo     = texto
         media_status_val = None
