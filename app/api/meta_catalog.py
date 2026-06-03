@@ -10,7 +10,10 @@ from app.core.database import get_db
 from app.core.deps import get_usuario_atual, verificar_acesso_workspace
 from app.models.user import User
 from app.services.ads_account_access import listar_ads_account_ids_acessiveis
-from app.services.object_storage import reescrever_carousel_urls
+from app.services.object_storage import (
+    reescrever_carousel_urls,
+    resolve_creative_image_url_hq,
+)
 from app.api.meta_delivery import (
     resolver_veiculacao_campanha,
     resolver_veiculacao_conjunto,
@@ -349,7 +352,7 @@ def catalogo_gerenciador(
 
     ad_rows = db.execute(
         text(
-            "SELECT ad.ad_id, ad.adset_id, ad.campaign_id, ad.nome, ad.effective_status AS status, "
+            "SELECT ad.ads_account_id::text AS ads_account_id, ad.ad_id, ad.adset_id, ad.campaign_id, ad.nome, ad.effective_status AS status, "
             "COALESCE(cr.tipo_criativo, 'IMAGE') AS tipo_criativo, "
             "cr.thumbnail_url, cr.image_url_hq, cr.link_anuncio, "
             "COALESCE(cr.creative_id, ad.creative_id, ad.ad_id) AS creative_id "
@@ -542,7 +545,11 @@ def catalogo_gerenciador(
             "creative_id": a["creative_id"],
             "tipo_criativo": a["tipo_criativo"],
             "thumbnail_url": a["thumbnail_url"],
-            "image_url_hq": a["image_url_hq"],
+            "image_url_hq": resolve_creative_image_url_hq(
+                a["image_url_hq"],
+                a.get("ads_account_id"),
+                a.get("creative_id"),
+            ),
             "link_anuncio": a["link_anuncio"],
             "spend": sp,
             "leads": ld,
@@ -859,6 +866,11 @@ def catalogo_criativos(
         data = dict(row)
         raw_payload = data.pop("raw_payload", None)
         utm_populated = data.get("utm_source") is not None or data.get("destination_url") is not None
+        data["image_url_hq"] = resolve_creative_image_url_hq(
+            data.get("image_url_hq"),
+            data.get("ads_account_id"),
+            data.get("creative_id"),
+        )
         if not utm_populated:
             if isinstance(raw_payload, str):
                 try:
@@ -874,6 +886,13 @@ def catalogo_criativos(
         if isinstance(carousel_cards, list):
             data["carousel_cards"] = reescrever_carousel_urls(
                 carousel_cards,
+                str(data.get("ads_account_id") or ""),
+                str(data.get("creative_id") or ""),
+            )
+        carousel_items = data.get("carousel_items")
+        if isinstance(carousel_items, list):
+            data["carousel_items"] = reescrever_carousel_urls(
+                carousel_items,
                 str(data.get("ads_account_id") or ""),
                 str(data.get("creative_id") or ""),
             )
@@ -911,4 +930,13 @@ def catalogo_videos(
         ),
         params,
     ).mappings().all()
-    return [dict(r) for r in rows]
+    result: list[dict] = []
+    for row in rows:
+        data = dict(row)
+        data["image_url_hq"] = resolve_creative_image_url_hq(
+            data.get("image_url_hq"),
+            data.get("ads_account_id"),
+            data.get("creative_id"),
+        )
+        result.append(data)
+    return result

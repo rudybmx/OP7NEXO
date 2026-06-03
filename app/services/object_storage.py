@@ -53,6 +53,43 @@ def public_url(bucket: str, object_name: str) -> str:
     return f"{base}/meta/storage/{bucket}/{object_name}"
 
 
+def is_legacy_storage_assinado_url(url: str | None) -> bool:
+    return bool(url and "/meta/storage-assinado" in str(url))
+
+
+def creative_object_name(ads_account_uuid: str, creative_id: str, extension: str = ".jpg") -> str:
+    ext = extension if extension.startswith(".") else f".{extension}"
+    return f"ads-accounts/{ads_account_uuid}/criativos/{creative_id}{ext}"
+
+
+def resolve_creative_image_url_hq(
+    image_url_hq: str | None,
+    ads_account_uuid: str | None,
+    creative_id: str | None,
+    *,
+    bucket: str | None = None,
+) -> str | None:
+    """Normaliza URLs legadas de criativos para o caminho estável do MinIO.
+
+    Se o valor já for estável, devolve como está. Se vier de
+    ``/meta/storage-assinado`` tenta reconstruir o caminho determinístico do
+    objeto no MinIO e devolve a URL pública correspondente. Se o objeto não
+    existir, retorna ``None`` para que o consumidor use o fallback já existente.
+    """
+    if not is_legacy_storage_assinado_url(image_url_hq):
+        return image_url_hq
+    if not ads_account_uuid or not creative_id:
+        return None
+
+    bucket_name = bucket or settings.MINIO_BUCKET_CRIATIVOS
+    object_name = creative_object_name(str(ads_account_uuid), str(creative_id))
+    try:
+        stat_object(bucket_name, object_name)
+    except Exception:
+        return None
+    return public_url(bucket_name, object_name)
+
+
 def get_object(bucket: str, object_name: str):
     client = get_minio_client()
     return client.get_object(bucket, object_name)

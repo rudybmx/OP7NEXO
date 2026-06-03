@@ -2,10 +2,11 @@ import unittest
 from unittest.mock import patch
 
 from app.core.config import settings
-from app.services.object_storage import public_url, reescrever_carousel_urls
+from app.services.object_storage import public_url, reescrever_carousel_urls, resolve_creative_image_url_hq
 from app.services.meta_sync import (
     _campanhas_publicos_relevantes,
     _carregar_objetivos_catalogo,
+    _carregar_hq_cache_imagens,
     _merge_hq_image_data,
     _meta_erro_terminal,
     _resolver_mapa_adimages_hq,
@@ -17,6 +18,7 @@ from app.services.meta_sync import (
     sincronizar_conta,
 )
 from app.services.meta_graph import MetaGraphClient, MetaRateLimitError
+from scripts.repair_meta_creative_image_urls import _build_candidates
 
 
 class _MappingResult:
@@ -297,7 +299,20 @@ class MetaSyncTests(unittest.TestCase):
         }
         conta = _FakeContaSync()
         db = _FakeDb()
-        totais = {"catalog_anuncios": 0}
+        totais = {
+            "catalog_campanhas": 0,
+            "catalog_conjuntos": 0,
+            "catalog_anuncios": 0,
+            "catalog_criativos": 0,
+            "catalog_videos": 0,
+            "catalog_videos_ignorados_permissao": 0,
+            "diarios": 0,
+            "campanhas": 0,
+            "anuncios": 0,
+            "publicos": 0,
+            "publicos_campanhas_processadas": 0,
+            "publicos_campanhas_puladas": 0,
+        }
 
         _sync_catalog_anuncios_criativos_videos(db=db, client=object(), conta=conta, account_id="act_1", token="token", totais=totais)
 
@@ -410,6 +425,104 @@ class MetaSyncTests(unittest.TestCase):
         self.assertEqual(result["hash-1"]["hq_source"], "adimage_minio")
         self.assertEqual(result["hash-2"]["hq_source"], "adimage")
 
+    @patch("app.services.meta_sync._fetch_adimages_by_hashes")
+    def test_resolver_mapa_adimages_hq_ignora_cache_legado_storage_assinado(self, mock_fetch):
+        db = _FakeDbByQuery({
+            "FROM meta_creatives_catalog": [
+                {
+                    "image_hash": "hash-1",
+                    "image_url_hq": "https://api.op7franquia.com.br/meta/storage-assinado?token=redacted",
+                    "meta_image_url_tmp": None,
+                    "meta_permalink_url": None,
+                    "original_width": 1200,
+                    "original_height": 628,
+                    "hq_source": "adimage_minio",
+                },
+                {
+                    "image_hash": "hash-2",
+                    "image_url_hq": "https://api.op7franquia.com.br/meta/storage/criativos-meta/ads-accounts/uuid-1/criativos/creative-2.jpg",
+                    "meta_image_url_tmp": None,
+                    "meta_permalink_url": None,
+                    "original_width": 1200,
+                    "original_height": 628,
+                    "hq_source": "adimage_minio",
+                },
+            ],
+            "FROM meta_creative_cards_catalog": [],
+        })
+        mock_fetch.return_value = {}
+
+        result = _resolver_mapa_adimages_hq(
+            object(),
+            db,
+            "act_1",
+            "token",
+            ["hash-1", "hash-2", "hash-3"],
+            "uuid-1",
+        )
+
+        self.assertEqual(mock_fetch.call_args.args[3], ["hash-1", "hash-3"])
+        self.assertEqual(result["hash-2"]["image_url_hq"], "https://api.op7franquia.com.br/meta/storage/criativos-meta/ads-accounts/uuid-1/criativos/creative-2.jpg")
+
+    def test_resolve_creative_image_url_hq_reescreve_legado_quando_objeto_existe(self):
+        with patch("app.services.object_storage.stat_object") as mock_stat:
+            mock_stat.return_value = object()
+            url = resolve_creative_image_url_hq(
+                "https://api.op7franquia.com.br/meta/storage-assinado?token=redacted",
+                "uuid-1",
+                "creative-1",
+            )
+
+        expected = public_url(
+            settings.MINIO_BUCKET_CRIATIVOS,
+            "ads-accounts/uuid-1/criativos/creative-1.jpg",
+        )
+        self.assertEqual(url, expected)
+
+    def test_resolve_creative_image_url_hq_retorna_none_quando_objeto_ausente(self):
+        with patch("app.services.object_storage.stat_object", side_effect=RuntimeError("missing")):
+            url = resolve_creative_image_url_hq(
+                "https://api.op7franquia.com.br/meta/storage-assinado?token=redacted",
+                "uuid-1",
+                "creative-1",
+            )
+
+        self.assertIsNone(url)
+
+    def test_repair_script_ignora_registro_sem_objeto_no_minio(self):
+        rows = [
+            {
+                "creative_id": "creative-1",
+                "ads_account_id": "uuid-1",
+                "image_url_hq": "https://api.op7franquia.com.br/meta/storage-assinado?token=redacted",
+                "hq_source": "adimage_minio",
+                "updated_at": "2026-06-03T12:00:00+00:00",
+            },
+            {
+                "creative_id": "creative-2",
+                "ads_account_id": "uuid-1",
+                "image_url_hq": "https://api.op7franquia.com.br/meta/storage-assinado?token=redacted",
+                "hq_source": "adimage_minio",
+                "updated_at": "2026-06-03T12:00:00+00:00",
+            },
+        ]
+
+        def stat_side_effect(bucket, object_name):
+            if object_name.endswith("creative-1.jpg"):
+                return type("Stat", (), {"size": 123, "content_type": "image/jpeg"})()
+            raise RuntimeError("missing")
+
+        with patch("scripts.repair_meta_creative_image_urls.stat_object", side_effect=stat_side_effect):
+            candidates, missing = _build_candidates(rows, settings.MINIO_BUCKET_CRIATIVOS)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(len(missing), 1)
+        self.assertEqual(candidates[0]["creative_id"], "creative-1")
+        self.assertEqual(candidates[0]["new_image_url_hq"], public_url(
+            settings.MINIO_BUCKET_CRIATIVOS,
+            "ads-accounts/uuid-1/criativos/creative-1.jpg",
+        ))
+
     def test_merge_hq_image_data_preserva_cache_minio_e_nao_rebaixa_para_thumbnail(self):
         creative = {
             "image_hashes": ["hash-1"],
@@ -471,6 +584,11 @@ class MetaSyncTests(unittest.TestCase):
                     }
                     for i in range(50)
                 },
+            ),
+            _FakeResponse(
+                400,
+                {"error": {"message": "Application does not have permission for this action", "code": 10}},
+                text="Application does not have permission for this action",
             ),
             _FakeResponse(
                 400,

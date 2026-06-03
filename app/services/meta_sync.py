@@ -969,6 +969,7 @@ def _carregar_hq_cache_imagens(db: Session, ads_account_uuid: str) -> dict[str, 
           AND image_hash IS NOT NULL
           AND image_url_hq IS NOT NULL
           AND COALESCE(hq_source, '') <> 'thumbnail_fallback'
+          AND COALESCE(image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
     """), {"ads_account_id": str(ads_account_uuid)}).mappings().all()
     for row in creative_rows:
         _registrar_hq_cache(
@@ -989,6 +990,7 @@ def _carregar_hq_cache_imagens(db: Session, ads_account_uuid: str) -> dict[str, 
           AND image_hash IS NOT NULL
           AND image_url_hq IS NOT NULL
           AND source_type = 'adimage'
+          AND COALESCE(image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
     """), {"ads_account_id": str(ads_account_uuid)}).mappings().all()
     for row in card_rows:
         _registrar_hq_cache(
@@ -2026,10 +2028,14 @@ def _sync_catalog_anuncios_criativos_videos(
                     image_url_hq = CASE
                         WHEN COALESCE(EXCLUDED.hq_source, '') <> 'thumbnail_fallback'
                              AND EXCLUDED.image_url_hq IS NOT NULL
+                             AND COALESCE(EXCLUDED.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
                             THEN EXCLUDED.image_url_hq
                         WHEN COALESCE(meta_creatives_catalog.hq_source, '') NOT IN ('', 'thumbnail_fallback')
+                             AND COALESCE(meta_creatives_catalog.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
                             THEN meta_creatives_catalog.image_url_hq
-                        ELSE EXCLUDED.image_url_hq
+                        WHEN COALESCE(EXCLUDED.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
+                            THEN EXCLUDED.image_url_hq
+                        ELSE NULL
                     END,
                     link_anuncio = EXCLUDED.link_anuncio,
                     carousel_items = EXCLUDED.carousel_items,
@@ -2041,10 +2047,14 @@ def _sync_catalog_anuncios_criativos_videos(
                     original_height = EXCLUDED.original_height,
                     hq_source = CASE
                         WHEN COALESCE(EXCLUDED.hq_source, '') <> 'thumbnail_fallback'
+                            AND COALESCE(EXCLUDED.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
                             THEN EXCLUDED.hq_source
                         WHEN COALESCE(meta_creatives_catalog.hq_source, '') NOT IN ('', 'thumbnail_fallback')
+                             AND COALESCE(meta_creatives_catalog.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
                             THEN meta_creatives_catalog.hq_source
-                        ELSE EXCLUDED.hq_source
+                        WHEN COALESCE(EXCLUDED.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
+                            THEN EXCLUDED.hq_source
+                        ELSE 'thumbnail_fallback'
                     END,
                     hq_last_resolved_at = EXCLUDED.hq_last_resolved_at,
                     headline = EXCLUDED.headline,
@@ -2114,17 +2124,25 @@ def _sync_catalog_anuncios_criativos_videos(
                         video_id = EXCLUDED.video_id,
                         image_url_hq = CASE
                             WHEN COALESCE(EXCLUDED.image_url_hq, '') LIKE '%/meta/storage/%'
+                                 AND COALESCE(EXCLUDED.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
                                 THEN EXCLUDED.image_url_hq
                             WHEN COALESCE(meta_creative_cards_catalog.image_url_hq, '') LIKE '%/meta/storage/%'
+                                 AND COALESCE(meta_creative_cards_catalog.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
                                 THEN meta_creative_cards_catalog.image_url_hq
-                            ELSE EXCLUDED.image_url_hq
+                            WHEN COALESCE(EXCLUDED.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
+                                THEN EXCLUDED.image_url_hq
+                            ELSE NULL
                         END,
                         source_type = CASE
                             WHEN COALESCE(EXCLUDED.image_url_hq, '') LIKE '%/meta/storage/%'
+                                 AND COALESCE(EXCLUDED.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
                                 THEN EXCLUDED.source_type
                             WHEN COALESCE(meta_creative_cards_catalog.image_url_hq, '') LIKE '%/meta/storage/%'
+                                 AND COALESCE(meta_creative_cards_catalog.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
                                 THEN meta_creative_cards_catalog.source_type
-                            ELSE EXCLUDED.source_type
+                            WHEN COALESCE(EXCLUDED.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
+                                THEN EXCLUDED.source_type
+                            ELSE 'thumbnail_fallback'
                         END,
                         link = EXCLUDED.link,
                         name = EXCLUDED.name,
@@ -2164,7 +2182,14 @@ def _sync_catalog_anuncios_criativos_videos(
                         campaign_id = EXCLUDED.campaign_id,
                         adset_id = EXCLUDED.adset_id,
                         thumbnail_url = EXCLUDED.thumbnail_url,
-                        image_url_hq = EXCLUDED.image_url_hq,
+                        image_url_hq = CASE
+                            WHEN COALESCE(EXCLUDED.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
+                                 AND EXCLUDED.image_url_hq IS NOT NULL
+                                THEN EXCLUDED.image_url_hq
+                            WHEN COALESCE(meta_videos_catalog.image_url_hq, '') NOT LIKE '%/meta/storage-assinado%'
+                                THEN meta_videos_catalog.image_url_hq
+                            ELSE NULL
+                        END,
                         source_url = EXCLUDED.source_url,
                         raw_payload = EXCLUDED.raw_payload,
                         last_seen_at = NOW()
@@ -3096,9 +3121,15 @@ def _sync_anuncios(
                 -- Guarda anti-regressão: HQ sempre é URL do MinIO (/meta/storage/).
                 -- Não trocar um HQ persistido por uma URL fbcdn crua (baixa qualidade).
                 image_url_hq  = CASE
-                    WHEN EXCLUDED.image_url_hq LIKE '%/meta/storage/%' THEN EXCLUDED.image_url_hq
-                    WHEN meta_anuncios_insights.image_url_hq LIKE '%/meta/storage/%' THEN meta_anuncios_insights.image_url_hq
-                    ELSE EXCLUDED.image_url_hq
+                    WHEN EXCLUDED.image_url_hq LIKE '%/meta/storage/%'
+                         AND EXCLUDED.image_url_hq NOT LIKE '%/meta/storage-assinado%'
+                        THEN EXCLUDED.image_url_hq
+                    WHEN meta_anuncios_insights.image_url_hq LIKE '%/meta/storage/%'
+                         AND meta_anuncios_insights.image_url_hq NOT LIKE '%/meta/storage-assinado%'
+                        THEN meta_anuncios_insights.image_url_hq
+                    WHEN EXCLUDED.image_url_hq NOT LIKE '%/meta/storage-assinado%'
+                        THEN EXCLUDED.image_url_hq
+                    ELSE NULL
                 END,
                 link_anuncio  = EXCLUDED.link_anuncio,
                 carousel_items = EXCLUDED.carousel_items,
