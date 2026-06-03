@@ -101,6 +101,24 @@ def _process_job(job_id: str) -> str:
                 _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
                 return "processed"
 
+            if job_type == "contact_avatar_enrichment":
+                from app.services.contact_avatar_enrichment import process_contact_avatar_enrichment_job
+                enrichment_job = dict(job)
+                enrichment_job["job_payload"] = enrichment_job.get("job_payload") or {}
+                result = process_contact_avatar_enrichment_job(db, enrichment_job)
+                status = str(result.get("status") or "done")
+                _mark_done(db, job_id, str(job["event_id"] or ""), status=status)
+                return "skipped" if status == "skipped" else "processed"
+
+            if job_type == "group_enrichment":
+                from app.services.contact_avatar_enrichment import process_group_enrichment_job
+                enrichment_job = dict(job)
+                enrichment_job["job_payload"] = enrichment_job.get("job_payload") or {}
+                result = process_group_enrichment_job(db, enrichment_job)
+                status = str(result.get("status") or "done")
+                _mark_done(db, job_id, str(job["event_id"] or ""), status=status)
+                return "skipped" if status == "skipped" else "processed"
+
             if job_type == "helena_session_enrichment":
                 enrichment_job = dict(job)
                 result = process_helena_session_enrichment_job(db, enrichment_job)

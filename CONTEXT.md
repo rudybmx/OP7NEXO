@@ -241,13 +241,20 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 ### ✅ Implementado (2026-05-28) — Workspaces do Usuário
 - `GET /me/workspaces` serializa `ativo`, `criado_em` e `padrao` em cada workspace para o seletor do frontend.
 
+### ✅ Implementado (2026-06-03) — Fase 1+2a: Identidade e avatares WhatsApp
+
+- `waha_service.py`: `buscar_avatar_chat(session, jid, cfg)` e `buscar_nome_grupo(session, group_jid, cfg)` via WAHA API
+- `contact_avatar_enrichment.py` (novo): jobs `contact_avatar_enrichment` e `group_enrichment`; TTL 7 dias; dedup por `avatar_fetched_at`; `@lid` ignorado sem NOWEB Store
+- `whatsapp_event_worker.py`: rota dos job_types `contact_avatar_enrichment` e `group_enrichment` para o módulo acima
+- `whatsapp_crm_persistence.py`: enfileira enrichment após upsert; fix `_upsert_contact` — nome só sobrescreve se anterior era JID raw; fix `process_evolution_receipt_event` — `instance` vem do payload WAHA (não `canal.evolution_instance_id`)
+
 ### ⏳ Em andamento / Próximas tarefas
-1. Filtro campaign_id + adset_id em Criativos
-2. Sync automático ao cadastrar conta
-3. Botão desativar conta na tabela Contas Ads
+1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
+2. Filtro campaign_id + adset_id em Criativos
+3. Sync automático ao cadastrar conta
 
 ### 🔴 Débito técnico conhecido
-- (adicionar aqui conforme identificado)
+- Contatos `@lid` nunca terão avatar sem NOWEB Store habilitado (esperado)
 
 ---
 

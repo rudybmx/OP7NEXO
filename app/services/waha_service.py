@@ -242,6 +242,50 @@ def enviar_mensagem_midia(
         raise WahaError(f"WAHA {endpoint}: {exc}") from exc
 
 
+def buscar_avatar_chat(session: str, jid: str, cfg: dict, timeout: float = 5.0) -> str | None:
+    """GET /api/{session}/chats/{jid}/picture → url str ou None."""
+    from urllib.parse import quote
+
+    base_url, headers = _headers(cfg)
+    jid_encoded = quote(str(jid), safe="")
+    try:
+        resp = httpx.get(
+            f"{base_url}/api/{session}/chats/{jid_encoded}/picture",
+            headers=headers,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json().get("url") or None
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA chats/picture: status={exc.response.status_code} body={exc.response.text[:150]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA chats/picture: {type(exc).__name__}") from exc
+
+
+def buscar_nome_grupo(session: str, group_jid: str, cfg: dict, timeout: float = 5.0) -> str | None:
+    """GET /api/{session}/groups/{group_jid} → subject str ou None."""
+    from urllib.parse import quote
+
+    base_url, headers = _headers(cfg)
+    jid_encoded = quote(str(group_jid), safe="")
+    try:
+        resp = httpx.get(
+            f"{base_url}/api/{session}/groups/{jid_encoded}",
+            headers=headers,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json().get("subject") or None
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA groups: status={exc.response.status_code} body={exc.response.text[:150]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA groups: {type(exc).__name__}") from exc
+
+
 def parar_sessao(session: str, cfg: dict) -> dict[str, Any]:
     """POST /api/sessions/{session}/stop"""
     base_url, headers = _headers(cfg)

@@ -137,6 +137,20 @@ def process_evolution_message(
         existing_contact_id=contato_id_existente,
     )
 
+    # Enfileirar busca de avatar (best-effort, fora do fluxo crítico)
+    try:
+        from app.services.contact_avatar_enrichment import enqueue_contact_avatar_enrichment
+        enqueue_contact_avatar_enrichment(
+            db,
+            workspace_id=workspace_id,
+            canal_id=canal_id,
+            contact_id=str(contato_id),
+            jid=resolved_remote_jid,
+            instance=instance,
+        )
+    except Exception:
+        logger.warning("[avatar-enqueue] falha ao enfileirar workspace=%s", str(workspace_id)[:8])
+
     conversa_id = _upsert_conversation(
         db,
         workspace_id=workspace_id,
@@ -149,6 +163,21 @@ def process_evolution_message(
         direction=direcao,
         received_at=recebida_em,
     )
+
+    # Enfileirar enriquecimento de grupo (best-effort)
+    if is_group:
+        try:
+            from app.services.contact_avatar_enrichment import enqueue_group_enrichment
+            enqueue_group_enrichment(
+                db,
+                workspace_id=workspace_id,
+                canal_id=canal_id,
+                conversa_id=str(conversa_id),
+                group_jid=resolved_remote_jid,
+                instance=instance,
+            )
+        except Exception:
+            logger.warning("[group-enqueue] falha ao enfileirar workspace=%s", str(workspace_id)[:8])
 
     mensagem_id = _upsert_message(
         db,
@@ -453,11 +482,15 @@ def _upsert_contact(
             text("""
                 UPDATE public.crm_whatsapp_contatos
                 SET push_name = COALESCE(:push, push_name),
-                    nome = COALESCE(:nome, nome),
+                    nome = CASE
+                        WHEN :push IS NOT NULL AND (nome IS NULL OR nome = telefone)
+                        THEN :push
+                        ELSE nome
+                    END,
                     updated_at = NOW()
                 WHERE id = :cid
             """),
-            {"push": push_name or None, "nome": push_name or None, "cid": str(existing_contact_id)},
+            {"push": push_name or None, "cid": str(existing_contact_id)},
         )
         return existing_contact_id
 
@@ -479,8 +512,14 @@ def _upsert_contact(
                 NOW(), NOW()
             )
             ON CONFLICT (workspace_id, jid) DO UPDATE SET
-                nome = COALESCE(EXCLUDED.nome, public.crm_whatsapp_contatos.nome),
                 push_name = COALESCE(EXCLUDED.push_name, public.crm_whatsapp_contatos.push_name),
+                nome = CASE
+                    WHEN EXCLUDED.push_name IS NOT NULL
+                         AND (public.crm_whatsapp_contatos.nome IS NULL
+                              OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.telefone)
+                    THEN EXCLUDED.push_name
+                    ELSE COALESCE(public.crm_whatsapp_contatos.nome, EXCLUDED.nome)
+                END,
                 numero_evo = COALESCE(NULLIF(EXCLUDED.numero_evo, ''), public.crm_whatsapp_contatos.numero_evo),
                 campanha_origem = COALESCE(public.crm_whatsapp_contatos.campanha_origem, EXCLUDED.campanha_origem),
                 utm_source = COALESCE(public.crm_whatsapp_contatos.utm_source, EXCLUDED.utm_source),
@@ -809,7 +848,9 @@ def process_evolution_receipt_event(
     from datetime import datetime, timezone
 
     event_norm = normalize_event_type(event)
-    receipt = normalize_receipt_event(data, event_norm, instance=canal.evolution_instance_id or "opcl")
+    # Para canais WAHA, evolution_instance_id é NULL — a sessão vem no payload adaptado.
+    instance = data.get("instance") or canal.evolution_instance_id or "opcl"
+    receipt = normalize_receipt_event(data, event_norm, instance=instance)
 
     if not receipt.message_ids or not receipt.status:
         logger.info("[webhook-status] ABORTANDO: evolution_msg_id ou status vazio")
@@ -818,11 +859,11 @@ def process_evolution_receipt_event(
     message_ids = list(dict.fromkeys(sorted(receipt.message_ids)))
     wa_status = receipt.status
     remote_jid = receipt.remote_jid
-    instance = canal.evolution_instance_id or "opcl"
     timestamp = datetime.now(timezone.utc)
 
+    updated_count = 0
     for evolution_msg_id in message_ids:
-        db.execute(
+        result = db.execute(
             text("""
                 UPDATE public.crm_whatsapp_mensagens
                 SET wa_status = :status,
@@ -831,13 +872,21 @@ def process_evolution_receipt_event(
                     updated_at = NOW()
                 WHERE evolution_msg_id = :evid
                   AND instance = :inst
+                  AND workspace_id = :ws_id
             """),
-            {"status": wa_status, "evid": evolution_msg_id, "inst": instance},
+            {"status": wa_status, "evid": evolution_msg_id, "inst": instance, "ws_id": str(canal.workspace_id)},
         )
+        if result.rowcount == 0:
+            logger.warning(
+                "[webhook-status] 0 rows updated evid=%.12s inst=%s ws=%s status=%s",
+                evolution_msg_id, instance, str(canal.workspace_id)[:8], wa_status,
+            )
+        else:
+            updated_count += result.rowcount
 
     db.commit()
 
-    logger.info("[webhook-status] msg_ids=%s status=%s", message_ids, wa_status)
+    logger.info("[webhook-status] msg_ids=%s status=%s updated=%d", message_ids, wa_status, updated_count)
 
     try:
         for evolution_msg_id in message_ids:
