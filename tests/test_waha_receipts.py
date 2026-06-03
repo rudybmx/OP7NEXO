@@ -12,9 +12,17 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.waha_normalizer import _map_waha_ack_to_status, adapt_waha_to_evolution
+from app.services.waha_normalizer import (
+    _map_waha_ack_to_status,
+    _waha_short_msg_id,
+    adapt_waha_to_evolution,
+)
 from app.services.whatsapp_normalizer import normalize_receipt_event
-from app.api.canais import _extract_waha_message_id, _status_allows_update
+from app.api.canais import (
+    _extract_waha_message_id,
+    _resolve_receipt_instance,
+    _status_allows_update,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -190,3 +198,116 @@ def test_extract_waha_message_id(resp, expected):
     assert _extract_waha_message_id(resp) == expected, (
         f"_extract_waha_message_id({resp}) esperado {expected!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Grupo 5 — _waha_short_msg_id (normalização de full WA ID)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw,expected", [
+    # full WA ID com true_ → extrai parte depois do último _
+    ("true_35210880090140@lid_3EB09C2DB39C7685CE4BE1", "3EB09C2DB39C7685CE4BE1"),
+    # full WA ID com false_
+    ("false_35210880090140@s.whatsapp.net_3EB0ABC123", "3EB0ABC123"),
+    # ID simples sem prefixo → não modifica
+    ("3EB09C2DB39C7685CE4BE1", "3EB09C2DB39C7685CE4BE1"),
+    # ID vazio → retorna vazio
+    ("", ""),
+    # ID com _ mas não começando com true_/false_ → não modifica
+    ("some_other_id", "some_other_id"),
+    # ID apenas true_ sem mais _ (borda) → retorna intacto (não tem _ depois do prefixo)
+    ("true_nounderscore", "true_nounderscore"),
+])
+def test_waha_short_msg_id(raw, expected):
+    assert _waha_short_msg_id(raw) == expected, (
+        f"_waha_short_msg_id({raw!r}) esperado {expected!r}"
+    )
+
+
+def test_adapt_ack_usa_short_id():
+    """adapt_waha_to_evolution com full WA ID deve retornar o short ID em data.key.id."""
+    waha = {
+        "event": "message.ack",
+        "session": "op7-test",
+        "payload": {
+            "id": "true_35210880090140@lid_3EB09C2DB39C7685CE4BE1",
+            "from": "35210880090140@lid",
+            "fromMe": True,
+            "ack": 3,
+            "ackName": "READ",
+            "chatId": "35210880090140@lid",
+        },
+    }
+    adapted = adapt_waha_to_evolution(waha)
+    assert adapted["data"]["key"]["id"] == "3EB09C2DB39C7685CE4BE1"
+
+
+def test_adapt_ack_id_simples_nao_modifica():
+    """ID sem prefixo true_/false_ não deve ser modificado."""
+    waha = {
+        "event": "message.ack",
+        "session": "op7-test",
+        "payload": {
+            "id": "3EB09C2DB39C7685CE4BE1",
+            "from": "35210880090140@lid",
+            "fromMe": True,
+            "ack": 2,
+        },
+    }
+    adapted = adapt_waha_to_evolution(waha)
+    assert adapted["data"]["key"]["id"] == "3EB09C2DB39C7685CE4BE1"
+
+
+# ---------------------------------------------------------------------------
+# Grupo 6 — _resolve_receipt_instance
+# ---------------------------------------------------------------------------
+
+class _FakeCanal:
+    def __init__(self, evolution_instance_id=None):
+        self.evolution_instance_id = evolution_instance_id
+
+
+def test_resolve_instance_from_payload():
+    canal = _FakeCanal(evolution_instance_id=None)
+    assert _resolve_receipt_instance({"instance": "op7-5bb27244"}, canal) == "op7-5bb27244"
+
+
+def test_resolve_instance_from_canal():
+    canal = _FakeCanal(evolution_instance_id="evo-instance")
+    assert _resolve_receipt_instance({}, canal) == "evo-instance"
+
+
+def test_resolve_instance_fallback_opcl():
+    canal = _FakeCanal(evolution_instance_id=None)
+    assert _resolve_receipt_instance({}, canal) == "opcl"
+
+
+def test_resolve_instance_payload_tem_prioridade():
+    canal = _FakeCanal(evolution_instance_id="evo-instance")
+    assert _resolve_receipt_instance({"instance": "waha-session"}, canal) == "waha-session"
+
+
+# ---------------------------------------------------------------------------
+# Grupo 2b atualizado — pipeline com short ID
+# ---------------------------------------------------------------------------
+
+def test_ack_pipeline_short_id_read():
+    """Pipeline completo com full WA ID → normalize_receipt_event extrai short ID."""
+    waha_payload = {
+        "event": "message.ack",
+        "session": "op7-test",
+        "payload": {
+            "id": "true_35210880090140@lid_3EB0TESTID001ABCDEF",
+            "from": "35210880090140@lid",
+            "fromMe": True,
+            "ack": 3,
+            "ackName": "READ",
+            "chatId": "35210880090140@lid",
+        },
+    }
+    adapted = adapt_waha_to_evolution(waha_payload)
+    assert adapted["event"] == "messages.update"
+
+    receipt = normalize_receipt_event(adapted, adapted["event"], instance="op7-test")
+    assert "3EB0TESTID001ABCDEF" in receipt.message_ids
+    assert receipt.status == "read"

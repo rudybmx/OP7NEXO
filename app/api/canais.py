@@ -3270,6 +3270,14 @@ def _processar_mensagem_evolution(
 _STATUS_RANK: dict[str, int] = {"pending": 1, "sent": 2, "delivered": 3, "read": 4}
 
 
+def _resolve_receipt_instance(data: dict, canal: CanalEntrada) -> str:
+    """Resolve a instância para lookup de receipt.
+    Prioridade: payload["instance"] > canal.evolution_instance_id > fallback "opcl".
+    Para canais WAHA, evolution_instance_id é NULL; o payload traz a session WAHA.
+    """
+    return data.get("instance") or canal.evolution_instance_id or "opcl"
+
+
 def _status_allows_update(current: str | None, new: str) -> bool:
     """Retorna True se `new` pode sobrescrever `current`.
 
@@ -3297,7 +3305,8 @@ def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict, eve
     from sqlalchemy import text
 
     event_norm = _normalizar_evento_evolution(event)
-    receipt = normalize_receipt_event(data, event_norm, instance=canal.evolution_instance_id or "opcl")
+    instance   = _resolve_receipt_instance(data, canal)
+    receipt = normalize_receipt_event(data, event_norm, instance=instance)
 
     if not receipt.message_ids or not receipt.status:
         logger.info("[webhook-status] ABORTANDO: evolution_msg_id ou status vazio")
@@ -3306,7 +3315,6 @@ def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict, eve
     message_ids = receipt.message_ids
     wa_status = receipt.status
     remote_jid = receipt.remote_jid
-    instance = canal.evolution_instance_id or "opcl"
     timestamp = datetime.now(timezone.utc)
 
     updated_ids: list[str] = []
@@ -3325,7 +3333,7 @@ def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict, eve
                 current_status, wa_status, evolution_msg_id,
             )
             continue
-        db.execute(
+        result = db.execute(
             text("""
                 UPDATE public.crm_whatsapp_mensagens
                 SET wa_status = :status,
@@ -3337,7 +3345,13 @@ def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict, eve
             """),
             {"status": wa_status, "evid": evolution_msg_id, "inst": instance},
         )
-        updated_ids.append(evolution_msg_id)
+        if result.rowcount > 0:
+            updated_ids.append(evolution_msg_id)
+        else:
+            logger.debug(
+                "[webhook-status] 0 rows updated evid=%.8s inst=%s status=%s",
+                evolution_msg_id, instance, wa_status,
+            )
 
     if not updated_ids:
         logger.debug("[webhook-status] nenhum update aplicado msg_ids=%s status=%s", message_ids, wa_status)

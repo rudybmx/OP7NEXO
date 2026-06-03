@@ -64,6 +64,20 @@ def _map_waha_ack_to_status(ack: int | None, ack_name: str | None) -> str | None
     return None
 
 
+def _waha_short_msg_id(raw_id: str) -> str:
+    """Extrai o short message ID do full WA ID WAHA NOWEB.
+
+    Full WA ID format: "true_JID_SHORTID" ou "false_JID_SHORTID".
+    Só normaliza se o sufixo após 'true_'/'false_' ainda contiver '_'
+    (ou seja, formato real true_JID_SHORTID). IDs simples são retornados intactos.
+    """
+    if raw_id.startswith(("true_", "false_")):
+        suffix = raw_id.split("_", 1)[1]   # parte após o prefixo
+        if "_" in suffix:                   # confirma estrutura JID_SHORTID
+            return raw_id.rsplit("_", 1)[-1]
+    return raw_id
+
+
 def _normalize_waha_media_url(url: str) -> str:
     """Substitui scheme+netloc quando a URL vem de localhost/127.0.0.1."""
     base = os.getenv("WAHA_API_BASE_URL", "http://waha:3000")
@@ -98,9 +112,12 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
     if (waha.get("event") or "").lower() == "message.ack":
         ack_val  = inner.get("ack")
         ack_name = inner.get("ackName")
+        # WAHA NOWEB envia full WA ID: "true_JID_SHORTID" — normalizar para short ID
+        # que é o que o sendText/sendImage armazena no banco (evolution_msg_id).
+        ack_msg_id = _waha_short_msg_id(msg_id)
         logger.debug(
             "[waha-ack] event=%s ack=%s ackName=%s has_id=%s",
-            waha.get("event"), ack_val, ack_name, bool(msg_id),
+            waha.get("event"), ack_val, ack_name, bool(ack_msg_id),
         )
         ack_status = _map_waha_ack_to_status(ack_val, ack_name)
         if ack_status is None:
@@ -109,7 +126,7 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
         return {
             "data": {
                 "key": {
-                    "id": msg_id,
+                    "id": ack_msg_id,
                     "remoteJid": remote_jid,
                     "fromMe": bool(from_me),
                 },
