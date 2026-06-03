@@ -102,7 +102,7 @@ def configurar_webhook(session: str, webhook_url: str, cfg: dict) -> dict[str, A
             "webhooks": [
                 {
                     "url": webhook_url,
-                    "events": ["message", "session.status"],
+                    "events": ["message", "message.ack", "session.status"],
                 }
             ]
         }

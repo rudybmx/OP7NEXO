@@ -945,10 +945,15 @@ def _extract_waha_message_id(resp: dict) -> str:
         key = data.get("key")
         if isinstance(key, dict):
             candidates.append(key.get("id"))
+    # WAHA NOWEB sendImage/sendFile pode retornar resp["id"] como dict {"id": "3EB0..."}
+    raw_id = resp.get("id")
+    if isinstance(raw_id, dict):
+        candidates.append(raw_id.get("id"))
     for value in candidates:
-        text = str(value or "").strip()
-        if text:
-            return text
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                return text
     return ""
 
 
@@ -1230,6 +1235,12 @@ def _enviar_mensagem_waha(
             logger.error("[canais] falha ao enviar mídia WAHA canal=%s tipo=%s", canal.id, payload.tipo)
             raise HTTPException(status_code=502, detail=str(exc))
 
+        logger.debug(
+            "[canais] waha-media-resp tipo=%s keys=%s id_type=%s",
+            payload.tipo,
+            list(waha_resp.keys()) if waha_resp else [],
+            type(waha_resp.get("id")).__name__,
+        )
         provider_msg_id = _extract_waha_message_id(waha_resp)
         if payload.tipo == "image":
             message_type = "imageMessage"
@@ -3256,6 +3267,30 @@ def _processar_mensagem_evolution(
     return process_evolution_message(db, canal, data, raw_event_id=raw_event_id)
 
 
+_STATUS_RANK: dict[str, int] = {"pending": 1, "sent": 2, "delivered": 3, "read": 4}
+
+
+def _status_allows_update(current: str | None, new: str) -> bool:
+    """Retorna True se `new` pode sobrescrever `current`.
+
+    Regras:
+    - read nunca regride
+    - delivered não regride para sent/pending
+    - failed só sobrescreve pending/sent/None
+    - failed não é sobrescrito por sent/delivered/read (falha confirmada é permanente)
+    - status desconhecido não atualiza
+    """
+    if new == "failed":
+        return current in (None, "pending", "sent")
+    if current == "failed":
+        return False
+    new_rank = _STATUS_RANK.get(new)
+    if new_rank is None:
+        return False
+    current_rank = _STATUS_RANK.get(current or "pending", 0)
+    return new_rank > current_rank
+
+
 def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict, event: str = "") -> None:
     """Processa evento de receipt/status para atualizar entrega/leitura."""
     from datetime import datetime, timezone
@@ -3274,7 +3309,22 @@ def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict, eve
     instance = canal.evolution_instance_id or "opcl"
     timestamp = datetime.now(timezone.utc)
 
+    updated_ids: list[str] = []
     for evolution_msg_id in dict.fromkeys(message_ids):
+        row = db.execute(
+            text(
+                "SELECT wa_status FROM public.crm_whatsapp_mensagens "
+                "WHERE evolution_msg_id = :evid AND instance = :inst"
+            ),
+            {"evid": evolution_msg_id, "inst": instance},
+        ).fetchone()
+        current_status = row[0] if row else None
+        if not _status_allows_update(current_status, wa_status):
+            logger.debug(
+                "[webhook-status] ignorando regressão %s → %s evid=%.8s",
+                current_status, wa_status, evolution_msg_id,
+            )
+            continue
         db.execute(
             text("""
                 UPDATE public.crm_whatsapp_mensagens
@@ -3287,13 +3337,19 @@ def _processar_status_mensagem(db: Session, canal: CanalEntrada, data: dict, eve
             """),
             {"status": wa_status, "evid": evolution_msg_id, "inst": instance},
         )
+        updated_ids.append(evolution_msg_id)
+
+    if not updated_ids:
+        logger.debug("[webhook-status] nenhum update aplicado msg_ids=%s status=%s", message_ids, wa_status)
+        db.rollback()
+        return
 
     db.commit()
 
-    logger.info("[webhook-status] msg_ids=%s status=%s", message_ids, wa_status)
+    logger.info("[webhook-status] msg_ids=%s status=%s", updated_ids, wa_status)
 
     try:
-        for evolution_msg_id in dict.fromkeys(message_ids):
+        for evolution_msg_id in updated_ids:
             publish_whatsapp_event({
                 "type": "message.status",
                 "workspaceId": str(canal.workspace_id),

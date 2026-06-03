@@ -9,8 +9,11 @@ e cai de volta para a raiz como fallback.
 
 from __future__ import annotations
 
+import logging
 import os
 from urllib.parse import urlparse, urlunparse
+
+logger = logging.getLogger(__name__)
 
 _WAHA_TYPE_TO_MSG_KEY: dict[str, str] = {
     "image":    "imageMessage",
@@ -22,6 +25,43 @@ _WAHA_TYPE_TO_MSG_KEY: dict[str, str] = {
     "file":     "documentMessage",
     "sticker":  "stickerMessage",
 }
+
+# ACK codes WAHA Plus NOWEB → status interno
+_WAHA_ACK_NAME_MAP: dict[str, str] = {
+    "error":     "failed",
+    "pending":   "pending",
+    "server":    "sent",
+    "device":    "delivered",
+    "read":      "read",
+    "played":    "read",
+}
+
+_WAHA_ACK_INT_MAP: dict[int, str] = {
+    -1: "failed",
+    0:  "pending",
+    1:  "sent",
+    2:  "delivered",
+    3:  "read",
+    4:  "read",
+}
+
+
+def _map_waha_ack_to_status(ack: int | None, ack_name: str | None) -> str | None:
+    """Converte ACK WAHA em status interno. Retorna None se não reconhecido.
+
+    ackName tem prioridade sobre o int (mais robusto a variações de versão).
+    """
+    name = str(ack_name or "").strip().lower()
+    if name:
+        mapped = _WAHA_ACK_NAME_MAP.get(name)
+        if mapped:
+            return mapped
+    if ack is not None:
+        try:
+            return _WAHA_ACK_INT_MAP.get(int(ack))
+        except (TypeError, ValueError):
+            pass
+    return None
 
 
 def _normalize_waha_media_url(url: str) -> str:
@@ -39,6 +79,9 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
 
     WAHA Plus noweb: campos em waha["payload"]["from"], waha["payload"]["body"], etc.
     Fallback flat: campos direto na raiz (formato legado).
+
+    Trata também evento message.ack, retornando messages.update compatível com
+    normalize_receipt_event() para atualização de status de entrega/leitura.
     """
     inner = waha.get("payload") or waha
 
@@ -51,6 +94,32 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
     from_me    = inner.get("fromMe") if inner.get("fromMe") is not None else waha.get("fromMe", False)
     session    = waha.get("session") or inner.get("_sessionName") or waha.get("_sessionName", "waha")
 
+    # ── Branch message.ack — receipt de entrega/leitura ──────────────────────
+    if (waha.get("event") or "").lower() == "message.ack":
+        ack_val  = inner.get("ack")
+        ack_name = inner.get("ackName")
+        logger.debug(
+            "[waha-ack] event=%s ack=%s ackName=%s has_id=%s",
+            waha.get("event"), ack_val, ack_name, bool(msg_id),
+        )
+        ack_status = _map_waha_ack_to_status(ack_val, ack_name)
+        if ack_status is None:
+            logger.warning("[waha-ack] ack desconhecido ack=%s ackName=%s", ack_val, ack_name)
+            return {"event": "messages.ack_unknown", "instance": session}
+        return {
+            "data": {
+                "key": {
+                    "id": msg_id,
+                    "remoteJid": remote_jid,
+                    "fromMe": bool(from_me),
+                },
+                "status": ack_status,
+            },
+            "event": "messages.update",
+            "instance": session,
+        }
+
+    # ── Branch mensagem (texto / mídia) ──────────────────────────────────────
     has_media = bool(inner.get("hasMedia"))
     waha_type  = str(inner.get("type") or "").lower()
     media_obj  = inner.get("media") or {}
