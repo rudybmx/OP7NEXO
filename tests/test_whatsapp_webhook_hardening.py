@@ -155,6 +155,14 @@ class _PersistenceDb:
             row = self.messages_by_evolution_id.get(params.get("evid")) or self.messages_by_hash.get(params.get("message_hash"))
             if row:
                 self.message_params_by_id[row["id"]].update(params)
+                if "mt" in params:
+                    self.message_params_by_id[row["id"]]["message_type"] = params["mt"]
+            return _Result(rowcount=1 if row else 0)
+
+        if "UPDATE public.crm_whatsapp_mensagens" in sql and "media_status" in sql:
+            row = self.message_params_by_id.get(str(params.get("mensagem_id")))
+            if row:
+                row.update(params)
             return _Result(rowcount=1 if row else 0)
 
         if "INSERT INTO public.crm_whatsapp_mensagens" in sql:
@@ -395,6 +403,41 @@ def _build_waha_manual_outbound_payload(raw_id: str = "true_554788888888@c.us_3E
     )
 
 
+def _build_waha_manual_outbound_media_payload(
+    raw_id: str = "true_554788888888@c.us_3EB0MEDIA001",
+    *,
+    url: str | None = "http://minio:9000/waha/op7-waha/3EB0MEDIA001.jpeg",
+):
+    media: dict[str, object] = {
+        "mimetype": "image/jpeg",
+        "filename": "foto.jpeg",
+    }
+    if url is not None:
+        media["url"] = url
+    else:
+        media["error"] = "media download disabled"
+    return adapt_waha_to_evolution(
+        {
+            "event": "message.any",
+            "session": "op7-waha",
+            "payload": {
+                "id": raw_id,
+                "from": "554799999999@c.us",
+                "to": "554788888888@c.us",
+                "chatId": "554788888888@c.us",
+                "fromMe": True,
+                "body": "[mídia]",
+                "caption": "Foto manual",
+                "hasMedia": True,
+                "type": "image",
+                "media": media,
+                "timestamp": 1_780_515_900,
+                "pushName": "Atendimento",
+            },
+        }
+    )
+
+
 def test_webhook_evolution_responde_rapido_e_preserva_workspace_do_canal(monkeypatch):
     canal = SimpleNamespace(
         id=uuid.uuid4(),
@@ -542,6 +585,103 @@ def test_process_waha_message_any_from_me_cria_outbound_sem_envio_previo(monkeyp
     assert published and published[0]["direction"] == "saida"
 
 
+def test_process_waha_message_any_from_me_com_midia_enfileira_download(monkeypatch):
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        evolution_instance_id=None,
+        numero_telefone="554799999999",
+        tipo="whatsapp_waha",
+        config={"waha": {"session": "op7-waha", "api_base_url": "http://waha:3000", "api_key_ref": "waha_key"}},
+    )
+    db = _PersistenceDb()
+    payload = _build_waha_manual_outbound_media_payload()
+
+    monkeypatch.setattr(whatsapp_crm_persistence, "extract_lead_origin", lambda *args, **kwargs: {})
+    monkeypatch.setattr(whatsapp_crm_persistence, "has_lead_origin", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(whatsapp_crm_persistence, "_resolve_lid_contact", lambda *args, **kwargs: (kwargs["remote_jid"], None))
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_participant_contact", lambda *args, **kwargs: None)
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_contact", lambda *args, **kwargs: "contact-1")
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_conversation", lambda *args, **kwargs: "conversation-1")
+    monkeypatch.setattr(whatsapp_crm_persistence, "publish_whatsapp_event", lambda event: None)
+
+    enqueued = []
+    monkeypatch.setattr(
+        whatsapp_crm_persistence,
+        "enqueue_inbound_media_download",
+        lambda db_arg, **kwargs: enqueued.append(kwargs) or True,
+    )
+
+    result = whatsapp_crm_persistence.process_evolution_webhook_event(
+        db,
+        canal,
+        "messages.upsert",
+        deepcopy(payload),
+        raw_event_id="event-media-1",
+    )
+
+    assert result["status"] == "done"
+    assert result["result"]["from_me"] is True
+    assert result["result"]["is_media"] is True
+    inserted_params = db.message_params_by_id[result["result"]["mensagem_id"]]
+    assert inserted_params["from_me"] is True
+    assert inserted_params["media_status"] == "pending"
+    assert inserted_params["sent_ts"] is not None
+    assert inserted_params["ts"] is None
+    assert enqueued
+    assert enqueued[0]["media_url"] == "http://minio:9000/waha/op7-waha/3EB0MEDIA001.jpeg"
+    assert enqueued[0]["media_mime_type"] == "image/jpeg"
+    assert enqueued[0]["media_filename"] == "foto.jpeg"
+    assert enqueued[0]["media_caption"] == "Foto manual"
+    assert enqueued[0]["waha_session"] == "op7-waha"
+    assert db.commits == 2
+
+
+def test_process_waha_message_any_from_me_midia_sem_url_registra_erro_sem_job(monkeypatch):
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        evolution_instance_id=None,
+        numero_telefone="554799999999",
+        tipo="whatsapp_waha",
+        config={"waha": {"session": "op7-waha"}},
+    )
+    db = _PersistenceDb()
+    payload = _build_waha_manual_outbound_media_payload(url=None)
+
+    monkeypatch.setattr(whatsapp_crm_persistence, "extract_lead_origin", lambda *args, **kwargs: {})
+    monkeypatch.setattr(whatsapp_crm_persistence, "has_lead_origin", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(whatsapp_crm_persistence, "_resolve_lid_contact", lambda *args, **kwargs: (kwargs["remote_jid"], None))
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_participant_contact", lambda *args, **kwargs: None)
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_contact", lambda *args, **kwargs: "contact-1")
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_conversation", lambda *args, **kwargs: "conversation-1")
+    monkeypatch.setattr(whatsapp_crm_persistence, "publish_whatsapp_event", lambda event: None)
+
+    enqueued = []
+    monkeypatch.setattr(
+        whatsapp_crm_persistence,
+        "enqueue_inbound_media_download",
+        lambda db_arg, **kwargs: enqueued.append(kwargs) or True,
+    )
+
+    result = whatsapp_crm_persistence.process_evolution_webhook_event(
+        db,
+        canal,
+        "messages.upsert",
+        deepcopy(payload),
+        raw_event_id="event-media-no-url-1",
+    )
+
+    assert result["status"] == "done"
+    assert result["result"]["from_me"] is True
+    assert result["result"]["is_media"] is False
+    inserted_params = db.message_params_by_id[result["result"]["mensagem_id"]]
+    assert inserted_params["media_status"] == "error"
+    assert inserted_params["media_error"] == "media download disabled"
+    assert enqueued == []
+    assert db.commits == 1
+
+
 def test_message_e_message_any_mesmo_id_nao_duplica(monkeypatch):
     canal = SimpleNamespace(
         id=uuid.uuid4(),
@@ -567,6 +707,47 @@ def test_message_e_message_any_mesmo_id_nao_duplica(monkeypatch):
     assert first["result"]["mensagem_id"] == second["result"]["mensagem_id"]
     assert len(db.messages_by_evolution_id) == 1
     assert len(db.messages_by_hash) == 1
+
+
+def test_message_any_duplicado_mesmo_id_mescla_midia_sem_duplicar(monkeypatch):
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        evolution_instance_id=None,
+        numero_telefone="554799999999",
+        tipo="whatsapp_waha",
+        config={"waha": {"session": "op7-waha", "api_base_url": "http://waha:3000", "api_key_ref": "waha_key"}},
+    )
+    db = _PersistenceDb()
+    payload_text = _build_waha_manual_outbound_payload("true_554788888888@c.us_3EB0MEDIA001")
+    payload_media = _build_waha_manual_outbound_media_payload("true_554788888888@c.us_3EB0MEDIA001")
+
+    monkeypatch.setattr(whatsapp_crm_persistence, "extract_lead_origin", lambda *args, **kwargs: {})
+    monkeypatch.setattr(whatsapp_crm_persistence, "has_lead_origin", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(whatsapp_crm_persistence, "_resolve_lid_contact", lambda *args, **kwargs: (kwargs["remote_jid"], None))
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_participant_contact", lambda *args, **kwargs: None)
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_contact", lambda *args, **kwargs: "contact-1")
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_conversation", lambda *args, **kwargs: "conversation-1")
+    monkeypatch.setattr(whatsapp_crm_persistence, "publish_whatsapp_event", lambda event: None)
+
+    enqueued = []
+    monkeypatch.setattr(
+        whatsapp_crm_persistence,
+        "enqueue_inbound_media_download",
+        lambda db_arg, **kwargs: enqueued.append(kwargs) or True,
+    )
+
+    first = whatsapp_crm_persistence.process_evolution_webhook_event(db, canal, "messages.upsert", deepcopy(payload_text))
+    second = whatsapp_crm_persistence.process_evolution_webhook_event(db, canal, "messages.upsert", deepcopy(payload_media))
+
+    assert first["result"]["mensagem_id"] == second["result"]["mensagem_id"]
+    assert len(db.messages_by_evolution_id) == 1
+    assert len(db.messages_by_hash) == 1
+    stored = db.message_params_by_id[first["result"]["mensagem_id"]]
+    assert stored["media_status"] == "pending"
+    assert stored["message_type"] == "imageMessage"
+    assert enqueued
+    assert enqueued[0]["mensagem_id"] == first["result"]["mensagem_id"]
 
 
 def test_message_ack_sem_mensagem_nao_cria_e_nao_falha(monkeypatch):
@@ -649,6 +830,52 @@ def test_process_evolution_webhook_event_media_enfileira_download(monkeypatch):
     assert enqueued[0]["media_base64"] == "Zm9v"
     assert db.commits == 2
     assert published and published[0]["type"] == "message.upsert"
+
+
+def test_process_evolution_media_sem_url_continua_enfileirando_fallback(monkeypatch):
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        evolution_instance_id="op7-instance",
+        numero_telefone="5511999999999",
+        tipo="whatsapp_evolution",
+    )
+    db = _PersistenceDb()
+    payload = _build_media_message_payload()
+    payload["data"]["Message"].pop("base64", None)
+    payload["data"]["Message"]["imageMessage"].pop("URL", None)
+
+    monkeypatch.setattr(whatsapp_crm_persistence, "extract_lead_origin", lambda *args, **kwargs: {})
+    monkeypatch.setattr(whatsapp_crm_persistence, "has_lead_origin", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(whatsapp_crm_persistence, "_resolve_lid_contact", lambda *args, **kwargs: (kwargs["remote_jid"], None))
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_participant_contact", lambda *args, **kwargs: None)
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_contact", lambda *args, **kwargs: "contact-1")
+    monkeypatch.setattr(whatsapp_crm_persistence, "_upsert_conversation", lambda *args, **kwargs: "conversation-1")
+    monkeypatch.setattr(whatsapp_crm_persistence, "publish_whatsapp_event", lambda event: None)
+
+    enqueued = []
+    monkeypatch.setattr(
+        whatsapp_crm_persistence,
+        "enqueue_inbound_media_download",
+        lambda db_arg, **kwargs: enqueued.append(kwargs) or True,
+    )
+
+    result = whatsapp_crm_persistence.process_evolution_webhook_event(
+        db,
+        canal,
+        "Message",
+        deepcopy(payload),
+        raw_event_id="event-fallback-1",
+    )
+
+    assert result["status"] == "done"
+    assert result["result"]["is_media"] is True
+    inserted_params = db.message_params_by_id[result["result"]["mensagem_id"]]
+    assert inserted_params["media_status"] == "pending"
+    assert inserted_params["media_error"] is None
+    assert enqueued
+    assert enqueued[0]["media_url"] is None
+    assert enqueued[0]["media_base64"] is None
 
 
 def test_process_evolution_receipt_event_atualiza_status_da_mensagem_outbound(monkeypatch):

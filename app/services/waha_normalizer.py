@@ -189,6 +189,8 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
                 "caption":  caption,
             }
         }
+        if media_obj.get("error"):
+            message[msg_key]["error"] = str(media_obj.get("error"))
     else:
         message = {"conversation": msg_text}
 

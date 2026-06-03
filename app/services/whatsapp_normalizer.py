@@ -48,6 +48,7 @@ class WhatsAppMediaPayload(BaseModel):
     mimetype: str = "application/octet-stream"
     filename: str | None = None
     caption: str | None = None
+    error: str | None = None
     is_media: bool = False
 
 
@@ -195,6 +196,7 @@ def normalize_media_payload(payload: dict[str, Any] | None) -> WhatsAppMediaPayl
     base64_value = pick("base64", "Base64", "data", "mediaBase64")
     url = pick("mediaUrl", "mediaURL", "URL", "url", "Url", "downloadUrl", "downloadURL")
     caption = pick("caption", "Caption", "text", "body")
+    error = pick("error", "Error", "mediaError", "media_error")
     message_type = normalize_message_type(payload)
     return WhatsAppMediaPayload(
         base64=str(base64_value) if base64_value not in (None, "") else None,
@@ -202,6 +204,7 @@ def normalize_media_payload(payload: dict[str, Any] | None) -> WhatsAppMediaPayl
         mimetype=str(pick("mimetype", "mimeType", "mime_type", "contentType") or "application/octet-stream"),
         filename=_optional_str(pick("fileName", "filename", "name", "file_name")),
         caption=_optional_str(caption),
+        error=_optional_str(error),
         is_media=message_type in (*MEDIA_MESSAGE_KEYS, "media") or bool(base64_value or url),
     )
 

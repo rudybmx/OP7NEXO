@@ -55,6 +55,7 @@ def enqueue_inbound_media_download(
     media_url: str | None = None,
     media_mime_type: str | None = None,
     media_filename: str | None = None,
+    media_caption: str | None = None,
     waha_session: str | None = None,
     waha_api_base_url: str | None = None,
     waha_api_key_ref: str | None = None,
@@ -62,8 +63,14 @@ def enqueue_inbound_media_download(
     db.execute(
         text("""
             UPDATE public.crm_whatsapp_mensagens
-            SET media_status = 'pending',
-                media_error = NULL,
+            SET media_status = CASE
+                    WHEN media_status = 'ready' THEN media_status
+                    ELSE 'pending'
+                END,
+                media_error = CASE
+                    WHEN media_status = 'ready' THEN media_error
+                    ELSE NULL
+                END,
                 updated_at = NOW()
             WHERE id = CAST(:mensagem_id AS uuid)
         """),
@@ -103,6 +110,7 @@ def enqueue_inbound_media_download(
                     "media_url": media_url,
                     "media_mime_type": media_mime_type,
                     "media_filename": media_filename,
+                    "caption": media_caption,
                     "waha_session": waha_session,
                     "waha_api_base_url": waha_api_base_url,
                     "waha_api_key_ref": waha_api_key_ref,
