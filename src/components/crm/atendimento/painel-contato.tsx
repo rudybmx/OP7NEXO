@@ -5,6 +5,16 @@ import { CalendarClock, Phone, User, Users, MessageSquare, X } from 'lucide-reac
 import type { ConversaApi } from '@/hooks/use-conversas'
 import { useCrmFollowups } from '@/hooks/use-crm-followups'
 
+function formatPhoneDisplay(value?: string | null): string | null {
+  if (!value) return null
+  const digits = value.replace(/\D/g, '')
+  if (!digits.startsWith('55') || digits.length < 12) return null
+  const ddd = digits.slice(2, 4)
+  const local = digits.slice(4)
+  if (local.length > 8) return `+55 ${ddd} ${local.slice(0, local.length - 4)}-${local.slice(-4)}`
+  return `+55 ${ddd} ${local}`
+}
+
 interface PainelContatoProps {
   conversa: ConversaApi
   workspaceId?: string
@@ -146,29 +156,51 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
         {/* Header do contato */}
         <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--ws-divider)', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-            <div style={{
-              width: 52,
-              height: 52,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 14,
-              fontWeight: 700,
-              color: 'white',
-              flexShrink: 0,
-            }}>
-              {conversa.contato.nome.slice(0, 2).toUpperCase()}
-            </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ws-text-1)', lineHeight: 1.2 }}>
-                {conversa.contato.nome}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 3 }}>
-                {conversa.contato.telefone}
-              </div>
-            </div>
+            {(() => {
+              const avatarSrc = conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato?.avatarUrl
+              const displayName = conversa.isGroup
+                ? (conversa.groupName || conversa.contato.nome)
+                : conversa.contato.nome
+              const initials = (() => {
+                const nome = displayName || ''
+                const hasLetters = /[A-Za-zÀ-ɏ]/.test(nome)
+                return hasLetters
+                  ? nome.split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+                  : '?'
+              })()
+              return (
+                <>
+                  <div style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: 'white',
+                    flexShrink: 0,
+                    overflow: 'hidden',
+                  }}>
+                    {avatarSrc
+                      ? <img src={avatarSrc} alt={displayName || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : initials}
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ws-text-1)', lineHeight: 1.2 }}>
+                      {displayName}
+                    </div>
+                    {!conversa.isGroup && (
+                      <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 3 }}>
+                        {conversa.contato.telefone}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )
+            })()}
           </div>
 
           {/* Tags de status */}
@@ -208,9 +240,8 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
           </div>
 
           <div style={{ display: 'grid', gap: 8 }}>
-            <InfoRow label="Telefone" valor={conversa.contato.numeroEvo || conversa.contato.telefone} icon={<Phone size={12} />} />
-            <InfoRow label="Remote JID" valor={conversa.contato.remoteJid} icon={<MessageSquare size={12} />} />
-            <InfoRow label={conversa.canalTipo === 'webhook' ? 'Canal' : 'Número conectado'} valor={conversa.canalNumero || conversa.canalNome} icon={<MessageSquare size={12} />} />
+            <InfoRow label="Telefone Lead" valor={formatPhoneDisplay(conversa.contato.telefone)} icon={<Phone size={12} />} />
+            <InfoRow label="Canal de entrada" valor={conversa.canalNome || conversa.canalNumero} icon={<MessageSquare size={12} />} />
             <InfoRow label="Próximo follow-up" valor={conversa.followupDueAt ? new Date(conversa.followupDueAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null} icon={<CalendarClock size={12} />} />
           </div>
         </div>
