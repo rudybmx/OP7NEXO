@@ -372,7 +372,9 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
   const titulo = formatHeaderTitle(conversa)
-  const telefone = formatPhoneLabel(conversa.contato.numeroEvo || conversa.contato.telefone || conversa.remoteJid)
+  const telefone = conversa.contato.telefone
+    ? formatPhoneLabel(conversa.contato.telefone)
+    : null
   const avatarSrc = conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato.avatarUrl
   const avatarFallback = getAvatarFallback(titulo)
   const canalLabel = getCanalBadgeLabel(conversa.canalTipo)
@@ -483,15 +485,19 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
             </div>
 
             <div style={{ fontSize: 11.5, color: 'var(--ws-text-3)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-              <span style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                maxWidth: '100%',
-              }}>
-                {telefone}
-              </span>
-              <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(100, 116, 139, 0.45)' }} />
+              {telefone && (
+                <>
+                  <span style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: '100%',
+                  }}>
+                    {telefone}
+                  </span>
+                  <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(100, 116, 139, 0.45)' }} />
+                </>
+              )}
               <span style={{
                 display: 'inline-flex',
                 alignItems: 'center',

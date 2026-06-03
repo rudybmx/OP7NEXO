@@ -248,15 +248,26 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - `whatsapp-realtime` e `redis-buffer` usam `REDIS_URL` ou `REDIS_PASSWORD` compartilhado com a infra.
 - `GET /api/whatsapp/stream` degrada para polling quando o Redis não consegue assinar, evitando `ERR_HTTP2_PROTOCOL_ERROR`.
 
+### ✅ Implementado (2026-06-03) — Fase 1: Identidade visual de contato
+
+- `conversations/route.ts`: `resolveContactNome` e `resolveContactTelefone` — JIDs `@lid` → "Contato WhatsApp"; `@g.us` → `group_name`; telefone só para `@s.whatsapp.net`/`@c.us` com prefixo 55
+- `painel-inbox.tsx`: título de conversa usa `groupName` para grupos, elimina JID raw como fallback
+- `painel-chat.tsx`: telefone no header só exibe quando `contato.telefone != null`; avatar usa `groupAvatarUrl` para grupos
+- `docker-compose.yml`: `ports 3000:3000` → `expose 3000` (Traefik reverse proxy)
+
+### ✅ Implementado (2026-06-03) — Fase 2a.1: Avatar no painel lateral
+
+- `painel-contato.tsx`: header usa `isGroup ? groupAvatarUrl : contato.avatarUrl`; renderiza `<img>` quando URL disponível; `displayName` respeita `groupName`; omite "Telefone Lead" para grupos
+
 ### ⏳ Em andamento / Próximas tarefas
-1. **Testar end-to-end**: enviar mensagem real pelo WhatsApp e confirmar que aparece no front (bugfix de evento deployado)
+1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos
 3. Sync automático ao cadastrar conta
 
 ### 🔴 Débito técnico conhecido
 - APIs `/api/auth/*` (login, me, refresh) ainda referenciam schema GoTrue legado (`auth.users`, `public.org_members`, `public.organizations`). Não são usadas pelo front atual (que usa `/api/proxy` → API Python), mas precisam de adaptação futura ou remoção.
 - APIs `/api/meta/*` e `/api/admin/organizacoes` ainda referenciam `org_id` e tabelas legadas; front usa proxy para API Python.
-- Componentes CRM podem precisar de ajustes visuais para refletir novos campos (avatar, telefone removidos de users).
+- Contatos `@lid` sem NOWEB Store nunca terão avatar — pendente Fase 2c.
 
 ---
 

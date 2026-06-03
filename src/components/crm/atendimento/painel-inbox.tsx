@@ -55,11 +55,10 @@ function formatConversationRelativeTime(value?: string | null, now = Date.now())
 }
 
 function formatConversationTitle(conversa: ConversaApi) {
+  if (conversa.isGroup) return conversa.groupName?.trim() || conversa.contato.nome?.trim() || 'Grupo WhatsApp'
   const contactName = conversa.contato.nome?.trim()
-  const groupName = conversa.groupName?.trim()
   const phone = conversa.contato.telefone?.trim()
-  const remote = conversa.remoteJid ? onlyDigits(conversa.remoteJid) : ''
-  return (conversa.isGroup ? groupName : contactName) || contactName || groupName || phone || remote || 'Contato'
+  return contactName || phone || 'Contato WhatsApp'
 }
 
 function formatConversationPreview(conversa: ConversaApi) {

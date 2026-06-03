@@ -7,8 +7,8 @@ services:
     image: op7nexo-front:latest
     container_name: op7nexo-front
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     networks:
       - traefik-public
     env_file:

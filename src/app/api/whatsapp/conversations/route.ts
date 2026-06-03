@@ -53,6 +53,31 @@ function formatPhone(telefone: string | null, remoteJid: string) {
   return `+55 ${digits.slice(2, 4)} ${digits.slice(4)}`
 }
 
+function isLidJid(jid?: string | null) { return !!jid?.endsWith('@lid') }
+function isGroupJid(jid?: string | null) { return !!jid?.endsWith('@g.us') }
+function jidDigits(jid?: string | null) { return jid?.split('@')[0]?.replace(/\D/g, '') ?? '' }
+function isRealPhoneJid(jid?: string | null) {
+  return !!jid && (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@c.us'))
+}
+
+function resolveContactNome(contato_nome: string | null | undefined, remote_jid: string | null | undefined, group_name: string | null | undefined): string {
+  const jid = remote_jid ?? ''
+  if (isGroupJid(jid)) return group_name?.trim() || 'Grupo WhatsApp'
+  const digits = jidDigits(jid)
+  const nomeIsJidDigits = !!contato_nome && contato_nome === digits
+  if (!contato_nome || nomeIsJidDigits) {
+    return isLidJid(jid) ? 'Contato WhatsApp' : (formatPhone(null, jid) || 'Contato WhatsApp')
+  }
+  return contato_nome
+}
+
+function resolveContactTelefone(remote_jid: string | null | undefined): string | null {
+  if (!isRealPhoneJid(remote_jid)) return null
+  const digits = jidDigits(remote_jid)
+  if (!digits.startsWith('55') || digits.length < 12) return null
+  return digits
+}
+
 export async function GET(request: NextRequest) {
   try {
     const access = await resolveWhatsappWorkspaceAccess(request)
@@ -175,8 +200,8 @@ export async function GET(request: NextRequest) {
       groupAvatarUrl: row.group_avatar_url || null,
       contato: {
         id: row.contato_id,
-        nome: row.contato_nome || formatPhone(null, row.remote_jid),
-        telefone: formatPhone(null, row.remote_jid),
+        nome: resolveContactNome(row.contato_nome, row.remote_jid, row.group_name),
+        telefone: resolveContactTelefone(row.remote_jid),
         remoteJid: row.remote_jid,
         numeroEvo: null,
         avatarUrl: row.contato_avatar_url || null,
