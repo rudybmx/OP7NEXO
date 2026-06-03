@@ -25,6 +25,7 @@ interface BackendConversaRow {
   contato_id: string
   contato_nome?: string | null
   contato_avatar_url?: string | null
+  contato_telefone?: string | null
   contato_campanha_origem?: string | null
   contato_meta_headline?: string | null
   contato_meta_body?: string | null
@@ -71,11 +72,26 @@ function resolveContactNome(contato_nome: string | null | undefined, remote_jid:
   return contato_nome
 }
 
-function resolveContactTelefone(remote_jid: string | null | undefined): string | null {
-  if (!isRealPhoneJid(remote_jid)) return null
-  const digits = jidDigits(remote_jid)
-  if (!digits.startsWith('55') || digits.length < 12) return null
-  return digits
+function isValidBrDigits(digits: string): boolean {
+  return digits.startsWith('55') && (digits.length === 12 || digits.length === 13)
+}
+
+function resolveContactTelefone(
+  remote_jid: string | null | undefined,
+  contato_telefone?: string | null,
+): string | null {
+  // 1. JID de telefone real (@s.whatsapp.net ou @c.us) → extrair dali
+  if (isRealPhoneJid(remote_jid)) {
+    const digits = jidDigits(remote_jid)
+    if (isValidBrDigits(digits)) return digits
+  }
+  // 2. Fallback: contato.telefone do banco — somente se for número BR real (55 + 10 ou 11 dígitos)
+  if (contato_telefone) {
+    const digits = contato_telefone.replace(/\D/g, '')
+    if (isValidBrDigits(digits)) return digits
+  }
+  // 3. @lid ou qualquer outro JID sem telefone real → null
+  return null
 }
 
 export async function GET(request: NextRequest) {
@@ -201,7 +217,7 @@ export async function GET(request: NextRequest) {
       contato: {
         id: row.contato_id,
         nome: resolveContactNome(row.contato_nome, row.remote_jid, row.group_name),
-        telefone: resolveContactTelefone(row.remote_jid),
+        telefone: resolveContactTelefone(row.remote_jid, row.contato_telefone),
         remoteJid: row.remote_jid,
         numeroEvo: null,
         avatarUrl: row.contato_avatar_url || null,
