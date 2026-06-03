@@ -710,8 +710,76 @@ def _fetch_videos_by_ids(
     totais: dict | None = None,
     on_progress=None,
 ) -> dict[str, dict]:
+    def _permission_error(payload: dict | None) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        err = payload.get("error") if isinstance(payload.get("error"), dict) else payload
+        try:
+            code = int(err.get("code") or 0)
+        except (TypeError, ValueError):
+            code = 0
+        message = str(err.get("message") or "").lower()
+        return code == 10 and "application does not have permission for this action" in message
+
+    def _mark_permission_skipped(count: int) -> None:
+        if count <= 0 or totais is None:
+            return
+        totais["catalog_videos_ignorados_permissao"] = (
+            totais.get("catalog_videos_ignorados_permissao", 0) + count
+        )
+        totais["videos_permission_skipped"] = True
+        totais["videos_permission_error_count"] = (
+            totais.get("videos_permission_error_count", 0) + count
+        )
+        totais["videos_permission_error_code"] = 10
+
+    def _fetch_batch(batch_ids: list[str], fields: str, *, label: str) -> httpx.Response | None:
+        try:
+            return client.get(
+                f"{META_BASE}/",
+                params={
+                    "access_token": token,
+                    "ids": ",".join(batch_ids),
+                    "fields": fields,
+                },
+            )
+        except httpx.HTTPError as exc:
+            log.warning("Erro batch vídeos %s: %s", label, exc)
+            return None
+
+    def _merge_payload(payload: dict, *, count_permission_errors: bool) -> list[str]:
+        permission_failed_ids: list[str] = []
+        for vid, item in payload.items():
+            if not isinstance(item, dict):
+                continue
+            if _permission_error(item):
+                permission_failed_ids.append(str(vid))
+                continue
+            if item.get("error"):
+                err = item.get("error") or {}
+                log.warning(
+                    "Erro batch vídeos por ID video_id=%s error_code=%s message=%s",
+                    vid,
+                    err.get("code"),
+                    err.get("message"),
+                )
+                continue
+            item["thumbnails"] = _normalizar_video_thumbnails(item.get("thumbnails"))
+            best_thumb = _selecionar_melhor_thumbnail_video(item.get("thumbnails"))
+            item["thumbnail_url"] = (
+                _safe_str(best_thumb.get("uri"))
+                if best_thumb
+                else _safe_str(item.get("picture"))
+            )
+            out[str(vid)] = item
+        if count_permission_errors:
+            _mark_permission_skipped(len(permission_failed_ids))
+        return permission_failed_ids
+
     out: dict[str, dict] = {}
     uniq = [v for v in dict.fromkeys(video_ids) if v]
+    fields_with_source = "id,picture,source,permalink_url,thumbnails{uri,width,height,is_preferred}"
+    fields_without_source = "id,picture,permalink_url,thumbnails{uri,width,height,is_preferred}"
     total_batches = max((len(uniq) + 49) // 50, 1)
     for batch_index, i in enumerate(range(0, len(uniq), 50), start=1):
         batch = uniq[i:i + 50]
@@ -720,38 +788,63 @@ def _fetch_videos_by_ids(
                 on_progress(f"anuncios:midia:videos ({batch_index}/{total_batches})", 70)
             except Exception:
                 pass
-        try:
-            resp = client.get(
-                f"{META_BASE}/",
-                params={
-                    "access_token": token,
-                    "ids": ",".join(batch),
-                    "fields": "id,picture,source,permalink_url,thumbnails{uri,width,height,is_preferred}",
-                },
-            )
-        except httpx.HTTPError as exc:
-            log.warning("Erro batch vídeos tentativa %d/%d: %s", batch_index, total_batches, exc)
+        resp = _fetch_batch(
+            batch,
+            fields_with_source,
+            label=f"tentativa {batch_index}/{total_batches}",
+        )
+        if resp is None:
             continue
         if resp.status_code != 200:
             err, _ = _meta_erro_payload(resp)
             mensagem = err.get("message", resp.text[:200])
-            if int(err.get("code") or 0) == 10:
-                if totais is not None:
-                    totais["catalog_videos_ignorados_permissao"] = totais.get("catalog_videos_ignorados_permissao", 0) + len(batch)
-                log.warning("batch vídeos ignorado por permissão (%d ids): %s", len(batch), mensagem)
-            else:
-                log.warning("Erro batch vídeos: %s", mensagem)
-            continue
-        for vid, payload in resp.json().items():
-            if isinstance(payload, dict):
-                payload["thumbnails"] = _normalizar_video_thumbnails(payload.get("thumbnails"))
-                best_thumb = _selecionar_melhor_thumbnail_video(payload.get("thumbnails"))
-                payload["thumbnail_url"] = (
-                    _safe_str(best_thumb.get("uri"))
-                    if best_thumb
-                    else _safe_str(payload.get("picture"))
+            if _permission_error({"error": err}):
+                fallback = _fetch_batch(
+                    batch,
+                    fields_without_source,
+                    label=f"fallback sem source {batch_index}/{total_batches}",
                 )
-                out[str(vid)] = payload
+                if fallback is not None and fallback.status_code == 200:
+                    permission_failed = _merge_payload(fallback.json(), count_permission_errors=True)
+                    if permission_failed:
+                        log.warning(
+                            "batch vídeos ignorado por permissão no fallback (%d ids): %s",
+                            len(permission_failed),
+                            mensagem,
+                        )
+                    continue
+                if fallback is not None:
+                    fallback_err, _ = _meta_erro_payload(fallback)
+                    if not _permission_error({"error": fallback_err}):
+                        log.warning("Erro batch vídeos fallback sem source: %s", fallback_err.get("message", fallback.text[:200]))
+                        continue
+                _mark_permission_skipped(len(batch))
+                log.warning("batch vídeos ignorado por permissão (%d ids): %s", len(batch), mensagem)
+                continue
+            log.warning("Erro batch vídeos: %s", mensagem)
+            continue
+        permission_failed = _merge_payload(resp.json(), count_permission_errors=False)
+        if permission_failed:
+            fallback = _fetch_batch(
+                permission_failed,
+                fields_without_source,
+                label=f"fallback sem source por ID {batch_index}/{total_batches}",
+            )
+            if fallback is not None and fallback.status_code == 200:
+                still_failed = _merge_payload(fallback.json(), count_permission_errors=True)
+                if still_failed:
+                    log.warning(
+                        "batch vídeos ignorado por permissão por ID (%d ids)",
+                        len(still_failed),
+                    )
+                continue
+            if fallback is not None:
+                fallback_err, _ = _meta_erro_payload(fallback)
+                if not _permission_error({"error": fallback_err}):
+                    log.warning("Erro batch vídeos fallback por ID sem source: %s", fallback_err.get("message", fallback.text[:200]))
+                    continue
+            _mark_permission_skipped(len(permission_failed))
+            log.warning("batch vídeos ignorado por permissão por ID (%d ids)", len(permission_failed))
     return out
 
 
@@ -1790,7 +1883,13 @@ def _sync_catalog_anuncios_criativos_videos(
     _aplicar_thumbnail_hq(client, criativos_map, token)
     _persist_hq_images_to_minio(client, criativos_map, str(conta.id))
     video_ids = [str(c.get("video_id")) for c in criativos_map.values() if c.get("video_id")]
-    video_map = _fetch_videos_by_ids(client, token, video_ids, totais=totais)
+    try:
+        video_map = _fetch_videos_by_ids(client, token, video_ids, totais=totais)
+    except MetaRateLimitError:
+        raise
+    except Exception as exc:
+        log.warning("Falha opcional ao enriquecer vídeos do catálogo: %s", exc)
+        video_map = {}
 
     for r in rows:
         ad_id = r.get("id")

@@ -10,6 +10,7 @@ from app.services.meta_sync import (
     _meta_erro_terminal,
     _resolver_mapa_adimages_hq,
     _fetch_videos_by_ids,
+    _sync_catalog_anuncios_criativos_videos,
     _sync_video_metrics,
     MetaContaInacessivelError,
     registrar_rate_limit_cooldown,
@@ -158,6 +159,162 @@ class _FakeContaConfig:
 
 
 class MetaSyncTests(unittest.TestCase):
+    def test_fetch_videos_by_ids_top_level_permission_error_tenta_fallback_sem_source(self):
+        responses = [
+            _FakeResponse(
+                400,
+                {"error": {"message": "Application does not have permission for this action", "code": 10}},
+                text="permission",
+            ),
+            _FakeResponse(
+                200,
+                {"video-1": {"id": "video-1", "picture": "https://cdn.example.com/thumb.jpg"}},
+            ),
+        ]
+        client = _FakeClient(responses)
+        totais = {"catalog_videos_ignorados_permissao": 0}
+
+        result = _fetch_videos_by_ids(client, "token", ["video-1"], totais=totais)
+
+        self.assertIn("video-1", result)
+        self.assertEqual(result["video-1"]["thumbnail_url"], "https://cdn.example.com/thumb.jpg")
+        self.assertEqual(totais["catalog_videos_ignorados_permissao"], 0)
+        self.assertEqual(len(client.calls), 2)
+        self.assertIn("source", client.calls[0][1]["fields"])
+        self.assertNotIn("source", client.calls[1][1]["fields"])
+
+    def test_fetch_videos_by_ids_permission_error_por_id_preserva_sucessos(self):
+        permission_error = {
+            "error": {
+                "message": "Application does not have permission for this action",
+                "code": 10,
+            }
+        }
+        responses = [
+            _FakeResponse(
+                200,
+                {
+                    "video-1": {"id": "video-1", "picture": "https://cdn.example.com/v1.jpg"},
+                    "video-2": permission_error,
+                    "video-3": {"id": "video-3", "picture": "https://cdn.example.com/v3.jpg"},
+                },
+            ),
+            _FakeResponse(
+                200,
+                {"video-2": {"id": "video-2", "picture": "https://cdn.example.com/v2.jpg"}},
+            ),
+        ]
+        client = _FakeClient(responses)
+        totais = {"catalog_videos_ignorados_permissao": 0}
+
+        result = _fetch_videos_by_ids(client, "token", ["video-1", "video-2", "video-3"], totais=totais)
+
+        self.assertEqual(set(result.keys()), {"video-1", "video-2", "video-3"})
+        self.assertEqual(totais["catalog_videos_ignorados_permissao"], 0)
+        self.assertEqual(client.calls[1][1]["ids"], "video-2")
+        self.assertNotIn("source", client.calls[1][1]["fields"])
+
+    def test_fetch_videos_by_ids_permission_error_por_id_conta_apenas_falhas(self):
+        permission_error = {
+            "error": {
+                "message": "Application does not have permission for this action",
+                "code": 10,
+            }
+        }
+        responses = [
+            _FakeResponse(
+                200,
+                {
+                    "video-1": {"id": "video-1", "picture": "https://cdn.example.com/v1.jpg"},
+                    "video-2": permission_error,
+                    "video-3": {"id": "video-3", "picture": "https://cdn.example.com/v3.jpg"},
+                },
+            ),
+            _FakeResponse(200, {"video-2": permission_error}),
+        ]
+        client = _FakeClient(responses)
+        totais = {"catalog_videos_ignorados_permissao": 0}
+
+        result = _fetch_videos_by_ids(client, "token", ["video-1", "video-2", "video-3"], totais=totais)
+
+        self.assertEqual(set(result.keys()), {"video-1", "video-3"})
+        self.assertEqual(totais["catalog_videos_ignorados_permissao"], 1)
+        self.assertTrue(totais["videos_permission_skipped"])
+        self.assertEqual(totais["videos_permission_error_count"], 1)
+        self.assertEqual(totais["videos_permission_error_code"], 10)
+
+    def test_fetch_videos_by_ids_fallback_top_level_permission_conta_batch_fallback(self):
+        responses = [
+            _FakeResponse(
+                400,
+                {"error": {"message": "Application does not have permission for this action", "code": 10}},
+            ),
+            _FakeResponse(
+                400,
+                {"error": {"message": "Application does not have permission for this action", "code": 10}},
+            ),
+        ]
+        client = _FakeClient(responses)
+        totais = {"catalog_videos_ignorados_permissao": 0}
+
+        result = _fetch_videos_by_ids(client, "token", ["video-1", "video-2"], totais=totais)
+
+        self.assertEqual(result, {})
+        self.assertEqual(totais["catalog_videos_ignorados_permissao"], 2)
+        self.assertEqual(totais["videos_permission_error_count"], 2)
+        self.assertNotIn("source", client.calls[1][1]["fields"])
+
+    @patch("app.services.meta_sync._persist_hq_images_to_minio")
+    @patch("app.services.meta_sync._aplicar_thumbnail_hq")
+    @patch("app.services.meta_sync._resolver_mapa_adimages_hq", return_value={})
+    @patch("app.services.meta_sync._fetch_criativos_batch")
+    @patch("app.services.meta_sync._paginar")
+    @patch("app.services.meta_sync._fetch_videos_by_ids", side_effect=RuntimeError("optional video failure"))
+    def test_sync_catalog_anuncios_criativos_videos_nao_falha_por_video_opcional(
+        self,
+        mock_fetch_videos,
+        mock_paginar,
+        mock_fetch_criativos,
+        _mock_adimages,
+        _mock_thumb,
+        _mock_minio,
+    ):
+        mock_paginar.return_value = [{
+            "id": "ad-1",
+            "name": "Ad 1",
+            "campaign_id": "camp-1",
+            "adset_id": "adset-1",
+            "effective_status": "ACTIVE",
+            "status": "ACTIVE",
+        }]
+        mock_fetch_criativos.return_value = {
+            "ad-1": {
+                "id": "creative-1",
+                "tipo": "VIDEO",
+                "video_id": "video-1",
+                "thumbnail_url": "https://cdn.example.com/thumb.jpg",
+            }
+        }
+        conta = _FakeContaSync()
+        db = _FakeDb()
+        totais = {"catalog_anuncios": 0}
+
+        _sync_catalog_anuncios_criativos_videos(db=db, client=object(), conta=conta, account_id="act_1", token="token", totais=totais)
+
+        mock_fetch_videos.assert_called_once()
+        self.assertEqual(db.commits, 1)
+
+    def test_meta_code_10_em_etapa_essencial_continua_terminal(self):
+        response = _FakeResponse(
+            400,
+            {"error": {"message": "Application does not have permission for this action", "code": 10}},
+            text="Application does not have permission for this action",
+        )
+
+        terminal, _ = _meta_erro_terminal(response)
+
+        self.assertTrue(terminal)
+
     def test_carregar_objetivos_catalogo_usa_coluna_objetivo(self):
         rows = [{"campaign_id": "camp-1", "objetivo": "OUTCOME_TRAFFIC"}]
         db = _FakeDbWithRows(rows)
