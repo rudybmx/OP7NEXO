@@ -11,6 +11,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 15.0
+OP7_WAHA_WEBHOOK_EVENTS = ["message", "message.any", "message.ack", "session.status"]
 
 # Mapeamento de status WAHA → connection_status interno
 STATUS_MAP: dict[str, str] = {
@@ -95,17 +96,40 @@ def iniciar_sessao(session: str, cfg: dict) -> dict[str, Any]:
 
 
 def configurar_webhook(session: str, webhook_url: str, cfg: dict) -> dict[str, Any]:
-    """PUT /api/sessions/{session} — injeta webhook no config da sessão."""
+    """PUT /api/sessions/{session} — faz upsert do webhook OP7NEXO da sessão."""
     base_url, headers = _headers(cfg)
+    current_config: dict[str, Any] = {}
+    try:
+        state = estado_sessao(session, cfg)
+        current_config = state.get("config") if isinstance(state.get("config"), dict) else {}
+    except WahaError:
+        current_config = {}
+
+    webhooks = current_config.get("webhooks")
+    if not isinstance(webhooks, list):
+        webhooks = []
+
+    webhook_path = "/webhook/waha/"
+    updated = False
+    next_webhooks: list[dict[str, Any]] = []
+    for item in webhooks:
+        if not isinstance(item, dict):
+            next_webhooks.append(item)
+            continue
+        item_url = str(item.get("url") or "")
+        if webhook_path in item_url:
+            next_item = {**item, "url": webhook_url, "events": OP7_WAHA_WEBHOOK_EVENTS}
+            next_webhooks.append(next_item)
+            updated = True
+        else:
+            next_webhooks.append(item)
+
+    if not updated:
+        next_webhooks.append({"url": webhook_url, "events": OP7_WAHA_WEBHOOK_EVENTS})
+
+    next_config = {**current_config, "webhooks": next_webhooks}
     body = {
-        "config": {
-            "webhooks": [
-                {
-                    "url": webhook_url,
-                    "events": ["message", "message.ack", "session.status"],
-                }
-            ]
-        }
+        "config": next_config
     }
     try:
         resp = httpx.put(

@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+from app.services import waha_service
+
+
+def test_configurar_webhook_preserva_config_e_faz_upsert_op7(monkeypatch):
+    captured = {}
+
+    def fake_headers(cfg):
+        return "http://waha:3000", {"X-Api-Key": "redacted", "Content-Type": "application/json"}
+
+    def fake_estado_sessao(session, cfg):
+        return {
+            "name": session,
+            "status": "WORKING",
+            "config": {
+                "noweb": {"store": {"enabled": True, "fullSync": False}},
+                "webhooks": [
+                    {"url": "https://third.example/webhook", "events": ["message"]},
+                    {
+                        "url": "http://op7nexo-api:8000/webhook/waha/old-token",
+                        "events": ["message"],
+                    },
+                ],
+            },
+        }
+
+    def fake_put(url, headers, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        return SimpleNamespace(content=b"{}", raise_for_status=lambda: None, json=lambda: {"ok": True})
+
+    monkeypatch.setattr(waha_service, "_headers", fake_headers)
+    monkeypatch.setattr(waha_service, "estado_sessao", fake_estado_sessao)
+    monkeypatch.setattr(waha_service.httpx, "put", fake_put)
+
+    result = waha_service.configurar_webhook(
+        "op7-session",
+        "http://op7nexo-api:8000/webhook/waha/new-token",
+        {"api_base_url": "http://waha:3000", "api_key_ref": "WAHA_API_KEY"},
+    )
+
+    assert result == {"ok": True}
+    assert captured["url"] == "http://waha:3000/api/sessions/op7-session"
+    config = captured["json"]["config"]
+    assert config["noweb"]["store"] == {"enabled": True, "fullSync": False}
+    assert config["webhooks"][0] == {"url": "https://third.example/webhook", "events": ["message"]}
+    assert config["webhooks"][1] == {
+        "url": "http://op7nexo-api:8000/webhook/waha/new-token",
+        "events": ["message", "message.any", "message.ack", "session.status"],
+    }

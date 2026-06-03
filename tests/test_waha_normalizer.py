@@ -262,3 +262,56 @@ def test_campos_base_presentes():
     key = adapted["data"]["key"]
     assert key["id"] == "FAKE001"
     assert key["fromMe"] is False
+
+
+def test_message_any_from_me_normaliza_id_jid_e_sessao():
+    waha = {
+        "event": "message.any",
+        "session": "op7-piloto",
+        "payload": {
+            "id": "true_554799999999@c.us_3EB0MANUAL001",
+            "from": "554788888888@c.us",
+            "to": "554799999999@c.us",
+            "chatId": "554788888888@c.us",
+            "fromMe": True,
+            "body": "Mensagem enviada pelo celular",
+            "hasMedia": False,
+            "timestamp": 1_780_515_900,
+            "pushName": "Atendimento",
+        },
+    }
+
+    adapted = adapt_waha_to_evolution(waha)
+
+    assert adapted["event"] == "messages.upsert"
+    assert adapted["instance"] == "op7-piloto"
+    assert adapted["data"]["key"] == {
+        "id": "3EB0MANUAL001",
+        "remoteJid": "554788888888@s.whatsapp.net",
+        "fromMe": True,
+    }
+    assert adapted["data"]["message"]["conversation"] == "Mensagem enviada pelo celular"
+    assert adapted["data"]["messageTimestamp"] == 1_780_515_900
+
+
+def test_session_status_vira_connection_update():
+    adapted = adapt_waha_to_evolution(
+        {
+            "event": "session.status",
+            "session": "op7-piloto",
+            "payload": {
+                "status": "WORKING",
+                "me": {"id": "554799999999@c.us"},
+            },
+        }
+    )
+
+    assert adapted == {
+        "event": "connection.update",
+        "instance": "op7-piloto",
+        "data": {
+            "status": "WORKING",
+            "state": "WORKING",
+            "number": "554799999999@c.us",
+        },
+    }

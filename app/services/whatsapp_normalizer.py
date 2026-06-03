@@ -351,11 +351,11 @@ def normalize_connection_event(
         or source.get("Status")
         or ""
     ).lower()
-    if state_value in {"open", "connected", "connect"}:
+    if state_value in {"open", "connected", "connect", "working"}:
         state = "connected"
-    elif state_value in {"connecting", "qrcode", "qr_code", "pairing"}:
+    elif state_value in {"connecting", "qrcode", "qr_code", "pairing", "starting", "scan_qr_code"}:
         state = "connecting"
-    elif state_value in {"close", "closed", "disconnected", "loggedout", "logged_out", "logout"}:
+    elif state_value in {"close", "closed", "disconnected", "loggedout", "logged_out", "logout", "stopped", "failed"}:
         state = "disconnected"
     elif source.get("Connected") is True:
         state = "connected"

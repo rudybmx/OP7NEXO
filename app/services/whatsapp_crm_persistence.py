@@ -36,7 +36,7 @@ def process_evolution_message(
     *,
     raw_event_id: str | uuid.UUID | None = None,
 ) -> dict[str, Any] | None:
-    normalized = normalize_message_event(data, instance=canal.evolution_instance_id or "opcl")
+    normalized = normalize_message_event(data, instance=canal.evolution_instance_id)
     message = payload_message(data) or data.get("message", {})
     remote_jid = normalized.remote_jid
     participant_jid = normalized.participant_jid
@@ -45,7 +45,7 @@ def process_evolution_message(
     push_name = normalized.push_name
     message_type = normalized.message_type
     recebida_em = normalized.received_at
-    instance = canal.evolution_instance_id or "opcl"
+    instance = canal.evolution_instance_id or normalized.instance or "opcl"
     media_payload = normalized.media.model_dump()
     is_group = normalized.is_group
     sender_name = push_name
@@ -103,6 +103,7 @@ def process_evolution_message(
             is_group=is_group,
             remote_jid=remote_jid,
             participant_jid=participant_jid,
+            instance=instance,
             workspace_id=workspace_id,
             media_payload=media_payload,
         )
@@ -248,6 +249,7 @@ def process_evolution_message(
         is_group=is_group,
         remote_jid=remote_jid,
         participant_jid=participant_jid,
+        instance=instance,
         workspace_id=workspace_id,
         media_payload=media_payload,
     )
@@ -668,12 +670,13 @@ def _upsert_message(
                     SELECT id FROM public.crm_whatsapp_mensagens
                     WHERE workspace_id = CAST(:ws AS uuid)
                       AND canal_id = CAST(:canal AS uuid)
+                      AND instance = :inst
                       AND evolution_msg_id = :evid
                       AND direcao = 'saida'
                       AND status = 'enviada'
                     ORDER BY created_at DESC LIMIT 1
                 """),
-                {"ws": workspace_id, "canal": canal_id, "evid": evolution_msg_id},
+                {"ws": workspace_id, "canal": canal_id, "inst": instance, "evid": evolution_msg_id},
             ).fetchone()
         else:
             msg_existente = db.execute(
@@ -698,7 +701,7 @@ def _upsert_message(
                         message_hash = :message_hash,
                         status = 'entregue',
                         payload = CAST(:payload AS jsonb),
-                        recebida_em = :ts,
+                        enviada_em = :ts,
                         updated_at = NOW()
                     WHERE id = :mid
                 """),
@@ -723,14 +726,14 @@ def _upsert_message(
                 evolution_msg_id, message_hash, instance, remote_jid, direcao,
                 from_me, remetente_tipo, remetente_nome, conteudo, message_type,
                 status, payload, recebida_em, media_status, participant_jid, participant_name,
-                is_mentioned, created_at, updated_at
+                is_mentioned, enviada_em, created_at, updated_at
             )
             VALUES (
                 CAST(:ws AS uuid), CAST(:canal AS uuid), CAST(:raw_event_id AS uuid), CAST(:cid AS uuid), CAST(:ct AS uuid),
                 :evid, :message_hash, :inst, :jid, :direction,
                 :from_me, :remetente_tipo, :rn, :msg, :mt,
                 :status, CAST(:payload AS jsonb), :ts, :media_status, :part_jid, :part_name,
-                :is_mentioned, NOW(), NOW()
+                :is_mentioned, :sent_ts, NOW(), NOW()
             )
             ON CONFLICT DO NOTHING
             RETURNING id
@@ -753,7 +756,8 @@ def _upsert_message(
             "mt": message_type,
             "status": status_value,
             "payload": json.dumps(payload),
-            "ts": received_at,
+            "ts": None if from_me else received_at,
+            "sent_ts": received_at if from_me else None,
             "media_status": media_status,
             "part_jid": participant_jid if is_group else None,
             "part_name": sender_name if is_group else None,
@@ -817,6 +821,7 @@ def _result(
     is_group: bool,
     remote_jid: str,
     participant_jid: str,
+    instance: str,
     workspace_id: str,
     media_payload: dict[str, Any],
 ) -> dict[str, Any]:
@@ -830,6 +835,7 @@ def _result(
         "is_group": is_group,
         "remote_jid": remote_jid,
         "participant_jid": participant_jid,
+        "instance": instance,
         "workspace_id": workspace_id,
         "media_base64": media_payload.get("base64"),
         "media_url": media_payload.get("url"),
@@ -979,7 +985,7 @@ def process_evolution_webhook_event(
             conversa_id = str(result.get("conversa_id") or "")
             evolution_msg_id = str(result.get("evolution_msg_id") or "")
             if mensagem_id and conversa_id and evolution_msg_id:
-                _waha_cfg = (canal.config or {}).get("waha", {}) if canal.tipo == "whatsapp_waha" else {}
+                _waha_cfg = (canal.config or {}).get("waha", {}) if getattr(canal, "tipo", "") == "whatsapp_waha" else {}
                 enqueue_inbound_media_download(
                     db,
                     workspace_id=str(result.get("workspace_id") or canal.workspace_id),
@@ -987,7 +993,7 @@ def process_evolution_webhook_event(
                     raw_event_id=raw_event_id,
                     mensagem_id=mensagem_id,
                     conversa_id=conversa_id,
-                    instance_name=canal.evolution_instance_id or "opcl",
+                    instance_name=result.get("instance") or canal.evolution_instance_id or "opcl",
                     evolution_msg_id=evolution_msg_id,
                     message_type_raw=str(result.get("message_type") or ""),
                     media_base64=result.get("media_base64"),

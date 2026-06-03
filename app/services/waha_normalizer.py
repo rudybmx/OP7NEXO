@@ -78,6 +78,13 @@ def _waha_short_msg_id(raw_id: str) -> str:
     return raw_id
 
 
+def _normalize_waha_jid(jid: str) -> str:
+    text = str(jid or "").strip()
+    if text.endswith("@c.us"):
+        return f"{text[:-5]}@s.whatsapp.net"
+    return text
+
+
 def _normalize_waha_media_url(url: str) -> str:
     """Substitui scheme+netloc quando a URL vem de localhost/127.0.0.1."""
     base = os.getenv("WAHA_API_BASE_URL", "http://waha:3000")
@@ -99,17 +106,31 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
     """
     inner = waha.get("payload") or waha
 
-    msg_id     = inner.get("id") or waha.get("id", "")
-    remote_jid = inner.get("chatId") or inner.get("from") or waha.get("chatId") or waha.get("from", "")
+    msg_id     = _waha_short_msg_id(str(inner.get("id") or waha.get("id", "")))
+    remote_jid = _normalize_waha_jid(
+        inner.get("chatId") or inner.get("from") or waha.get("chatId") or waha.get("from", "")
+    )
     msg_text   = inner.get("body") or waha.get("body", "")
     push_name  = inner.get("pushName") or waha.get("pushName", "")
     timestamp  = (inner.get("timestamp") or inner.get("messageTimestamp")
                   or waha.get("timestamp") or waha.get("messageTimestamp"))
     from_me    = inner.get("fromMe") if inner.get("fromMe") is not None else waha.get("fromMe", False)
     session    = waha.get("session") or inner.get("_sessionName") or waha.get("_sessionName", "waha")
+    event_name = (waha.get("event") or "").lower()
+
+    if event_name == "session.status":
+        return {
+            "data": {
+                "status": inner.get("status") or waha.get("status"),
+                "state": inner.get("status") or waha.get("status"),
+                "number": (inner.get("me") or {}).get("id") if isinstance(inner.get("me"), dict) else None,
+            },
+            "event": "connection.update",
+            "instance": session,
+        }
 
     # ── Branch message.ack — receipt de entrega/leitura ──────────────────────
-    if (waha.get("event") or "").lower() == "message.ack":
+    if event_name == "message.ack":
         ack_val  = inner.get("ack")
         ack_name = inner.get("ackName")
         # WAHA NOWEB envia full WA ID: "true_JID_SHORTID" — normalizar para short ID
