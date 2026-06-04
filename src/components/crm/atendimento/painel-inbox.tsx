@@ -6,6 +6,7 @@ import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import type { WhatsappCanal } from '@/hooks/use-whatsapp-canais'
 import { getCanalBadgeLabel, getCanalProviderLabel } from '@/lib/whatsapp-canal'
+import { formatarTelefoneBR } from '@/lib/formatar'
 
 interface PainelInboxProps {
   conversas: ConversaApi[]
@@ -55,9 +56,9 @@ function formatConversationRelativeTime(value?: string | null, now = Date.now())
 }
 
 function formatConversationTitle(conversa: ConversaApi) {
-  if (conversa.isGroup) return conversa.groupName?.trim() || conversa.contato.nome?.trim() || 'Grupo WhatsApp'
+  if (conversa.isGroup) return conversa.groupName?.trim() || 'Grupo WhatsApp'
   const contactName = conversa.contato.nome?.trim()
-  const phone = conversa.contato.telefone?.trim()
+  const phone = formatarTelefoneBR(conversa.contato.telefone || conversa.remoteJid)
   return contactName || phone || 'Contato'
 }
 
@@ -443,7 +444,7 @@ export function PainelInbox({
           const tempoRelativo = formatConversationRelativeTime(conversa.ultimaMensagemAt, agora)
           const providerLabel = canal ? getCanalProviderLabel(canal) : getCanalBadgeLabel(conversa.canalTipo)
           const channelLabel = formatChannelLabel(canal, conversa)
-          const avatarSrc = conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato.avatarUrl
+          const avatarSrc = conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato.avatarUrl) : conversa.contato.avatarUrl
           const avatarFallback = getAvatarFallback(titulo)
           const unreadCount = conversa.naoLidas > 99 ? '99+' : String(conversa.naoLidas)
           const showStatus = conversa.status !== 'em_atendimento'

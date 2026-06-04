@@ -7,6 +7,7 @@ export type StatusConversa = 'nova' | 'em_atendimento' | 'aguardando' | 'resgate
 export interface ContatoApi {
   id: string
   nome: string
+  pushName?: string | null
   telefone: string
   remoteJid: string
   numeroEvo?: string | null

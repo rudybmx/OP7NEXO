@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { resolveWhatsappWorkspaceAccess, normalizeWorkspaceId } from '@/lib/whatsapp-workspace-access'
+import { formatarTelefoneBR } from '@/lib/formatar'
 
 const API_BASE_URL = 'http://op7nexo-api:8000'
 
@@ -68,7 +69,8 @@ export async function POST(request: NextRequest) {
         status: conversa.status,
         contato: {
           id: contato.id,
-          nome: contato.nome || conversa.remote_jid?.split('@')[0]?.replace(/\D/g, ''),
+          nome: contato.push_name || contato.nome || formatarTelefoneBR(conversa.remote_jid?.split('@')[0]) || 'Contato',
+          pushName: contato.push_name || null,
           telefone: contato.telefone || conversa.remote_jid?.split('@')[0]?.replace(/\D/g, ''),
           remoteJid: contato.jid,
         },

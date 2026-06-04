@@ -10,6 +10,7 @@ import {
   ChevronLeft, ChevronRight as ChevronRightIcon,
 } from 'lucide-react'
 import { useContatos, type ContatoApi } from '@/hooks/use-contatos'
+import { formatarTelefoneBR } from '@/lib/formatar'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -173,7 +174,7 @@ function etapaParaStage(etapa?: string | null): Stage {
 }
 
 function mapearContatoReal(c: ContatoApi): Contato {
-  const nome = c.nome || c.push_name || c.telefone || c.jid.split('@')[0] || 'Sem nome'
+  const nome = c.push_name || c.nome || c.telefone || c.jid.split('@')[0] || 'Sem nome'
   return {
     id: c.id,
     nome,
@@ -718,7 +719,7 @@ export function PaginaContatos() {
                       </div>
                     </div>
                   </td>
-                  <td style={{ padding: '10px 12px', color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>{c.telefone}</td>
+                  <td style={{ padding: '10px 12px', color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>{formatarTelefoneBR(c.telefone) || c.telefone}</td>
                   <td style={{ padding: '10px 12px' }}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {c.canais.map(canal => <CanalBadge key={canal} canal={canal} />)}

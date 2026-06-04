@@ -4,16 +4,7 @@ import { useState } from 'react'
 import { CalendarClock, Phone, User, Users, MessageSquare, X } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import { useCrmFollowups } from '@/hooks/use-crm-followups'
-
-function formatPhoneDisplay(value?: string | null): string | null {
-  if (!value) return null
-  const digits = value.replace(/\D/g, '')
-  if (!digits.startsWith('55') || digits.length < 12) return null
-  const ddd = digits.slice(2, 4)
-  const local = digits.slice(4)
-  if (local.length > 8) return `+55 ${ddd} ${local.slice(0, local.length - 4)}-${local.slice(-4)}`
-  return `+55 ${ddd} ${local}`
-}
+import { formatarTelefoneBR } from '@/lib/formatar'
 
 interface PainelContatoProps {
   conversa: ConversaApi
@@ -157,9 +148,9 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
         <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--ws-divider)', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
             {(() => {
-              const avatarSrc = conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato?.avatarUrl
+              const avatarSrc = conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato?.avatarUrl) : conversa.contato?.avatarUrl
               const displayName = conversa.isGroup
-                ? (conversa.groupName || conversa.contato.nome)
+                ? (conversa.groupName || 'Grupo WhatsApp')
                 : conversa.contato.nome
               const initials = (() => {
                 const nome = displayName || ''
@@ -204,7 +195,7 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
                     </div>
                     {!conversa.isGroup && (
                       <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 3 }}>
-                        {conversa.contato.telefone}
+                        {formatarTelefoneBR(conversa.contato.telefone || conversa.remoteJid)}
                       </div>
                     )}
                   </div>
@@ -250,8 +241,8 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
           </div>
 
           <div style={{ display: 'grid', gap: 8 }}>
-            <InfoRow label="Telefone Lead" valor={formatPhoneDisplay(conversa.contato.telefone)} icon={<Phone size={12} />} />
             <InfoRow label="Canal de entrada" valor={conversa.canalNome || conversa.canalNumero} icon={<MessageSquare size={12} />} />
+            <InfoRow label="Telefone" valor={formatarTelefoneBR(conversa.contato.telefone || conversa.remoteJid)} icon={<Phone size={12} />} />
             <InfoRow label="Próximo follow-up" valor={conversa.followupDueAt ? new Date(conversa.followupDueAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null} icon={<CalendarClock size={12} />} />
           </div>
         </div>

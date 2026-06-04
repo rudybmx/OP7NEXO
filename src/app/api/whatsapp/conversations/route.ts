@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveWhatsappWorkspaceAccess, normalizeWorkspaceId } from '@/lib/whatsapp-workspace-access'
 import { getCanalTags } from '@/lib/whatsapp-canal'
+import { formatarTelefoneBR } from '@/lib/formatar'
 import type { NextRequest } from 'next/server'
 
 const API_BASE_URL = 'http://op7nexo-api:8000'
@@ -24,6 +25,7 @@ interface BackendConversaRow {
   group_avatar_url?: string | null
   contato_id: string
   contato_nome?: string | null
+  contato_push_name?: string | null
   contato_avatar_url?: string | null
   contato_telefone?: string | null
   contato_campanha_origem?: string | null
@@ -46,15 +48,6 @@ interface BackendConversaRow {
 function iso(value: Date | string | null | undefined) {
   if (!value) return null
   return value instanceof Date ? value.toISOString() : value
-}
-
-function formatPhone(telefone: string | null, remoteJid: string): string {
-  const raw = telefone || remoteJid?.split('@')[0] || ''
-  const digits = raw.replace(/\D/g, '')
-  if (!digits.startsWith('55')) return digits || raw
-  if (digits.length === 13) return `+55 ${digits.slice(2, 4)} ${digits.slice(4, 9)}-${digits.slice(9)}`
-  if (digits.length === 12) return `+55 ${digits.slice(2, 4)} ${digits.slice(4, 8)}-${digits.slice(8)}`
-  return digits
 }
 
 function isGroupJid(jid?: string | null) { return !!jid?.endsWith('@g.us') }
@@ -92,6 +85,7 @@ function isValidDisplayName(value: string | null | undefined, remoteJid?: string
 }
 
 function resolveContactNome(
+  contato_push_name: string | null | undefined,
   contato_nome: string | null | undefined,
   remote_jid: string | null | undefined,
   group_name: string | null | undefined,
@@ -99,11 +93,11 @@ function resolveContactNome(
 ): string {
   const jid = remote_jid ?? ''
   if (isGroupJid(jid)) return group_name?.trim() || 'Grupo WhatsApp'
+  if (isValidDisplayName(contato_push_name, jid)) return contato_push_name.trim()
   if (isValidDisplayName(contato_nome, jid)) return contato_nome.trim()
-  if (isRealPhoneJid(jid)) return formatPhone(null, jid) || 'Contato'
+  if (isRealPhoneJid(jid)) return formatarTelefoneBR(jid.split('@')[0]) || 'Contato'
   if (contato_telefone) {
-    const telDigits = contato_telefone.replace(/\D/g, '')
-    if (isValidBrDigits(telDigits)) return formatPhone(telDigits, '') || 'Contato'
+    return formatarTelefoneBR(contato_telefone) || 'Contato'
   }
   return 'Contato'
 }
@@ -119,12 +113,12 @@ function resolveContactTelefone(
   // 1. JID de telefone real (@s.whatsapp.net ou @c.us) → extrair dali
   if (isRealPhoneJid(remote_jid)) {
     const digits = jidDigits(remote_jid)
-    if (isValidBrDigits(digits)) return digits
+    if (digits) return digits
   }
-  // 2. Fallback: contato.telefone do banco — somente se for número BR real (55 + 10 ou 11 dígitos)
+  // 2. Fallback: contato.telefone do banco — devolve os dígitos canônicos que existirem
   if (contato_telefone) {
     const digits = contato_telefone.replace(/\D/g, '')
-    if (isValidBrDigits(digits)) return digits
+    if (digits) return digits
   }
   // 3. @lid ou qualquer outro JID sem telefone real → null
   return null
@@ -249,10 +243,11 @@ export async function GET(request: NextRequest) {
       },
       isGroup: row.is_group || false,
       groupName: row.group_name || null,
-      groupAvatarUrl: row.group_avatar_url || null,
+      groupAvatarUrl: row.group_avatar_url || row.contato_avatar_url || null,
       contato: {
         id: row.contato_id,
-        nome: resolveContactNome(row.contato_nome, row.remote_jid, row.group_name, row.contato_telefone),
+        nome: resolveContactNome(row.contato_push_name, row.contato_nome, row.remote_jid, row.group_name, row.contato_telefone),
+        pushName: row.contato_push_name || null,
         telefone: resolveContactTelefone(row.remote_jid, row.contato_telefone),
         remoteJid: row.remote_jid,
         numeroEvo: null,

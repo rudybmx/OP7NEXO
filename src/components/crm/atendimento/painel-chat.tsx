@@ -7,6 +7,7 @@ import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { CardRastreamento } from './card-rastreamento'
 import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
+import { formatarTelefoneBR } from '@/lib/formatar'
 
 const AI_HANDOFF_ENABLED = false
 const CHAT_PATTERN_URL = 'https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7_dash_odc/Pattern%20OP7.svg'
@@ -50,24 +51,10 @@ function onlyDigits(value?: string | null) {
   return value ? value.replace(/\D/g, '') : ''
 }
 
-function formatPhoneLabel(value?: string | null) {
-  if (!value) return 'Telefone indisponível'
-  const digits = onlyDigits(value)
-  if (!digits) return value
-  if (digits.startsWith('55') && digits.length >= 12) {
-    const ddd = digits.slice(2, 4)
-    const local = digits.slice(4)
-    if (local.length > 8) {
-      return `+55 ${ddd} ${local.slice(0, local.length - 4)}-${local.slice(-4)}`
-    }
-    return `+55 ${ddd} ${local}`
-  }
-  return digits || value
-}
-
 function formatHeaderTitle(conversa: ConversaApi) {
-  const name = conversa.isGroup ? conversa.groupName : conversa.contato.nome
-  return (name?.trim() || conversa.contato.nome?.trim() || formatPhoneLabel(conversa.contato.telefone) || onlyDigits(conversa.remoteJid) || 'Contato')
+  if (conversa.isGroup) return conversa.groupName?.trim() || 'Grupo WhatsApp'
+  const name = conversa.contato.nome?.trim()
+  return name || formatarTelefoneBR(conversa.contato.telefone) || formatarTelefoneBR(conversa.remoteJid) || 'Contato'
 }
 
 function formatStatusLabel(status: string) {
@@ -464,10 +451,8 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
   const titulo = formatHeaderTitle(conversa)
-  const telefone = conversa.contato.telefone
-    ? formatPhoneLabel(conversa.contato.telefone)
-    : null
-  const avatarSrc = conversa.isGroup ? conversa.groupAvatarUrl : conversa.contato.avatarUrl
+  const telefone = formatarTelefoneBR(conversa.contato.telefone || conversa.remoteJid)
+  const avatarSrc = conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato.avatarUrl) : conversa.contato.avatarUrl
   const avatarFallback = getAvatarFallback(titulo)
   const canalLabel = getCanalBadgeLabel(conversa.canalTipo)
   const canalDetalhe = [conversa.canalNome, conversa.canalNumero].filter(Boolean).join(' · ')
