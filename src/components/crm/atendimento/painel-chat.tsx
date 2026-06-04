@@ -524,13 +524,20 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
             overflow: 'hidden',
             flexShrink: 0,
             boxShadow: '0 6px 16px rgba(15, 23, 42, 0.10)',
+            position: 'relative',
           }}>
+            <span aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {avatarFallback}
+            </span>
             {avatarSrc ? (
-              <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={avatarSrc} alt={titulo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              </>
-            ) : avatarFallback}
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarSrc}
+                alt={titulo}
+                onError={event => { event.currentTarget.style.display = 'none' }}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', position: 'relative', zIndex: 1 }}
+              />
+            ) : null}
           </div>
 
           <div style={{ minWidth: 0 }}>

@@ -183,10 +183,20 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
                     color: 'white',
                     flexShrink: 0,
                     overflow: 'hidden',
+                    position: 'relative',
                   }}>
-                    {avatarSrc
-                      ? <img src={avatarSrc} alt={displayName || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : initials}
+                    <span aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {initials}
+                    </span>
+                    {avatarSrc ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={avatarSrc}
+                        alt={displayName || ''}
+                        onError={event => { event.currentTarget.style.display = 'none' }}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', position: 'relative', zIndex: 1 }}
+                      />
+                    ) : null}
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ws-text-1)', lineHeight: 1.2 }}>

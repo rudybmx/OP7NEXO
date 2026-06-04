@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import {
   Search, Plus, Filter, ArrowUpDown, ChevronDown,
   X, Phone, Mail, Tag, User, Calendar, Check,
@@ -240,12 +240,20 @@ function Avatar({ initials, cor, src, size = 32 }: { initials: string; cor: stri
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontSize: size * 0.34, fontWeight: 700, color: 'white',
       overflow: 'hidden',
+      position: 'relative',
     }}>
+      <span aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {initials}
+      </span>
       {src ? (
-        <img src={src} alt={initials} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover' }} />
-      ) : (
-        initials
-      )}
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={initials}
+          onError={event => { event.currentTarget.style.display = 'none' }}
+          style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', display: 'block', position: 'relative', zIndex: 1 }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -535,8 +543,14 @@ export function PaginaContatos() {
   const [modal, setModal] = useState<{ aberto: boolean; modo: 'criar' | 'editar' | 'ver'; contato: Contato | null }>({ aberto: false, modo: 'criar', contato: null })
 
   // Sync mapped real data into local state (for client-side create/edit/delete)
-  useMemo(() => {
-    setContatos(contatosMapeados)
+  useEffect(() => {
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) setContatos(contatosMapeados)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [contatosMapeados])
 
   const filtrados = useMemo(() => {
