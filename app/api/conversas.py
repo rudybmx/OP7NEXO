@@ -46,6 +46,7 @@ class ConversaOut(BaseModel):
     group_name: str | None
     group_avatar_url: str | None
     contato_nome: str | None
+    contato_push_name: str | None
     contato_avatar_url: str | None
     contato_telefone: str | None
     contato_campanha_origem: str | None
@@ -111,6 +112,7 @@ class IniciarContatoOut(BaseModel):
     jid: str
     telefone: str | None
     nome: str | None
+    push_name: str | None
 
 
 class IniciarConversaOut(BaseModel):
@@ -137,13 +139,16 @@ def _is_jid_like(value: str) -> bool:
 
 def _format_phone_display(value: str | None) -> str | None:
     digits = _digits(value)
-    if not digits.startswith("55"):
+    if not digits:
         return None
-    if len(digits) == 13:
-        return f"+55 {digits[2:4]} {digits[4:9]}-{digits[9:]}"
-    if len(digits) == 12:
-        return f"+55 {digits[2:4]} {digits[4:8]}-{digits[8:]}"
-    return None
+    national = digits[2:] if digits.startswith("55") and len(digits) > 11 else digits
+    if len(national) == 11:
+        return f"({national[:2]}) {national[2:7]}-{national[7:]}"
+    if len(national) == 10:
+        return f"({national[:2]}) {national[2:6]}-{national[6:]}"
+    if len(national) > 2:
+        return f"({national[:2]}) {national[2:]}"
+    return national
 
 
 def _valid_contact_display_name(value: str | None, *, jid: str | None = None) -> str:
@@ -171,7 +176,7 @@ def _resolved_contact_name(c: Conversa) -> str:
     contato = c.contato
     remote_jid = c.remote_jid or ""
     if contato:
-        for candidate in (contato.nome, contato.push_name):
+        for candidate in (contato.push_name, contato.nome):
             display = _valid_contact_display_name(candidate, jid=remote_jid)
             if display:
                 return display
@@ -227,6 +232,7 @@ def _conversa_out(c: Conversa) -> ConversaOut:
         group_name=c.group_name,
         group_avatar_url=c.group_avatar_url,
         contato_nome=_resolved_contact_name(c),
+        contato_push_name=c.contato.push_name if c.contato else None,
         contato_avatar_url=c.contato.avatar_url if c.contato else None,
         contato_telefone=c.contato.telefone if c.contato else None,
         contato_campanha_origem=c.contato.campanha_origem if c.contato else None,
@@ -445,11 +451,12 @@ def iniciar_conversa(
     conversa = (
         db.query(Conversa)
         .filter(
-            Conversa.instance == instance,
+            Conversa.workspace_id == canal_ws_id,
+            Conversa.canal_id == canal.id,
             Conversa.remote_jid == jid,
-            Conversa.status != "resolvido",
             Conversa.ativo.is_(True),
         )
+        .order_by(Conversa.atualizado_em.desc())
         .first()
     )
 
@@ -469,6 +476,17 @@ def iniciar_conversa(
         )
         db.add(conversa)
         db.flush()
+    elif conversa.status == "resolvido":
+        conversa.status = "nova"
+        conversa.closed_at = None
+        conversa.resolution_time = None
+        conversa.nao_lidas = 0
+        conversa.deleted_at = None
+        conversa.ativo = True
+        conversa.instance = instance
+        conversa.atualizado_em = datetime.utcnow()
+    else:
+        conversa.instance = instance
 
     db.commit()
     db.refresh(conversa)
@@ -481,7 +499,8 @@ def iniciar_conversa(
             workspace_id=str(contato.workspace_id),
             jid=contato.jid,
             telefone=contato.telefone or numero_limpo,
-            nome=contato.nome or numero_formatado,
+            nome=contato.push_name or contato.nome or numero_formatado,
+            push_name=contato.push_name,
         ),
         existente=existente,
     )

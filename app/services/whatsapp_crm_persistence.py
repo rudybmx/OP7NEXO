@@ -57,13 +57,16 @@ def _is_ignored_waha_crm_update(*values: str) -> bool:
 
 def _format_phone_display(value: str) -> str | None:
     digits = _digits(value)
-    if not digits.startswith("55"):
+    if not digits:
         return None
-    if len(digits) == 13:
-        return f"+55 {digits[2:4]} {digits[4:9]}-{digits[9:]}"
-    if len(digits) == 12:
-        return f"+55 {digits[2:4]} {digits[4:8]}-{digits[8:]}"
-    return None
+    national = digits[2:] if digits.startswith("55") and len(digits) > 11 else digits
+    if len(national) == 11:
+        return f"({national[:2]}) {national[2:7]}-{national[7:]}"
+    if len(national) == 10:
+        return f"({national[:2]}) {national[2:6]}-{national[6:]}"
+    if len(national) > 2:
+        return f"({national[:2]}) {national[2:]}"
+    return national
 
 
 def _channel_own_identity(canal: CanalEntrada) -> dict[str, set[str] | str]:
@@ -268,7 +271,8 @@ def process_evolution_message(
     numero_evo = sender_pn if sender_pn else (remote_jid if "@s.whatsapp.net" in remote_jid else "")
     resolved_remote_jid, contato_id_existente = _resolve_lid_contact(
         db,
-        instance=instance,
+        workspace_id=workspace_id,
+        canal_id=canal_id,
         remote_jid=remote_jid,
         sender_pn=sender_pn,
         is_lid=normalized.is_lid,
@@ -636,7 +640,8 @@ def _record_lead_origin_event(
 def _resolve_lid_contact(
     db: Session,
     *,
-    instance: str,
+    workspace_id: str,
+    canal_id: str,
     remote_jid: str,
     sender_pn: str,
     is_lid: bool,
@@ -662,10 +667,13 @@ def _resolve_lid_contact(
                 SELECT cv.id, cv.status, ct.id AS contato_id
                 FROM public.crm_whatsapp_conversas cv
                 JOIN public.crm_whatsapp_contatos ct ON ct.id = cv.contato_id
-                WHERE cv.instance = :inst AND cv.remote_jid = :jid
+                WHERE cv.workspace_id = CAST(:ws AS uuid)
+                  AND cv.canal_id = CAST(:canal AS uuid)
+                  AND cv.remote_jid = :jid
+                  AND cv.ativo = true
                 ORDER BY cv.updated_at DESC LIMIT 1
             """),
-            {"inst": instance, "jid": candidate_jid},
+            {"ws": workspace_id, "canal": canal_id, "jid": candidate_jid},
         ).fetchone()
         if phone_conv:
             logger.info("[webhook-process] LID %s resolvido para JID %s via senderPn", remote_jid, candidate_jid)
@@ -855,17 +863,17 @@ def _upsert_conversation(
             FROM public.crm_whatsapp_conversas
             WHERE workspace_id = CAST(:ws AS uuid)
               AND canal_id = CAST(:canal AS uuid)
-              AND instance = :inst
               AND remote_jid = :jid
               AND ativo = true
             ORDER BY updated_at DESC
             LIMIT 1
         """),
-        {"ws": workspace_id, "canal": canal_id, "inst": instance, "jid": remote_jid},
+        {"ws": workspace_id, "canal": canal_id, "jid": remote_jid},
     ).fetchone()
 
-    if conv_row and not (conv_row[1] == "resolvido" and direction == "entrada"):
+    if conv_row:
         conversa_id = conv_row[0]
+        reopen = conv_row[1] == "resolvido" and direction == "entrada"
         db.execute(
             text("""
                 UPDATE public.crm_whatsapp_conversas
@@ -876,10 +884,24 @@ def _upsert_conversation(
                     last_outbound_at = CASE WHEN :dir = 'saida' THEN :ts ELSE last_outbound_at END,
                     is_group = COALESCE(:is_group, is_group),
                     nao_lidas = nao_lidas + CASE WHEN :dir = 'entrada' THEN 1 ELSE 0 END,
+                    status = CASE WHEN :reopen THEN 'nova' ELSE status END,
+                    closed_at = CASE WHEN :reopen THEN NULL ELSE closed_at END,
+                    resolution_time = CASE WHEN :reopen THEN NULL ELSE resolution_time END,
+                    ativo = true,
+                    deleted_at = NULL,
+                    instance = :inst,
                     updated_at = NOW()
                 WHERE id = :cid
             """),
-            {"msg": message_text[:500], "dir": direction, "ts": received_at, "is_group": is_group, "cid": str(conversa_id)},
+            {
+                "msg": message_text[:500],
+                "dir": direction,
+                "ts": received_at,
+                "is_group": is_group,
+                "reopen": reopen,
+                "inst": instance,
+                "cid": str(conversa_id),
+            },
         )
         return conversa_id
 

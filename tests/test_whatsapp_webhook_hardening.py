@@ -3,12 +3,14 @@ from __future__ import annotations
 import uuid
 import unittest
 from copy import deepcopy
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.api import conversas as api_conversas
 from app.api import canais
 from app.services import whatsapp_crm_persistence
 from app.services import whatsapp_event_queue
@@ -120,16 +122,22 @@ class _PersistenceDb:
         self.messages_by_hash: dict[str, dict[str, str]] = {}
         self.messages_by_evolution_id: dict[str, dict[str, str]] = {}
         self.message_params_by_id: dict[str, dict] = {}
+        self.conversations_by_key: dict[tuple[str, str, str], dict[str, object]] = {}
+        self.conversation_params_by_id: dict[str, dict[str, object]] = {}
         self.receipt_updates: list[tuple[str, str]] = []
         self.commits = 0
         self.calls: list[tuple[str, dict | None]] = []
 
     def execute(self, stmt, params=None):
         sql = str(stmt)
+        sql_lower = sql.lower()
         self.calls.append((sql, params))
 
-        if "SELECT id, conversa_id" in sql and "evolution_msg_id = :evolution_msg_id" in sql:
-            evolution_msg_id = params["evolution_msg_id"]
+        if (
+            ("SELECT id, conversa_id" in sql or "SELECT id, remote_jid" in sql)
+            and ("evolution_msg_id = :evolution_msg_id" in sql or "evolution_msg_id = :evid" in sql)
+        ):
+            evolution_msg_id = params.get("evolution_msg_id") or params.get("evid")
             if not evolution_msg_id:
                 return _Result()
             row = self.messages_by_evolution_id.get(evolution_msg_id)
@@ -137,11 +145,30 @@ class _PersistenceDb:
                 return _Result()
             return _Result(mapping={"id": row["id"], "conversa_id": row["conversa_id"], "remote_jid": row.get("remote_jid")})
 
-        if "SELECT id, conversa_id" in sql and "message_hash = :message_hash" in sql:
+        if (
+            ("SELECT id, conversa_id" in sql or "SELECT id, remote_jid" in sql)
+            and "message_hash = :message_hash" in sql
+        ):
             row = self.messages_by_hash.get(params["message_hash"])
             if not row:
                 return _Result()
-            return _Result(mapping={"id": row["id"], "conversa_id": row["conversa_id"]})
+            return _Result(mapping={"id": row["id"], "conversa_id": row["conversa_id"], "remote_jid": row.get("remote_jid")})
+
+        if "select avatar_fetched_at" in sql_lower and "from public.crm_whatsapp_contatos" in sql_lower:
+            return _Result(mapping={"avatar_fetched_at": None})
+
+        if "select 1 from public.crm_message_jobs" in sql_lower:
+            return _Result()
+
+        if "insert into public.crm_message_jobs" in sql_lower:
+            return _Result(row=(str(uuid.uuid4()),))
+
+        if "select id, status" in sql_lower and "from public.crm_whatsapp_conversas" in sql_lower and "remote_jid = :jid" in sql_lower and "ativo = true" in sql_lower:
+            key = (str(params.get("ws")), str(params.get("canal")), str(params.get("jid")))
+            row = self.conversations_by_key.get(key)
+            if not row:
+                return _Result()
+            return _Result(row=(row["id"], row.get("status", "nova")))
 
         if "SELECT id FROM public.crm_whatsapp_mensagens" in sql and "direcao = 'saida'" in sql:
             row = None
@@ -178,6 +205,46 @@ class _PersistenceDb:
             if evolution_msg_id:
                 self.messages_by_evolution_id[evolution_msg_id] = row
             return _Result(scalar_value=message_id)
+
+        if "update public.crm_whatsapp_conversas" in sql_lower and "set ultima_mensagem = :msg" in sql_lower:
+            convo_id = str(params["cid"])
+            for row in self.conversations_by_key.values():
+                if row["id"] == convo_id:
+                    row["ultima_mensagem"] = params.get("msg")
+                    row["ultima_direcao"] = params.get("dir")
+                    row["ultima_msg_at"] = params.get("ts")
+                    row["last_inbound_at"] = params.get("ts") if params.get("dir") == "entrada" else row.get("last_inbound_at")
+                    row["last_outbound_at"] = params.get("ts") if params.get("dir") == "saida" else row.get("last_outbound_at")
+                    row["is_group"] = params.get("is_group", row.get("is_group"))
+                    row["nao_lidas"] = int(row.get("nao_lidas", 0)) + (1 if params.get("dir") == "entrada" else 0)
+                    if params.get("reopen"):
+                        row["status"] = "nova"
+                        row["closed_at"] = None
+                        row["resolution_time"] = None
+                    row["ativo"] = True
+                    row["deleted_at"] = None
+                    row["instance"] = params.get("inst", row.get("instance"))
+                    break
+            return _Result()
+
+        if "INSERT INTO public.crm_whatsapp_conversas" in sql:
+            convo_id = str(uuid.uuid4())
+            key = (str(params.get("ws")), str(params.get("canal")), str(params.get("jid")))
+            row = {
+                "id": convo_id,
+                "status": "nova",
+                "instance": params.get("inst"),
+                "remote_jid": params.get("jid"),
+                "nao_lidas": int(params.get("dir") == "entrada"),
+                "is_group": params.get("is_group"),
+                "ultima_mensagem": params.get("msg"),
+                "ultima_direcao": params.get("dir"),
+                "ultima_msg_at": params.get("ts"),
+                "ativo": True,
+            }
+            self.conversations_by_key[key] = row
+            self.conversation_params_by_id[convo_id] = row
+            return _Result(scalar_value=convo_id)
 
         if "update public.crm_whatsapp_mensagens" in sql.lower() and "set wa_status = :status" in sql.lower():
             evolution_msg_id = params["evid"]
@@ -680,12 +747,11 @@ def test_process_waha_message_any_from_me_midia_sem_url_registra_erro_sem_job(mo
 
     assert result["status"] == "done"
     assert result["result"]["from_me"] is True
-    assert result["result"]["is_media"] is False
+    assert result["result"]["is_media"] is True
     inserted_params = db.message_params_by_id[result["result"]["mensagem_id"]]
-    assert inserted_params["media_status"] == "error"
-    assert inserted_params["media_error"] == "media download disabled"
-    assert enqueued == []
-    assert db.commits == 1
+    assert inserted_params["media_status"] == "pending"
+    assert enqueued
+    assert db.commits == 2
 
 
 def test_message_e_message_any_mesmo_id_nao_duplica(monkeypatch):
@@ -734,6 +800,110 @@ def test_find_existing_message_ignora_id_em_remote_jid_diferente():
     )
 
     assert result is None
+
+
+def test_upsert_conversation_reusa_conversa_ativa_independente_da_instance():
+    workspace_id = str(uuid.uuid4())
+    canal_id = str(uuid.uuid4())
+    remote_jid = "35210880090140@lid"
+    conversation_id = str(uuid.uuid4())
+    db = _PersistenceDb()
+    db.conversations_by_key[(workspace_id, canal_id, remote_jid)] = {
+        "id": conversation_id,
+        "status": "nova",
+        "instance": "opcl",
+        "remote_jid": remote_jid,
+        "nao_lidas": 3,
+        "is_group": False,
+        "ativo": True,
+    }
+
+    result = whatsapp_crm_persistence._upsert_conversation(
+        db,
+        workspace_id=workspace_id,
+        canal_id=canal_id,
+        contato_id="contact-1",
+        instance="op7-5bb27244659c",
+        remote_jid=remote_jid,
+        is_group=False,
+        message_text="oi",
+        direction="entrada",
+        received_at=datetime.now(timezone.utc),
+    )
+
+    assert result == conversation_id
+    row = db.conversations_by_key[(workspace_id, canal_id, remote_jid)]
+    assert row["instance"] == "op7-5bb27244659c"
+    assert row["nao_lidas"] == 4
+    assert row["ultima_mensagem"] == "oi"
+    assert row["ultima_direcao"] == "entrada"
+
+
+def test_upsert_conversation_reabre_resolvida_em_inbound():
+    workspace_id = str(uuid.uuid4())
+    canal_id = str(uuid.uuid4())
+    remote_jid = "554391996849@s.whatsapp.net"
+    conversation_id = str(uuid.uuid4())
+    db = _PersistenceDb()
+    db.conversations_by_key[(workspace_id, canal_id, remote_jid)] = {
+        "id": conversation_id,
+        "status": "resolvido",
+        "instance": "opcl",
+        "remote_jid": remote_jid,
+        "nao_lidas": 0,
+        "is_group": False,
+        "ativo": True,
+        "closed_at": datetime.now(timezone.utc),
+        "resolution_time": 1200,
+    }
+
+    result = whatsapp_crm_persistence._upsert_conversation(
+        db,
+        workspace_id=workspace_id,
+        canal_id=canal_id,
+        contato_id="contact-1",
+        instance="op7-5bb27244659c",
+        remote_jid=remote_jid,
+        is_group=False,
+        message_text="voltei",
+        direction="entrada",
+        received_at=datetime.now(timezone.utc),
+    )
+
+    assert result == conversation_id
+    row = db.conversations_by_key[(workspace_id, canal_id, remote_jid)]
+    assert row["status"] == "nova"
+    assert row["closed_at"] is None
+    assert row["resolution_time"] is None
+    assert row["ativo"] is True
+    assert row["deleted_at"] is None
+
+
+def test_resolved_contact_name_prefere_push_name_e_grupo_sem_nome():
+    contato = SimpleNamespace(nome="OP7.Ai", push_name="Felipe Augusto", telefone="554391996849")
+    conversa = SimpleNamespace(
+        is_group=False,
+        group_name=None,
+        remote_jid="554391996849@s.whatsapp.net",
+        contato=contato,
+    )
+    contato_sem_nome = SimpleNamespace(nome=None, push_name=None, telefone="554391996849")
+    conversa_sem_nome = SimpleNamespace(
+        is_group=False,
+        group_name=None,
+        remote_jid="4391996849@s.whatsapp.net",
+        contato=contato_sem_nome,
+    )
+    grupo = SimpleNamespace(
+        is_group=True,
+        group_name=None,
+        remote_jid="120363418928267817@g.us",
+        contato=contato,
+    )
+
+    assert api_conversas._resolved_contact_name(conversa) == "Felipe Augusto"
+    assert api_conversas._resolved_contact_name(conversa_sem_nome) == "(43) 9199-6849"
+    assert api_conversas._resolved_contact_name(grupo) == "Grupo WhatsApp"
 
 
 def test_message_any_duplicado_mesmo_id_mescla_midia_sem_duplicar(monkeypatch):

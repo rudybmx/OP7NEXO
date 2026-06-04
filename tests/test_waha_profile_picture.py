@@ -211,6 +211,35 @@ def test_buscar_avatar_chat_retorna_none_quando_avatar_ausente(monkeypatch):
     assert result is None
 
 
+def test_buscar_avatar_chat_faz_fallback_para_chat_picture(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        calls.append({"url": url, "params": params})
+        request = httpx.Request("GET", url, params=params)
+        if len(calls) == 1:
+            return httpx.Response(200, request=request, json={"profilePictureURL": None})
+        return httpx.Response(200, request=request, json={"picture": "https://cdn.example.test/chat-picture.jpg"})
+
+    monkeypatch.setenv("WAHA_API_KEY", "secret-token")
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = waha_service.buscar_avatar_chat(
+        "minha-sessao",
+        "120363123456789@g.us",
+        {"api_base_url": "http://waha:3000", "api_key_ref": "WAHA_API_KEY"},
+    )
+
+    assert result == "https://cdn.example.test/chat-picture.jpg"
+    assert calls[0]["url"] == "http://waha:3000/api/contacts/profile-picture"
+    assert calls[0]["params"] == {
+        "contactId": "120363123456789@g.us",
+        "session": "minha-sessao",
+    }
+    assert calls[1]["url"] == "http://waha:3000/api/minha-sessao/chats/120363123456789%40g.us/picture"
+    assert calls[1]["params"] == {}
+
+
 def test_enqueue_contact_avatar_enrichment_skips_when_avatar_recent():
     workspace_id = str(uuid.uuid4())
     canal_id = str(uuid.uuid4())

@@ -138,7 +138,6 @@ class Conversa(Base):
             "uq_crm_open_conversation_per_channel",
             "workspace_id",
             "canal_id",
-            "instance",
             "remote_jid",
             unique=True,
             postgresql_where=(ativo.is_(True) & (status != "resolvido")),

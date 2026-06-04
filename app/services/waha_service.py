@@ -312,36 +312,67 @@ def enviar_mensagem_midia(
 
 
 def buscar_avatar_chat(session: str, jid: str, cfg: dict, timeout: float = 5.0, refresh: bool = False) -> str | None:
-    """GET /api/contacts/profile-picture → profilePictureURL str ou None."""
+    """Busca avatar via WAHA.
+
+    Prioridade:
+    1. `/api/contacts/profile-picture` para contatos individuais.
+    2. `/api/{session}/chats/{chatId}/picture` como fallback para grupos e casos sem profile picture.
+    """
     base_url, headers = _headers(cfg)
-    params: dict[str, str] = {
+    def _get_json_avatar(
+        url: str,
+        params: dict[str, str],
+        *,
+        missing_statuses: set[int],
+    ) -> str | None:
+        try:
+            resp = httpx.get(url, headers=headers, params=params, timeout=timeout)
+            if resp.status_code in missing_statuses:
+                return None
+            resp.raise_for_status()
+            if not resp.content:
+                return None
+            try:
+                return _extract_profile_picture_url(resp.json())
+            except ValueError as exc:
+                cleaned = resp.text.strip()
+                if cleaned.startswith("http://") or cleaned.startswith("https://"):
+                    return cleaned
+                raise WahaError("WAHA avatar: resposta JSON inválida") from exc
+        except httpx.HTTPStatusError as exc:
+            raise WahaError(
+                f"WAHA avatar: status={exc.response.status_code} body={exc.response.text[:150]}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise WahaError(f"WAHA avatar: {type(exc).__name__}") from exc
+
+    profile_params: dict[str, str] = {
         "contactId": str(jid),
         "session": session,
     }
     if refresh:
-        params["refresh"] = "True"
-    try:
-        resp = httpx.get(
-            f"{base_url}/api/contacts/profile-picture",
-            headers=headers,
-            params=params,
-            timeout=timeout,
-        )
-        if resp.status_code in (404, 204):
-            return None
-        resp.raise_for_status()
-        if not resp.content:
-            return None
-        try:
-            return _extract_profile_picture_url(resp.json())
-        except ValueError as exc:
-            raise WahaError("WAHA contacts/profile-picture: resposta JSON inválida") from exc
-    except httpx.HTTPStatusError as exc:
-        raise WahaError(
-            f"WAHA contacts/profile-picture: status={exc.response.status_code} body={exc.response.text[:150]}"
-        ) from exc
-    except httpx.RequestError as exc:
-        raise WahaError(f"WAHA contacts/profile-picture: {type(exc).__name__}") from exc
+        profile_params["refresh"] = "True"
+
+    avatar_url = _get_json_avatar(
+        f"{base_url}/api/contacts/profile-picture",
+        profile_params,
+        missing_statuses={400, 404, 204, 422},
+    )
+    if avatar_url:
+        return avatar_url
+
+    from urllib.parse import quote
+
+    chat_id = str(jid)
+    if not chat_id:
+        return None
+    chat_params: dict[str, str] = {}
+    chat_picture = _get_json_avatar(
+        f"{base_url}/api/{session}/chats/{quote(chat_id, safe='')}/picture",
+        chat_params,
+        missing_statuses={400, 404, 204, 422},
+    )
+    return chat_picture
 
 
 def buscar_nome_grupo(session: str, group_jid: str, cfg: dict, timeout: float = 5.0) -> str | None:
