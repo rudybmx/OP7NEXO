@@ -58,7 +58,7 @@ function formatConversationTitle(conversa: ConversaApi) {
   if (conversa.isGroup) return conversa.groupName?.trim() || conversa.contato.nome?.trim() || 'Grupo WhatsApp'
   const contactName = conversa.contato.nome?.trim()
   const phone = conversa.contato.telefone?.trim()
-  return contactName || phone || 'Contato WhatsApp'
+  return contactName || phone || 'Contato'
 }
 
 function formatConversationPreview(conversa: ConversaApi) {

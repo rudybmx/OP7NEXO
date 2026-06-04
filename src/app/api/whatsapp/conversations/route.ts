@@ -48,10 +48,13 @@ function iso(value: Date | string | null | undefined) {
   return value instanceof Date ? value.toISOString() : value
 }
 
-function formatPhone(telefone: string | null, remoteJid: string) {
-  const digits = telefone || remoteJid?.split('@')[0]?.replace(/\D/g, '') || remoteJid || ''
-  if (!digits.startsWith('55') || digits.length < 12) return digits
-  return `+55 ${digits.slice(2, 4)} ${digits.slice(4)}`
+function formatPhone(telefone: string | null, remoteJid: string): string {
+  const raw = telefone || remoteJid?.split('@')[0] || ''
+  const digits = raw.replace(/\D/g, '')
+  if (!digits.startsWith('55')) return digits || raw
+  if (digits.length === 13) return `+55 ${digits.slice(2, 4)} ${digits.slice(4, 9)}-${digits.slice(9)}`
+  if (digits.length === 12) return `+55 ${digits.slice(2, 4)} ${digits.slice(4, 8)}-${digits.slice(8)}`
+  return digits
 }
 
 function isLidJid(jid?: string | null) { return !!jid?.endsWith('@lid') }
@@ -61,15 +64,23 @@ function isRealPhoneJid(jid?: string | null) {
   return !!jid && (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@c.us'))
 }
 
-function resolveContactNome(contato_nome: string | null | undefined, remote_jid: string | null | undefined, group_name: string | null | undefined): string {
+function resolveContactNome(
+  contato_nome: string | null | undefined,
+  remote_jid: string | null | undefined,
+  group_name: string | null | undefined,
+  contato_telefone?: string | null,
+): string {
   const jid = remote_jid ?? ''
   if (isGroupJid(jid)) return group_name?.trim() || 'Grupo WhatsApp'
   const digits = jidDigits(jid)
   const nomeIsJidDigits = !!contato_nome && contato_nome === digits
-  if (!contato_nome || nomeIsJidDigits) {
-    return isLidJid(jid) ? 'Contato WhatsApp' : (formatPhone(null, jid) || 'Contato WhatsApp')
+  if (contato_nome && !nomeIsJidDigits) return contato_nome
+  if (isRealPhoneJid(jid)) return formatPhone(null, jid) || 'Contato'
+  if (contato_telefone) {
+    const telDigits = contato_telefone.replace(/\D/g, '')
+    if (isValidBrDigits(telDigits)) return formatPhone(telDigits, '') || 'Contato'
   }
-  return contato_nome
+  return 'Contato'
 }
 
 function isValidBrDigits(digits: string): boolean {
@@ -216,7 +227,7 @@ export async function GET(request: NextRequest) {
       groupAvatarUrl: row.group_avatar_url || null,
       contato: {
         id: row.contato_id,
-        nome: resolveContactNome(row.contato_nome, row.remote_jid, row.group_name),
+        nome: resolveContactNome(row.contato_nome, row.remote_jid, row.group_name, row.contato_telefone),
         telefone: resolveContactTelefone(row.remote_jid, row.contato_telefone),
         remoteJid: row.remote_jid,
         numeroEvo: null,
