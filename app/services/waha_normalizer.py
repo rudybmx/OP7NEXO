@@ -69,13 +69,14 @@ def _waha_short_msg_id(raw_id: str) -> str:
     """Extrai o short message ID do full WA ID WAHA NOWEB.
 
     Full WA ID format: "true_JID_SHORTID" ou "false_JID_SHORTID".
-    Só normaliza se o sufixo após 'true_'/'false_' ainda contiver '_'
-    (ou seja, formato real true_JID_SHORTID). IDs simples são retornados intactos.
+    IDs simples são retornados intactos.
     """
     if raw_id.startswith(("true_", "false_")):
-        suffix = raw_id.split("_", 1)[1]   # parte após o prefixo
-        if "_" in suffix:                   # confirma estrutura JID_SHORTID
-            return raw_id.rsplit("_", 1)[-1]
+        parts = raw_id.split("_")
+        if len(parts) >= 3:
+            # true_{jid}_{msgid}
+            # false_{groupJid}_{msgid}_{participantJid}
+            return parts[2]
     return raw_id
 
 

@@ -149,6 +149,14 @@ def process_evolution_message(
     message_type = normalized.message_type
     recebida_em = normalized.received_at
     instance = canal.evolution_instance_id or normalized.instance or "opcl"
+    payload_root = normalized.raw if isinstance(normalized.raw, dict) else {}
+    waha_payload = payload_root.get("waha") if isinstance(payload_root.get("waha"), dict) else {}
+    provider = str(
+        payload_root.get("provider")
+        or ("whatsapp_waha" if getattr(canal, "tipo", "") == "whatsapp_waha" else "whatsapp_evolution")
+    )
+    waha_full_message_id = str(waha_payload.get("fullMessageId") or "") if isinstance(waha_payload, dict) else ""
+    waha_chat_id = str(waha_payload.get("chatId") or remote_jid) if isinstance(waha_payload, dict) else remote_jid
     media_payload = normalized.media.model_dump()
     should_enqueue_media = bool(normalized.media.is_media)
     media_status = None
@@ -201,6 +209,7 @@ def process_evolution_message(
         canal_id=canal_id,
         instance=instance,
         evolution_msg_id=evolution_msg_id,
+        remote_jid=remote_jid,
         message_hash=message_hash,
     )
     if duplicate and not from_me:
@@ -230,6 +239,10 @@ def process_evolution_message(
             instance=instance,
             workspace_id=workspace_id,
             media_payload=media_payload,
+            provider=provider,
+            full_message_id=waha_full_message_id,
+            chat_id=waha_chat_id,
+            participant_name=sender_name if is_group else "",
         )
 
     sender_pn = normalized.sender_pn
@@ -341,6 +354,7 @@ def process_evolution_message(
         received_at=recebida_em,
         media_status=media_status,
         media_error=media_error,
+        message_signature=message_signature,
     )
 
     if has_lead_origin(lead_origem):
@@ -390,6 +404,10 @@ def process_evolution_message(
         instance=instance,
         workspace_id=workspace_id,
         media_payload=media_payload,
+        provider=provider,
+        full_message_id=waha_full_message_id,
+        chat_id=waha_chat_id,
+        participant_name=sender_name if is_group else "",
     )
 
 
@@ -444,13 +462,14 @@ def _find_existing_message(
     canal_id: str,
     instance: str,
     evolution_msg_id: str,
+    remote_jid: str,
     message_hash: str,
 ) -> dict[str, Any] | None:
     row = None
     if evolution_msg_id:
         row = db.execute(
             text("""
-                SELECT id, conversa_id
+                SELECT id, conversa_id, remote_jid
                 FROM public.crm_whatsapp_mensagens
                 WHERE workspace_id = CAST(:workspace_id AS uuid)
                   AND canal_id = CAST(:canal_id AS uuid)
@@ -465,8 +484,17 @@ def _find_existing_message(
                 "evolution_msg_id": evolution_msg_id,
             },
         ).mappings().first()
-    if row:
-        return dict(row)
+        if row:
+            existing_remote_jid = str(row.get("remote_jid") or "")
+            if existing_remote_jid and remote_jid and existing_remote_jid != remote_jid:
+                logger.warning(
+                    "[webhook-process] evolution_msg_id collision ignored evid=%s existing_remote_jid=%s incoming_remote_jid=%s",
+                    evolution_msg_id,
+                    existing_remote_jid,
+                    remote_jid,
+                )
+            else:
+                return dict(row)
     row = db.execute(
         text("""
             SELECT id, conversa_id
@@ -890,9 +918,43 @@ def _upsert_message(
     received_at: Any,
     media_status: str | None,
     media_error: str | None,
+    message_signature: dict[str, Any],
 ) -> Any | None:
+    stored_evolution_msg_id = evolution_msg_id
+    stored_message_hash = message_hash
+    if evolution_msg_id:
+        collision = db.execute(
+            text("""
+                SELECT id, remote_jid
+                FROM public.crm_whatsapp_mensagens
+                WHERE workspace_id = CAST(:ws AS uuid)
+                  AND canal_id = CAST(:canal AS uuid)
+                  AND instance = :inst
+                  AND evolution_msg_id = :evid
+                LIMIT 1
+            """),
+            {"ws": workspace_id, "canal": canal_id, "inst": instance, "evid": evolution_msg_id},
+        ).mappings().first()
+        if collision and str(collision.get("remote_jid") or "") and str(collision.get("remote_jid") or "") != remote_jid:
+            logger.warning(
+                "[webhook-process] evolution_msg_id collision fallback evid=%s existing_remote_jid=%s incoming_remote_jid=%s",
+                evolution_msg_id,
+                collision.get("remote_jid"),
+                remote_jid,
+            )
+            stored_evolution_msg_id = ""
+            stored_message_hash = _build_message_hash(
+                workspace_id=workspace_id,
+                canal_id=canal_id,
+                instance=instance,
+                evolution_msg_id="",
+                direction=direction,
+                remote_jid=remote_jid,
+                message_signature=message_signature,
+            )
+
     if from_me:
-        if evolution_msg_id:
+        if stored_evolution_msg_id:
             msg_existente = db.execute(
                 text("""
                     SELECT id FROM public.crm_whatsapp_mensagens
@@ -904,7 +966,7 @@ def _upsert_message(
                       AND status = 'enviada'
                     ORDER BY created_at DESC LIMIT 1
                 """),
-                {"ws": workspace_id, "canal": canal_id, "inst": instance, "evid": evolution_msg_id},
+                {"ws": workspace_id, "canal": canal_id, "inst": instance, "evid": stored_evolution_msg_id},
             ).fetchone()
         else:
             msg_existente = db.execute(
@@ -917,7 +979,7 @@ def _upsert_message(
                       AND status = 'enviada'
                     LIMIT 1
                 """),
-                {"ws": workspace_id, "canal": canal_id, "message_hash": message_hash},
+                {"ws": workspace_id, "canal": canal_id, "message_hash": stored_message_hash},
             ).fetchone()
 
         if msg_existente:
@@ -948,9 +1010,9 @@ def _upsert_message(
                     WHERE id = :mid
                 """),
                 {
-                    "evid": evolution_msg_id,
+                    "evid": stored_evolution_msg_id or None,
                     "raw_event_id": raw_event_id,
-                    "message_hash": message_hash,
+                    "message_hash": stored_message_hash,
                     "payload": json.dumps(payload),
                     "mt": message_type,
                     "msg": text_value,
@@ -990,8 +1052,8 @@ def _upsert_message(
             "raw_event_id": raw_event_id,
             "cid": conversa_id,
             "ct": contato_id,
-            "evid": evolution_msg_id or None,
-            "message_hash": message_hash,
+            "evid": stored_evolution_msg_id or None,
+            "message_hash": stored_message_hash,
             "inst": instance,
             "jid": remote_jid,
             "direction": direction,
@@ -1022,8 +1084,9 @@ def _upsert_message(
             workspace_id=workspace_id,
             canal_id=canal_id,
             instance=instance,
-            evolution_msg_id=evolution_msg_id,
-            message_hash=message_hash,
+            evolution_msg_id=stored_evolution_msg_id,
+            remote_jid=remote_jid,
+            message_hash=stored_message_hash,
         )
         if existing:
             _merge_message_media_fields(
@@ -1086,6 +1149,10 @@ def _result(
     instance: str,
     workspace_id: str,
     media_payload: dict[str, Any],
+    provider: str | None = None,
+    full_message_id: str | None = None,
+    chat_id: str | None = None,
+    participant_name: str | None = None,
 ) -> dict[str, Any]:
     return {
         "is_media": is_media,
@@ -1099,6 +1166,10 @@ def _result(
         "participant_jid": participant_jid,
         "instance": instance,
         "workspace_id": workspace_id,
+        "provider": provider,
+        "full_message_id": full_message_id,
+        "chat_id": chat_id,
+        "participant_name": participant_name,
         "media_base64": media_payload.get("base64"),
         "media_url": media_payload.get("url"),
         "media_mime_type": media_payload.get("mimetype"),
@@ -1260,6 +1331,11 @@ def process_evolution_webhook_event(
                     instance_name=result.get("instance") or canal.evolution_instance_id or "opcl",
                     evolution_msg_id=evolution_msg_id,
                     message_type_raw=str(result.get("message_type") or ""),
+                    provider=str(result.get("provider") or ("whatsapp_waha" if getattr(canal, "tipo", "") == "whatsapp_waha" else "whatsapp_evolution")),
+                    provider_full_message_id=str(result.get("full_message_id") or ""),
+                    provider_chat_id=str(result.get("chat_id") or result.get("remote_jid") or ""),
+                    provider_participant_jid=str(result.get("participant_jid") or ""),
+                    provider_participant_name=str(result.get("participant_name") or ""),
                     media_base64=result.get("media_base64"),
                     media_url=result.get("media_url"),
                     media_mime_type=result.get("media_mime_type"),

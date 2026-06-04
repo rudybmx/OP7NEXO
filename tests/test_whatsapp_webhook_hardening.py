@@ -135,7 +135,7 @@ class _PersistenceDb:
             row = self.messages_by_evolution_id.get(evolution_msg_id)
             if not row:
                 return _Result()
-            return _Result(mapping={"id": row["id"], "conversa_id": row["conversa_id"]})
+            return _Result(mapping={"id": row["id"], "conversa_id": row["conversa_id"], "remote_jid": row.get("remote_jid")})
 
         if "SELECT id, conversa_id" in sql and "message_hash = :message_hash" in sql:
             row = self.messages_by_hash.get(params["message_hash"])
@@ -171,7 +171,7 @@ class _PersistenceDb:
                 return _Result()
             message_id = str(uuid.uuid4())
             conversa_id = str(params["cid"])
-            row = {"id": message_id, "conversa_id": conversa_id}
+            row = {"id": message_id, "conversa_id": conversa_id, "remote_jid": params["jid"]}
             self.messages_by_hash[message_hash] = row
             self.message_params_by_id[message_id] = dict(params)
             evolution_msg_id = params.get("evid")
@@ -623,6 +623,8 @@ def test_process_waha_message_any_from_me_com_midia_enfileira_download(monkeypat
     assert result["status"] == "done"
     assert result["result"]["from_me"] is True
     assert result["result"]["is_media"] is True
+    assert result["result"]["provider"] == "whatsapp_waha"
+    assert result["result"]["full_message_id"] == "true_554788888888@c.us_3EB0MEDIA001"
     inserted_params = db.message_params_by_id[result["result"]["mensagem_id"]]
     assert inserted_params["from_me"] is True
     assert inserted_params["media_status"] == "pending"
@@ -633,6 +635,10 @@ def test_process_waha_message_any_from_me_com_midia_enfileira_download(monkeypat
     assert enqueued[0]["media_mime_type"] == "image/jpeg"
     assert enqueued[0]["media_filename"] == "foto.jpeg"
     assert enqueued[0]["media_caption"] == "Foto manual"
+    assert enqueued[0]["provider"] == "whatsapp_waha"
+    assert enqueued[0]["provider_full_message_id"] == "true_554788888888@c.us_3EB0MEDIA001"
+    assert enqueued[0]["provider_chat_id"] == "554788888888@s.whatsapp.net"
+    assert enqueued[0]["provider_participant_jid"] == ""
     assert enqueued[0]["waha_session"] == "op7-waha"
     assert db.commits == 2
 
@@ -707,6 +713,27 @@ def test_message_e_message_any_mesmo_id_nao_duplica(monkeypatch):
     assert first["result"]["mensagem_id"] == second["result"]["mensagem_id"]
     assert len(db.messages_by_evolution_id) == 1
     assert len(db.messages_by_hash) == 1
+
+
+def test_find_existing_message_ignora_id_em_remote_jid_diferente():
+    db = _PersistenceDb()
+    db.messages_by_evolution_id["3EB0MANUAL001"] = {
+        "id": "msg-1",
+        "conversa_id": "conversation-1",
+        "remote_jid": "120363418928267817@g.us",
+    }
+
+    result = whatsapp_crm_persistence._find_existing_message(
+        db,
+        workspace_id="workspace-1",
+        canal_id="canal-1",
+        instance="op7-instance",
+        evolution_msg_id="3EB0MANUAL001",
+        remote_jid="120363403111619314@g.us",
+        message_hash="hash-1",
+    )
+
+    assert result is None
 
 
 def test_message_any_duplicado_mesmo_id_mescla_midia_sem_duplicar(monkeypatch):

@@ -209,6 +209,8 @@ def test_extract_waha_message_id(resp, expected):
     ("true_35210880090140@lid_3EB09C2DB39C7685CE4BE1", "3EB09C2DB39C7685CE4BE1"),
     # full WA ID com false_
     ("false_35210880090140@s.whatsapp.net_3EB0ABC123", "3EB0ABC123"),
+    # full WA ID de grupo com participant no sufixo → usa o msgid real, não o @lid
+    ("false_120363403111619314@g.us_3EB0C491AF96817AFEEE3D_35210880090140@lid", "3EB0C491AF96817AFEEE3D"),
     # ID simples sem prefixo → não modifica
     ("3EB09C2DB39C7685CE4BE1", "3EB09C2DB39C7685CE4BE1"),
     # ID vazio → retorna vazio
