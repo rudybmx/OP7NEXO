@@ -57,11 +57,38 @@ function formatPhone(telefone: string | null, remoteJid: string): string {
   return digits
 }
 
-function isLidJid(jid?: string | null) { return !!jid?.endsWith('@lid') }
 function isGroupJid(jid?: string | null) { return !!jid?.endsWith('@g.us') }
 function jidDigits(jid?: string | null) { return jid?.split('@')[0]?.replace(/\D/g, '') ?? '' }
 function isRealPhoneJid(jid?: string | null) {
   return !!jid && (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@c.us'))
+}
+
+function isJidLike(value: string): boolean {
+  const text = value.trim().toLowerCase()
+  return text.includes('@') && (
+    text.endsWith('@s.whatsapp.net') ||
+    text.endsWith('@c.us') ||
+    text.endsWith('@g.us') ||
+    text.endsWith('@lid')
+  )
+}
+
+function isRawPhoneName(value: string, remoteJid?: string | null): boolean {
+  const compact = value.replace(/[\s()+.-]/g, '')
+  const digits = value.replace(/\D/g, '')
+  if (!digits || compact !== digits) return false
+  const jid = jidDigits(remoteJid)
+  return !jid || digits === jid || isValidBrDigits(digits)
+}
+
+function isValidDisplayName(value: string | null | undefined, remoteJid?: string | null): value is string {
+  const text = value?.trim()
+  if (!text) return false
+  const lower = text.toLowerCase()
+  if (lower === 'contato' || lower === 'contato whatsapp') return false
+  if (isJidLike(text) || lower.includes('@lid')) return false
+  if (isRawPhoneName(text, remoteJid)) return false
+  return true
 }
 
 function resolveContactNome(
@@ -72,9 +99,7 @@ function resolveContactNome(
 ): string {
   const jid = remote_jid ?? ''
   if (isGroupJid(jid)) return group_name?.trim() || 'Grupo WhatsApp'
-  const digits = jidDigits(jid)
-  const nomeIsJidDigits = !!contato_nome && contato_nome === digits
-  if (contato_nome && !nomeIsJidDigits) return contato_nome
+  if (isValidDisplayName(contato_nome, jid)) return contato_nome.trim()
   if (isRealPhoneJid(jid)) return formatPhone(null, jid) || 'Contato'
   if (contato_telefone) {
     const telDigits = contato_telefone.replace(/\D/g, '')
