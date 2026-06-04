@@ -34,6 +34,11 @@ export interface MensagemApi {
   messageType?: string | null
   mediaUrl?: string | null
   mediaStatus?: string | null
+  mediaError?: string | null
+  mediaKind?: string | null        // 'image' | 'audio' | 'video' | 'document' | 'sticker'
+  mediaMimetype?: string | null
+  mediaFilename?: string | null
+  mediaCaption?: string | null
   waStatus?: 'pending' | 'sent' | 'delivered' | 'read' | 'played' | 'failed' | string | null
   failedReason?: string | null
   midias?: MensagemMidiaApi[]

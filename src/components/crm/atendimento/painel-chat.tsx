@@ -294,74 +294,166 @@ function MediaImagem({
   )
 }
 
+function renderMidiaPending(kind: string, filename: string | null | undefined, isEntrada: boolean, isIA: boolean, key: string) {
+  const mutedColor = isEntrada ? '#64748b' : (isIA ? 'rgba(255,255,255,0.55)' : 'rgba(15,32,58,0.50)')
+  const skeletonBg = isEntrada ? 'rgba(15,23,42,0.08)' : (isIA ? 'rgba(255,255,255,0.10)' : 'rgba(15,32,58,0.08)')
+
+  if (kind === 'image') {
+    return (
+      <div key={key} className="animate-pulse" style={{
+        width: 260, maxWidth: '100%', aspectRatio: '4/3',
+        borderRadius: 10, background: skeletonBg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={mutedColor} strokeWidth="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+      </div>
+    )
+  }
+  if (kind === 'audio') {
+    return (
+      <div key={key} className="animate-pulse" style={{
+        width: 250, maxWidth: '100%', height: 40, borderRadius: 8,
+        background: skeletonBg, display: 'flex', alignItems: 'center',
+        justifyContent: 'center', gap: 8,
+      }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={mutedColor} strokeWidth="1.5">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        <div style={{ flex: 1, height: 4, borderRadius: 2, background: skeletonBg, maxWidth: 160 }} />
+      </div>
+    )
+  }
+  if (kind === 'video') {
+    return (
+      <div key={key} className="animate-pulse" style={{
+        width: 260, maxWidth: '100%', aspectRatio: '16/9',
+        borderRadius: 10, background: skeletonBg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={mutedColor} strokeWidth="1.5">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+      </div>
+    )
+  }
+  if (kind === 'document') {
+    return (
+      <div key={key} style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        color: mutedColor, fontSize: 12,
+      }}>
+        <FileText size={16} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {filename || 'Carregando documento...'}
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div key={key} style={{ fontSize: 12, color: mutedColor }}>
+      Carregando mídia...
+    </div>
+  )
+}
+
+function renderMidiaError(kind: string | null | undefined, isEntrada: boolean, isIA: boolean, key: string) {
+  const mutedColor = isEntrada ? '#ef4444' : (isIA ? 'rgba(255,100,100,0.80)' : '#dc2626')
+  return (
+    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: mutedColor }}>
+      <AlertCircle size={14} />
+      <span>Não foi possível carregar a mídia</span>
+    </div>
+  )
+}
+
 function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpenLightbox: (url: string) => void) {
   const midias = msg.midias?.length
     ? msg.midias
-    : msg.mediaUrl ? [{ id: `${msg.id}-media`, tipo: msg.messageType || 'document', url: msg.mediaUrl }] : []
+    : msg.mediaUrl ? [{ id: `${msg.id}-media`, tipo: msg.mediaKind || msg.messageType || 'document', url: msg.mediaUrl, caption: msg.mediaCaption, filename: msg.mediaFilename }] : []
+
+  // Quando midias[] vazio mas há media_kind pendente, renderizar skeleton
+  const hasPendingOrError = !midias.length && (msg.mediaStatus === 'pending' || msg.mediaStatus === 'error') && msg.mediaKind
+  if (hasPendingOrError) {
+    if (msg.mediaStatus === 'error') {
+      return <div style={{ marginBottom: 4 }}>{renderMidiaError(msg.mediaKind, isEntrada, isIA, `${msg.id}-err`)}</div>
+    }
+    return <div style={{ marginBottom: 4 }}>{renderMidiaPending(msg.mediaKind!, msg.mediaFilename, isEntrada, isIA, `${msg.id}-pending`)}</div>
+  }
 
   if (midias.length === 0) return null
 
+  const caption = (media: { caption?: string | null }) => media.caption || msg.mediaCaption
+
   return (
-    <div style={{ display: 'grid', gap: 8, marginBottom: msg.conteudo ? 8 : 0 }}>
+    <div style={{ display: 'grid', gap: 8, marginBottom: 0 }}>
       {midias.map(media => {
-        const tipo = (media.tipo || msg.messageType || '').toLowerCase()
+        const kind = (media.tipo || msg.mediaKind || msg.messageType || '').toLowerCase()
         const url = media.url
+
         if (!url) {
-          return (
-            <div
-              key={media.id}
-              style={{
-                fontSize: 12,
-                color: isEntrada ? '#64748b' : (isIA ? 'rgba(255,255,255,0.78)' : '#10203a'),
-              }}
-            >
-              Mídia em processamento
-            </div>
-          )
+          if (msg.mediaStatus === 'error') {
+            return renderMidiaError(kind, isEntrada, isIA, media.id)
+          }
+          return renderMidiaPending(kind, (media as { filename?: string | null }).filename || msg.mediaFilename, isEntrada, isIA, media.id)
         }
-        if (tipo.includes('image') || tipo.includes('imagem')) {
+
+        const captionText = caption(media)
+        const mutedColor = isEntrada ? '#64748b' : (isIA ? 'rgba(255,255,255,0.78)' : '#10203a')
+
+        if (kind.includes('image') || kind.includes('imagem')) {
           return (
             <div key={media.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <MediaImagem
                 url={url}
-                alt={media.caption || media.filename || 'Imagem da conversa'}
+                alt={captionText || (media as { filename?: string | null }).filename || 'Imagem da conversa'}
                 onOpen={onOpenLightbox}
               />
-              {media.caption && (
-                <span style={{ fontSize: 12, color: isEntrada ? '#64748b' : (isIA ? 'rgba(255,255,255,0.78)' : '#10203a') }}>
-                  {media.caption}
-                </span>
+              {captionText && (
+                <span style={{ fontSize: 12, color: mutedColor }}>{captionText}</span>
               )}
             </div>
           )
         }
-        if (tipo.includes('audio')) {
-          return <audio key={media.id} controls src={url} style={{ width: 250, maxWidth: '100%' }} />
+        if (kind.includes('audio')) {
+          return (
+            <div key={media.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <audio controls src={url} style={{ width: 250, maxWidth: '100%' }} />
+              {captionText && <span style={{ fontSize: 12, color: mutedColor }}>{captionText}</span>}
+            </div>
+          )
         }
-        if (tipo.includes('video')) {
-          return <video key={media.id} controls src={url} style={{ display: 'block', width: 260, maxWidth: '100%', borderRadius: 10 }} />
+        if (kind.includes('video')) {
+          return (
+            <div key={media.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <video controls src={url} style={{ display: 'block', width: 260, maxWidth: '100%', borderRadius: 10 }} />
+              {captionText && <span style={{ fontSize: 12, color: mutedColor }}>{captionText}</span>}
+            </div>
+          )
         }
         return (
-          <a
-            key={media.id}
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              color: isEntrada ? '#3E5BFF' : (isIA ? '#ffffff' : '#0f2744'),
-              textDecoration: 'none',
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            {tipo.includes('sticker') ? <PlayCircle size={16} /> : <FileText size={16} />}
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {media.filename || 'Documento'}
-            </span>
-          </a>
+          <div key={media.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                color: isEntrada ? '#3E5BFF' : (isIA ? '#ffffff' : '#0f2744'),
+                textDecoration: 'none', fontSize: 12, fontWeight: 600,
+              }}
+            >
+              {kind.includes('sticker') ? <PlayCircle size={16} /> : <FileText size={16} />}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {(media as { filename?: string | null }).filename || msg.mediaFilename || 'Documento'}
+              </span>
+            </a>
+            {captionText && <span style={{ fontSize: 12, color: mutedColor }}>{captionText}</span>}
+          </div>
         )
       })}
     </div>
@@ -751,8 +843,11 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                       {renderMidia(msg, isEntrada, isIA, setLightboxUrl)}
                       {(() => {
                         const temMidia = (msg.midias?.length ?? 0) > 0 || !!msg.mediaUrl
-                        const isPlaceholder = msg.conteudo?.trim() === '[mídia]'
-                        if (!msg.conteudo || (temMidia && isPlaceholder)) return null
+                        const body = msg.conteudo?.trim() ?? ''
+                        const isPlaceholder = body === '[mídia]'
+                        // Suprimir "mídia" / "(mídia)" quando media_kind conhecido indica que é só placeholder
+                        const isMidiaText = msg.mediaKind != null && /^\(?(mídia|midia)\)?$/i.test(body)
+                        if (!msg.conteudo || (temMidia && isPlaceholder) || isMidiaText) return null
                         return <div style={{ whiteSpace: 'pre-wrap' }}>{msg.conteudo}</div>
                       })()}
                       <div style={{

@@ -21,6 +21,10 @@ interface BackendMensagemRow {
   failed_reason?: string | null
   media_status?: string | null
   media_error?: string | null
+  media_kind?: string | null
+  media_mimetype?: string | null
+  media_filename?: string | null
+  media_caption?: string | null
   message_type?: string | null
   participant_jid?: string | null
   participant_name?: string | null
@@ -55,6 +59,10 @@ interface MensagemRespostaRow {
   mediaUrl: string | null
   mediaStatus: string | null
   mediaError: string | null
+  mediaKind: string | null
+  mediaMimetype: string | null
+  mediaFilename: string | null
+  mediaCaption: string | null
   midias: Array<{
     id: string
     tipo: string
@@ -152,6 +160,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
         mediaUrl: midias[0]?.url || null,
         mediaStatus: row.media_status || null,
         mediaError: row.media_error || null,
+        mediaKind: row.media_kind ?? null,
+        mediaMimetype: row.media_mimetype ?? null,
+        mediaFilename: row.media_filename ?? null,
+        mediaCaption: row.media_caption ?? null,
         midias,
         participantJid: row.participant_jid || null,
         participantName: row.participant_name || null,
