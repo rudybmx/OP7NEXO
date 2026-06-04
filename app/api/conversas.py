@@ -368,14 +368,14 @@ def iniciar_conversa(
             workspace_id=canal_ws_id,
             jid=jid,
             telefone=numero_limpo,
-            nome=numero_formatado,
+            nome=numero_limpo,
             origem="manual",
         )
         db.add(contato)
         db.flush()
     else:
         if not contato.nome:
-            contato.nome = numero_formatado
+            contato.nome = numero_limpo
         if not contato.telefone:
             contato.telefone = numero_limpo
 
