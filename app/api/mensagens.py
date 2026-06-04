@@ -88,7 +88,6 @@ def _derive_media_fields(m: Mensagem) -> dict:
             }
 
     # 2. Verificar se há evidência real de mídia antes de inspecionar payload
-    has_media_status = getattr(m, "media_status", None) in ("pending", "ready", "error")
     has_media_type = (m.message_type or "") in _MEDIA_MESSAGE_TYPES
 
     # Payload protegido contra tipos não-dict
@@ -108,7 +107,7 @@ def _derive_media_fields(m: Mensagem) -> dict:
     has_payload_media = bool(media_node)
 
     # Se não há evidência de mídia, retornar null sem chamar infer_media_type
-    if not (has_media_status or has_media_type or has_payload_media):
+    if not (has_media_type or has_payload_media):
         return _NULL_MEDIA
 
     # 3. Extrair campos do nó de mídia

@@ -29,6 +29,104 @@ from app.services.whatsapp_normalizer import (
 logger = logging.getLogger(__name__)
 
 
+_INVALID_DISPLAY_NAMES = {"contato", "contato whatsapp"}
+
+
+def _digits(value: str) -> str:
+    return re.sub(r"\D", "", value or "")
+
+
+def _is_jid_like(value: str) -> bool:
+    text = str(value or "").strip().lower()
+    return "@" in text and (
+        text.endswith("@s.whatsapp.net")
+        or text.endswith("@c.us")
+        or text.endswith("@g.us")
+        or text.endswith("@lid")
+    )
+
+
+def _format_phone_display(value: str) -> str | None:
+    digits = _digits(value)
+    if not digits.startswith("55"):
+        return None
+    if len(digits) == 13:
+        return f"+55 {digits[2:4]} {digits[4:9]}-{digits[9:]}"
+    if len(digits) == 12:
+        return f"+55 {digits[2:4]} {digits[4:8]}-{digits[8:]}"
+    return None
+
+
+def _channel_own_identity(canal: CanalEntrada) -> dict[str, set[str] | str]:
+    cfg = getattr(canal, "config", None) or {}
+    waha = cfg.get("waha") if isinstance(cfg, dict) else {}
+    if not isinstance(waha, dict):
+        waha = {}
+    own_names = {
+        str(value).strip().casefold()
+        for value in (
+            waha.get("push_name"),
+            waha.get("pushName"),
+            waha.get("name"),
+            waha.get("session_name"),
+            waha.get("sessionName"),
+            waha.get("session"),
+        )
+        if str(value or "").strip()
+    }
+    return {
+        "phone": str(getattr(canal, "numero_telefone", "") or ""),
+        "names": own_names,
+    }
+
+
+def _valid_display_name(
+    value: str | None,
+    *,
+    jid: str = "",
+    own_identity: dict[str, set[str] | str] | None = None,
+) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.casefold() in _INVALID_DISPLAY_NAMES:
+        return ""
+    if _is_jid_like(text) or "@lid" in text.lower():
+        return ""
+
+    own_names = set()
+    own_phone = ""
+    if own_identity:
+        names = own_identity.get("names")
+        if isinstance(names, set):
+            own_names = names
+        phone = own_identity.get("phone")
+        if isinstance(phone, str):
+            own_phone = phone
+    if text.casefold() in own_names:
+        return ""
+
+    text_digits = _digits(text)
+    jid_digits = _digits(jid.split("@", 1)[0] if jid else "")
+    own_phone_digits = _digits(own_phone)
+    compact = re.sub(r"[\s()+.-]", "", text)
+    if text_digits and compact == text_digits:
+        return ""
+    if jid_digits and text_digits and text_digits == jid_digits:
+        return ""
+    if own_phone_digits and text_digits and text_digits == own_phone_digits:
+        return ""
+    return text
+
+
+def _message_sender_display_name(*, push_name: str, participant_jid: str, remote_jid: str) -> str:
+    clean_name = _valid_display_name(push_name, jid=participant_jid or remote_jid)
+    if clean_name:
+        return clean_name
+    formatted = _format_phone_display((participant_jid or remote_jid).split("@", 1)[0])
+    return formatted or "Contato"
+
+
 def process_evolution_message(
     db: Session,
     canal: CanalEntrada,
@@ -42,7 +140,12 @@ def process_evolution_message(
     participant_jid = normalized.participant_jid
     from_me = normalized.from_me
     evolution_msg_id = normalized.evolution_msg_id
-    push_name = normalized.push_name
+    own_identity = _channel_own_identity(canal)
+    push_name = _valid_display_name(
+        normalized.push_name,
+        jid=normalized.participant_jid if normalized.is_group else normalized.remote_jid,
+        own_identity=own_identity,
+    )
     message_type = normalized.message_type
     recebida_em = normalized.received_at
     instance = canal.evolution_instance_id or normalized.instance or "opcl"
@@ -526,12 +629,24 @@ def _resolve_lid_contact(
 
 
 def _upsert_participant_contact(db: Session, *, workspace_id: str, participant_jid: str, sender_name: str) -> Any:
+    display_name = _valid_display_name(sender_name, jid=participant_jid)
     result = db.execute(
         text("""
             INSERT INTO public.crm_whatsapp_contatos (workspace_id, jid, telefone, numero_evo, nome, push_name, origem, created_at, updated_at)
             VALUES (CAST(:ws AS uuid), :jid, :tel, :evo, :nome, :push, 'evolution', NOW(), NOW())
             ON CONFLICT (workspace_id, jid) DO UPDATE SET
-                nome = COALESCE(EXCLUDED.nome, public.crm_whatsapp_contatos.nome),
+                nome = CASE
+                    WHEN EXCLUDED.push_name IS NOT NULL
+                         AND (
+                            public.crm_whatsapp_contatos.nome IS NULL
+                            OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.telefone
+                            OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.jid
+                            OR lower(public.crm_whatsapp_contatos.nome) IN ('contato', 'contato whatsapp')
+                            OR public.crm_whatsapp_contatos.nome LIKE '%@%'
+                         )
+                    THEN EXCLUDED.push_name
+                    ELSE public.crm_whatsapp_contatos.nome
+                END,
                 push_name = COALESCE(EXCLUDED.push_name, public.crm_whatsapp_contatos.push_name),
                 updated_at = NOW()
             RETURNING id
@@ -541,8 +656,8 @@ def _upsert_participant_contact(db: Session, *, workspace_id: str, participant_j
             "jid": participant_jid,
             "tel": participant_jid.split("@")[0] if "@" in participant_jid else participant_jid,
             "evo": participant_jid,
-            "nome": sender_name or participant_jid.split("@")[0],
-            "push": sender_name,
+            "nome": display_name,
+            "push": display_name,
         },
     )
     return result.scalar()
@@ -563,20 +678,38 @@ def _upsert_contact(
     upsert_tel = upsert_jid.split("@")[0] if "@s.whatsapp.net" in upsert_jid else (
         re.sub(r"\D", "", sender_pn.split("@")[0]) if sender_pn else remote_jid.split("@")[0]
     )
+    clean_push_name = _valid_display_name(push_name, jid=upsert_jid)
+    fallback_name = _format_phone_display(upsert_tel)
     if existing_contact_id:
         db.execute(
             text("""
                 UPDATE public.crm_whatsapp_contatos
                 SET push_name = COALESCE(:push, push_name),
                     nome = CASE
-                        WHEN :push IS NOT NULL AND (nome IS NULL OR nome = telefone)
+                        WHEN :push IS NOT NULL
+                             AND (
+                                nome IS NULL
+                                OR nome = telefone
+                                OR nome = jid
+                                OR lower(nome) IN ('contato', 'contato whatsapp')
+                                OR nome LIKE '%@%'
+                             )
                         THEN :push
+                        WHEN :fallback_name IS NOT NULL
+                             AND (
+                                nome IS NULL
+                                OR nome = telefone
+                                OR nome = jid
+                                OR lower(nome) IN ('contato', 'contato whatsapp')
+                                OR nome LIKE '%@%'
+                             )
+                        THEN :fallback_name
                         ELSE nome
                     END,
                     updated_at = NOW()
                 WHERE id = :cid
             """),
-            {"push": push_name or None, "cid": str(existing_contact_id)},
+            {"push": clean_push_name or None, "fallback_name": fallback_name, "cid": str(existing_contact_id)},
         )
         return existing_contact_id
 
@@ -602,8 +735,20 @@ def _upsert_contact(
                 nome = CASE
                     WHEN EXCLUDED.push_name IS NOT NULL
                          AND (public.crm_whatsapp_contatos.nome IS NULL
-                              OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.telefone)
+                              OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.telefone
+                              OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.jid
+                              OR lower(public.crm_whatsapp_contatos.nome) IN ('contato', 'contato whatsapp')
+                              OR public.crm_whatsapp_contatos.nome LIKE '%@%')
                     THEN EXCLUDED.push_name
+                    WHEN EXCLUDED.nome IS NOT NULL
+                         AND (
+                            public.crm_whatsapp_contatos.nome IS NULL
+                            OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.telefone
+                            OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.jid
+                            OR lower(public.crm_whatsapp_contatos.nome) IN ('contato', 'contato whatsapp')
+                            OR public.crm_whatsapp_contatos.nome LIKE '%@%'
+                         )
+                    THEN EXCLUDED.nome
                     ELSE COALESCE(public.crm_whatsapp_contatos.nome, EXCLUDED.nome)
                 END,
                 numero_evo = COALESCE(NULLIF(EXCLUDED.numero_evo, ''), public.crm_whatsapp_contatos.numero_evo),
@@ -627,8 +772,8 @@ def _upsert_contact(
             "jid": upsert_jid,
             "tel": upsert_tel,
             "evo": numero_evo,
-            "nome": push_name or upsert_tel,
-            "push": push_name,
+            "nome": clean_push_name or fallback_name,
+            "push": clean_push_name,
             "campanha": lead_origin.get("campanha_origem"),
             "utm_source": lead_origin.get("utm_source"),
             "utm_medium": lead_origin.get("utm_medium"),
@@ -854,7 +999,11 @@ def _upsert_message(
             "direction": direction,
             "from_me": from_me,
             "remetente_tipo": remetente_tipo,
-            "rn": "Agente" if from_me else (push_name or (participant_jid.split("@")[0] if participant_jid else remote_jid.split("@")[0])),
+            "rn": "Agente" if from_me else _message_sender_display_name(
+                push_name=push_name,
+                participant_jid=participant_jid,
+                remote_jid=remote_jid,
+            ),
             "msg": text_value,
             "mt": message_type,
             "status": status_value,

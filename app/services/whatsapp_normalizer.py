@@ -500,7 +500,7 @@ def _extract_text(message: dict[str, Any], info: dict[str, Any], media: WhatsApp
 
     if media.is_media:
         return "[mídia]"
-    return "[mídia]"
+    return ""
 
 
 def _extract_mentions(message: dict[str, Any], root: dict[str, Any]) -> list[str]:

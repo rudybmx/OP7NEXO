@@ -128,6 +128,65 @@ def test_ptt_original_vira_audioMessage():
     assert "audioMessage" in msg
 
 
+def test_waha_contact_name_nested_vira_push_name():
+    waha = {
+        "event": "message",
+        "session": "test_session",
+        "payload": {
+            "id": "MSG1",
+            "from": "5511999990001@c.us",
+            "chatId": "5511999990001@c.us",
+            "fromMe": False,
+            "body": "Oi",
+            "hasMedia": False,
+            "contact": {"name": "Maria Silva", "pushname": "Maria"},
+        },
+    }
+    adapted = adapt_waha_to_evolution(waha)
+    assert adapted["data"]["pushName"] == "Maria"
+
+
+def test_waha_own_account_name_nao_vira_push_name():
+    waha = {
+        "event": "message",
+        "session": "op7-waha",
+        "me": {"id": "554799999999@c.us", "pushName": "Atendimento OP7"},
+        "payload": {
+            "id": "MSG1",
+            "from": "5511999990001@c.us",
+            "chatId": "5511999990001@c.us",
+            "fromMe": False,
+            "body": "Oi",
+            "hasMedia": False,
+            "pushName": "Atendimento OP7",
+        },
+    }
+    adapted = adapt_waha_to_evolution(waha)
+    assert adapted["data"]["pushName"] == ""
+
+
+def test_waha_group_preserva_remote_jid_e_participant_separados():
+    waha = {
+        "event": "message",
+        "session": "test_session",
+        "payload": {
+            "id": "GROUP1",
+            "from": "120363000000000000@g.us",
+            "chatId": "120363000000000000@g.us",
+            "participant": "5511888887777@c.us",
+            "participantName": "João",
+            "fromMe": False,
+            "body": "Oi grupo",
+            "hasMedia": False,
+            "chat": {"name": "Grupo Comercial"},
+        },
+    }
+    adapted = adapt_waha_to_evolution(waha)
+    assert adapted["data"]["key"]["remoteJid"] == "120363000000000000@g.us"
+    assert adapted["data"]["key"]["participant"] == "5511888887777@s.whatsapp.net"
+    assert adapted["data"]["pushName"] == "João"
+
+
 # ---------------------------------------------------------------------------
 # _derive_media_fields — extração de payload quando midias[] vazio
 # ---------------------------------------------------------------------------
@@ -200,6 +259,16 @@ def test_texto_sem_midia_retorna_null():
     assert fields == _NULL_MEDIA
     assert fields["media_kind"] is None
     assert fields["media_mimetype"] is None
+
+
+def test_texto_com_media_status_sem_evidencia_nao_vira_midia():
+    m = _FakeMensagem(
+        message_type="conversation",
+        media_status="pending",
+        payload={"data": {"message": {"conversation": "Olá"}}},
+    )
+    fields = _derive_media_fields(m)
+    assert fields == _NULL_MEDIA
 
 
 def test_midia_ready_usa_dados_da_midia_salva():

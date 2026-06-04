@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from urllib.parse import urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,127 @@ def _normalize_waha_jid(jid: str) -> str:
     return text
 
 
+def _nested_dict(source: dict, *keys: str) -> dict:
+    current = source
+    for key in keys:
+        value = current.get(key) if isinstance(current, dict) else None
+        if not isinstance(value, dict):
+            return {}
+        current = value
+    return current
+
+
+def _first_text(*values: object) -> str:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def _digits(value: str) -> str:
+    return re.sub(r"\D", "", value or "")
+
+
+def _is_jid_like(value: str) -> bool:
+    text = value.strip().lower()
+    return "@" in text and (
+        text.endswith("@c.us")
+        or text.endswith("@s.whatsapp.net")
+        or text.endswith("@g.us")
+        or text.endswith("@lid")
+    )
+
+
+def _valid_waha_name(value: object, *, jid: str = "", own_names: set[str] | None = None, own_phone: str = "") -> str:
+    text = _first_text(value)
+    if not text:
+        return ""
+    normalized = text.casefold()
+    if normalized in {"contato", "contato whatsapp"}:
+        return ""
+    if _is_jid_like(text) or text.endswith("@lid") or "@lid" in text:
+        return ""
+    digits = _digits(text)
+    jid_digits = _digits(jid.split("@", 1)[0] if jid else "")
+    if digits and digits == text.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", ""):
+        return ""
+    if jid_digits and digits and digits == jid_digits:
+        return ""
+    own_phone_digits = _digits(own_phone)
+    if own_phone_digits and digits and digits == own_phone_digits:
+        return ""
+    if own_names and normalized in own_names:
+        return ""
+    return text
+
+
+def _extract_contact_name(
+    inner: dict,
+    root: dict,
+    *,
+    jid: str,
+    own_names: set[str],
+    own_phone: str,
+    include_chat_name: bool = True,
+) -> str:
+    contact = _nested_dict(inner, "contact") or _nested_dict(root, "contact")
+    data = _nested_dict(inner, "_data") or _nested_dict(root, "_data")
+    chat = _nested_dict(inner, "chat") or _nested_dict(root, "chat")
+    chat_name = _valid_waha_name(chat.get("name"), jid=jid, own_names=own_names, own_phone=own_phone) if include_chat_name else ""
+    return _first_text(
+        _valid_waha_name(inner.get("pushName"), jid=jid, own_names=own_names, own_phone=own_phone),
+        _valid_waha_name(inner.get("pushname"), jid=jid, own_names=own_names, own_phone=own_phone),
+        _valid_waha_name(root.get("pushName"), jid=jid, own_names=own_names, own_phone=own_phone),
+        _valid_waha_name(contact.get("pushName"), jid=jid, own_names=own_names, own_phone=own_phone),
+        _valid_waha_name(contact.get("pushname"), jid=jid, own_names=own_names, own_phone=own_phone),
+        _valid_waha_name(contact.get("name"), jid=jid, own_names=own_names, own_phone=own_phone),
+        _valid_waha_name(contact.get("shortName"), jid=jid, own_names=own_names, own_phone=own_phone),
+        _valid_waha_name(data.get("notifyName"), jid=jid, own_names=own_names, own_phone=own_phone),
+        _valid_waha_name(data.get("pushName"), jid=jid, own_names=own_names, own_phone=own_phone),
+        chat_name,
+    )
+
+
+def _extract_participant_jid(inner: dict, root: dict) -> str:
+    data = _nested_dict(inner, "_data") or _nested_dict(root, "_data")
+    return _normalize_waha_jid(
+        _first_text(
+            inner.get("participant"),
+            root.get("participant"),
+            data.get("participant"),
+        )
+    )
+
+
+def _extract_own_identity(inner: dict, root: dict) -> tuple[str, set[str]]:
+    me = _nested_dict(root, "me") or _nested_dict(inner, "me")
+    own_phone = _first_text(
+        me.get("id"),
+        me.get("jid"),
+        me.get("number"),
+        root.get("meId"),
+        inner.get("meId"),
+        root.get("to"),
+        inner.get("to"),
+    )
+    own_names = {
+        str(value).strip().casefold()
+        for value in (
+            me.get("pushName"),
+            me.get("pushname"),
+            me.get("name"),
+            me.get("shortName"),
+            root.get("sessionName"),
+            inner.get("sessionName"),
+        )
+        if str(value or "").strip()
+    }
+    return own_phone, own_names
+
+
 def _normalize_waha_media_url(url: str) -> str:
     """Substitui scheme+netloc quando a URL vem de localhost/127.0.0.1."""
     base = os.getenv("WAHA_API_BASE_URL", "http://waha:3000")
@@ -111,7 +233,26 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
         inner.get("chatId") or inner.get("from") or waha.get("chatId") or waha.get("from", "")
     )
     msg_text   = inner.get("body") or waha.get("body", "")
-    push_name  = inner.get("pushName") or waha.get("pushName", "")
+    own_phone, own_names = _extract_own_identity(inner, waha)
+    is_group_chat = remote_jid.endswith("@g.us")
+    push_name  = _extract_contact_name(
+        inner,
+        waha,
+        jid=remote_jid,
+        own_names=own_names,
+        own_phone=own_phone,
+        include_chat_name=not is_group_chat,
+    )
+    participant_jid = _extract_participant_jid(inner, waha)
+    participant_name = ""
+    if participant_jid:
+        participant_name = _first_text(
+            _valid_waha_name(inner.get("participantName"), jid=participant_jid, own_names=own_names, own_phone=own_phone),
+            _valid_waha_name(waha.get("participantName"), jid=participant_jid, own_names=own_names, own_phone=own_phone),
+            push_name,
+        )
+        if is_group_chat and not push_name:
+            push_name = participant_name
     timestamp  = (inner.get("timestamp") or inner.get("messageTimestamp")
                   or waha.get("timestamp") or waha.get("messageTimestamp"))
     from_me    = inner.get("fromMe") if inner.get("fromMe") is not None else waha.get("fromMe", False)
@@ -158,9 +299,18 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
         }
 
     # ── Branch mensagem (texto / mídia) ──────────────────────────────────────
-    has_media = bool(inner.get("hasMedia"))
     waha_type  = str(inner.get("type") or "").lower()
     media_obj  = inner.get("media") or {}
+    if not isinstance(media_obj, dict):
+        media_obj = {}
+    has_media = bool(
+        inner.get("hasMedia")
+        or waha_type in _WAHA_TYPE_TO_MSG_KEY
+        or media_obj.get("url")
+        or media_obj.get("mimetype")
+        or media_obj.get("filename")
+        or media_obj.get("fileName")
+    )
     caption    = inner.get("caption") or ""
 
     # WAHA NOWEB não envia campo "type" — inferir pelo mimetype quando ausente
@@ -209,8 +359,11 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
                 "id": msg_id,
                 "remoteJid": remote_jid,
                 "fromMe": bool(from_me),
+                "participant": participant_jid,
             },
             "pushName": push_name,
+            "participant": participant_jid,
+            "participantName": participant_name,
             "message": message,
             "messageTimestamp": timestamp,
         },
