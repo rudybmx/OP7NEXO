@@ -46,6 +46,8 @@ _WAHA_ACK_INT_MAP: dict[int, str] = {
     4:  "read",
 }
 
+_IGNORED_CHAT_SUFFIXES = ("@newsletter", "@broadcast")
+
 
 def _map_waha_ack_to_status(ack: int | None, ack_name: str | None) -> str | None:
     """Converte ACK WAHA em status interno. Retorna None se não reconhecido.
@@ -85,6 +87,28 @@ def _normalize_waha_jid(jid: str) -> str:
     if text.endswith("@c.us"):
         return f"{text[:-5]}@s.whatsapp.net"
     return text
+
+
+def _is_ignored_waha_chat_id(jid: str) -> bool:
+    """WAHA channel/broadcast updates are not CRM conversations."""
+    text = str(jid or "").strip().lower()
+    return bool(text) and (text == "status@broadcast" or text.endswith(_IGNORED_CHAT_SUFFIXES))
+
+
+def _extract_waha_chat_candidates(inner: dict, root: dict) -> list[str]:
+    candidates: list[str] = []
+    for source in (inner, root):
+        for key in ("chatId", "from", "to", "id"):
+            value = source.get(key) if isinstance(source, dict) else None
+            if isinstance(value, str) and value.strip():
+                candidates.append(_normalize_waha_jid(value))
+    return candidates
+
+
+def is_ignored_waha_update(waha: dict) -> bool:
+    """Retorna True para atualizações WAHA de Channels/Status/Broadcast."""
+    inner = waha.get("payload") if isinstance(waha.get("payload"), dict) else waha
+    return any(_is_ignored_waha_chat_id(candidate) for candidate in _extract_waha_chat_candidates(inner, waha))
 
 
 def _nested_dict(source: dict, *keys: str) -> dict:
@@ -260,6 +284,27 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
     session    = waha.get("session") or inner.get("_sessionName") or waha.get("_sessionName", "waha")
     event_name = (waha.get("event") or "").lower()
 
+    if is_ignored_waha_update(waha):
+        return {
+            "data": {
+                "key": {
+                    "id": msg_id,
+                    "remoteJid": remote_jid,
+                    "fromMe": bool(from_me),
+                },
+                "provider": "whatsapp_waha",
+                "waha": {
+                    "session": session,
+                    "chatId": remote_jid,
+                    "messageId": msg_id,
+                    "fullMessageId": str(inner.get("id") or waha.get("id") or ""),
+                    "ignoredReason": "whatsapp_channel_or_broadcast_update",
+                },
+            },
+            "event": "messages.ignored",
+            "instance": session,
+        }
+
     if event_name == "session.status":
         return {
             "data": {
@@ -356,14 +401,17 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
     else:
         message = {"conversation": msg_text}
 
+    key: dict[str, object] = {
+        "id": msg_id,
+        "remoteJid": remote_jid,
+        "fromMe": bool(from_me),
+    }
+    if participant_jid:
+        key["participant"] = participant_jid
+
     return {
         "data": {
-            "key": {
-                "id": msg_id,
-                "remoteJid": remote_jid,
-                "fromMe": bool(from_me),
-                "participant": participant_jid,
-            },
+            "key": key,
             "pushName": push_name,
             "participant": participant_jid,
             "participantName": participant_name,

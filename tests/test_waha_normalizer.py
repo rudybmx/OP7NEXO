@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from app.services.waha_normalizer import _normalize_waha_media_url, adapt_waha_to_evolution
+from app.services.waha_normalizer import _normalize_waha_media_url, adapt_waha_to_evolution, is_ignored_waha_update
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +61,53 @@ def test_texto_sem_media():
     assert "conversation" in msg
     assert msg["conversation"] == "Olá"
     assert "imageMessage" not in msg
+
+
+def test_whatsapp_channel_newsletter_e_ignorado():
+    waha = {
+        "event": "message",
+        "session": "qozt",
+        "payload": {
+            "id": "false_120363999999999999@newsletter_3EB0CHANNEL001",
+            "from": "120363999999999999@newsletter",
+            "chatId": "120363999999999999@newsletter",
+            "fromMe": False,
+            "body": "Atualização de canal do WhatsApp",
+            "hasMedia": False,
+            "timestamp": 1_700_000_000,
+            "pushName": "Canal",
+        },
+    }
+
+    adapted = adapt_waha_to_evolution(waha)
+
+    assert is_ignored_waha_update(waha) is True
+    assert adapted["event"] == "messages.ignored"
+    assert adapted["data"]["key"]["remoteJid"] == "120363999999999999@newsletter"
+    assert adapted["data"]["waha"]["ignoredReason"] == "whatsapp_channel_or_broadcast_update"
+    assert "message" not in adapted["data"]
+
+
+def test_whatsapp_status_broadcast_e_ignorado():
+    waha = {
+        "event": "message",
+        "session": "qozt",
+        "payload": {
+            "id": "false_status@broadcast_3EB0STATUS001",
+            "from": "status@broadcast",
+            "chatId": "status@broadcast",
+            "fromMe": False,
+            "body": "Atualização de status",
+            "hasMedia": False,
+            "timestamp": 1_700_000_000,
+        },
+    }
+
+    adapted = adapt_waha_to_evolution(waha)
+
+    assert is_ignored_waha_update(waha) is True
+    assert adapted["event"] == "messages.ignored"
+    assert adapted["data"]["key"]["remoteJid"] == "status@broadcast"
 
 
 # ---------------------------------------------------------------------------
