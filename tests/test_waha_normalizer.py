@@ -234,16 +234,17 @@ def test_video_sem_type_usa_mimetype():
     assert "videoMessage" in msg, f"esperado videoMessage, got {list(msg.keys())}"
 
 
-def test_type_presente_tem_prioridade_sobre_mimetype():
-    """Quando type está presente, ele tem prioridade (compatibilidade com versões que enviam type)."""
+def test_document_com_image_jpeg_vira_imageMessage():
+    """document + mimetype image/jpeg → reclassificado como imageMessage (fix: JPG enviado como doc)."""
     waha = _make_waha(
         type_="document",
-        mimetype="image/jpeg",  # mimetype discrepante — type deve vencer
+        mimetype="image/jpeg",
         url="http://waha:3000/api/files/qozt/file.jpg",
     )
     adapted = adapt_waha_to_evolution(waha)
     msg = adapted["data"]["message"]
-    assert "documentMessage" in msg
+    assert "imageMessage" in msg
+    assert "documentMessage" not in msg
 
 
 # ---------------------------------------------------------------------------

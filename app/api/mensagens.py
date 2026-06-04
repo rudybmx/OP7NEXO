@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
 from app.models.crm import Mensagem
 from app.models.user import User
+from app.services.whatsapp_media import infer_media_type
 
 router = APIRouter(prefix="/mensagens", tags=["mensagens"])
 
@@ -40,6 +41,10 @@ class MensagemOut(BaseModel):
     failed_reason: str | None
     media_status: str | None = None
     media_error: str | None = None
+    media_kind: str | None = None
+    media_mimetype: str | None = None
+    media_filename: str | None = None
+    media_caption: str | None = None
     participant_jid: str | None
     participant_name: str | None
     is_mentioned: bool
@@ -56,6 +61,69 @@ class MensagemIn(BaseModel):
     remetente_tipo: str = "agente"
     remetente_nome: str | None = None
     message_type: str = "text"
+
+
+_MEDIA_MESSAGE_TYPES = frozenset({
+    "imageMessage", "audioMessage", "pttMessage",
+    "videoMessage", "documentMessage", "stickerMessage",
+})
+
+_NULL_MEDIA: dict = {
+    "media_kind": None,
+    "media_mimetype": None,
+    "media_filename": None,
+    "media_caption": None,
+}
+
+
+def _derive_media_fields(m: Mensagem) -> dict:
+    # 1. Preferir dados da midia já salva
+    for media in (m.midias or []):
+        if media.ativo:
+            return {
+                "media_kind": media.tipo,
+                "media_mimetype": media.mimetype,
+                "media_filename": getattr(media, "filename", None),
+                "media_caption": getattr(media, "caption", None),
+            }
+
+    # 2. Verificar se há evidência real de mídia antes de inspecionar payload
+    has_media_status = getattr(m, "media_status", None) in ("pending", "ready", "error")
+    has_media_type = (m.message_type or "") in _MEDIA_MESSAGE_TYPES
+
+    # Payload protegido contra tipos não-dict
+    payload = m.payload if isinstance(m.payload, dict) else {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    msg_obj = data.get("message") if isinstance(data.get("message"), dict) else {}
+    msg_key = m.message_type or ""
+    media_node = msg_obj.get(msg_key) if isinstance(msg_obj.get(msg_key), dict) else {}
+    if not media_node:
+        for v in msg_obj.values():
+            if isinstance(v, dict) and any(
+                k in v for k in ("mimetype", "mimeType", "fileName", "filename", "caption", "url", "base64")
+            ):
+                media_node = v
+                break
+
+    has_payload_media = bool(media_node)
+
+    # Se não há evidência de mídia, retornar null sem chamar infer_media_type
+    if not (has_media_status or has_media_type or has_payload_media):
+        return _NULL_MEDIA
+
+    # 3. Extrair campos do nó de mídia
+    raw_mimetype = media_node.get("mimetype") or media_node.get("mimeType") or ""
+    raw_filename = media_node.get("fileName") or media_node.get("filename") or None
+    raw_caption = media_node.get("caption") or None
+
+    kind = infer_media_type(raw_mimetype, msg_key, raw_filename or "")
+
+    return {
+        "media_kind": kind or None,
+        "media_mimetype": raw_mimetype or None,
+        "media_filename": raw_filename,
+        "media_caption": raw_caption,
+    }
 
 
 def _get_mensagem_or_404(
@@ -76,6 +144,7 @@ def _get_mensagem_or_404(
 
 
 def _mensagem_out(m: Mensagem) -> MensagemOut:
+    mf = _derive_media_fields(m)
     return MensagemOut(
         id=str(m.id),
         workspace_id=str(m.workspace_id),
@@ -101,6 +170,10 @@ def _mensagem_out(m: Mensagem) -> MensagemOut:
         failed_reason=m.failed_reason,
         media_status=getattr(m, "media_status", None),
         media_error=getattr(m, "media_error", None),
+        media_kind=mf["media_kind"],
+        media_mimetype=mf["media_mimetype"],
+        media_filename=mf["media_filename"],
+        media_caption=mf["media_caption"],
         participant_jid=m.participant_jid,
         participant_name=m.participant_name,
         is_mentioned=m.is_mentioned,

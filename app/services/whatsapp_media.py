@@ -195,7 +195,7 @@ def store_media_bytes(
     message_type_raw: str = "",
 ) -> StoredMedia:
     validate_media(content, mimetype)
-    media_type = infer_media_type(mimetype, message_type_raw)
+    media_type = infer_media_type(mimetype, message_type_raw, filename or "")
     ext = os.path.splitext(filename or "")[1] or mimetypes.guess_extension(mimetype) or ".bin"
     safe_filename = _safe_filename(filename or f"{mensagem_id}{ext}")
     object_key = f"whatsapp/{workspace_id}/{conversa_id}/{mensagem_id}{ext}"
@@ -268,16 +268,46 @@ def validate_media(content: bytes, mimetype: str) -> None:
         raise ValueError(f"Tipo de arquivo não permitido: {mimetype}")
 
 
-def infer_media_type(mimetype: str, message_type_raw: str = "") -> str:
+def infer_media_type(mimetype: str, message_type_raw: str = "", filename: str = "") -> str:
     raw = str(message_type_raw or "").lower()
-    if "image" in raw or mimetype.startswith("image/"):
-        return "image"
-    if "video" in raw or "ptv" in raw or mimetype.startswith("video/"):
-        return "video"
-    if "audio" in raw or mimetype.startswith("audio/"):
-        return "audio"
+
+    # Sticker explícito vence mimetype (image/webp via stickerMessage → sticker)
     if "sticker" in raw:
         return "sticker"
+
+    mt = str(mimetype or "").lower()
+    if mt.startswith("image/"):
+        return "image"   # image/webp aqui é image (sticker checado acima)
+    if mt.startswith("audio/"):
+        return "audio"
+    if mt.startswith("video/"):
+        return "video"
+    if mt == "application/pdf":
+        return "document"
+
+    # Fallback por message_type
+    if "image" in raw:
+        return "image"
+    if "video" in raw or "ptv" in raw:
+        return "video"
+    if "audio" in raw or "ptt" in raw:
+        return "audio"
+
+    # Fallback por extensão
+    if filename:
+        ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+        _EXT: dict[str, str] = {
+            "jpg": "image", "jpeg": "image", "png": "image",
+            "webp": "image", "gif": "image",
+            "mp3": "audio", "ogg": "audio", "opus": "audio",
+            "wav": "audio", "m4a": "audio",
+            "mp4": "video", "mov": "video",
+            "pdf": "document", "doc": "document", "docx": "document",
+            "xls": "document", "xlsx": "document", "csv": "document", "txt": "document",
+        }
+        if ext in _EXT:
+            return _EXT[ext]
+
     return "document"
 
 

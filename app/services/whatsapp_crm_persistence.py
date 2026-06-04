@@ -156,7 +156,8 @@ def process_evolution_message(
         remote_jid=remote_jid,
         sender_pn=sender_pn,
         numero_evo=numero_evo,
-        push_name=push_name,
+        # Para fromMe=True, push_name é o nome da nossa conta — não sobrescrever o contato
+        push_name=None if from_me else push_name,
         lead_origin=lead_origem,
         existing_contact_id=contato_id_existente,
     )

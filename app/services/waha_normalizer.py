@@ -177,6 +177,15 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
         elif mimetype_str:
             waha_type = "document"
 
+    # Override: document com mimetype de imagem/áudio → reclassificar pelo mimetype real.
+    # Sticker NÃO é inferido por mimetype — só quando waha_type original for "sticker".
+    if waha_type == "document" and has_media:
+        _mt = (media_obj.get("mimetype") or "").lower()
+        if _mt.startswith("image/"):
+            waha_type = "image"   # image/webp como document → image (não sticker)
+        elif _mt.startswith("audio/"):
+            waha_type = "audio"   # audio/webm como document → audioMessage (não ptt)
+
     if has_media and waha_type in _WAHA_TYPE_TO_MSG_KEY:
         msg_key = _WAHA_TYPE_TO_MSG_KEY[waha_type]
         raw_url = media_obj.get("url") or inner.get("mediaUrl") or ""
