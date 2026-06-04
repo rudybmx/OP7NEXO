@@ -150,9 +150,7 @@ def process_evolution_message(
     recebida_em = normalized.received_at
     instance = canal.evolution_instance_id or normalized.instance or "opcl"
     media_payload = normalized.media.model_dump()
-    has_media_file = bool(normalized.media.base64 or normalized.media.url)
-    is_waha_channel = getattr(canal, "tipo", "") == "whatsapp_waha"
-    should_enqueue_media = bool(normalized.media.is_media and (has_media_file or not is_waha_channel))
+    should_enqueue_media = bool(normalized.media.is_media)
     media_status = None
     media_error = None
     if normalized.media.is_media:
@@ -638,10 +636,10 @@ def _upsert_participant_contact(db: Session, *, workspace_id: str, participant_j
                 nome = CASE
                     WHEN EXCLUDED.push_name IS NOT NULL
                          AND (
-                            public.crm_whatsapp_contatos.nome IS NULL
+                            NULLIF(BTRIM(public.crm_whatsapp_contatos.nome), '') IS NULL
                             OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.telefone
                             OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.jid
-                            OR lower(public.crm_whatsapp_contatos.nome) IN ('contato', 'contato whatsapp')
+                            OR lower(BTRIM(public.crm_whatsapp_contatos.nome)) IN ('contato', 'contato whatsapp')
                             OR public.crm_whatsapp_contatos.nome LIKE '%@%'
                          )
                     THEN EXCLUDED.push_name
@@ -688,19 +686,19 @@ def _upsert_contact(
                     nome = CASE
                         WHEN :push IS NOT NULL
                              AND (
-                                nome IS NULL
+                                NULLIF(BTRIM(nome), '') IS NULL
                                 OR nome = telefone
                                 OR nome = jid
-                                OR lower(nome) IN ('contato', 'contato whatsapp')
+                                OR lower(BTRIM(nome)) IN ('contato', 'contato whatsapp')
                                 OR nome LIKE '%@%'
                              )
                         THEN :push
                         WHEN :fallback_name IS NOT NULL
                              AND (
-                                nome IS NULL
+                                NULLIF(BTRIM(nome), '') IS NULL
                                 OR nome = telefone
                                 OR nome = jid
-                                OR lower(nome) IN ('contato', 'contato whatsapp')
+                                OR lower(BTRIM(nome)) IN ('contato', 'contato whatsapp')
                                 OR nome LIKE '%@%'
                              )
                         THEN :fallback_name
@@ -734,18 +732,18 @@ def _upsert_contact(
                 push_name = COALESCE(EXCLUDED.push_name, public.crm_whatsapp_contatos.push_name),
                 nome = CASE
                     WHEN EXCLUDED.push_name IS NOT NULL
-                         AND (public.crm_whatsapp_contatos.nome IS NULL
+                         AND (NULLIF(BTRIM(public.crm_whatsapp_contatos.nome), '') IS NULL
                               OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.telefone
                               OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.jid
-                              OR lower(public.crm_whatsapp_contatos.nome) IN ('contato', 'contato whatsapp')
+                              OR lower(BTRIM(public.crm_whatsapp_contatos.nome)) IN ('contato', 'contato whatsapp')
                               OR public.crm_whatsapp_contatos.nome LIKE '%@%')
                     THEN EXCLUDED.push_name
                     WHEN EXCLUDED.nome IS NOT NULL
                          AND (
-                            public.crm_whatsapp_contatos.nome IS NULL
+                            NULLIF(BTRIM(public.crm_whatsapp_contatos.nome), '') IS NULL
                             OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.telefone
                             OR public.crm_whatsapp_contatos.nome = public.crm_whatsapp_contatos.jid
-                            OR lower(public.crm_whatsapp_contatos.nome) IN ('contato', 'contato whatsapp')
+                            OR lower(BTRIM(public.crm_whatsapp_contatos.nome)) IN ('contato', 'contato whatsapp')
                             OR public.crm_whatsapp_contatos.nome LIKE '%@%'
                          )
                     THEN EXCLUDED.nome
@@ -1267,7 +1265,9 @@ def process_evolution_webhook_event(
                     media_mime_type=result.get("media_mime_type"),
                     media_filename=result.get("media_filename"),
                     media_caption=result.get("media_caption"),
+                    media_error=result.get("media_error"),
                     waha_session=_waha_cfg.get("session"),
+                    waha_chat_id=result.get("remote_jid"),
                     waha_api_base_url=_waha_cfg.get("api_base_url"),
                     waha_api_key_ref=_waha_cfg.get("api_key_ref"),
                 )

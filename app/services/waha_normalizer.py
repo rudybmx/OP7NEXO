@@ -326,6 +326,8 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
             waha_type = "video"
         elif mimetype_str:
             waha_type = "document"
+        else:
+            waha_type = "document"
 
     # Override: document com mimetype de imagem/áudio → reclassificar pelo mimetype real.
     # Sticker NÃO é inferido por mimetype — só quando waha_type original for "sticker".
@@ -364,6 +366,15 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
             "pushName": push_name,
             "participant": participant_jid,
             "participantName": participant_name,
+            "provider": "whatsapp_waha",
+            "waha": {
+                "session": session,
+                "chatId": remote_jid,
+                "messageId": msg_id,
+                "fullMessageId": str(inner.get("id") or waha.get("id") or ""),
+                "hasMedia": bool(inner.get("hasMedia")),
+                "mediaError": str(media_obj.get("error") or "") if media_obj.get("error") else None,
+            },
             "message": message,
             "messageTimestamp": timestamp,
         },

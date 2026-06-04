@@ -2696,7 +2696,9 @@ def _processar_evento_evolution(
                     media_mime_type=resultado.get("media_mime_type"),
                     media_filename=resultado.get("media_filename"),
                     media_caption=resultado.get("media_caption"),
+                    media_error=resultado.get("media_error"),
                     waha_session=_waha_inner.get("session"),
+                    waha_chat_id=resultado.get("remote_jid"),
                     waha_api_base_url=_waha_inner.get("api_base_url"),
                     waha_api_key_ref=_waha_inner.get("api_key_ref"),
                 )

@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime
 
@@ -120,6 +121,67 @@ class IniciarConversaOut(BaseModel):
     existente: bool
 
 
+def _digits(value: str | None) -> str:
+    return re.sub(r"\D", "", value or "")
+
+
+def _is_jid_like(value: str) -> bool:
+    text = value.strip().lower()
+    return "@" in text and (
+        text.endswith("@s.whatsapp.net")
+        or text.endswith("@c.us")
+        or text.endswith("@g.us")
+        or text.endswith("@lid")
+    )
+
+
+def _format_phone_display(value: str | None) -> str | None:
+    digits = _digits(value)
+    if not digits.startswith("55"):
+        return None
+    if len(digits) == 13:
+        return f"+55 {digits[2:4]} {digits[4:9]}-{digits[9:]}"
+    if len(digits) == 12:
+        return f"+55 {digits[2:4]} {digits[4:8]}-{digits[8:]}"
+    return None
+
+
+def _valid_contact_display_name(value: str | None, *, jid: str | None = None) -> str:
+    text_value = str(value or "").strip()
+    if not text_value:
+        return ""
+    lowered = text_value.casefold()
+    if lowered in {"contato", "contato whatsapp"}:
+        return ""
+    if _is_jid_like(text_value) or "@lid" in lowered:
+        return ""
+    compact = re.sub(r"[\s()+.-]", "", text_value)
+    digits = _digits(text_value)
+    if digits and compact == digits:
+        return ""
+    jid_digits = _digits((jid or "").split("@", 1)[0])
+    if jid_digits and digits and digits == jid_digits:
+        return ""
+    return text_value
+
+
+def _resolved_contact_name(c: Conversa) -> str:
+    if c.is_group:
+        return (c.group_name or "").strip() or "Grupo WhatsApp"
+    contato = c.contato
+    remote_jid = c.remote_jid or ""
+    if contato:
+        for candidate in (contato.nome, contato.push_name):
+            display = _valid_contact_display_name(candidate, jid=remote_jid)
+            if display:
+                return display
+        formatted = _format_phone_display(contato.telefone)
+        if formatted:
+            return formatted
+    formatted = _format_phone_display(remote_jid.split("@", 1)[0])
+    return formatted or "Contato"
+
+
 def _get_conversa_or_404(
     conversa_id: uuid.UUID,
     db: Session,
@@ -164,7 +226,7 @@ def _conversa_out(c: Conversa) -> ConversaOut:
         is_group=c.is_group,
         group_name=c.group_name,
         group_avatar_url=c.group_avatar_url,
-        contato_nome=c.contato.nome if c.contato else None,
+        contato_nome=_resolved_contact_name(c),
         contato_avatar_url=c.contato.avatar_url if c.contato else None,
         contato_telefone=c.contato.telefone if c.contato else None,
         contato_campanha_origem=c.contato.campanha_origem if c.contato else None,

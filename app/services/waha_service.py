@@ -225,6 +225,38 @@ def baixar_midia(url: str, cfg: dict) -> tuple[bytes, str]:
         raise WahaError(f"WAHA baixar_midia: {exc}") from exc
 
 
+def buscar_mensagem(
+    session: str,
+    cfg: dict,
+    *,
+    chat_id: str,
+    message_id: str,
+    download_media: bool = True,
+    timeout: float = 20.0,
+) -> dict[str, Any]:
+    """GET /api/{session}/chats/{chatId}/messages/{messageId}?downloadMedia=true."""
+    from urllib.parse import quote
+
+    base_url, headers = _headers(cfg)
+    chat_id_encoded = quote(str(chat_id or "all"), safe="")
+    message_id_encoded = quote(str(message_id), safe="")
+    try:
+        resp = httpx.get(
+            f"{base_url}/api/{session}/chats/{chat_id_encoded}/messages/{message_id_encoded}",
+            headers=headers,
+            params={"downloadMedia": "true" if download_media else "false"},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA chats/messages: status={exc.response.status_code} body={exc.response.text[:200]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA chats/messages: {type(exc).__name__}") from exc
+
+
 def enviar_mensagem_midia(
     session: str,
     cfg: dict,
