@@ -845,8 +845,8 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         const temMidia = (msg.midias?.length ?? 0) > 0 || !!msg.mediaUrl
                         const body = msg.conteudo?.trim() ?? ''
                         const isPlaceholder = body === '[mídia]'
-                        // Suprimir "mídia" / "(mídia)" quando media_kind conhecido indica que é só placeholder
-                        const isMidiaText = msg.mediaKind != null && /^\(?(mídia|midia)\)?$/i.test(body)
+                        // Suprimir placeholders de mídia quando media_kind conhecido: "[mídia]", "mídia", "(mídia)"
+                        const isMidiaText = msg.mediaKind != null && /^[\[(]?(mídia|midia)[\])]?$/i.test(body)
                         if (!msg.conteudo || (temMidia && isPlaceholder) || isMidiaText) return null
                         return <div style={{ whiteSpace: 'pre-wrap' }}>{msg.conteudo}</div>
                       })()}
