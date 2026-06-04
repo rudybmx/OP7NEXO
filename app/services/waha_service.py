@@ -27,6 +27,19 @@ class WahaError(Exception):
     pass
 
 
+def _extract_profile_picture_url(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+
+    for key in ("profilePictureURL", "url", "picture", "profile_picture_url"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if cleaned:
+                return cleaned
+    return None
+
+
 def _headers(cfg: dict) -> tuple[str, dict[str, str]]:
     """Retorna (base_url, headers) a partir do config do canal."""
     base_url = str(cfg.get("api_base_url", "")).rstrip("/")
@@ -298,26 +311,37 @@ def enviar_mensagem_midia(
         raise WahaError(f"WAHA {endpoint}: {exc}") from exc
 
 
-def buscar_avatar_chat(session: str, jid: str, cfg: dict, timeout: float = 5.0) -> str | None:
-    """GET /api/{session}/chats/{jid}/picture → url str ou None."""
-    from urllib.parse import quote
-
+def buscar_avatar_chat(session: str, jid: str, cfg: dict, timeout: float = 5.0, refresh: bool = False) -> str | None:
+    """GET /api/contacts/profile-picture → profilePictureURL str ou None."""
     base_url, headers = _headers(cfg)
-    jid_encoded = quote(str(jid), safe="")
+    params: dict[str, str] = {
+        "contactId": str(jid),
+        "session": session,
+    }
+    if refresh:
+        params["refresh"] = "True"
     try:
         resp = httpx.get(
-            f"{base_url}/api/{session}/chats/{jid_encoded}/picture",
+            f"{base_url}/api/contacts/profile-picture",
             headers=headers,
+            params=params,
             timeout=timeout,
         )
+        if resp.status_code in (404, 204):
+            return None
         resp.raise_for_status()
-        return resp.json().get("url") or None
+        if not resp.content:
+            return None
+        try:
+            return _extract_profile_picture_url(resp.json())
+        except ValueError as exc:
+            raise WahaError("WAHA contacts/profile-picture: resposta JSON inválida") from exc
     except httpx.HTTPStatusError as exc:
         raise WahaError(
-            f"WAHA chats/picture: status={exc.response.status_code} body={exc.response.text[:150]}"
+            f"WAHA contacts/profile-picture: status={exc.response.status_code} body={exc.response.text[:150]}"
         ) from exc
     except httpx.RequestError as exc:
-        raise WahaError(f"WAHA chats/picture: {type(exc).__name__}") from exc
+        raise WahaError(f"WAHA contacts/profile-picture: {type(exc).__name__}") from exc
 
 
 def buscar_nome_grupo(session: str, group_jid: str, cfg: dict, timeout: float = 5.0) -> str | None:

@@ -70,6 +70,33 @@ def process_next_whatsapp_jobs(limit: int = 20) -> dict[str, int]:
     return {"processed": processed, "failed": failed, "skipped": skipped}
 
 
+def _publish_avatar_refresh(job_payload: dict, *, workspace_id: str) -> None:
+    conversa_id = str(
+        job_payload.get("conversa_id")
+        or job_payload.get("conversation_id")
+        or ""
+    )
+    remote_jid = str(
+        job_payload.get("group_jid")
+        or job_payload.get("jid")
+        or job_payload.get("remote_jid")
+        or ""
+    )
+
+    try:
+        publish_whatsapp_event(
+            {
+                "type": "conversation.refresh",
+                "workspaceId": workspace_id,
+                "conversaId": conversa_id,
+                "remoteJid": remote_jid,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+    except Exception as exc:
+        log.info("[whatsapp-worker] falha ao publicar refresh de avatar: %s", exc)
+
+
 def _process_job(job_id: str) -> str:
     with SessionLocal() as db:
         job = db.execute(
@@ -108,6 +135,10 @@ def _process_job(job_id: str) -> str:
                 result = process_contact_avatar_enrichment_job(db, enrichment_job)
                 status = str(result.get("status") or "done")
                 _mark_done(db, job_id, str(job["event_id"] or ""), status=status)
+                _publish_avatar_refresh(
+                    enrichment_job["job_payload"] if isinstance(enrichment_job.get("job_payload"), dict) else {},
+                    workspace_id=str(enrichment_job["workspace_id"]),
+                )
                 return "skipped" if status == "skipped" else "processed"
 
             if job_type == "group_enrichment":
@@ -117,6 +148,10 @@ def _process_job(job_id: str) -> str:
                 result = process_group_enrichment_job(db, enrichment_job)
                 status = str(result.get("status") or "done")
                 _mark_done(db, job_id, str(job["event_id"] or ""), status=status)
+                _publish_avatar_refresh(
+                    enrichment_job["job_payload"] if isinstance(enrichment_job.get("job_payload"), dict) else {},
+                    workspace_id=str(enrichment_job["workspace_id"]),
+                )
                 return "skipped" if status == "skipped" else "processed"
 
             if job_type == "helena_session_enrichment":
