@@ -27,6 +27,7 @@ export function formatarTelefoneBR(valor?: string | null): string | null {
   if (!digits) return null
 
   const national = digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits
+  if (national.length > 11) return null  // LID ou número inválido
   if (national.length === 11) {
     return `(${national.slice(0, 2)}) ${national.slice(2, 7)}-${national.slice(7)}`
   }
