@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { EditarContaDialog } from '@/components/administracao/contas-ads/editar-conta-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { WSTable, WSTableActions, WSTableShell } from '@/components/ui/ws-table'
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, TableScrollContainer, TableContent, Chip, Button as HeroButton } from '@heroui/react'
 import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
 import { useAuth } from '@/hooks/use-auth'
 import { Progress } from '@/components/ui/progress'
@@ -1069,7 +1069,16 @@ export default function ContasAdsPage() {
       </div>
 
       {/* Tabela */}
-      <WSTableShell>
+      <div
+        style={{
+          background: 'var(--ws-glass-bg)',
+          border: '1px solid var(--ws-glass-border)',
+          boxShadow: 'inset 0 0 0 1px rgba(15,23,42,0.06)',
+          borderRadius: 14,
+          overflow: 'hidden',
+          backdropFilter: 'blur(16px)',
+        }}
+      >
         {carregando ? (
           <div style={{ padding: 60, textAlign: 'center' }}>
             <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ws-blue)' }} />
@@ -1088,140 +1097,142 @@ export default function ContasAdsPage() {
             )}
           </div>
         ) : (
-          <WSTable minWidth={1050}>
-            <thead>
-              <tr>
-                {['Plataforma', 'Account ID', 'Nome', 'Cliente', 'Período', 'Insights', 'Última Atualização', 'Ações'].map(h => (
-                  <th key={h} style={{
-                    padding: '8px 14px', fontSize: 10, fontWeight: 600,
-                    color: 'var(--ws-text-3)', textAlign: 'left',
-                    textTransform: 'uppercase', letterSpacing: '0.06em',
-                    whiteSpace: 'nowrap', background: 'rgba(62,91,255,0.04)',
-                    borderBottom: '1px solid var(--ws-divider)',
-                  }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtradas.map(c => {
-                const plat = PLATFORM_BADGE[c.plataforma]
-                const insights = insightsBadge(c)
-                return (
-                  <tr
-                    key={c.id}
-                    style={{ borderBottom: '1px solid var(--ws-divider)', transition: 'var(--ws-transition)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(62,91,255,0.03)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '4px 10px', borderRadius: 6,
-                        background: plat.bg, color: plat.color,
-                        fontSize: 12, fontWeight: 600,
-                      }}>
-                        {plat.label}
-                      </span>
-                    </td>
-                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
-                      <code style={{ fontSize: 11, color: 'var(--ws-text-3)', fontFamily: 'monospace' }}>
-                        {c.account_id}
-                      </code>
-                    </td>
-                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13, color: 'var(--ws-text-1)', fontWeight: 500 }}>
-                      {c.nome}
-                    </td>
-                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-2)' }}>
-                      {c.workspace_nome || '—'}
-                    </td>
-                    <td style={{ padding: '9px 14px', whiteSpace: 'normal', fontSize: 13, color: 'var(--ws-text-3)' }}>
-                      {c.periodo_sync_inicio ? formatarPeriodo(c.periodo_sync_inicio) : '—'}
-                    </td>
-                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '3px 8px', borderRadius: 6,
-                        background: insights.bg, color: insights.color,
-                        fontSize: 12, fontWeight: 600,
-                      }}>
-                        <span style={{
-                          width: 6, height: 6, borderRadius: '50%',
-                          background: insights.color, flexShrink: 0,
-                        }} />
-                        {insights.label}
-                      </span>
-                    </td>
-                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-3)' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                          {(() => {
-                            const status = c.sync_state?.last_run_status
-                            const hasCooldown = c.sync_state?.cooldown_until && isFutureIso(c.sync_state.cooldown_until)
-                            const isRunning = syncJobs[c.id]?.status === 'running' || syncJobs[c.id]?.status === 'pending'
-                            if (isRunning) return <Loader2 size={13} style={{ color: 'var(--ws-blue)', flexShrink: 0 }} className="animate-spin" />
-                            if (hasCooldown) return <Clock size={13} style={{ color: '#c9a84c', flexShrink: 0 }} />
-                            if (status === 'error') return <AlertTriangle size={13} style={{ color: 'var(--ws-coral)', flexShrink: 0 }} />
-                            if (status === 'success') return <CheckCircle2 size={13} style={{ color: 'var(--ws-green)', flexShrink: 0 }} />
-                            return null
-                          })()}
-                          {c.sincronizado_em ? formatarDataHora(c.sincronizado_em) : 'Nunca sincronizado'}
-                        </span>
-                        {c.sync_state?.last_success_at && c.sync_state.last_success_at !== c.sincronizado_em && (
-                          <span style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>
-                            Último sucesso: {formatarDataHora(c.sync_state.last_success_at)}
+          <Table variant="secondary" aria-label="Contas Ads" className="w-full">
+            <TableScrollContainer className="overflow-x-auto">
+              <TableContent aria-label="Contas Ads" className="w-full border-separate border-spacing-0">
+                <TableHeader className="sticky top-0 z-10">
+                  {(['Plataforma', 'Account ID', 'Nome', 'Cliente', 'Período', 'Insights', 'Última Atualização', 'Ações'] as const).map(h => (
+                    <TableColumn
+                      key={h}
+                      className="px-3.5 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.06em] whitespace-nowrap border-b"
+                      style={{
+                        color: 'var(--ws-text-3)',
+                        background: 'rgba(62,91,255,0.04)',
+                        borderColor: 'var(--ws-divider)',
+                      }}
+                    >
+                      {h}
+                    </TableColumn>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {filtradas.map(c => {
+                    const plat = PLATFORM_BADGE[c.plataforma]
+                    const insights = insightsBadge(c)
+                    return (
+                      <TableRow
+                        key={c.id}
+                        id={c.id}
+                        className="border-b transition-colors hover:bg-[rgba(62,91,255,0.03)]"
+                        style={{ borderColor: 'var(--ws-divider)' }}
+                      >
+                        {/* Plataforma */}
+                        <TableCell className="px-3.5 py-2.5 whitespace-nowrap">
+                          <Chip
+                            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold"
+                            style={{ background: plat.bg, color: plat.color }}
+                          >
+                            {plat.label}
+                          </Chip>
+                        </TableCell>
+                        {/* Account ID */}
+                        <TableCell className="px-3.5 py-2.5 whitespace-nowrap">
+                          <code className="font-mono text-[11px]" style={{ color: 'var(--ws-text-3)' }}>
+                            {c.account_id}
+                          </code>
+                        </TableCell>
+                        {/* Nome */}
+                        <TableCell className="px-3.5 py-2.5 max-w-[180px]">
+                          <span className="block truncate text-[13px] font-medium" style={{ color: 'var(--ws-text-1)' }}>
+                            {c.nome}
                           </span>
-                        )}
-                        {c.sync_state?.last_run_status === 'error' && c.sync_state.last_error_stage && (
-                          <span style={{ fontSize: 11, color: 'var(--ws-coral)' }}>
-                            Falha em {c.sync_state.last_error_stage}
-                            {c.sync_state.last_error_message ? `: ${c.sync_state.last_error_message}` : ''}
+                        </TableCell>
+                        {/* Cliente */}
+                        <TableCell className="px-3.5 py-2.5 max-w-[140px]">
+                          <span className="block truncate text-[13px]" style={{ color: 'var(--ws-text-2)' }}>
+                            {c.workspace_nome || '—'}
                           </span>
-                        )}
-                        {c.sync_state?.cooldown_until && isFutureIso(c.sync_state.cooldown_until) && (
-                          <span style={{ fontSize: 11, color: '#c9a84c' }}>
-                            Cooldown até {formatarDataHora(c.sync_state.cooldown_until)}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
-                      <WSTableActions>
-                        <button
-                          style={{
-                            background: 'transparent',
-                            border: '1px solid var(--ws-glass-border)',
-                            borderRadius: 6, padding: '4px 12px',
-                            fontSize: 12, color: 'var(--ws-text-2)',
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => abrirEdicaoConta(c)}
-                        >
-                          Editar
-                        </button>
-                        {renderSyncCell(c)}
-                        <button
-                          style={{
-                            background: 'transparent',
-                            border: `1px solid ${c.ativo ? 'rgba(255,92,141,0.35)' : 'rgba(15,168,86,0.35)'}`,
-                            borderRadius: 6, padding: '4px 12px',
-                            fontSize: 12, color: c.ativo ? 'var(--ws-coral)' : 'var(--ws-green)',
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => setConfirmToggle(c)}
-                        >
-                          {c.ativo ? 'Desativar' : 'Ativar'}
-                        </button>
-                      </WSTableActions>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </WSTable>
+                        </TableCell>
+                        {/* Período */}
+                        <TableCell className="px-3.5 py-2.5 whitespace-nowrap text-[13px]" style={{ color: 'var(--ws-text-3)' }}>
+                          {c.periodo_sync_inicio ? formatarPeriodo(c.periodo_sync_inicio) : '—'}
+                        </TableCell>
+                        {/* Insights */}
+                        <TableCell className="px-3.5 py-2.5 whitespace-nowrap">
+                          <Chip
+                            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold"
+                            style={{ background: insights.bg, color: insights.color }}
+                          >
+                            <span className="size-1.5 rounded-full flex-shrink-0" style={{ background: insights.color }} />
+                            {insights.label}
+                          </Chip>
+                        </TableCell>
+                        {/* Última Atualização */}
+                        <TableCell className="px-3.5 py-2.5 min-w-[160px] text-[13px]" style={{ color: 'var(--ws-text-3)' }}>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="flex items-center gap-1.5">
+                              {(() => {
+                                const status = c.sync_state?.last_run_status
+                                const hasCooldown = c.sync_state?.cooldown_until && isFutureIso(c.sync_state.cooldown_until)
+                                const isRunning = syncJobs[c.id]?.status === 'running' || syncJobs[c.id]?.status === 'pending'
+                                if (isRunning) return <Loader2 size={13} style={{ color: 'var(--ws-blue)', flexShrink: 0 }} className="animate-spin" />
+                                if (hasCooldown) return <Clock size={13} style={{ color: '#c9a84c', flexShrink: 0 }} />
+                                if (status === 'error') return <AlertTriangle size={13} style={{ color: 'var(--ws-coral)', flexShrink: 0 }} />
+                                if (status === 'success') return <CheckCircle2 size={13} style={{ color: 'var(--ws-green)', flexShrink: 0 }} />
+                                return null
+                              })()}
+                              {c.sincronizado_em ? formatarDataHora(c.sincronizado_em) : 'Nunca sincronizado'}
+                            </span>
+                            {c.sync_state?.last_success_at && c.sync_state.last_success_at !== c.sincronizado_em && (
+                              <span className="text-[11px]" style={{ color: 'var(--ws-text-2)' }}>
+                                Último sucesso: {formatarDataHora(c.sync_state.last_success_at)}
+                              </span>
+                            )}
+                            {c.sync_state?.last_run_status === 'error' && c.sync_state.last_error_stage && (
+                              <span className="text-[11px]" style={{ color: 'var(--ws-coral)' }}>
+                                Falha em {c.sync_state.last_error_stage}
+                                {c.sync_state.last_error_message ? `: ${c.sync_state.last_error_message}` : ''}
+                              </span>
+                            )}
+                            {c.sync_state?.cooldown_until && isFutureIso(c.sync_state.cooldown_until) && (
+                              <span className="text-[11px]" style={{ color: '#c9a84c' }}>
+                                Cooldown até {formatarDataHora(c.sync_state.cooldown_until)}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        {/* Ações */}
+                        <TableCell className="px-3.5 py-2.5 whitespace-nowrap">
+                          <div className="inline-flex items-center gap-2">
+                            <HeroButton
+                              onPress={() => abrirEdicaoConta(c)}
+                              className="rounded-md border px-3 py-1 text-xs cursor-pointer bg-transparent transition-colors hover:bg-[rgba(62,91,255,0.06)] outline-none"
+                              style={{ borderColor: 'var(--ws-glass-border)', color: 'var(--ws-text-2)' }}
+                            >
+                              Editar
+                            </HeroButton>
+                            {renderSyncCell(c)}
+                            <HeroButton
+                              onPress={() => setConfirmToggle(c)}
+                              className="rounded-md border px-3 py-1 text-xs cursor-pointer bg-transparent transition-colors outline-none"
+                              style={{
+                                borderColor: c.ativo ? 'rgba(255,92,141,0.35)' : 'rgba(15,168,86,0.35)',
+                                color: c.ativo ? 'var(--ws-coral)' : 'var(--ws-green)',
+                              }}
+                            >
+                              {c.ativo ? 'Desativar' : 'Ativar'}
+                            </HeroButton>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </TableContent>
+            </TableScrollContainer>
+          </Table>
         )}
-      </WSTableShell>
+      </div>
 
       {/* Drawer Nova Conta */}
       <Sheet open={drawerAberto} onOpenChange={open => !open && fecharDrawer()}>
