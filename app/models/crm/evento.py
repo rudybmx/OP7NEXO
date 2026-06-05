@@ -20,10 +20,10 @@ class Evento(Base):
         ForeignKey("workspaces.id", ondelete="SET NULL"),
         nullable=False,
     )
-    canal_id: Mapped[uuid.UUID] = mapped_column(
+    canal_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("canais_entrada.id", ondelete="SET NULL"),
-        nullable=False,
+        nullable=True,
     )
     event: Mapped[str] = mapped_column(String(50), nullable=False)
     event_type: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -37,10 +37,10 @@ class Mensagem(Base):
         ForeignKey("crm_whatsapp_conversas.id", ondelete="CASCADE"),
         nullable=False,
     )
-    canal_id: Mapped[uuid.UUID] = mapped_column(
+    canal_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("canais_entrada.id", ondelete="SET NULL"),
-        nullable=False,
+        nullable=True,
     )
     raw_event_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

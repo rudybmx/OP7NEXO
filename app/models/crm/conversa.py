@@ -40,10 +40,10 @@ class Conversa(Base):
         ForeignKey("crm_whatsapp_contatos.id", ondelete="CASCADE"),
         nullable=False,
     )
-    canal_id: Mapped[uuid.UUID] = mapped_column(
+    canal_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("canais_entrada.id", ondelete="SET NULL"),
-        nullable=False,
+        nullable=True,
     )
     instance: Mapped[str | None] = mapped_column(String(100), nullable=True)
     remote_jid: Mapped[str | None] = mapped_column(String(50), nullable=True)
