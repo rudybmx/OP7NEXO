@@ -85,6 +85,7 @@
   --color-accent-foreground:        var(--accent-foreground);
   --color-accent-soft:              var(--accent-soft);
   --color-accent-soft-foreground:   var(--accent-soft-foreground);
+  --color-muted:                    var(--ws-text-3);
 }
 
 :root {
@@ -282,7 +283,7 @@ button {
   --warning-soft:             rgba(201, 168, 76, 0.12);
   --warning-soft-foreground:  #c9a84c;
   --focus:                    var(--ws-blue);
-  --surface-secondary:        var(--ws-surface-2);
+  --surface-secondary:        #ebebef;
   --separator:                var(--ws-divider);
   --separator-tertiary:       var(--ws-divider);
 }
@@ -311,6 +312,7 @@ button {
   /* SURFACES DARK */
   --ws-surface:       #1a2244;
   --ws-surface-2:     #141c38;
+  --surface-secondary: rgba(255, 255, 255, 0.08);
   --ws-card-active:   rgba(255, 255, 255, 0.10);
   --ws-card-hover:    rgba(255, 255, 255, 0.06);
   --ws-pill-alpha:    0.18;
