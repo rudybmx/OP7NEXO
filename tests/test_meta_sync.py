@@ -1,10 +1,12 @@
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from app.core.config import settings
 from app.services.object_storage import public_url, reescrever_carousel_urls, resolve_creative_image_url_hq
 from app.services.meta_sync import (
     _campanhas_publicos_relevantes,
+    _catalogo_ads_para_enriquecimento,
     _carregar_objetivos_catalogo,
     _carregar_hq_cache_imagens,
     _merge_hq_image_data,
@@ -43,6 +45,20 @@ class _MappingResult:
         return first
 
 
+class _FakeQuery:
+    def __init__(self, rows=None):
+        self._rows = rows or []
+
+    def filter(self, *args, **kwargs):
+        return self
+
+    def all(self):
+        return self._rows
+
+    def first(self):
+        return self._rows[0] if self._rows else None
+
+
 class _FakeDbWithRows:
     def __init__(self, rows):
         self._rows = rows
@@ -57,6 +73,7 @@ class _FakeDbByQuery:
     def __init__(self, rows_by_query):
         self.rows_by_query = rows_by_query
         self.calls = []
+        self.commits = 0
 
     def execute(self, stmt, params=None):
         sql = str(stmt)
@@ -66,14 +83,27 @@ class _FakeDbByQuery:
                 return _MappingResult(rows)
         return _MappingResult([])
 
+    def commit(self):
+        self.commits += 1
+
 
 class _FakeDb:
     def __init__(self):
         self.calls = []
         self.commits = 0
+        self.added = []
 
     def execute(self, stmt, params=None):
         self.calls.append((stmt, params))
+        return None
+
+    def query(self, model):
+        return _FakeQuery()
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    def refresh(self, obj):
         return None
 
     def commit(self):
@@ -135,9 +165,13 @@ class _FakeDbSync:
         self.commits = 0
         self.rollbacks = 0
         self.calls = []
+        self.added = []
 
     def get(self, model, key):
         return self.conta
+
+    def query(self, model):
+        return _FakeQuery()
 
     def execute(self, stmt, params=None):
         self.calls.append((stmt, params))
@@ -153,6 +187,12 @@ class _FakeDbSync:
 
     def rollback(self):
         self.rollbacks += 1
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    def refresh(self, obj):
+        return None
 
 
 class _FakeContaConfig:
@@ -344,16 +384,21 @@ class MetaSyncTests(unittest.TestCase):
         self.assertNotIn("MAX(objective)", sql)
         self.assertEqual(params, {"ads_account_id": "uuid-1"})
 
-    @patch("app.services.meta_sync._fetch_criativos_batch")
+    @patch("app.services.meta_sync._persist_video_thumbnail_to_minio", return_value=None)
+    @patch("app.services.meta_sync._fetch_videos_by_ids")
     @patch("app.services.meta_sync._paginar")
-    def test_sync_video_metrics_omite_video_3_sec_e_grava_zero(self, mock_paginar, mock_fetch_criativos):
-        mock_fetch_criativos.return_value = {"ad-1": {"video_id": "video-1"}}
+    def test_sync_video_metrics_omite_video_3_sec_e_grava_zero(self, mock_paginar, mock_fetch_videos, _mock_persist_thumb):
+        mock_fetch_videos.return_value = {
+            "video-1": {
+                "id": "video-1",
+                "picture": "https://cdn.example.com/video-1.jpg",
+                "thumbnails": [{"uri": "https://cdn.example.com/video-1-hq.jpg", "width": 1200, "height": 628, "is_preferred": True}],
+            }
+        }
         paginar_calls = []
 
         def paginar_side_effect(client, url, params):
             paginar_calls.append((url, params))
-            if url.endswith("/ads"):
-                return [{"id": "ad-1"}]
             if url.endswith("/insights"):
                 return [{
                     "ad_id": "ad-1",
@@ -373,16 +418,21 @@ class MetaSyncTests(unittest.TestCase):
 
         mock_paginar.side_effect = paginar_side_effect
 
-        db = _FakeDb()
+        db = _FakeDbByQuery({
+            "FROM meta_ads_catalog a": [{"ad_id": "ad-1", "video_id": "video-1"}],
+        })
         _sync_video_metrics(object(), db, "act_1", "token", "{\"since\":\"2026-05-01\",\"until\":\"2026-05-18\"}", "uuid-1")
 
-        self.assertEqual(len(paginar_calls), 2)
-        self.assertTrue(paginar_calls[0][0].endswith("/ads"))
-        self.assertTrue(paginar_calls[1][0].endswith("/insights"))
-        self.assertNotIn("video_3_sec_watched_actions", paginar_calls[1][1]["fields"])
+        self.assertEqual(len(paginar_calls), 1)
+        self.assertTrue(paginar_calls[0][0].endswith("/insights"))
+        self.assertIn("video_3_sec_watched_actions", paginar_calls[0][1]["fields"])
         self.assertEqual(db.commits, 1)
-        self.assertEqual(len(db.calls), 1)
-        _, params = db.calls[0]
+        self.assertEqual(len(db.calls), 2)
+        select_sql, select_params = db.calls[0]
+        self.assertIn("FROM meta_ads_catalog a", select_sql)
+        self.assertEqual(select_params, {"ads_account_id": "uuid-1"})
+        insert_sql, params = db.calls[1]
+        self.assertIn("INSERT INTO meta_video_metrics_daily", insert_sql)
         self.assertEqual(params["video_views"], 11)
         self.assertEqual(params["video_play_actions"], 2)
         self.assertEqual(params["video_complete_watched_actions"], 4)
@@ -666,6 +716,26 @@ class MetaSyncTests(unittest.TestCase):
         self.assertEqual(len(sleeps), 1)
         self.assertGreaterEqual(sleeps[0], 30)
 
+    def test_meta_graph_client_insights_throttle_header_gera_cooldown(self):
+        responses = [
+            _FakeResponse(
+                200,
+                {"data": []},
+                headers={"x-fb-ads-insights-throttle": '{"acc_id_util_pct": 91}'},
+            ),
+            _FakeResponse(200, {"data": []}),
+        ]
+        raw_client = _FakeClient(responses)
+        sleeps = []
+        graph = MetaGraphClient(raw_client, sleep=sleeps.append)
+
+        graph.get("https://graph.facebook.com/v21.0/act_1/insights", params={"access_token": "secret"})
+        graph.get("https://graph.facebook.com/v21.0/act_1/insights", params={"access_token": "secret"})
+
+        self.assertEqual(graph.last_usage_percent, 91)
+        self.assertEqual(len(sleeps), 1)
+        self.assertGreaterEqual(sleeps[0], 30)
+
     def test_meta_graph_client_rate_limit_persistente_levanta_erro_temporario(self):
         raw_client = _FakeClient([
             _FakeResponse(429, {"error": {"message": "Application request limit", "code": 4}}, text="Application request limit")
@@ -708,6 +778,43 @@ class MetaSyncTests(unittest.TestCase):
         self.assertEqual(result, ["camp-0", "camp-1", "camp-2"])
         _, params = db.calls[0]
         self.assertEqual(params["limit"], 3)
+
+    def test_catalogo_ads_para_enriquecimento_pula_itens_sem_mudanca_e_com_hq_completa(self):
+        rows = [
+            {"id": "ad-1", "updated_time": "2026-06-05T10:00:00+00:00"},
+            {"id": "ad-2", "updated_time": "2026-06-05T11:00:00+00:00"},
+        ]
+        ads_estado = {
+            "ad-1": {"updated_time": datetime(2026, 6, 5, 10, 0, tzinfo=timezone.utc), "creative_id": "creative-1"},
+            "ad-2": {"updated_time": datetime(2026, 6, 5, 11, 0, tzinfo=timezone.utc), "creative_id": "creative-2"},
+        }
+        criativos_estado = {
+            "ad-1": {
+                "creative_id": "creative-1",
+                "image_hash": "hash-1",
+                "image_url_hq": "https://cdn.example.com/hq.jpg",
+                "hq_source": "adimage_minio",
+                "video_id": None,
+            },
+            "ad-2": {
+                "creative_id": "creative-2",
+                "image_hash": "hash-2",
+                "image_url_hq": "https://cdn.example.com/fallback.jpg",
+                "hq_source": "thumbnail_fallback",
+                "video_id": None,
+            },
+        }
+        videos_estado = {"ad-1"}
+
+        ad_ids, max_updated_time = _catalogo_ads_para_enriquecimento(
+            rows,
+            ads_estado,
+            criativos_estado,
+            videos_estado,
+        )
+
+        self.assertEqual(ad_ids, ["ad-2"])
+        self.assertEqual(max_updated_time, datetime(2026, 6, 5, 11, 0, tzinfo=timezone.utc))
 
     def test_logs_meta_graph_nao_expoem_token(self):
         raw_client = _FakeClient([

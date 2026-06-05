@@ -22,7 +22,6 @@ from app.models.user import User
 from app.services.meta_graph import MetaRateLimitError
 from app.services.meta_sync import (
     MetaContaInacessivelError,
-    registrar_rate_limit_cooldown,
     sincronizar_conta,
     reprocessar_imagens_hq_conta,
 )
@@ -364,15 +363,11 @@ def _run_sync_background(ads_account_id: str, job_id: str, modo_sync: str) -> No
                 db.rollback()
             except Exception:
                 pass
-            conta = db.get(AdsAccount, uuid.UUID(ads_account_id))
-            cooldown_until = None
-            if conta:
-                cooldown_until = registrar_rate_limit_cooldown(db, conta, exc)
             _finalizar(
                 "error",
                 erro=(
                     "Rate limit temporário da Meta. "
-                    f"Tente novamente após {cooldown_until.isoformat() if cooldown_until else 'o cooldown'}."
+                    f"Tente novamente após o cooldown atual. ({exc})"
                 ),
             )
         except MetaContaInacessivelError as exc:

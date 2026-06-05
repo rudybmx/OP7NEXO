@@ -21,6 +21,7 @@ USAGE_HEADERS = (
     "x-app-usage",
     "x-ad-account-usage",
     "x-business-use-case-usage",
+    "x-fb-ads-insights-throttle",
 )
 
 
@@ -133,7 +134,12 @@ def _usage_values(raw: str) -> list[int]:
     def walk(value: Any) -> None:
         if isinstance(value, dict):
             for key, child in value.items():
-                if key in {"call_count", "total_cputime", "total_time"}:
+                key_norm = str(key).lower()
+                if (
+                    key_norm in {"call_count", "total_cputime", "total_time"}
+                    or key_norm.endswith("_util_pct")
+                    or key_norm.endswith("_pct")
+                ):
                     try:
                         values.append(int(float(child)))
                     except (TypeError, ValueError):

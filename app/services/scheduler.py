@@ -5,12 +5,14 @@ from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import func, or_
 
 from app.core.database import SessionLocal
 from app.models.ads_account import AdsAccount
+from app.models.meta_sync_state import MetaSyncState
 from app.core.config import settings
 from app.services.meta_graph import MetaRateLimitError
-from app.services.meta_sync import MetaContaInacessivelError, registrar_rate_limit_cooldown, sincronizar_conta
+from app.services.meta_sync import MetaContaInacessivelError, sincronizar_conta
 from app.services.whatsapp_event_worker import process_next_whatsapp_jobs
 
 log = logging.getLogger(__name__)
@@ -21,18 +23,34 @@ scheduler = BackgroundScheduler()
 def _job_sync_todas_contas() -> None:
     log.info("Scheduler: iniciando sync Meta Ads — %s", datetime.now(tz=timezone.utc).isoformat())
     with SessionLocal() as db:
-        contas = db.query(AdsAccount).filter(
+        agora = datetime.now(timezone.utc)
+        contas = db.query(AdsAccount).outerjoin(
+            MetaSyncState,
+            MetaSyncState.ads_account_id == AdsAccount.id,
+        ).filter(
             AdsAccount.plataforma == "meta",
             AdsAccount.status == "ativo",
             AdsAccount.sync_paused.is_(False),
+            AdsAccount.bm_token.isnot(None),
+            or_(
+                AdsAccount.token_expira_em.is_(None),
+                AdsAccount.token_expira_em >= agora,
+            ),
+            or_(
+                MetaSyncState.cooldown_until.is_(None),
+                MetaSyncState.cooldown_until <= agora,
+            ),
+        ).order_by(
+            func.coalesce(
+                MetaSyncState.last_success_at,
+                AdsAccount.sincronizado_em,
+                AdsAccount.criado_em,
+            ).asc(),
+            AdsAccount.account_name.asc(),
+            AdsAccount.account_id.asc(),
         ).all()
 
         for conta in contas:
-            if not conta.bm_token:
-                continue
-            if conta.token_expira_em and conta.token_expira_em < datetime.now(tz=timezone.utc):
-                log.warning("Token expirado — conta %s (%s)", conta.id, conta.account_id)
-                continue
             try:
                 resultado = sincronizar_conta(str(conta.id), db)
                 log.info("Conta %s: %s", conta.account_id, resultado)
@@ -41,11 +59,12 @@ def _job_sync_todas_contas() -> None:
                     db.rollback()
                 except Exception:
                     pass
-                cooldown_until = registrar_rate_limit_cooldown(db, conta, exc)
                 log.warning(
-                    "Conta %s em cooldown por rate limit Meta até %s",
+                    "Conta %s em cooldown por rate limit Meta endpoint=%s usage=%s cooldown=%.2fs",
                     conta.account_id,
-                    cooldown_until.isoformat(),
+                    exc.endpoint,
+                    exc.usage_percent,
+                    float(exc.cooldown_seconds or 0.0),
                 )
             except MetaContaInacessivelError as exc:
                 try:

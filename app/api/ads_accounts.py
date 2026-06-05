@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.deps import exigir_platform_admin, get_usuario_atual, verificar_acesso_workspace
 from app.models.ads_account import AdsAccount
 from app.models.ads_account_workspace_access import AdsAccountWorkspaceAccess
+from app.models.meta_sync_state import MetaSyncState
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.services.ads_account_access import carregar_workspace_acessos_por_conta, listar_ads_accounts_acessiveis
@@ -20,6 +21,44 @@ class WorkspaceResumoOut(BaseModel):
     nome: str
 
     model_config = {"from_attributes": True}
+
+
+class MetaSyncStateOut(BaseModel):
+    last_run_at: str | None = None
+    last_run_mode: str | None = None
+    last_run_status: str | None = None
+    last_success_at: str | None = None
+    last_error_at: str | None = None
+    last_error_stage: str | None = None
+    last_error_message: str | None = None
+    last_error_code: int | None = None
+    last_error_http_status: int | None = None
+    last_rate_limit_usage_percent: int | None = None
+    cooldown_until: str | None = None
+    last_totals: dict = Field(default_factory=dict)
+    watermarks: dict = Field(default_factory=dict)
+    last_error_meta: dict = Field(default_factory=dict)
+
+
+def _meta_sync_state_out(state: MetaSyncState | None) -> MetaSyncStateOut | None:
+    if not state:
+        return None
+    return MetaSyncStateOut(
+        last_run_at=state.last_run_at.isoformat() if state.last_run_at else None,
+        last_run_mode=state.last_run_mode,
+        last_run_status=state.last_run_status,
+        last_success_at=state.last_success_at.isoformat() if state.last_success_at else None,
+        last_error_at=state.last_error_at.isoformat() if state.last_error_at else None,
+        last_error_stage=state.last_error_stage,
+        last_error_message=state.last_error_message,
+        last_error_code=state.last_error_code,
+        last_error_http_status=state.last_error_http_status,
+        last_rate_limit_usage_percent=state.last_rate_limit_usage_percent,
+        cooldown_until=state.cooldown_until.isoformat() if state.cooldown_until else None,
+        last_totals=state.last_totals or {},
+        watermarks=state.watermarks or {},
+        last_error_meta=state.last_error_meta or {},
+    )
 
 
 class AdsAccountCreateIn(BaseModel):
@@ -66,6 +105,7 @@ class AdsAccountOut(BaseModel):
     sincronizado_em: str | None = None
     periodo_sync_inicio: str | None = None
     agrupamento: str | None = None
+    sync_state: MetaSyncStateOut | None = None
 
     model_config = {"from_attributes": True}
 
@@ -73,6 +113,7 @@ def _ads_account_out(
     a: AdsAccount,
     workspace_nome: str | None = None,
     workspace_acessos: list[WorkspaceResumoOut] | None = None,
+    sync_state: MetaSyncState | None = None,
 ) -> AdsAccountOut:
     return AdsAccountOut(
         id=str(a.id),
@@ -92,6 +133,7 @@ def _ads_account_out(
         agrupamento=a.agrupamento,
         ativo=a.ativo,
         sync_paused=a.sync_paused,
+        sync_state=_meta_sync_state_out(sync_state),
     )
 
 
@@ -111,6 +153,18 @@ def _workspace_accessos_por_conta(
         ads_account_id: [WorkspaceResumoOut(**workspace) for workspace in workspaces]
         for ads_account_id, workspaces in acessos.items()
     }
+
+
+def _sync_states_por_conta(
+    db: Session,
+    ads_account_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, MetaSyncState]:
+    if not ads_account_ids:
+        return {}
+    rows = db.query(MetaSyncState).filter(
+        MetaSyncState.ads_account_id.in_(ads_account_ids),
+    ).all()
+    return {state.ads_account_id: state for state in rows}
 
 
 def _normalizar_workspace_ids_acesso(
@@ -203,7 +257,11 @@ def listar_todas_ads_accounts(
     workspace_ids = {a.workspace_id for a in contas}
     workspaces = _workspace_nomes_por_ids(db, workspace_ids)
     workspace_acessos = _workspace_accessos_por_conta(db, [a.id for a in contas])
-    return [_ads_account_out(a, workspaces.get(a.workspace_id), workspace_acessos.get(a.id)) for a in contas]
+    sync_states = _sync_states_por_conta(db, [a.id for a in contas])
+    return [
+        _ads_account_out(a, workspaces.get(a.workspace_id), workspace_acessos.get(a.id), sync_states.get(a.id))
+        for a in contas
+    ]
 
 
 @router.get("/meta/ads-accounts", response_model=list[AdsAccountOut])
@@ -216,7 +274,11 @@ def listar_todas_ads_accounts_meta(
     workspace_ids = {a.workspace_id for a in contas}
     workspaces = _workspace_nomes_por_ids(db, workspace_ids)
     workspace_acessos = _workspace_accessos_por_conta(db, [a.id for a in contas])
-    return [_ads_account_out(a, workspaces.get(a.workspace_id), workspace_acessos.get(a.id)) for a in contas]
+    sync_states = _sync_states_por_conta(db, [a.id for a in contas])
+    return [
+        _ads_account_out(a, workspaces.get(a.workspace_id), workspace_acessos.get(a.id), sync_states.get(a.id))
+        for a in contas
+    ]
 
 
 @router.get("/workspaces/{workspace_id}/ads-accounts", response_model=list[AdsAccountOut])
@@ -232,7 +294,11 @@ def listar_ads_accounts(
     workspace_ids = {a.workspace_id for a in contas}
     workspaces = _workspace_nomes_por_ids(db, workspace_ids)
     workspace_acessos = _workspace_accessos_por_conta(db, [a.id for a in contas])
-    return [_ads_account_out(a, workspaces.get(a.workspace_id), workspace_acessos.get(a.id)) for a in contas]
+    sync_states = _sync_states_por_conta(db, [a.id for a in contas])
+    return [
+        _ads_account_out(a, workspaces.get(a.workspace_id), workspace_acessos.get(a.id), sync_states.get(a.id))
+        for a in contas
+    ]
 
 
 @router.post(
@@ -278,7 +344,8 @@ def criar_ads_account(
     db.refresh(a)
     workspace_nome = db.query(Workspace.nome).filter(Workspace.id == a.workspace_id).scalar()
     workspace_acessos = _workspace_accessos_por_conta(db, [a.id]).get(a.id, [])
-    return _ads_account_out(a, workspace_nome, workspace_acessos)
+    sync_state = _sync_states_por_conta(db, [a.id]).get(a.id)
+    return _ads_account_out(a, workspace_nome, workspace_acessos, sync_state)
 
 
 @router.put("/ads-accounts/{ads_account_id}", response_model=AdsAccountOut)
@@ -314,7 +381,8 @@ def atualizar_ads_account(
     db.refresh(a)
     workspace_acessos = _workspace_accessos_por_conta(db, [a.id]).get(a.id, [])
     workspace_nome = db.query(Workspace.nome).filter(Workspace.id == a.workspace_id).scalar()
-    return _ads_account_out(a, workspace_nome, workspace_acessos)
+    sync_state = _sync_states_por_conta(db, [a.id]).get(a.id)
+    return _ads_account_out(a, workspace_nome, workspace_acessos, sync_state)
 
 
 @router.delete("/ads-accounts/{ads_account_id}", status_code=status.HTTP_204_NO_CONTENT)
