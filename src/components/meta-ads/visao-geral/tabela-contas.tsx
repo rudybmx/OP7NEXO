@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { ContaAnuncio } from '@/types/meta-ads'
+import type { FinanceiroMetaAds } from '@/types/meta-ads-financeiro'
 import { formatarMoeda, formatarNumeroCompacto, formatarPorcentagem } from '@/lib/formatar'
 
 type ChaveOrdenacao = 'nome' | 'investimento' | 'leads' | 'cpl' | 'cpc' | 'cpm' | 'ctr' | 'impressoes' | 'frequencia' | 'saldo'
@@ -24,6 +25,7 @@ function IconeOrdenacao({ coluna, chaveOrdenacao, direcao }: { coluna: ChaveOrde
 
 interface TabelaContasProps {
   contas: ContaAnuncio[]
+  financeiro?: FinanceiroMetaAds | null
 }
 
 const COLUNAS: { chave: ChaveOrdenacao; label: string }[] = [
@@ -39,7 +41,7 @@ const COLUNAS: { chave: ChaveOrdenacao; label: string }[] = [
   { chave: 'saldo', label: 'Saldo' },
 ]
 
-export function TabelaContas({ contas }: TabelaContasProps) {
+export function TabelaContas({ contas, financeiro }: TabelaContasProps) {
   const [chaveOrdenacao, setChaveOrdenacao] = useState<ChaveOrdenacao>('investimento')
   const [direcaoOrdenacao, setDirecaoOrdenacao] = useState<DirecaoOrdenacao>('desc')
 
@@ -74,7 +76,9 @@ export function TabelaContas({ contas }: TabelaContasProps) {
     frequencia: contasAtivas.reduce((s, c) => s + c.alcance, 0) > 0
       ? contasAtivas.reduce((s, c) => s + c.impressoes, 0) / contasAtivas.reduce((s, c) => s + c.alcance, 0)
       : 0,
-    saldo: contas.reduce((s, c) => s + c.saldo, 0),
+    saldo: financeiro?.accounts?.length
+      ? financeiro.accounts.reduce((s, f) => s + (f.displayBalanceAmount ?? f.availableBalance ?? 0), 0)
+      : contas.reduce((s, c) => s + c.saldo, 0),
   }
 
   const totalCliques = contasAtivas.reduce((s, c) => s + (c.investimento / Math.max(c.cpc, 0.01)), 0)
@@ -83,6 +87,11 @@ export function TabelaContas({ contas }: TabelaContasProps) {
   totais.ctr = contasAtivas.reduce((s, c) => s + c.alcance, 0) > 0
     ? (contasAtivas.reduce((s, c) => s + c.ctr * c.alcance, 0) / contasAtivas.reduce((s, c) => s + c.alcance, 0))
     : 0
+
+  function getSaldoFinanceiro(conta: ContaAnuncio) {
+    if (!financeiro?.accounts?.length) return null
+    return financeiro.accounts.find(f => f.accountId === conta.metaAccountId) ?? null
+  }
 
   const formatarCelula = (conta: ContaAnuncio, chave: ChaveOrdenacao) => {
     switch (chave) {
@@ -112,9 +121,19 @@ export function TabelaContas({ contas }: TabelaContasProps) {
       case 'frequencia':
         return <span>{conta.frequencia.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
       case 'saldo': {
+        const finConta = getSaldoFinanceiro(conta)
+        if (finConta) {
+          const saldoVal = finConta.displayBalanceAmount ?? finConta.availableBalance ?? 0
+          const alertState = finConta.alertState
+          const cor = alertState === 'critical' ? '#FF5C8D'
+                     : alertState === 'warning' ? 'var(--ws-gold)'
+                     : '#0E142A'
+          const bold = alertState === 'critical' || alertState === 'warning'
+          return <span style={{ color: cor, fontWeight: bold ? 600 : 400 }}>{formatarMoeda(saldoVal)}</span>
+        }
         const pctSaldo = conta.saldoInicial > 0 ? (conta.saldo / conta.saldoInicial) * 100 : 0
-        const cor = pctSaldo <= 15 ? '#FF5C8D' : '#0E142A'
-        return <span style={{ color: cor, fontWeight: pctSaldo <= 15 ? 600 : 400 }}>{formatarMoeda(conta.saldo)}</span>
+        const cor = pctSaldo <= 15 && conta.saldoInicial > 0 ? '#FF5C8D' : '#0E142A'
+        return <span style={{ color: cor, fontWeight: pctSaldo <= 15 && conta.saldoInicial > 0 ? 600 : 400 }}>{formatarMoeda(conta.saldo)}</span>
       }
       default:
         return null

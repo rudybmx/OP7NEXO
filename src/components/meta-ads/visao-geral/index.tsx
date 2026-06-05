@@ -76,7 +76,7 @@ export function VisaoGeral({
 
       <TopCriativos criativos={data.topCriativos} filtros={filtros} workspaceId={workspaceId} />
 
-      <TabelaContas contas={data.contas} />
+      <TabelaContas contas={data.contas} financeiro={financeiro} />
     </div>
   )
 }
