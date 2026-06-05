@@ -161,6 +161,12 @@ export function SaldoFinanceiroCard({
   const selectedAccountCount = financeiro.accounts.length
   const hasSelectionRequired = financeiro.selectionRequired || financeiro.selectionState !== 'ready'
   const showAccountList = !compact && selectedAccountCount > 1 && typeof onSelecionarConta === 'function'
+  const isMultiConta = financeiro.selectionState === 'multiple' ||
+                       (financeiro.accounts.length > 1 && !selected)
+  const totalSaldo = financeiro.accounts.reduce(
+    (s, a) => s + (a.displayBalanceAmount ?? a.availableBalance ?? 0), 0
+  )
+  const multiCurrency = financeiro.accounts[0]?.currency ?? resumo.currency
   const canAutoSelectOne = compact && hasSelectionRequired && selectedAccountCount === 1 && typeof onSelecionarConta === 'function'
   const compactButtonLabel = ctaLabel ?? 'Abrir financeiro'
   const hoverCloseTimer = useRef<number | null>(null)
@@ -247,7 +253,7 @@ export function SaldoFinanceiroCard({
                   gap: 6,
                   lineHeight: 1.2,
                 }}>
-                  <span>{saldoPresentation.label.toUpperCase()}</span>
+                  <span>{isMultiConta ? 'VALOR RESTANTE' : saldoPresentation.label.toUpperCase()}</span>
                 </div>
                 <div style={{
                   marginTop: 6,
@@ -260,9 +266,11 @@ export function SaldoFinanceiroCard({
                     : stateTone.accent,
                   wordBreak: 'break-word',
                 }}>
-                  {hasSelectionRequired && !selected
-                    ? 'Selecione uma conta'
-                    : formatCurrency(saldoPresentation.amount, resumo.currency)}
+                  {isMultiConta
+                    ? formatCurrency(totalSaldo, multiCurrency)
+                    : hasSelectionRequired && !selected
+                      ? 'Selecione uma conta'
+                      : formatCurrency(saldoPresentation.amount, resumo.currency)}
                 </div>
               </div>
             </div>
@@ -277,9 +285,9 @@ export function SaldoFinanceiroCard({
                 height: 32,
                 padding: '0 12px',
                 borderRadius: 'var(--ws-radius-md)',
-                border: `1px solid ${hasSelectionRequired ? 'rgba(62,91,255,0.18)' : 'var(--ws-divider)'}`,
-                background: hasSelectionRequired ? 'var(--ws-blue-soft)' : 'var(--ws-glass-bg-hover)',
-                color: hasSelectionRequired ? 'var(--ws-blue)' : 'var(--ws-text-1)',
+                border: '1px solid var(--ws-divider)',
+                background: 'var(--ws-glass-bg-hover)',
+                color: 'var(--ws-text-1)',
                 fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -365,32 +373,67 @@ export function SaldoFinanceiroCard({
               </div>
             </div>
 
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {saldoDetails.map((item) => (
-                    <div
-                      key={item.label}
-                      style={{
+                {isMultiConta ? (
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {financeiro.accounts.map((conta) => (
+                      <div key={conta.id} style={{
                         display: 'flex',
+                        alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: 12,
+                        gap: 8,
                         borderTop: '1px solid var(--ws-divider)',
                         paddingTop: 8,
-                      }}
-                    >
-                      <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>{item.label}</span>
-                      <span
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                          <div style={{
+                            width: 22, height: 22, borderRadius: '50%',
+                            background: stateTone.accentSoft,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0,
+                          }}>
+                            {fundingIcon(conta)}
+                          </div>
+                          <span style={{
+                            fontSize: 11, color: 'var(--ws-text-1)',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {accountLabel(conta)}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ws-text-1)', flexShrink: 0 }}>
+                          {formatCurrency(conta.displayBalanceAmount ?? conta.availableBalance ?? 0, conta.currency)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {saldoDetails.map((item) => (
+                      <div
+                        key={item.label}
                         style={{
-                          fontSize: 11,
-                          color: 'var(--ws-text-1)',
-                          textAlign: 'right',
-                          fontWeight: 500,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          gap: 12,
+                          borderTop: '1px solid var(--ws-divider)',
+                          paddingTop: 8,
                         }}
                       >
-                        {item.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                        <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>{item.label}</span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--ws-text-1)',
+                            textAlign: 'right',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {item.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
           </div>
         </PopoverContent>
       </Popover>
