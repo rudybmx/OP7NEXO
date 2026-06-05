@@ -31,11 +31,12 @@ interface FiltrosMetaProps {
   workspaceId: string | null
   filtros: FiltrosMeta
   onChange: (filtros: FiltrosMeta) => void
+  ultimaAtualizacao?: string | null
 }
 
 // Removido CalendarioMes antigo em favor do shadcn Calendar
 
-export function FiltrosMeta({ workspaceId, filtros, onChange }: FiltrosMetaProps) {
+export function FiltrosMeta({ workspaceId, filtros, onChange, ultimaAtualizacao }: FiltrosMetaProps) {
   const [agrupamentoAberto, setAgrupamentoAberto] = useState(false)
   const [contaAberta, setContaAberta] = useState(false)
   const [dataAberta, setDataAberta] = useState(false)
@@ -239,6 +240,7 @@ export function FiltrosMeta({ workspaceId, filtros, onChange }: FiltrosMetaProps
               transition: 'var(--ws-transition)',
               whiteSpace: 'nowrap',
               outline: 'none',
+              minWidth: 200,
             }}
             onMouseEnter={e => {
               e.currentTarget.style.background = 'var(--ws-glass-bg-hover)'
@@ -254,7 +256,7 @@ export function FiltrosMeta({ workspaceId, filtros, onChange }: FiltrosMetaProps
                   {filtros.contaIds.length}
                 </span>
               )}
-              <span className="truncate max-w-[120px]">
+              <span className="truncate max-w-[240px]">
                 {filtros.contaIds.length === 0
                   ? 'Todas as contas'
                   : contasSelecionadas.length === 1
@@ -264,7 +266,7 @@ export function FiltrosMeta({ workspaceId, filtros, onChange }: FiltrosMetaProps
               <ChevronDown size={12} style={{ color: 'var(--ws-text-3)', marginLeft: 'auto' }} />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-[280px] p-1 bg-[rgba(255,255,255,0.97)] dark:bg-[rgba(20,28,56,0.97)] border-[1px] border-[rgba(14,20,42,0.10)] dark:border-[rgba(255,255,255,0.10)] rounded-[10px] shadow-[0_8px_32px_rgba(14,20,42,0.14),0_2px_8px_rgba(14,20,42,0.08)] backdrop-blur-[20px]" align="start">
+          <PopoverContent className="w-[560px] p-1 bg-[rgba(255,255,255,0.97)] dark:bg-[rgba(20,28,56,0.97)] border-[1px] border-[rgba(14,20,42,0.10)] dark:border-[rgba(255,255,255,0.10)] rounded-[10px] shadow-[0_8px_32px_rgba(14,20,42,0.14),0_2px_8px_rgba(14,20,42,0.08)] backdrop-blur-[20px]" align="start">
             <Command className="bg-transparent">
               <CommandInput placeholder="Buscar conta..." className="h-8 text-[12px]" />
               <CommandList>
@@ -417,6 +419,11 @@ export function FiltrosMeta({ workspaceId, filtros, onChange }: FiltrosMetaProps
               </div>
             </PopoverContent>
           </Popover>
+          {ultimaAtualizacao && (
+            <div style={{ fontSize: 10, color: 'var(--ws-text-3)', marginTop: 4, textAlign: 'right', whiteSpace: 'nowrap' }}>
+              Atualizado em {format(parseISO(ultimaAtualizacao), "dd/MM/yyyy, HH:mm", { locale: ptBR })}
+            </div>
+          )}
         </div>
       </div>
 

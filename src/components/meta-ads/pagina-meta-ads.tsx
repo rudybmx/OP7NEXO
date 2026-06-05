@@ -126,6 +126,12 @@ export function PaginaMetaAds() {
     }
   }, [campanhas, campanhaSelecionadaId])
 
+  const ultimaAtualizacao = financeiro?.accounts
+    ?.map(a => a.updatedAt)
+    .filter((v): v is string => Boolean(v))
+    .sort()
+    .at(-1) ?? null
+
   const handleFiltrosChange = (novosFiltros: FiltrosMetaTipo) => {
     setFiltros(novosFiltros)
     if (typeof window !== 'undefined') {
@@ -158,7 +164,7 @@ export function PaginaMetaAds() {
 
   return (
     <div className="p-6 md:p-8" style={{ position: 'relative', minHeight: '100vh' }}>
-      <FiltrosMeta workspaceId={wsId ?? null} filtros={filtros} onChange={handleFiltrosChange} />
+      <FiltrosMeta workspaceId={wsId ?? null} filtros={filtros} onChange={handleFiltrosChange} ultimaAtualizacao={ultimaAtualizacao} />
 
       <BreadcrumbMobile
         plataforma="Meta Ads"
