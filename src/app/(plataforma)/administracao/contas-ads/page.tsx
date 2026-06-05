@@ -33,6 +33,23 @@ interface WorkspaceResumo {
   nome: string
 }
 
+interface SyncState {
+  last_run_at?: string | null
+  last_run_mode?: string | null
+  last_run_status?: string | null
+  last_success_at?: string | null
+  last_error_at?: string | null
+  last_error_stage?: string | null
+  last_error_message?: string | null
+  last_error_code?: number | null
+  last_error_http_status?: number | null
+  last_rate_limit_usage_percent?: number | null
+  cooldown_until?: string | null
+  last_totals?: Record<string, unknown>
+  watermarks?: Record<string, unknown>
+  last_error_meta?: Record<string, unknown>
+}
+
 interface AdsAccount {
   id: string
   workspace_id: string
@@ -49,6 +66,7 @@ interface AdsAccount {
   sincronizado_em?: string | null
   periodo_sync_inicio?: string | null
   agrupamento?: string | null
+  sync_state?: SyncState | null
 }
 
 interface MetaContaAPI {
@@ -141,11 +159,24 @@ const INSIGHTS_BADGE = {
   com_dados: { label: 'Com dados', bg: 'rgba(15,168,86,0.15)', color: 'var(--ws-green)' },
   aguardando: { label: 'Aguardando', bg: 'rgba(201,168,76,0.15)', color: '#c9a84c' },
   erro: { label: 'Erro', bg: 'rgba(255,92,141,0.15)', color: 'var(--ws-coral)' },
+  cooldown: { label: 'Cooldown', bg: 'rgba(201,168,76,0.15)', color: '#c9a84c' },
+  executando: { label: 'Executando', bg: 'rgba(62,91,255,0.15)', color: 'var(--ws-blue)' },
+  pausado: { label: 'Pausado', bg: 'rgba(255,92,141,0.15)', color: 'var(--ws-coral)' },
+}
+
+function isFutureIso(iso?: string | null): boolean {
+  if (!iso) return false
+  const time = new Date(iso).getTime()
+  return Number.isFinite(time) && time > Date.now()
 }
 
 function insightsBadge(c: AdsAccount) {
-  if (c.status === 'erro') return INSIGHTS_BADGE.erro
-  if (c.sincronizado_em) return INSIGHTS_BADGE.com_dados
+  const state = c.sync_state
+  if (c.sync_paused) return INSIGHTS_BADGE.pausado
+  if (state?.cooldown_until && isFutureIso(state.cooldown_until)) return INSIGHTS_BADGE.cooldown
+  if (state?.last_run_status === 'running') return INSIGHTS_BADGE.executando
+  if (state?.last_run_status === 'error') return INSIGHTS_BADGE.erro
+  if (state?.last_success_at || c.sincronizado_em) return INSIGHTS_BADGE.com_dados
   return INSIGHTS_BADGE.aguardando
 }
 
@@ -722,6 +753,8 @@ export default function ContasAdsPage() {
     if (c.plataforma !== 'meta') return null
     const job = syncJobs[c.id]
     const jobTooltip = job ? formatarTooltipSyncJob(job) : undefined
+    const state = c.sync_state
+    const cooldownUntil = state?.cooldown_until && isFutureIso(state.cooldown_until) ? state.cooldown_until : null
     if (job?.status === 'done') {
       return (
         <span
@@ -768,6 +801,55 @@ export default function ContasAdsPage() {
           <XCircle size={13} />
           Pausado
         </span>
+      )
+    }
+    if (cooldownUntil) {
+      return (
+        <span
+          title={`Cooldown até ${formatarDataHora(cooldownUntil)}`}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: '#c9a84c', cursor: 'help' }}
+        >
+          <Clock3 size={13} />
+          Cooldown
+        </span>
+      )
+    }
+    if (state?.last_run_status === 'running') {
+      return (
+        <span
+          title={state.last_run_at ? `Última execução iniciada em ${formatarDataHora(state.last_run_at)}` : 'Sync em execução'}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-blue)', cursor: 'help' }}
+        >
+          <Loader2 size={13} className="animate-spin" />
+          Executando
+        </span>
+      )
+    }
+    if (state?.last_run_status === 'error') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 110 }}>
+          <span
+            title={state.last_error_message || state.last_error_stage || 'Erro no último sync'}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-coral)', cursor: 'help' }}
+          >
+            <XCircle size={13} />
+            Erro
+          </span>
+          <button
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(62,91,255,0.35)',
+              borderRadius: 6, padding: '4px 10px',
+              fontSize: 12, color: 'var(--ws-blue)',
+              cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+            }}
+            onClick={() => handleSync(c)}
+          >
+            <RefreshCw size={11} />
+            Sync
+          </button>
+        </div>
       )
     }
     return (
@@ -1053,7 +1135,7 @@ export default function ContasAdsPage() {
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-2)' }}>
                       {c.workspace_nome || '—'}
                     </td>
-                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-3)' }}>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'normal', fontSize: 13, color: 'var(--ws-text-3)' }}>
                       {c.periodo_sync_inicio ? formatarPeriodo(c.periodo_sync_inicio) : '—'}
                     </td>
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
@@ -1071,7 +1153,27 @@ export default function ContasAdsPage() {
                       </span>
                     </td>
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-3)' }}>
-                      {c.sincronizado_em ? formatarDataHora(c.sincronizado_em) : 'Nunca sincronizado'}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <span>
+                          {c.sincronizado_em ? formatarDataHora(c.sincronizado_em) : 'Nunca sincronizado'}
+                        </span>
+                        {c.sync_state?.last_success_at && c.sync_state.last_success_at !== c.sincronizado_em && (
+                          <span style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>
+                            Último sucesso: {formatarDataHora(c.sync_state.last_success_at)}
+                          </span>
+                        )}
+                        {c.sync_state?.last_run_status === 'error' && c.sync_state.last_error_stage && (
+                          <span style={{ fontSize: 11, color: 'var(--ws-coral)' }}>
+                            Falha em {c.sync_state.last_error_stage}
+                            {c.sync_state.last_error_message ? `: ${c.sync_state.last_error_message}` : ''}
+                          </span>
+                        )}
+                        {c.sync_state?.cooldown_until && isFutureIso(c.sync_state.cooldown_until) && (
+                          <span style={{ fontSize: 11, color: '#c9a84c' }}>
+                            Cooldown até {formatarDataHora(c.sync_state.cooldown_until)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
                       <WSTableActions>
