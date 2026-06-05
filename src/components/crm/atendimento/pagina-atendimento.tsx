@@ -192,37 +192,51 @@ export function PaginaAtendimento() {
   }, [conversaAtivaId, assumir, refetch, refetchMensagens])
 
   const handleEnviar = useCallback(async (options?: { file?: File | Blob | null; filename?: string; tipo?: 'image' | 'audio' | 'video' | 'document'; caption?: string | null }) => {
-    const conteudo = textoMensagem.trim()
-    if ((!conteudo && !options?.file) || !conversaAtiva) return
+    const draftText = textoMensagem.trim()
+    if ((!draftText && !options?.file) || !conversaAtiva) return
     const telefone = conversaAtiva.contato.remoteJid || conversaAtiva.contato.telefone
     const agora = new Date().toISOString()
     const idOtimista = `optimistic-${Date.now()}`
-    const tipoMensagem = options?.tipo || (options?.file ? 'document' : undefined)
+    const mediaKind = options?.file ? (options?.tipo || 'document') : null
+    const isAudioMedia = mediaKind === 'audio'
+    const textoParaEnvio = isAudioMedia ? '' : draftText
+    const captionParaEnvio = isAudioMedia ? null : (options?.caption ?? (options?.file ? draftText : null))
+    const conteudoOtimista = options?.file
+      ? (isAudioMedia ? '[mídia]' : captionParaEnvio || '[mídia]')
+      : draftText
+
     addMensagemLocal({
       id: idOtimista,
       direcao: 'saida',
-      conteudo: conteudo || options?.caption || '[mídia]',
+      conteudo: conteudoOtimista,
       remetenteNome: 'Você',
       remetenteTipo: 'agente',
       enviadaEm: agora,
       recebidaEm: null,
       criadaEm: agora,
-      messageType: tipoMensagem || 'conversation',
+      messageType: mediaKind ? `${mediaKind}Message` : 'conversation',
       mediaUrl: null,
+      mediaKind: mediaKind || null,
+      mediaFilename: options?.filename || null,
+      mediaCaption: captionParaEnvio,
       waStatus: 'pending',
       mediaStatus: options?.file ? 'pending' : null,
     })
-    setTextoMensagem('')
-    const ok = await enviar(conversaAtiva.id, telefone, conteudo, workspaceAtual ?? undefined, {
+
+    const ok = await enviar(conversaAtiva.id, telefone, textoParaEnvio, workspaceAtual ?? undefined, {
       canalId: conversaAtiva.canalId || (canalSelecionadoId === 'todos' ? undefined : canalSelecionadoId),
       ...options,
+      caption: captionParaEnvio,
     })
+
     if (ok) {
+      if (!isAudioMedia) {
+        setTextoMensagem('')
+      }
       refetchMensagens()
       refetch()
     } else {
       removerMensagemLocal(idOtimista)
-      setTextoMensagem(conteudo)
     }
   }, [textoMensagem, conversaAtiva, enviar, refetchMensagens, refetch, addMensagemLocal, removerMensagemLocal, workspaceAtual, canalSelecionadoId])
 

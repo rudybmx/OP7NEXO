@@ -1,8 +1,23 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { Send, Smile, Paperclip, Mic, X, Square } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent, CSSProperties } from 'react'
+import { FileAudio, FileText, Mic, Pause, Play, Plus, Send, Video, X } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+
+type AttachmentKind = 'document' | 'audio' | 'video'
+
+interface DraftAttachment {
+  kind: AttachmentKind
+  file: File
+  filename: string
+}
 
 interface InputMensagemProps {
   valor: string
@@ -13,63 +28,320 @@ interface InputMensagemProps {
   erro?: string | null
 }
 
+const DOCUMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,text/plain,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+const AUDIO_ACCEPT = 'audio/*'
+const VIDEO_ACCEPT = 'video/*'
+
 export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa, erro }: InputMensagemProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const documentInputRef = useRef<HTMLInputElement>(null)
+  const audioInputRef = useRef<HTMLInputElement>(null)
+  const videoInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
-  const [arquivo, setArquivo] = useState<File | null>(null)
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
-  const [gravando, setGravando] = useState(false)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioChunksRef = useRef<BlobPart[]>([])
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const recordingStartedAtRef = useRef<number | null>(null)
+  const pausedStartedAtRef = useRef<number | null>(null)
+  const pausedAccumulatedRef = useRef(0)
+  const sendAfterStopRef = useRef(false)
+  const recordingMimeTypeRef = useRef('audio/webm')
+  const recordingLockRef = useRef(false)
 
-  const tipoArquivo = arquivo
-    ? arquivo.type.startsWith('image/') ? 'image' : arquivo.type.startsWith('video/') ? 'video' : arquivo.type.startsWith('audio/') ? 'audio' : 'document'
-    : undefined
-  const temAnexo = Boolean(arquivo || audioBlob)
+  const [attachment, setAttachment] = useState<DraftAttachment | null>(null)
+  const [isRecording, setIsRecording] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
+  const [recordingElapsedMs, setRecordingElapsedMs] = useState(0)
+  const [recordingError, setRecordingError] = useState<string | null>(null)
 
-  async function toggleGravacao() {
-    if (isEnviando) return
-    if (gravando) {
-      mediaRecorderRef.current?.stop()
+  const draftText = valor.trim()
+  const hasText = draftText.length > 0
+  const hasAttachment = attachment !== null
+  const hasPrimaryContent = hasText || hasAttachment
+  const primaryAction = hasPrimaryContent ? 'send' : 'record'
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea || isRecording) return
+
+    textarea.style.height = '0px'
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 40), 108)}px`
+  }, [valor, isRecording])
+
+  useEffect(() => {
+    return () => {
+      clearRecordingTimer()
+      stopMediaStream()
+    }
+  }, [])
+
+  function clearRecordingTimer() {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current)
+      recordingTimerRef.current = null
+    }
+  }
+
+  function stopMediaStream() {
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+    mediaStreamRef.current = null
+  }
+
+  function resetRecordingRefs() {
+    audioChunksRef.current = []
+    recordingStartedAtRef.current = null
+    pausedStartedAtRef.current = null
+    pausedAccumulatedRef.current = 0
+    sendAfterStopRef.current = false
+    recordingMimeTypeRef.current = 'audio/webm'
+    mediaRecorderRef.current = null
+    recordingLockRef.current = false
+  }
+
+  function getElapsedMs(now = Date.now()) {
+    const startedAt = recordingStartedAtRef.current
+    if (!startedAt) return 0
+    const pausedDuringCurrentSession = pausedStartedAtRef.current ? now - pausedStartedAtRef.current : 0
+    return Math.max(0, now - startedAt - pausedAccumulatedRef.current - pausedDuringCurrentSession)
+  }
+
+  function formatDuration(ms: number) {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+
+  function inferAttachmentKind(file: File, fallback: AttachmentKind): AttachmentKind {
+    const mime = (file.type || '').toLowerCase()
+    if (mime.startsWith('audio/')) return 'audio'
+    if (mime.startsWith('video/')) return 'video'
+    if (mime.startsWith('application/') || mime.startsWith('text/')) return 'document'
+    return fallback
+  }
+
+  function openPicker(kind: AttachmentKind) {
+    if (isEnviando || isRecording) return
+    if (kind === 'document') documentInputRef.current?.click()
+    if (kind === 'audio') audioInputRef.current?.click()
+    if (kind === 'video') videoInputRef.current?.click()
+  }
+
+  function handlePickedFile(kind: AttachmentKind, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null
+    event.currentTarget.value = ''
+    if (!file) return
+
+    const resolvedKind = inferAttachmentKind(file, kind)
+    setRecordingError(null)
+    setAttachment({
+      kind: resolvedKind,
+      file,
+      filename: file.name || `${resolvedKind}-${Date.now()}`,
+    })
+  }
+
+  function clearAttachment() {
+    setAttachment(null)
+  }
+
+  function startTimer() {
+    clearRecordingTimer()
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingElapsedMs(getElapsedMs())
+    }, 250)
+  }
+
+  async function startRecording() {
+    if (isEnviando || isRecording || recordingLockRef.current) return
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setRecordingError('Seu navegador não suporta gravação de áudio.')
       return
     }
-    if (!navigator.mediaDevices?.getUserMedia) return
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    audioChunksRef.current = []
-    const recorder = new MediaRecorder(stream)
-    mediaRecorderRef.current = recorder
-    recorder.ondataavailable = event => {
-      if (event.data.size > 0) audioChunksRef.current.push(event.data)
+
+    recordingLockRef.current = true
+    setRecordingError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const preferredMimeType = typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '')
+      const recorder = preferredMimeType
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream)
+
+      mediaStreamRef.current = stream
+      mediaRecorderRef.current = recorder
+      audioChunksRef.current = []
+      recordingStartedAtRef.current = Date.now()
+      pausedStartedAtRef.current = null
+      pausedAccumulatedRef.current = 0
+      sendAfterStopRef.current = false
+      recordingMimeTypeRef.current = recorder.mimeType || preferredMimeType || 'audio/webm'
+      setAttachment(null)
+      setIsRecording(true)
+      setIsPaused(false)
+      setRecordingElapsedMs(0)
+      startTimer()
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      recorder.onstop = () => {
+        clearRecordingTimer()
+        const blob = new Blob(audioChunksRef.current, { type: recordingMimeTypeRef.current || 'audio/webm' })
+        const shouldSend = sendAfterStopRef.current
+        const filename = `audio-${Date.now()}.webm`
+
+        stopMediaStream()
+        resetRecordingRefs()
+        setIsRecording(false)
+        setIsPaused(false)
+        setRecordingElapsedMs(0)
+
+        if (shouldSend) {
+          onEnviar({ file: blob, filename, tipo: 'audio', caption: null })
+        }
+      }
+
+      recorder.start()
+    } catch (error) {
+      stopMediaStream()
+      resetRecordingRefs()
+      setIsRecording(false)
+      setIsPaused(false)
+      setRecordingElapsedMs(0)
+      setRecordingError(error instanceof Error ? error.message : 'Não foi possível iniciar a gravação.')
+    } finally {
+      recordingLockRef.current = false
     }
-    recorder.onstop = () => {
-      setAudioBlob(new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' }))
-      setGravando(false)
-      stream.getTracks().forEach(track => track.stop())
-    }
-    setArquivo(null)
-    setAudioBlob(null)
-    setGravando(true)
-    recorder.start()
   }
 
-  function enviarAtual() {
-    const file = audioBlob || arquivo
-    const filename = audioBlob ? `audio-${Date.now()}.webm` : arquivo?.name
-    const tipo = audioBlob ? 'audio' : tipoArquivo
-    onEnviar(file ? { file, filename, tipo, caption: valor.trim() || null } : undefined)
-    setArquivo(null)
-    setAudioBlob(null)
+  function stopRecording(send: boolean) {
+    const recorder = mediaRecorderRef.current
+    if (!recorder || recorder.state === 'inactive') return
+    sendAfterStopRef.current = send
+    try {
+      recorder.stop()
+    } catch {
+      clearRecordingTimer()
+      stopMediaStream()
+      resetRecordingRefs()
+      setIsRecording(false)
+      setIsPaused(false)
+    }
   }
+
+  function togglePauseResume() {
+    const recorder = mediaRecorderRef.current
+    if (!recorder || recorder.state === 'inactive') return
+
+    if (recorder.state === 'recording') {
+      pausedStartedAtRef.current = Date.now()
+      recorder.pause()
+      setIsPaused(true)
+      setRecordingElapsedMs(getElapsedMs())
+      return
+    }
+
+    if (recorder.state === 'paused') {
+      if (pausedStartedAtRef.current) {
+        pausedAccumulatedRef.current += Date.now() - pausedStartedAtRef.current
+        pausedStartedAtRef.current = null
+      }
+      recorder.resume()
+      setIsPaused(false)
+      setRecordingElapsedMs(getElapsedMs())
+    }
+  }
+
+  function handlePrimaryAction() {
+    if (isEnviando || isRecording) return
+    if (hasPrimaryContent) {
+      handleSendTextOrAttachment()
+      return
+    }
+
+    void startRecording()
+  }
+
+  function handleSendTextOrAttachment() {
+    if (isEnviando || isRecording) return
+    if (!hasPrimaryContent) return
+
+    const tipo = attachment?.kind ?? undefined
+    const caption = tipo === 'audio' ? null : (hasText ? draftText : null)
+
+    if (attachment) {
+      onEnviar({
+        file: attachment.file,
+        filename: attachment.filename,
+        tipo,
+        caption,
+      })
+      clearAttachment()
+      return
+    }
+
+    onEnviar()
+  }
+
+  function renderAttachmentLabel() {
+    if (!attachment) return ''
+    const prefix = attachment.kind === 'document'
+      ? 'Documento'
+      : attachment.kind === 'audio'
+        ? 'Áudio'
+        : 'Vídeo'
+    return `${prefix}: ${attachment.filename}`
+  }
+
+  const attachmentTone = useMemo(() => {
+    if (!attachment) return {
+      background: 'rgba(15, 23, 42, 0.04)',
+      color: 'var(--ws-text-2)',
+      border: '1px solid rgba(15, 23, 42, 0.08)',
+    }
+
+    if (attachment.kind === 'audio') {
+      return {
+        background: 'rgba(37, 211, 102, 0.10)',
+        color: '#1D9E75',
+        border: '1px solid rgba(29, 158, 117, 0.18)',
+      }
+    }
+
+    if (attachment.kind === 'video') {
+      return {
+        background: 'rgba(24, 95, 165, 0.10)',
+        color: '#185FA5',
+        border: '1px solid rgba(24, 95, 165, 0.18)',
+      }
+    }
+
+    return {
+      background: 'rgba(15, 23, 42, 0.04)',
+      color: 'var(--ws-text-2)',
+      border: '1px solid rgba(15, 23, 42, 0.08)',
+    }
+  }, [attachment])
+
+  const recordingButtonStyle = {
+    width: 42,
+    height: 42,
+    borderRadius: '50%',
+    border: 'none',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: isEnviando ? 'wait' : 'pointer',
+    transition: 'transform 120ms ease, opacity 120ms ease, background 120ms ease',
+  } as const
 
   return (
-    <div style={{
-      padding: '12px 20px 16px',
-      borderTop: '1px solid var(--ws-divider)',
-      background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(247,249,252,0.98) 100%)',
-      width: '100%',
-      minWidth: 0,
-      boxSizing: 'border-box',
-      boxShadow: '0 -10px 24px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255,255,255,0.72)',
-    }}>
+    <div style={composerShellStyle}>
       {conversa.campanha && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12 }}>
           <span style={{ fontSize: 10, color: 'var(--ws-text-3)', fontStyle: 'italic' }}>
@@ -79,143 +351,298 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
       )}
 
       {erro && (
-        <div style={{
-          marginBottom: 12,
-          padding: '8px 12px',
-          borderRadius: 10,
-          border: '1px solid rgba(239,68,68,0.25)',
-          background: 'rgba(239,68,68,0.08)',
-          color: '#ef4444',
-          fontSize: 12,
-          lineHeight: 1.4,
-        }}>
+        <div style={errorBannerStyle}>
           {erro}
         </div>
       )}
 
-      {temAnexo && (
-        <div style={{
-          marginBottom: 10,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 10,
-          padding: '8px 10px',
-          borderRadius: 10,
-          border: '1px solid var(--ws-glass-border)',
-          background: 'rgba(255,255,255,0.04)',
-          color: 'var(--ws-text-2)',
-          fontSize: 12,
-        }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {audioBlob ? 'Áudio gravado pronto para envio' : arquivo?.name}
-          </span>
+      {recordingError && (
+        <div style={errorBannerStyle}>
+          {recordingError}
+        </div>
+      )}
+
+      {attachment && !isRecording && (
+        <div style={{ ...attachmentPreviewStyle, ...attachmentTone }}>
+          <div style={{ display: 'flex', minWidth: 0, alignItems: 'center', gap: 8, flex: 1 }}>
+            {attachment.kind === 'audio' ? <FileAudio size={16} /> : attachment.kind === 'video' ? <Video size={16} /> : <FileText size={16} />}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {renderAttachmentLabel()}
+            </span>
+          </div>
           <button
-            onClick={() => {
-              setArquivo(null)
-              setAudioBlob(null)
-            }}
-            style={iconBtnStyle}
+            type="button"
+            onClick={clearAttachment}
+            style={iconButtonStyle}
             title="Remover anexo"
+            disabled={isEnviando}
           >
             <X size={16} />
           </button>
         </div>
       )}
 
-      {/* Input */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*,video/*,audio/*,application/pdf,text/plain,text/csv,.doc,.docx,.xls,.xlsx"
-          style={{ display: 'none' }}
-          onChange={event => {
-            const nextFile = event.target.files?.[0] || null
-            setArquivo(nextFile)
-            setAudioBlob(null)
-            event.currentTarget.value = ''
-          }}
-        />
-        <div style={{
-          flex: 1,
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 8,
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)',
-          border: '1px solid rgba(15, 23, 42, 0.08)',
-          borderRadius: 14,
-          padding: '8px 12px',
-          boxShadow: '0 8px 18px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255,255,255,0.75)',
-        }}>
-          <div style={{ display: 'flex', gap: 8, paddingBottom: 6 }}>
-            <button style={iconBtnStyle} disabled={isEnviando}><Smile size={18} /></button>
-            <button style={iconBtnStyle} disabled={isEnviando} onClick={() => fileInputRef.current?.click()} title="Anexar arquivo"><Paperclip size={18} /></button>
-            <button style={{ ...iconBtnStyle, color: gravando ? '#a32d2d' : iconBtnStyle.color }} disabled={isEnviando} onClick={toggleGravacao} title={gravando ? 'Parar gravação' : 'Gravar áudio'}>
-              {gravando ? <Square size={18} /> : <Mic size={18} />}
-            </button>
+      {isRecording ? (
+        <div style={recordingBarStyle}>
+          <div style={{ display: 'flex', minWidth: 0, alignItems: 'center', gap: 10 }}>
+            <span style={recordingPulseStyle} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#b42318', lineHeight: 1.2 }}>
+                Gravando áudio
+              </div>
+              <div style={{ fontSize: 11, color: '#b42318', opacity: 0.88, fontVariantNumeric: 'tabular-nums' }}>
+                {isPaused ? 'Pausado' : formatDuration(recordingElapsedMs)}
+              </div>
+            </div>
           </div>
 
-          <textarea
-            value={valor}
-            onChange={e => onChange(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                enviarAtual()
-              }
-            }}
-            placeholder="Digite uma mensagem..."
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => stopRecording(false)}
+              style={{ ...recordingButtonStyle, background: 'rgba(239, 68, 68, 0.10)', color: '#dc2626' }}
+              title="Cancelar gravação"
+              aria-label="Cancelar gravação"
+            >
+              <X size={18} />
+            </button>
+
+            <button
+              type="button"
+              onClick={togglePauseResume}
+              style={{ ...recordingButtonStyle, background: 'rgba(15, 23, 42, 0.06)', color: '#0f172a' }}
+              title={isPaused ? 'Retomar gravação' : 'Pausar gravação'}
+              aria-label={isPaused ? 'Retomar gravação' : 'Pausar gravação'}
+            >
+              {isPaused ? <Play size={18} /> : <Pause size={18} />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => stopRecording(true)}
+              style={{ ...recordingButtonStyle, background: 'linear-gradient(135deg, #25D366 0%, #1D9E75 100%)', color: 'white' }}
+              title="Enviar áudio"
+              aria-label="Enviar áudio"
+            >
+              <Send size={18} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={composerRowStyle}>
+          <input
+            ref={documentInputRef}
+            type="file"
+            accept={DOCUMENT_ACCEPT}
+            style={hiddenInputStyle}
+            onChange={event => handlePickedFile('document', event)}
+          />
+          <input
+            ref={audioInputRef}
+            type="file"
+            accept={AUDIO_ACCEPT}
+            style={hiddenInputStyle}
+            onChange={event => handlePickedFile('audio', event)}
+          />
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept={VIDEO_ACCEPT}
+            style={hiddenInputStyle}
+            onChange={event => handlePickedFile('video', event)}
+          />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                disabled={isEnviando}
+                style={iconCircleButtonStyle}
+                title="Anexar"
+                aria-label="Anexar"
+              >
+                <Plus size={18} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" sideOffset={8} className="w-52">
+              <DropdownMenuItem onSelect={() => openPicker('document')}>
+                <FileText size={16} />
+                <span>Documento</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => openPicker('audio')}>
+                <FileAudio size={16} />
+                <span>Áudio</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => openPicker('video')}>
+                <Video size={16} />
+                <span>Vídeo</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <div style={inputShellStyle}>
+            <textarea
+              ref={textareaRef}
+              value={valor}
+              onChange={e => onChange(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  if (hasPrimaryContent) {
+                    handleSendTextOrAttachment()
+                  }
+                }
+              }}
+              placeholder="Digite uma mensagem..."
+              disabled={isEnviando}
+              rows={1}
+              style={textareaStyle}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={handlePrimaryAction}
             disabled={isEnviando}
             style={{
-              flex: 1,
-              background: 'none',
-              border: 'none',
-              color: 'var(--ws-text-1)',
-              fontSize: 13,
-              outline: 'none',
-              resize: 'none',
-              minWidth: 0,
-              padding: '4px 0',
-              minHeight: 20,
-              maxHeight: 100,
+              ...primaryActionButtonStyle,
+              opacity: isEnviando ? 0.72 : 1,
             }}
-            rows={1}
-          />
+            title={primaryAction === 'send' ? 'Enviar mensagem' : 'Gravar áudio'}
+            aria-label={primaryAction === 'send' ? 'Enviar mensagem' : 'Gravar áudio'}
+          >
+            {primaryAction === 'send' ? <Send size={18} /> : <Mic size={18} />}
+          </button>
         </div>
-
-        <button
-          onClick={enviarAtual}
-          disabled={isEnviando || (!valor.trim() && !temAnexo)}
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: '50%',
-            background: isEnviando || (!valor.trim() && !temAnexo)
-              ? 'rgba(62,91,255,0.45)'
-              : 'linear-gradient(135deg, var(--ws-blue) 0%, var(--ws-purple) 100%)',
-            border: 'none',
-            color: 'white',
-            cursor: isEnviando ? 'wait' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 4px 12px rgba(62, 91, 255, 0.2)',
-            opacity: isEnviando ? 0.8 : 1,
-          }}
-        >
-          <Send size={18} />
-        </button>
-      </div>
+      )}
     </div>
   )
 }
 
-const iconBtnStyle: React.CSSProperties = {
+const composerShellStyle: CSSProperties = {
+  padding: '12px 20px 16px',
+  borderTop: '1px solid var(--ws-divider)',
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(247,249,252,0.98) 100%)',
+  width: '100%',
+  minWidth: 0,
+  boxSizing: 'border-box',
+  boxShadow: '0 -10px 24px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255,255,255,0.72)',
+}
+
+const composerRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-end',
+  gap: 10,
+}
+
+const inputShellStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  display: 'flex',
+  alignItems: 'center',
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)',
+  border: '1px solid rgba(15, 23, 42, 0.08)',
+  borderRadius: 18,
+  padding: '9px 12px',
+  boxShadow: '0 8px 18px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255,255,255,0.75)',
+}
+
+const textareaStyle: CSSProperties = {
+  width: '100%',
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--ws-text-1)',
+  fontSize: 13,
+  outline: 'none',
+  resize: 'none',
+  minWidth: 0,
+  padding: 0,
+  lineHeight: 1.45,
+  minHeight: 20,
+  maxHeight: 108,
+}
+
+const hiddenInputStyle: CSSProperties = {
+  display: 'none',
+}
+
+const iconCircleButtonStyle: CSSProperties = {
+  width: 42,
+  height: 42,
+  borderRadius: '50%',
+  background: 'rgba(15, 23, 42, 0.05)',
+  border: '1px solid rgba(15, 23, 42, 0.08)',
+  color: 'var(--ws-text-2)',
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+  transition: 'transform 120ms ease, background 120ms ease, opacity 120ms ease',
+}
+
+const primaryActionButtonStyle: CSSProperties = {
+  width: 42,
+  height: 42,
+  borderRadius: '50%',
+  background: 'linear-gradient(135deg, #25D366 0%, #1D9E75 100%)',
+  border: 'none',
+  color: 'white',
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+  boxShadow: '0 8px 18px rgba(29, 158, 117, 0.22)',
+  transition: 'transform 120ms ease, opacity 120ms ease',
+}
+
+const attachmentPreviewStyle: CSSProperties = {
+  marginBottom: 10,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 10,
+  padding: '8px 10px',
+  borderRadius: 12,
+  fontSize: 12,
+}
+
+const recordingBarStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  padding: '10px 14px',
+  borderRadius: 16,
+  border: '1px solid rgba(220, 38, 38, 0.18)',
+  background: 'linear-gradient(180deg, rgba(254, 226, 226, 0.72) 0%, rgba(255,255,255,0.98) 100%)',
+  boxShadow: '0 10px 22px rgba(220, 38, 38, 0.08)',
+}
+
+const recordingPulseStyle: CSSProperties = {
+  width: 12,
+  height: 12,
+  borderRadius: '50%',
+  background: '#dc2626',
+  boxShadow: '0 0 0 0 rgba(220, 38, 38, 0.38)',
+}
+
+const errorBannerStyle: CSSProperties = {
+  marginBottom: 12,
+  padding: '8px 12px',
+  borderRadius: 10,
+  border: '1px solid rgba(239,68,68,0.25)',
+  background: 'rgba(239,68,68,0.08)',
+  color: '#ef4444',
+  fontSize: 12,
+  lineHeight: 1.4,
+}
+
+const iconButtonStyle: CSSProperties = {
   background: 'none',
   border: 'none',
-  color: 'var(--ws-text-3)',
+  color: 'inherit',
   cursor: 'pointer',
   padding: 4,
   display: 'flex',

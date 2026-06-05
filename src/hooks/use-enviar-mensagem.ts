@@ -27,6 +27,14 @@ function getToken(): string | null {
   return localStorage.getItem('op7nexo_token')
 }
 
+function inferMediaKind(file: File | Blob): 'image' | 'audio' | 'video' | 'document' {
+  const mime = (file.type || '').toLowerCase()
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('audio/')) return 'audio'
+  if (mime.startsWith('video/')) return 'video'
+  return 'document'
+}
+
 export function useEnviarMensagem(): UseEnviarMensagemReturn {
   const [isEnviando, setIsEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,8 +59,8 @@ export function useEnviarMensagem(): UseEnviarMensagemReturn {
       }
 
       let mediaUrl: string | null = null
-      let tipo = options?.tipo
-      let caption = options?.caption ?? null
+      let tipo = options?.tipo || (options?.file ? inferMediaKind(options.file) : undefined)
+      const caption = tipo === 'audio' ? null : (options?.caption ?? null)
 
       if (options?.file) {
         if (!options.canalId) {
@@ -74,8 +82,13 @@ export function useEnviarMensagem(): UseEnviarMensagemReturn {
           throw new Error(uploadData.detail || uploadData.error || 'Erro ao enviar anexo')
         }
         mediaUrl = uploadData.media_url
-        tipo = uploadData.tipo || tipo || 'document'
+        if (tipo === 'document' && uploadData.tipo && uploadData.tipo !== 'document') {
+          tipo = uploadData.tipo
+        }
       }
+
+      const textoEnviado = tipo === 'audio' ? '' : texto.trim()
+      const captionEnviada = tipo === 'audio' ? null : caption
 
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
@@ -83,12 +96,12 @@ export function useEnviarMensagem(): UseEnviarMensagemReturn {
         body: JSON.stringify({
           conversa_id: conversaId,
           number: numero,
-          text: texto.trim(),
+          text: textoEnviado,
           workspace_id: workspaceId || undefined,
           canal_id: options?.canalId || undefined,
           tipo: tipo || undefined,
           media_url: mediaUrl || undefined,
-          caption: caption || undefined,
+          caption: captionEnviada || undefined,
         }),
       })
       if (!res.ok) {
