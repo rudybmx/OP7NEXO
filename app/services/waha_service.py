@@ -486,3 +486,24 @@ def parar_sessao(session: str, cfg: dict) -> dict[str, Any]:
         ) from exc
     except httpx.RequestError as exc:
         raise WahaError(f"WAHA sessions/{session}/stop: {exc}") from exc
+
+
+def deletar_sessao(session: str, cfg: dict) -> dict[str, Any]:
+    """DELETE /api/sessions/{session} — remove permanentemente a sessão WAHA."""
+    base_url, headers = _headers(cfg)
+    try:
+        resp = httpx.delete(
+            f"{base_url}/api/sessions/{session}",
+            headers=headers,
+            timeout=_TIMEOUT,
+        )
+        if resp.status_code == 404:
+            return {}
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA sessions/{session} DELETE: {exc.response.status_code} {exc.response.text[:200]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA sessions/{session} DELETE: {exc}") from exc

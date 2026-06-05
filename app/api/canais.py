@@ -883,6 +883,13 @@ def remover_canal(
     c = _get_canal_or_404(canal_id, db)
     _exigir_admin_canal(usuario, c, db)
 
+    # Bloquear exclusão de canal ainda conectado
+    if c.connection_status not in (None, "disconnected"):
+        raise HTTPException(
+            status_code=409,
+            detail="Inative o canal antes de excluir. Clique em 'Inativar' para desconectá-lo primeiro.",
+        )
+
     # Se for Evolution, deletar instância na Evolution API
     if c.tipo == "whatsapp_evolution":
         evolution = _evolution_config(c)
@@ -895,6 +902,14 @@ def remover_canal(
                 logger.error("[canais] falha ao deletar instância Evolution: %s", exc)
         else:
             logger.info("[canais] preservando instância Evolution legada/protegida canal=%s", c.nome)
+
+    # Se for WAHA, deletar sessão permanentemente
+    if c.tipo == "whatsapp_waha":
+        session, cfg = _waha_cfg(c)
+        try:
+            waha_service.deletar_sessao(session, cfg)
+        except Exception as exc:
+            logger.error("[canais] falha ao deletar sessão WAHA: %s", exc)
 
     db.delete(c)
     db.commit()
@@ -1598,8 +1613,15 @@ def desconectar_canal(
 
     if c.tipo == "whatsapp_waha":
         return _desconectar_waha(c, db)
+    if c.tipo == "webhook":
+        c.status = "inativo"
+        db.commit()
+        return {"status": "disconnected", "message": "Canal webhook inativado."}
     if c.tipo != "whatsapp_evolution":
-        raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
+        c.status = "inativo"
+        c.connection_status = "disconnected"
+        db.commit()
+        return {"status": "disconnected", "message": "Canal inativado."}
 
     instance_name, instance_id, instance_token = _evolution_meta(c)
 
