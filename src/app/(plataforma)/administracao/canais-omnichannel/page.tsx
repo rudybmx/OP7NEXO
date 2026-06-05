@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Plus, Search, Link2, Smartphone, Calendar, Pencil, Trash2 } from 'lucide-react'
+import { Loader2, Plus, Search, Link2, Smartphone, Calendar, Pencil, Trash2, PowerOff } from 'lucide-react'
+import { AlertDialog } from 'radix-ui'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
 import api from '@/lib/api-client'
@@ -91,8 +92,11 @@ export default function CanaisOmnichannelPage() {
   const [conectando, setConectando] = useState(false)
   const [pollingId, setPollingId] = useState<ReturnType<typeof setInterval> | null>(null)
 
-  // Exclusão
+  // Exclusão / Inativação
   const [excluindoId, setExcluindoId] = useState<string | null>(null)
+  const [inativandoId, setInativandoId] = useState<string | null>(null)
+  const [confirmExcluir, setConfirmExcluir] = useState<Canal | null>(null)
+  const [confirmInativar, setConfirmInativar] = useState<Canal | null>(null)
 
   useEffect(() => {
     if (!authLoading && user && user.role !== 'platform_admin') router.push('/')
@@ -206,10 +210,8 @@ export default function CanaisOmnichannelPage() {
     }
   }
 
-  async function excluirCanal(canal: Canal) {
-    const confirmar = window.confirm(`Tem certeza que deseja excluir o canal "${canal.nome}"? Esta ação também removerá a instância na Evolution e não poderá ser desfeita.`)
-    if (!confirmar) return
-
+  async function excluirCanalConfirmado(canal: Canal) {
+    setConfirmExcluir(null)
     setExcluindoId(canal.id)
     try {
       await api.delete(`/canais/${canal.id}`)
@@ -219,6 +221,22 @@ export default function CanaisOmnichannelPage() {
       toast.error(errorMessage(err, 'Erro ao excluir canal'))
     } finally {
       setExcluindoId(null)
+    }
+  }
+
+  async function inativarCanalConfirmado(canal: Canal) {
+    setConfirmInativar(null)
+    setInativandoId(canal.id)
+    try {
+      await api.post(`/canais/${canal.id}/desconectar`)
+      setCanais(prev => prev.map(c =>
+        c.id === canal.id ? { ...c, connection_status: 'disconnected', status: 'inativo', numero_telefone: null } : c
+      ))
+      toast.success('Canal inativado com sucesso')
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Erro ao inativar canal'))
+    } finally {
+      setInativandoId(null)
     }
   }
 
@@ -555,21 +573,39 @@ export default function CanaisOmnichannelPage() {
                     </td>
                     <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <button
-                          onClick={() => excluirCanal(c)}
-                          disabled={excluindoId === c.id}
-                          style={{
-                            background: 'transparent',
-                            border: '1px solid rgba(163,45,45,0.35)',
-                            borderRadius: 6, padding: '4px 12px',
-                            fontSize: 12, color: '#a32d2d', cursor: excluindoId === c.id ? 'not-allowed' : 'pointer',
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                            opacity: excluindoId === c.id ? 0.6 : 1,
-                          }}
-                        >
-                          {excluindoId === c.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                          Excluir
-                        </button>
+                        {['connected', 'connecting'].includes(c.connection_status ?? '') ? (
+                          <button
+                            onClick={() => setConfirmInativar(c)}
+                            disabled={inativandoId === c.id}
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid rgba(163,45,45,0.35)',
+                              borderRadius: 6, padding: '4px 12px',
+                              fontSize: 12, color: '#a32d2d', cursor: inativandoId === c.id ? 'not-allowed' : 'pointer',
+                              display: 'inline-flex', alignItems: 'center', gap: 5,
+                              opacity: inativandoId === c.id ? 0.6 : 1,
+                            }}
+                          >
+                            {inativandoId === c.id ? <Loader2 size={12} className="animate-spin" /> : <PowerOff size={12} />}
+                            Inativar
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmExcluir(c)}
+                            disabled={excluindoId === c.id}
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid rgba(163,45,45,0.35)',
+                              borderRadius: 6, padding: '4px 12px',
+                              fontSize: 12, color: '#a32d2d', cursor: excluindoId === c.id ? 'not-allowed' : 'pointer',
+                              display: 'inline-flex', alignItems: 'center', gap: 5,
+                              opacity: excluindoId === c.id ? 0.6 : 1,
+                            }}
+                          >
+                            {excluindoId === c.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                            Excluir
+                          </button>
+                        )}
                         <button
                           onClick={() => abrirEdicao(c)}
                           style={{
@@ -622,6 +658,80 @@ export default function CanaisOmnichannelPage() {
         onConectar={conectarEvolution}
         onDesconectar={desconectarEvolution}
       />
+
+      {/* Dialog: Confirmar Inativar */}
+      <AlertDialog.Root open={!!confirmInativar} onOpenChange={open => { if (!open) setConfirmInativar(null) }}>
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000 }} />
+          <AlertDialog.Content style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            background: 'var(--card)', border: '1px solid var(--ws-glass-border)',
+            borderRadius: 12, padding: 24, zIndex: 1001, maxWidth: 440, width: '90vw',
+          }}>
+            <AlertDialog.Title style={{ margin: 0, fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+              Inativar canal
+            </AlertDialog.Title>
+            <AlertDialog.Description style={{ margin: 0, fontSize: 14, color: 'var(--ws-text-2)', marginBottom: 20 }}>
+              Tem certeza que deseja inativar <strong>{confirmInativar?.nome}</strong>?
+              A instância será desconectada no WAHA/Evolution. Você poderá excluir o canal em seguida.
+            </AlertDialog.Description>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <AlertDialog.Cancel asChild>
+                <button style={{
+                  background: 'transparent', border: '1px solid var(--ws-glass-border)',
+                  borderRadius: 6, padding: '6px 16px', fontSize: 13, cursor: 'pointer',
+                }}>Cancelar</button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  onClick={() => confirmInativar && inativarCanalConfirmado(confirmInativar)}
+                  style={{
+                    background: '#a32d2d', border: 'none', color: '#fff',
+                    borderRadius: 6, padding: '6px 16px', fontSize: 13, cursor: 'pointer',
+                  }}
+                >Inativar</button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+
+      {/* Dialog: Confirmar Excluir */}
+      <AlertDialog.Root open={!!confirmExcluir} onOpenChange={open => { if (!open) setConfirmExcluir(null) }}>
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000 }} />
+          <AlertDialog.Content style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            background: 'var(--card)', border: '1px solid var(--ws-glass-border)',
+            borderRadius: 12, padding: 24, zIndex: 1001, maxWidth: 440, width: '90vw',
+          }}>
+            <AlertDialog.Title style={{ margin: 0, fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+              Excluir canal permanentemente
+            </AlertDialog.Title>
+            <AlertDialog.Description style={{ margin: 0, fontSize: 14, color: 'var(--ws-text-2)', marginBottom: 20 }}>
+              Tem certeza que deseja excluir <strong>{confirmExcluir?.nome}</strong>?
+              Isso removerá o canal do banco de dados e a instância nas ferramentas. Esta ação não pode ser desfeita.
+            </AlertDialog.Description>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <AlertDialog.Cancel asChild>
+                <button style={{
+                  background: 'transparent', border: '1px solid var(--ws-glass-border)',
+                  borderRadius: 6, padding: '6px 16px', fontSize: 13, cursor: 'pointer',
+                }}>Cancelar</button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  onClick={() => confirmExcluir && excluirCanalConfirmado(confirmExcluir)}
+                  style={{
+                    background: '#a32d2d', border: 'none', color: '#fff',
+                    borderRadius: 6, padding: '6px 16px', fontSize: 13, cursor: 'pointer',
+                  }}
+                >Excluir</button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
     </div>
   )
 }
