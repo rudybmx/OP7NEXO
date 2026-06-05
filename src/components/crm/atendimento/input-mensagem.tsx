@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
-import { FileAudio, FileText, Mic, Pause, Play, Plus, Send, Video, X } from 'lucide-react'
+import { FileAudio, FileText, Image, Mic, Pause, Play, Plus, Send, Video, X } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import {
   DropdownMenu,
@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-type AttachmentKind = 'document' | 'audio' | 'video'
+type AttachmentKind = 'document' | 'audio' | 'video' | 'image'
 
 interface DraftAttachment {
   kind: AttachmentKind
@@ -36,6 +36,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
   const documentInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
@@ -113,6 +114,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
 
   function inferAttachmentKind(file: File, fallback: AttachmentKind): AttachmentKind {
     const mime = (file.type || '').toLowerCase()
+    if (mime.startsWith('image/')) return 'image'
     if (mime.startsWith('audio/')) return 'audio'
     if (mime.startsWith('video/')) return 'video'
     if (mime.startsWith('application/') || mime.startsWith('text/')) return 'document'
@@ -124,6 +126,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
     if (kind === 'document') documentInputRef.current?.click()
     if (kind === 'audio') audioInputRef.current?.click()
     if (kind === 'video') videoInputRef.current?.click()
+    if (kind === 'image') imageInputRef.current?.click()
   }
 
   function handlePickedFile(kind: AttachmentKind, event: ChangeEvent<HTMLInputElement>) {
@@ -294,9 +297,38 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
       ? 'Documento'
       : attachment.kind === 'audio'
         ? 'Áudio'
-        : 'Vídeo'
+        : attachment.kind === 'video'
+          ? 'Vídeo'
+          : 'Imagem'
     return `${prefix}: ${attachment.filename}`
   }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = Array.from(e.clipboardData.items)
+    const imageItem = items.find(item => item.kind === 'file' && item.type.startsWith('image/'))
+    if (!imageItem) return
+    const file = imageItem.getAsFile()
+    if (!file) return
+    e.preventDefault()
+    setRecordingError(null)
+    setAttachment({
+      kind: 'image',
+      file,
+      filename: `imagem-${Date.now()}.${file.type.split('/')[1] || 'png'}`,
+    })
+  }
+
+  const imagePreviewUrl = useMemo(() => {
+    if (!attachment || attachment.kind !== 'image') return null
+    const url = URL.createObjectURL(attachment.file)
+    return url
+  }, [attachment])
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    }
+  }, [imagePreviewUrl])
 
   const attachmentTone = useMemo(() => {
     if (!attachment) return {
@@ -318,6 +350,14 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
         background: 'rgba(24, 95, 165, 0.10)',
         color: '#185FA5',
         border: '1px solid rgba(24, 95, 165, 0.18)',
+      }
+    }
+
+    if (attachment.kind === 'image') {
+      return {
+        background: 'rgba(122, 90, 248, 0.10)',
+        color: '#7A5AF8',
+        border: '1px solid rgba(122, 90, 248, 0.18)',
       }
     }
 
@@ -365,7 +405,13 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
       {attachment && !isRecording && (
         <div style={{ ...attachmentPreviewStyle, ...attachmentTone }}>
           <div style={{ display: 'flex', minWidth: 0, alignItems: 'center', gap: 8, flex: 1 }}>
-            {attachment.kind === 'audio' ? <FileAudio size={16} /> : attachment.kind === 'video' ? <Video size={16} /> : <FileText size={16} />}
+            {attachment.kind === 'image' && imagePreviewUrl ? (
+              <img
+                src={imagePreviewUrl}
+                alt={attachment.filename}
+                style={{ maxWidth: 80, maxHeight: 56, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
+              />
+            ) : attachment.kind === 'audio' ? <FileAudio size={16} /> : attachment.kind === 'video' ? <Video size={16} /> : <FileText size={16} />}
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {renderAttachmentLabel()}
             </span>
@@ -451,6 +497,13 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
             style={hiddenInputStyle}
             onChange={event => handlePickedFile('video', event)}
           />
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            style={hiddenInputStyle}
+            onChange={event => handlePickedFile('image', event)}
+          />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -465,6 +518,10 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" sideOffset={8} className="w-52">
+              <DropdownMenuItem onSelect={() => openPicker('image')}>
+                <Image size={16} />
+                <span>Imagem</span>
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => openPicker('document')}>
                 <FileText size={16} />
                 <span>Documento</span>
@@ -493,6 +550,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
                   }
                 }
               }}
+              onPaste={handlePaste}
               placeholder="Digite uma mensagem..."
               disabled={isEnviando}
               rows={1}
