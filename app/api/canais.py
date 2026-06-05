@@ -2616,6 +2616,39 @@ async def receber_webhook_evolution(
     }
 
 
+def _resolve_lid_in_adapted(adapted: dict, canal: CanalEntrada) -> None:
+    """Substitui JIDs @lid por @c.us no payload adaptado consultando a API WAHA.
+
+    NOWEB envia @lid em vez do número de telefone desde uma atualização do WhatsApp.
+    O endpoint GET /api/{session}/lids/{lid} retorna o mapeamento LID → @c.us.
+    Só tenta a resolução se o canal tiver store NOWEB ativo (custo de rede por webhook).
+    """
+    data = adapted.get("data")
+    if not isinstance(data, dict):
+        return
+    key = data.get("key")
+    if not isinstance(key, dict):
+        return
+    remote_jid: str = key.get("remoteJid", "")
+    if not remote_jid.endswith("@lid"):
+        return
+
+    try:
+        session, cfg = _waha_cfg(canal)
+        lid_number = remote_jid.split("@")[0]
+        phone = waha_service.buscar_lid_phone(session, lid_number, cfg, timeout=4.0)
+        if not phone:
+            return
+        resolved_jid = f"{phone}@s.whatsapp.net"
+        key["remoteJid"] = resolved_jid
+        waha_inner = data.get("waha")
+        if isinstance(waha_inner, dict):
+            waha_inner["chatId"] = resolved_jid
+        logger.info("[webhook-waha] lid=%s → %s", remote_jid, resolved_jid)
+    except Exception:
+        logger.debug("[webhook-waha] falha ao resolver LID %s (store inativo?)", remote_jid)
+
+
 @router.post("/webhook/waha/{token}")
 async def receber_webhook_waha(
     token: str,
@@ -2636,6 +2669,9 @@ async def receber_webhook_waha(
 
     adapted = adapt_waha_to_evolution(raw)
     event = adapted.get("event", "messages.upsert")
+
+    # Resolve LID → @c.us quando NOWEB envia @lid em vez do número de telefone
+    _resolve_lid_in_adapted(adapted, canal)
 
     logger.info("[webhook-waha] canal=%s event=%s", canal.nome, event)
 
