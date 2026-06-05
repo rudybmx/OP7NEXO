@@ -26,6 +26,7 @@ from app.services.meta_sync import (
     marcar_sync_jobs_ativos_como_interrompidos,
     sincronizar_conta,
 )
+from app.services.redis_pub import _get_redis
 from app.services.scheduler import iniciar_scheduler, parar_scheduler
 
 log = logging.getLogger(__name__)
@@ -137,6 +138,16 @@ def _poll_pending_jobs() -> None:
         t.start()
 
 
+def _heartbeat_loop() -> None:
+    """Publica heartbeat no Redis a cada 30s para sinalizar que o scheduler está ativo."""
+    while not _shutdown:
+        try:
+            _get_redis().setex("meta_sync:scheduler_running", 60, "1")
+        except Exception:
+            pass
+        time.sleep(30)
+
+
 def _handle_shutdown(signum, frame) -> None:
     global _shutdown
     log.info("Worker: sinal %s recebido — iniciando graceful shutdown", signum)
@@ -154,6 +165,8 @@ def main() -> None:
         log.warning("Jobs interrompidos no startup do worker: %s", interrompidos)
 
     iniciar_scheduler()
+
+    threading.Thread(target=_heartbeat_loop, daemon=True, name="heartbeat").start()
 
     signal.signal(signal.SIGTERM, _handle_shutdown)
     signal.signal(signal.SIGINT, _handle_shutdown)

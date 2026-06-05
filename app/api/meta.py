@@ -25,7 +25,6 @@ from app.services.meta_sync import (
     sincronizar_conta,
     reprocessar_imagens_hq_conta,
 )
-from app.services.scheduler import scheduler
 from app.services.object_storage import get_object, stat_object
 from app.core.config import settings
 
@@ -505,14 +504,28 @@ def get_sync_historico(
 
 @router.get("/sync/scheduler", response_model=SyncSchedulerOut)
 def get_sync_scheduler(_: User = Depends(exigir_platform_admin)):
+    # Estado real do scheduler vem do worker via heartbeat no Redis (TTL 60s)
+    running = False
     try:
-        jobs = sorted(
-            scheduler.get_jobs(),
-            key=lambda job: job.next_run_time or datetime.max.replace(tzinfo=timezone.utc),
-        )
+        from app.services.redis_pub import _get_redis
+        running = _get_redis().exists("meta_sync:scheduler_running") > 0
     except Exception:
-        jobs = []
-    return SyncSchedulerOut(
-        running=bool(getattr(scheduler, "running", False)),
-        jobs=[_sync_scheduler_job_out(job) for job in jobs],
-    )
+        pass
+
+    # Jobs do scheduler local estão vazios (scheduler não inicia na API).
+    # Calcular próxima execução do cron estaticamente para exibir na UI.
+    try:
+        from apscheduler.triggers.cron import CronTrigger as _CronTrigger
+        _trigger = _CronTrigger(hour="6,12,18", timezone="America/Sao_Paulo")
+        _next = _trigger.get_next_fire_time(None, datetime.now(timezone.utc))
+        _next_iso = _next.isoformat() if _next else None
+        jobs_out = [SyncSchedulerJobOut(
+            id="meta_sync",
+            trigger="cron[hour='6,12,18']",
+            next_run_time=_next_iso,
+            timezone="America/Sao_Paulo",
+        )]
+    except Exception:
+        jobs_out = []
+
+    return SyncSchedulerOut(running=running, jobs=jobs_out)
