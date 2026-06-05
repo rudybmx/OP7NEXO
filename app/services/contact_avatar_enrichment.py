@@ -117,6 +117,56 @@ def enqueue_contact_avatar_enrichment(
         return False
 
 
+def backfill_contact_avatar_enrichment(
+    db: Session,
+    *,
+    workspace_id: str,
+    limit: int = 200,
+) -> int:
+    """Enfileira jobs de avatar para contatos sem avatar_fetched_at (backfill).
+
+    Retorna o número de jobs enfileirados.
+    """
+    rows = db.execute(
+        text("""
+            SELECT c.id, c.jid, cv.canal_id
+            FROM public.crm_whatsapp_contatos c
+            JOIN public.crm_whatsapp_conversas cv
+              ON cv.workspace_id = c.workspace_id
+             AND cv.remote_jid = c.jid
+             AND cv.ativo = true
+            WHERE c.workspace_id = CAST(:ws AS uuid)
+              AND c.ativo = true
+              AND c.avatar_fetched_at IS NULL
+              AND c.jid NOT LIKE '%@newsletter'
+              AND c.jid NOT LIKE '%@broadcast'
+            GROUP BY c.id, c.jid, cv.canal_id
+            LIMIT :limit
+        """),
+        {"ws": workspace_id, "limit": limit},
+    ).fetchall()
+
+    enqueued = 0
+    for row in rows:
+        contact_id = str(row[0])
+        jid = str(row[1])
+        canal_id = str(row[2])
+        try:
+            ok = enqueue_contact_avatar_enrichment(
+                db,
+                workspace_id=workspace_id,
+                canal_id=canal_id,
+                contact_id=contact_id,
+                jid=jid,
+                instance="",
+            )
+            if ok:
+                enqueued += 1
+        except Exception:
+            logger.exception("[avatar-backfill] erro ao enfileirar contact_id=%s", contact_id)
+    return enqueued
+
+
 def enqueue_group_enrichment(
     db: Session,
     *,
@@ -209,10 +259,14 @@ def _jid_type(jid: str) -> str:
 
 
 def _load_canal_cfg(db: Session, *, workspace_id: str, canal_id: str) -> dict[str, Any] | None:
-    """Retorna o sub-dict 'waha' do config do canal, que é o esperado por _headers() em waha_service."""
+    """Retorna o sub-dict 'waha' do config do canal, que é o esperado por _headers() em waha_service.
+
+    Para canais Evolution (sem config WAHA), injeta 'evolution_instance' no dict retornado
+    para permitir fallback via Evolution API em process_contact_avatar_enrichment_job.
+    """
     row = db.execute(
         text("""
-            SELECT config FROM public.canais_entrada
+            SELECT config, tipo, evolution_instance_id FROM public.canais_entrada
             WHERE id = CAST(:canal_id AS uuid)
               AND workspace_id = CAST(:ws AS uuid)
         """),
@@ -221,7 +275,11 @@ def _load_canal_cfg(db: Session, *, workspace_id: str, canal_id: str) -> dict[st
     if not row:
         return None
     full_cfg = row["config"] or {}
-    return dict(full_cfg.get("waha", {}))
+    waha_cfg = dict(full_cfg.get("waha", {}))
+    # Injeta metadados do canal para uso por fallbacks não-WAHA
+    waha_cfg["_canal_tipo"] = str(row["tipo"] or "")
+    waha_cfg["_evolution_instance"] = str(row["evolution_instance_id"] or "")
+    return waha_cfg
 
 
 def process_contact_avatar_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, Any]:
@@ -256,39 +314,74 @@ def process_contact_avatar_enrichment_job(db: Session, job: dict[str, Any]) -> d
     if cfg is None:
         raise RuntimeError(f"Canal não encontrado workspace={str(workspace_id)[:8]}")
 
-    # Sessão WAHA vem do config do canal; payload['instance'] é fallback legado
-    session = cfg.get("session") or str(payload.get("instance") or "")
-    if not session:
-        raise RuntimeError(f"Sessão WAHA não encontrada workspace={str(workspace_id)[:8]}")
+    canal_tipo = cfg.get("_canal_tipo", "")
+    evolution_instance = cfg.get("_evolution_instance", "") or str(payload.get("instance") or "")
+    is_waha_canal = bool(cfg.get("api_base_url"))
 
-    try:
-        url = waha_service.buscar_avatar_chat(session, jid, cfg, timeout=5.0)
-    except WahaError as exc:
-        err_str = str(exc)
-        if WAHA_STORE_DISABLED_MSG in err_str:
-            # Falha permanente para @lid sem store — marcar fetched_at e não tentar mais
+    url: str | None = None
+
+    if is_waha_canal:
+        # Sessão WAHA vem do config do canal; payload['instance'] é fallback legado
+        session = cfg.get("session") or str(payload.get("instance") or "")
+        if not session:
+            raise RuntimeError(f"Sessão WAHA não encontrada workspace={str(workspace_id)[:8]}")
+
+        try:
+            url = waha_service.buscar_avatar_chat(session, jid, cfg, timeout=5.0)
+        except WahaError as exc:
+            err_str = str(exc)
+            if WAHA_STORE_DISABLED_MSG in err_str:
+                # Falha permanente para @lid sem store — marcar fetched_at e não tentar mais
+                logger.warning(
+                    "[avatar-enrich] store_disabled jid_type=%s session=%s workspace=%s",
+                    jt, session, str(workspace_id)[:8],
+                )
+                db.execute(
+                    text("""
+                        UPDATE public.crm_whatsapp_contatos
+                        SET avatar_fetched_at = NOW(), updated_at = NOW()
+                        WHERE id = CAST(:cid AS uuid) AND workspace_id = CAST(:ws AS uuid)
+                    """),
+                    {"cid": contact_id, "ws": workspace_id},
+                )
+                db.commit()
+                return {"status": "skipped"}
+
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
             logger.warning(
-                "[avatar-enrich] store_disabled jid_type=%s session=%s workspace=%s",
+                "[avatar-enrich] falha jid_type=%s session=%s workspace=%s status=%s",
                 jt, session, str(workspace_id)[:8],
+                status_code or type(exc).__name__,
             )
-            db.execute(
-                text("""
-                    UPDATE public.crm_whatsapp_contatos
-                    SET avatar_fetched_at = NOW(), updated_at = NOW()
-                    WHERE id = CAST(:cid AS uuid) AND workspace_id = CAST(:ws AS uuid)
-                """),
-                {"cid": contact_id, "ws": workspace_id},
-            )
-            db.commit()
-            return {"status": "skipped"}
+            raise
 
-        status_code = getattr(getattr(exc, "response", None), "status_code", None)
-        logger.warning(
-            "[avatar-enrich] falha jid_type=%s session=%s workspace=%s status=%s",
-            jt, session, str(workspace_id)[:8],
-            status_code or type(exc).__name__,
+    elif canal_tipo == "whatsapp_evolution" and jt == "individual" and evolution_instance:
+        # Fallback para canais Evolution API (sem WAHA): usa evo_service
+        try:
+            from app.services import evolution as evo_service
+            foto_info = evo_service.buscar_foto_perfil(evolution_instance, jid)
+            if isinstance(foto_info, dict):
+                url = foto_info.get("url") or None
+            elif isinstance(foto_info, str) and foto_info.startswith("http"):
+                url = foto_info
+            logger.info(
+                "[avatar-enrich] evolution_fallback jid=%s instance=%s workspace=%s has_url=%s",
+                jid, evolution_instance, str(workspace_id)[:8], url is not None,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[avatar-enrich] evolution_fallback falhou jid=%s workspace=%s err=%s",
+                jid, str(workspace_id)[:8], exc,
+            )
+            # Não re-raise — marcar fetched_at para evitar retry infinito em caso de erro persistente
+
+    else:
+        # Canal sem suporte WAHA nem Evolution para este JID — skip silencioso
+        logger.info(
+            "[avatar-enrich] skip (sem suporte) jid_type=%s canal_tipo=%s workspace=%s",
+            jt, canal_tipo, str(workspace_id)[:8],
         )
-        raise
+        return {"status": "skipped"}
 
     # Sucesso: url pode ser str (tem foto) ou None (sem foto)
     db.execute(
