@@ -6,7 +6,7 @@ Create Date: 2026-06-05
 """
 from alembic import op
 
-revision = "054_canal_id_nullable_crm"
+revision = "054"
 down_revision = "053_meta_sync_log"
 branch_labels = None
 depends_on = None

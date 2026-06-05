@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import copy
 import base64
 import hashlib
@@ -890,29 +891,42 @@ def remover_canal(
             detail="Inative o canal antes de excluir. Clique em 'Inativar' para desconectá-lo primeiro.",
         )
 
-    # Se for Evolution, deletar instância na Evolution API
-    if c.tipo == "whatsapp_evolution":
-        evolution = _evolution_config(c)
-        pode_deletar = evolution.get("managed_by") == "op7nexo" or evolution.get("created_by_connect_flow") is True
-        if pode_deletar and not _evolution_protected_name(c):
-            instance_name, instance_id, instance_token = _evolution_meta(c)
+    # Deletar instância/sessão na ferramenta externa de forma assíncrona
+    # (não bloqueia a resposta HTTP — falhas são logadas mas não impedem a exclusão)
+    canal_nome = c.nome
+    canal_tipo = c.tipo
+
+    def _cleanup_externo():
+        if canal_tipo == "whatsapp_evolution":
+            evolution = _evolution_config(c)
+            pode_deletar = evolution.get("managed_by") == "op7nexo" or evolution.get("created_by_connect_flow") is True
+            if pode_deletar and not _evolution_protected_name(c):
+                instance_name, instance_id, instance_token = _evolution_meta(c)
+                try:
+                    evo_service.deletar_instancia(
+                        c.evolution_instance_id or instance_name,
+                        instance_id=instance_id,
+                        instance_token=instance_token,
+                    )
+                except Exception as exc:
+                    logger.error("[canais] falha ao deletar instância Evolution canal=%s: %s", canal_nome, exc)
+            else:
+                logger.info("[canais] preservando instância Evolution legada/protegida canal=%s", canal_nome)
+
+        elif canal_tipo == "whatsapp_waha":
+            session, cfg = _waha_cfg(c)
             try:
-                evo_service.deletar_instancia(c.evolution_instance_id or instance_name, instance_id=instance_id, instance_token=instance_token)
-            except evo_service.EvolutionError as exc:
-                logger.error("[canais] falha ao deletar instância Evolution: %s", exc)
-        else:
-            logger.info("[canais] preservando instância Evolution legada/protegida canal=%s", c.nome)
+                waha_service.deletar_sessao(session, cfg)
+            except Exception as exc:
+                logger.error("[canais] falha ao deletar sessão WAHA canal=%s: %s", canal_nome, exc)
 
-    # Se for WAHA, deletar sessão permanentemente
-    if c.tipo == "whatsapp_waha":
-        session, cfg = _waha_cfg(c)
-        try:
-            waha_service.deletar_sessao(session, cfg)
-        except Exception as exc:
-            logger.error("[canais] falha ao deletar sessão WAHA: %s", exc)
-
+    # Primeiro remove do banco (rápido), depois limpa externamente em background
     db.delete(c)
     db.commit()
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    executor.submit(_cleanup_externo)
+    executor.shutdown(wait=False)
 
 
 # ── Helpers WAHA ─────────────────────────────────────────────────────
