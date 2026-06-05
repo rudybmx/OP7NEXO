@@ -1795,6 +1795,18 @@ def marcar_sync_jobs_ativos_como_interrompidos(motivo: str = SYNC_JOB_INTERRUPTE
                     "ads_account_ids": [uuid.UUID(str(item)) for item in contas if item],
                 },
             )
+        # Marcar entradas running do meta_sync_log como interrompidas
+        db.execute(
+            text("""
+                UPDATE meta_sync_log
+                SET finished_at = NOW(),
+                    status = 'error',
+                    stage_failed = 'interrompido',
+                    error_message = :motivo
+                WHERE status = 'running' AND finished_at IS NULL
+            """),
+            {"motivo": motivo},
+        )
         db.commit()
         return int(getattr(result, "rowcount", 0) or 0)
 
