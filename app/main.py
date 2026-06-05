@@ -30,13 +30,27 @@ from app.core.database import SessionLocal
 from app.core.logging import setup_logging
 from app.api.canais import reaplicar_webhooks_evolution_ativos
 from app.services import sftp_pool
-from app.services.meta_sync import marcar_sync_jobs_ativos_como_interrompidos
-from app.services.scheduler import iniciar_scheduler, parar_scheduler
 
 log = logging.getLogger(__name__)
 
 
+def _normalizar_alembic_version() -> None:
+    """Corrige IDs de revisão renomeados que possam estar no banco."""
+    renames = {"054_canal_id_nullable_crm": "054"}
+    try:
+        with SessionLocal() as db:
+            from sqlalchemy import text
+            for old, new in renames.items():
+                db.execute(text(
+                    "UPDATE alembic_version SET version_num = :new WHERE version_num = :old"
+                ), {"old": old, "new": new})
+            db.commit()
+    except Exception as exc:
+        log.warning("_normalizar_alembic_version: %s", exc)
+
+
 def _rodar_migracoes() -> None:
+    _normalizar_alembic_version()
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
         capture_output=True,
@@ -51,9 +65,6 @@ def _rodar_migracoes() -> None:
 async def lifespan(app: FastAPI):
     setup_logging()
     _rodar_migracoes()
-    interrompidos = marcar_sync_jobs_ativos_como_interrompidos()
-    if interrompidos:
-        log.warning("Jobs Meta Ads ativos interrompidos no startup: %s", interrompidos)
     try:
         with SessionLocal() as db:
             reaplicados = reaplicar_webhooks_evolution_ativos(db)
@@ -62,7 +73,6 @@ async def lifespan(app: FastAPI):
     else:
         if reaplicados:
             log.info("Webhooks Evolution reaplicados no startup: %s canais", reaplicados)
-    iniciar_scheduler()
     sftp_cleanup_task = asyncio.create_task(sftp_pool.cleanup_loop())
     try:
         yield
@@ -73,7 +83,6 @@ async def lifespan(app: FastAPI):
         except (asyncio.CancelledError, Exception):
             pass
         sftp_pool.close_all()
-        parar_scheduler()
 
 
 app = FastAPI(

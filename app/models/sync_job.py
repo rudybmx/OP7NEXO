@@ -15,6 +15,7 @@ class SyncJob(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     ads_account_id: Mapped[str] = mapped_column(String, nullable=False)
+    modo_sync: Mapped[str] = mapped_column(String(30), nullable=False, default="recorrente")
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     etapa_atual: Mapped[str | None] = mapped_column(String, nullable=True)
     progresso: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

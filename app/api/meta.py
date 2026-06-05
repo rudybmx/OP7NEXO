@@ -1,6 +1,5 @@
 import calendar
 import json
-import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -170,15 +169,11 @@ def _iniciar_sync_conta(ads_account_id: str, db: Session, modo_sync: str = "reco
     if job_ativo:
         return str(job_ativo.id), False
 
-    job = SyncJob(ads_account_id=ads_account_id, status="pending", progresso=0)
+    job = SyncJob(ads_account_id=ads_account_id, modo_sync=modo_sync, status="pending", progresso=0)
     db.add(job)
     db.commit()
     db.refresh(job)
-    job_id = str(job.id)
-
-    t = threading.Thread(target=_run_sync_background, args=(ads_account_id, job_id, modo_sync), daemon=True)
-    t.start()
-    return job_id, True
+    return str(job.id), True
 
 
 @router.get("/imagem")

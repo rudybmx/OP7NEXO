@@ -23,6 +23,18 @@ services:
       - traefik.http.services.op7nexo-api.loadbalancer.server.port=8000
       - traefik.http.services.op7nexo-api.loadbalancer.passHostHeader=true
 
+  op7nexo-worker:
+    build: .
+    container_name: op7nexo-worker
+    restart: unless-stopped
+    command: python -m app.worker
+    env_file:
+      - .env
+      - /root/infra/redis/.env
+    networks:
+      - traefik-public
+    stop_grace_period: 130s
+
 networks:
   traefik-public:
     external: true
