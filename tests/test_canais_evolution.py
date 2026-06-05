@@ -108,10 +108,10 @@ class _OutboundDb:
         sql_lower = sql.lower()
         self.calls.append((sql, params))
 
-        if "from public.crm_whatsapp_conversas c join public.crm_whatsapp_contatos ct" in sql_lower and "where c.id = :cid" in sql_lower:
+        if "from public.crm_whatsapp_conversas c join public.crm_whatsapp_contatos ct" in sql_lower and "where c.id =" in sql_lower:
             return _OutboundResult(row=self.conversa_row)
 
-        if "update public.crm_whatsapp_conversas" in sql_lower and "where id = :cid" in sql_lower:
+        if "update public.crm_whatsapp_conversas" in sql_lower and "where id =" in sql_lower:
             return _OutboundResult()
 
         if "insert into public.crm_whatsapp_mensagens" in sql_lower:
@@ -697,6 +697,96 @@ class CanaisEvolutionTests(unittest.TestCase):
         self.assertEqual(db.message_insert_params["jid"], "554391996849@s.whatsapp.net")
         self.assertEqual(db.commits, 1)
         mock_publish.assert_called_once()
+
+    @patch("app.api.canais.publish_whatsapp_event")
+    @patch("app.api.canais._exigir_admin_canal")
+    @patch("app.api.canais._get_canal_or_404")
+    @patch("app.api.canais.waha_service.enviar_mensagem_voz")
+    @patch("app.services.object_storage.get_minio_client")
+    def test_enviar_mensagem_canal_audio_waha_usa_send_voice(
+        self,
+        mock_get_minio_client,
+        mock_enviar_voz,
+        mock_get_canal,
+        mock_exigir_admin,
+        mock_publish,
+    ):
+        canal_id = uuid.uuid4()
+        workspace_id = uuid.uuid4()
+        canal = SimpleNamespace(
+            id=canal_id,
+            workspace_id=workspace_id,
+            tipo="whatsapp_waha",
+            nome="Canal WAHA",
+            config={
+                "waha": {
+                    "session": "op7-waha",
+                    "api_base_url": "http://waha:3000",
+                    "api_key_ref": "WAHA_API_KEY",
+                }
+            },
+            mensagem_boas_vindas=None,
+            webhook_token="webhook-token-1",
+            status="ativo",
+            numero_telefone=None,
+            conectado_em=None,
+            evolution_instance_id=None,
+            connection_status="connected",
+        )
+        conversa_id = uuid.uuid4()
+        contato_id = uuid.uuid4()
+        db = _OutboundDb(
+            (
+                str(conversa_id),
+                str(contato_id),
+                "554391996849@s.whatsapp.net",
+                "554391996849",
+                "554391996849@s.whatsapp.net",
+            )
+        )
+        usuario = SimpleNamespace(role="platform_admin", nome="Agente Teste", email="agente@example.com")
+
+        class _FakeStat:
+            size = 2048
+            content_type = "audio/webm"
+
+        class _FakeMinioClient:
+            def stat_object(self, bucket, object_key):
+                self.bucket = bucket
+                self.object_key = object_key
+                return _FakeStat()
+
+            def presigned_get_object(self, bucket, object_key, expires):
+                self.bucket = bucket
+                self.object_key = object_key
+                self.expires = expires
+                return "http://minio:9000/whatsapp-media/voice.webm"
+
+        mock_get_minio_client.return_value = _FakeMinioClient()
+        mock_get_canal.return_value = canal
+        mock_enviar_voz.return_value = {"id": "voice-id-789"}
+        payload = canais.EnviarMensagemIn(
+            conversa_id=str(conversa_id),
+            texto="",
+            tipo="audio",
+            media_url="https://api.op7franquia.com.br/meta/storage/whatsapp-media/voice.webm",
+        )
+
+        resultado = canais.enviar_mensagem_canal(canal.id, payload, db=db, usuario=usuario)
+
+        self.assertTrue(resultado.ok)
+        self.assertEqual(resultado.mensagem_id, "message-id-1")
+        self.assertEqual(db.message_insert_params["evid"], "voice-id-789")
+        self.assertEqual(db.message_insert_params["mt"], "audioMessage")
+        self.assertEqual(db.message_insert_params["msg"], "[mídia]")
+        self.assertEqual(db.message_insert_params["ms"], "ready")
+        self.assertEqual(db.commits, 1)
+        mock_publish.assert_called_once()
+        mock_enviar_voz.assert_called_once()
+        _, kwargs = mock_enviar_voz.call_args
+        self.assertEqual(kwargs["media_url"], "http://minio:9000/whatsapp-media/voice.webm")
+        self.assertEqual(kwargs["mimetype"], "audio/webm")
+        self.assertEqual(kwargs["filename"], "voice.webm")
 
 
 if __name__ == "__main__":

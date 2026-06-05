@@ -217,6 +217,52 @@ def enviar_mensagem_texto(session: str, cfg: dict, chat_id: str, texto: str) -> 
         raise WahaError(f"WAHA sendText: {exc}") from exc
 
 
+def _waha_voice_needs_convert(mimetype: str | None) -> bool:
+    normalized = str(mimetype or "").strip().lower()
+    if not normalized:
+        return True
+    if not normalized.startswith("audio/ogg"):
+        return True
+    return "opus" not in normalized
+
+
+def enviar_mensagem_voz(
+    session: str,
+    cfg: dict,
+    chat_id: str,
+    media_url: str,
+    mimetype: str,
+    filename: str | None = None,
+    convert: bool | None = None,
+) -> dict[str, Any]:
+    """POST /api/sendVoice — envia nota de voz via WAHA Plus."""
+    base_url, headers = _headers(cfg)
+    file_body: dict[str, Any] = {"url": media_url, "mimetype": mimetype}
+    if filename:
+        file_body["filename"] = filename
+    body: dict[str, Any] = {
+        "session": session,
+        "chatId": chat_id,
+        "file": file_body,
+        "convert": _waha_voice_needs_convert(mimetype) if convert is None else convert,
+    }
+    try:
+        resp = httpx.post(
+            f"{base_url}/api/sendVoice",
+            headers=headers,
+            json=body,
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA /api/sendVoice: {exc.response.status_code} {exc.response.text[:200]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA /api/sendVoice: {exc}") from exc
+
+
 def baixar_midia(url: str, cfg: dict) -> tuple[bytes, str]:
     """GET autenticado para download de mídia WAHA. Retorna (conteúdo, content_type)."""
     _, headers = _headers(cfg)

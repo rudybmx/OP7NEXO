@@ -1222,15 +1222,27 @@ def _enviar_mensagem_waha(
             BUCKET, object_key, expires=timedelta(minutes=10)
         )
 
-        caption_to_send = None if payload.tipo == "audio" else (payload.caption or None)
         try:
-            waha_resp = waha_service.enviar_mensagem_midia(
-                session, cfg, chat_id, payload.tipo,
-                media_url=presigned,
-                mimetype=mimetype,
-                filename=filename,
-                caption=caption_to_send,
-            )
+            if payload.tipo == "audio":
+                waha_resp = waha_service.enviar_mensagem_voz(
+                    session,
+                    cfg,
+                    chat_id,
+                    media_url=presigned,
+                    mimetype=mimetype,
+                    filename=filename,
+                )
+            else:
+                waha_resp = waha_service.enviar_mensagem_midia(
+                    session,
+                    cfg,
+                    chat_id,
+                    payload.tipo,
+                    media_url=presigned,
+                    mimetype=mimetype,
+                    filename=filename,
+                    caption=payload.caption or None,
+                )
         except waha_service.WahaError as exc:
             logger.error("[canais] falha ao enviar mídia WAHA canal=%s tipo=%s", canal.id, payload.tipo)
             raise HTTPException(status_code=502, detail=str(exc))
