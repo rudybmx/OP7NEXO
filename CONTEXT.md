@@ -248,6 +248,11 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - `whatsapp_event_worker.py`: rota dos job_types `contact_avatar_enrichment` e `group_enrichment` para o módulo acima
 - `whatsapp_crm_persistence.py`: enfileira enrichment após upsert; fix `_upsert_contact` — nome só sobrescreve se anterior era JID raw; fix `process_evolution_receipt_event` — `instance` vem do payload WAHA (não `canal.evolution_instance_id`)
 
+### ✅ Implementado (2026-06-05) — Dedup de mídias em _mensagem_out
+
+- `_dedup_midias()` em `app/api/mensagens.py`: mensagens outbound gerariam dois registros em `crm_whatsapp_midia` (um no envio, outro pelo echo webhook da Evolution). A função deduplica por `tipo` em leitura, preferindo `storage_status='ready'` e desempatando por `created_at` mais antigo. Corrige players de áudio duplicados no painel de chat.
+- Migrações 048–051: WAHA LID enrichment, media pipeline hardening, Meta sync state incremental.
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos

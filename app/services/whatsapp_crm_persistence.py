@@ -721,9 +721,14 @@ def _upsert_contact(
     lead_origin: dict[str, Any],
     existing_contact_id: Any | None,
 ) -> Any:
-    upsert_tel = upsert_jid.split("@")[0] if "@s.whatsapp.net" in upsert_jid else (
-        re.sub(r"\D", "", sender_pn.split("@")[0]) if sender_pn else remote_jid.split("@")[0]
-    )
+    if "@s.whatsapp.net" in upsert_jid:
+        upsert_tel = upsert_jid.split("@")[0]
+    elif sender_pn:
+        upsert_tel = re.sub(r"\D", "", sender_pn.split("@")[0])
+    elif "@lid" in upsert_jid:
+        upsert_tel = None  # LID não é telefone — aguarda enriquecimento
+    else:
+        upsert_tel = remote_jid.split("@")[0] if "@" in remote_jid else remote_jid
     clean_push_name = _valid_display_name(push_name, jid=upsert_jid)
     fallback_name = _format_phone_display(upsert_tel)
     if existing_contact_id:
