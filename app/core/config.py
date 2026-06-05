@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     META_SYNC_PUBLICOS_CAMPANHA_BACKFILL: bool = False
     META_SYNC_USAGE_SOFT_THRESHOLD_PERCENT: int = 80
     META_SYNC_USAGE_HARD_THRESHOLD_PERCENT: int = 95
+    META_SYNC_MAX_PARALLEL_ACCOUNTS: int = 4
+    META_SYNC_WORKER_POLL_INTERVAL: int = 2
+    META_SYNC_WORKER_POLL_BATCH: int = 10
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

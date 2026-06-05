@@ -1,6 +1,6 @@
 """APScheduler — roda sincronização Meta Ads 3x/dia."""
 import logging
-import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -50,36 +50,49 @@ def _job_sync_todas_contas() -> None:
             AdsAccount.account_id.asc(),
         ).all()
 
-        for conta in contas:
-            try:
-                resultado = sincronizar_conta(str(conta.id), db)
-                log.info("Conta %s: %s", conta.account_id, resultado)
-            except MetaRateLimitError as exc:
+        def _sync_conta(conta_id: str, account_id_meta: str) -> None:
+            with SessionLocal() as conta_db:
                 try:
-                    db.rollback()
-                except Exception:
-                    pass
-                log.warning(
-                    "Conta %s em cooldown por rate limit Meta endpoint=%s usage=%s cooldown=%.2fs",
-                    conta.account_id,
-                    exc.endpoint,
-                    exc.usage_percent,
-                    float(exc.cooldown_seconds or 0.0),
-                )
-            except MetaContaInacessivelError as exc:
+                    resultado = sincronizar_conta(conta_id, conta_db)
+                    log.info("Conta %s: %s", account_id_meta, resultado)
+                except MetaRateLimitError as exc:
+                    try:
+                        conta_db.rollback()
+                    except Exception:
+                        pass
+                    log.warning(
+                        "Conta %s em cooldown por rate limit Meta endpoint=%s usage=%s cooldown=%.2fs",
+                        account_id_meta,
+                        exc.endpoint,
+                        exc.usage_percent,
+                        float(exc.cooldown_seconds or 0.0),
+                    )
+                except MetaContaInacessivelError as exc:
+                    try:
+                        conta_db.rollback()
+                    except Exception:
+                        pass
+                    import uuid as _uuid
+                    c = conta_db.get(AdsAccount, _uuid.UUID(conta_id))
+                    if c:
+                        c.sync_paused = True
+                        conta_db.commit()
+                    log.warning("Conta %s pausada após erro terminal no sync: %s", account_id_meta, exc)
+                except Exception as exc:
+                    log.exception("Erro sync conta %s: %s", account_id_meta, exc)
+
+        max_workers = max(1, int(settings.META_SYNC_MAX_PARALLEL_ACCOUNTS))
+        log.info("Scheduler: processando %d contas com %d workers paralelos", len(contas), max_workers)
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(_sync_conta, str(conta.id), conta.account_id): conta
+                for conta in contas
+            }
+            for future in as_completed(futures):
                 try:
-                    db.rollback()
-                except Exception:
-                    pass
-                conta.sync_paused = True
-                db.commit()
-                log.warning("Conta %s pausada após erro terminal no sync: %s", conta.account_id, exc)
-            except Exception as exc:
-                log.exception("Erro sync conta %s: %s", conta.account_id, exc)
-            finally:
-                delay = max(float(settings.META_SYNC_ACCOUNT_DELAY_SECONDS), 0.0)
-                if delay:
-                    time.sleep(delay)
+                    future.result()
+                except Exception as exc:
+                    log.exception("Erro inesperado em thread de sync: %s", exc)
 
     log.info("Scheduler: sync concluído")
 

@@ -34,6 +34,12 @@ services:
     networks:
       - traefik-public
     stop_grace_period: 130s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
 networks:
   traefik-public:

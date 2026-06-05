@@ -113,13 +113,14 @@ def _run_sync_job(job_id: str, ads_account_id: str, modo_sync: str) -> None:
 
 def _poll_pending_jobs() -> None:
     """Busca jobs pending e dispara threads para cada um."""
+    batch = max(1, int(settings.META_SYNC_WORKER_POLL_BATCH))
     with SessionLocal() as db:
-        rows = db.execute(text("""
+        rows = db.execute(text(f"""
             SELECT id, ads_account_id, modo_sync
             FROM sync_jobs
             WHERE status = 'pending'
             ORDER BY created_at ASC
-            LIMIT 5
+            LIMIT {batch}
         """)).fetchall()
 
     for row in rows:
@@ -159,12 +160,13 @@ def main() -> None:
 
     log.info("Worker ativo — polling a cada 10s")
 
+    poll_interval = max(1, int(settings.META_SYNC_WORKER_POLL_INTERVAL))
     while not _shutdown:
         try:
             _poll_pending_jobs()
         except Exception:
             log.exception("Erro no polling de jobs pending")
-        time.sleep(10)
+        time.sleep(poll_interval)
 
     log.info("Worker: shutdown iniciado — aguardando threads ativas...")
     parar_scheduler()
