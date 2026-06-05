@@ -113,6 +113,11 @@ Account
 - `ativo = false` → invisível para o usuário final, só admin vê com `?include_inactive=true`
 - Toggle via: `PATCH /meta/ads-accounts/:id/toggle`
 
+### UI `/administracao/contas-ads`
+- Dialog de edição: componente `EditarContaDialog` centralizado em `src/components/administracao/contas-ads/editar-conta-dialog.tsx` (Radix UI Dialog, não Sheet lateral)
+- Painel "Histórico de Sync" no dialog: exibe últimas 10 rodadas consumindo `GET /meta/sync/historico/{id}`
+- Tabela: ícones de status na coluna "Última Atualização" (CheckCircle2/AlertTriangle/Clock/Loader2)
+
 ---
 
 ## CANAIS — WhatsApp (Evolution API)
@@ -296,6 +301,7 @@ op7nexo-front/docs/specs/
 ├── marketing/spec.md           — Meta Ads UI, filtros, insights IA
 ├── crm/spec.md                 — CRM painéis, follow-up, agenda, NPS
 └── administracao/spec.md       — Usuários, canais, contas-ads, empresas
+└── 001-meta-sync-incremental-ui/spec.md — Sync incremental Meta Ads + dialog centralizado contas-ads
 ```
 
 Para nova feature: `/speckit.specify [nome]` → cria `spec.md`, depois `/speckit.plan` e `/speckit.tasks`.

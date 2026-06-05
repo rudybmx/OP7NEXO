@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, Loader2, Plus, Search, X, CreditCard, RefreshCw, Check, CheckCircle2, XCircle, Clock3, ChevronLeft } from 'lucide-react'
+import { Building2, Loader2, Plus, Search, X, CreditCard, RefreshCw, Check, CheckCircle2, XCircle, Clock3, ChevronLeft, AlertTriangle, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
+import { EditarContaDialog } from '@/components/administracao/contas-ads/editar-conta-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { WSTable, WSTableActions, WSTableShell } from '@/components/ui/ws-table'
 import { wsSheetCreamCloseButtonStyle, wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens } from '@/components/ui/ws-sheet'
@@ -1154,7 +1155,17 @@ export default function ContasAdsPage() {
                     </td>
                     <td style={{ padding: '9px 14px', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ws-text-3)' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        <span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          {(() => {
+                            const status = c.sync_state?.last_run_status
+                            const hasCooldown = c.sync_state?.cooldown_until && isFutureIso(c.sync_state.cooldown_until)
+                            const isRunning = syncJobs[c.id]?.status === 'running' || syncJobs[c.id]?.status === 'pending'
+                            if (isRunning) return <Loader2 size={13} style={{ color: 'var(--ws-blue)', flexShrink: 0 }} className="animate-spin" />
+                            if (hasCooldown) return <Clock size={13} style={{ color: '#c9a84c', flexShrink: 0 }} />
+                            if (status === 'error') return <AlertTriangle size={13} style={{ color: 'var(--ws-coral)', flexShrink: 0 }} />
+                            if (status === 'success') return <CheckCircle2 size={13} style={{ color: 'var(--ws-green)', flexShrink: 0 }} />
+                            return null
+                          })()}
                           {c.sincronizado_em ? formatarDataHora(c.sincronizado_em) : 'Nunca sincronizado'}
                         </span>
                         {c.sync_state?.last_success_at && c.sync_state.last_success_at !== c.sincronizado_em && (
@@ -1764,18 +1775,18 @@ export default function ContasAdsPage() {
         </SheetContent>
       </Sheet>
 
-      <Sheet open={!!editandoConta} onOpenChange={open => !open && fecharEdicaoConta()}>
-        <SheetContent
-          side="right"
-          showCloseButton={false}
-          style={{
-            width: 'min(640px, 100vw)',
-            ...wsSheetCreamStyle,
-            padding: 0,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
+      <EditarContaDialog
+        conta={editandoConta}
+        workspaces={workspaces}
+        onClose={fecharEdicaoConta}
+        onSaved={(atualizada) => {
+          setContas(prev => prev.map(c => c.id === atualizada.id ? atualizada : c))
+        }}
+      />
+
+      {/* LEGACY Sheet placeholder — kept for future use */}
+      <Sheet open={false} onOpenChange={() => {}}>
+        <SheetContent side="right" showCloseButton={false} style={{ display: 'none' }}>
           <SheetTitle className="sr-only">Editar Conta Ads</SheetTitle>
           <SheetDescription className="sr-only">
             Atualize os dados da conta, os clientes com acesso e a pausa de sincronização
