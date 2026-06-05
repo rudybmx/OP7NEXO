@@ -23,11 +23,10 @@ export function WSTableShell({ children, style }: WSTableShellProps) {
       style={{
         background: 'var(--ws-glass-bg)',
         border: '1px solid var(--ws-glass-border)',
-        boxShadow: 'inset 0 0 0 1px rgba(15,23,42,0.06)',
+        boxShadow: 'var(--ws-glass-shadow)',
         borderRadius: 14,
         overflowX: 'auto',
         overflowY: 'hidden',
-        backdropFilter: 'blur(16px)',
         ...style,
       }}
     >

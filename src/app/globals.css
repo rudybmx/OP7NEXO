@@ -55,8 +55,8 @@
 }
 
 :root {
-  --bg: #ffffff;
-  --bg2: #f7f7f5;
+  --bg: #f4f4f5;
+  --bg2: #ffffff;
   --text: #37352f;
   --text2: #9b9a97;
   --border: #e9e9e7;
@@ -179,31 +179,31 @@ button {
   --ws-gold-soft:     rgba(242, 101, 34, 0.12);
   --ws-gold-border:   rgba(242, 101, 34, 0.30);
 
-  /* GLASS LIGHT */
-  --ws-glass-bg:            rgba(255, 255, 255, 0.72);
-  --ws-glass-bg-hover:      rgba(255, 255, 255, 0.88);
-  --ws-glass-border:        rgba(255, 255, 255, 0.35);
-  --ws-glass-border-strong: rgba(255, 255, 255, 0.55);
-  --ws-glass-shadow:        0 8px 32px rgba(14, 20, 42, 0.12), 0 2px 8px rgba(14, 20, 42, 0.08);
-  --ws-glass-shadow-lg:     0 16px 48px rgba(14, 20, 42, 0.18), 0 4px 16px rgba(14, 20, 42, 0.10);
-  --ws-glass-shadow-sm:     0 4px 16px rgba(14, 20, 42, 0.08), 0 1px 4px rgba(14, 20, 42, 0.06);
+  /* CLEAN CARDS LIGHT (ex-glass) */
+  --ws-glass-bg:            #ffffff;
+  --ws-glass-bg-hover:      #f9f9fb;
+  --ws-glass-border:        rgba(0, 0, 0, 0.08);
+  --ws-glass-border-strong: rgba(0, 0, 0, 0.14);
+  --ws-glass-shadow:        0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --ws-glass-shadow-lg:     0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --ws-glass-shadow-sm:     0 1px 2px rgba(0, 0, 0, 0.06);
 
   /* PAGE BG LIGHT */
-  --ws-page-bg:       linear-gradient(135deg, #f0f6ff 0%, #e8f2ff 40%, #eef5ff 100%);
-  --ws-sidebar-bg:    rgba(255, 255, 255, 0.55);
-  --ws-sidebar-border:rgba(255, 255, 255, 0.50);
+  --ws-page-bg:       #f4f4f5;
+  --ws-sidebar-bg:    #ffffff;
+  --ws-sidebar-border:rgba(0, 0, 0, 0.08);
 
   /* TEXT LIGHT */
-  --ws-text-1:        #0E142A;
-  --ws-text-2:        #4a5580;
-  --ws-text-3:        #8892b0;
-  --ws-divider:       rgba(14, 20, 42, 0.06);
+  --ws-text-1:        #111827;
+  --ws-text-2:        #6b7280;
+  --ws-text-3:        #9ca3af;
+  --ws-divider:       rgba(0, 0, 0, 0.07);
 
   /* SURFACES LIGHT */
   --ws-surface:       #ffffff;
-  --ws-surface-2:     #f5f7fb;
-  --ws-card-active:   rgba(255, 255, 255, 0.90);
-  --ws-card-hover:    rgba(255, 255, 255, 0.70);
+  --ws-surface-2:     #f4f4f5;
+  --ws-card-active:   #ffffff;
+  --ws-card-hover:    #f9f9fb;
   --ws-pill-alpha:    0.12;
 
   /* RADIUS */
@@ -219,14 +219,14 @@ button {
 }
 
 .dark {
-  /* GLASS DARK */
-  --ws-glass-bg:            rgba(255, 255, 255, 0.06);
-  --ws-glass-bg-hover:      rgba(255, 255, 255, 0.10);
-  --ws-glass-border:        rgba(255, 255, 255, 0.10);
-  --ws-glass-border-strong: rgba(255, 255, 255, 0.18);
-  --ws-glass-shadow:        0 8px 32px rgba(0, 0, 0, 0.40), 0 2px 8px rgba(0, 0, 0, 0.30);
-  --ws-glass-shadow-lg:     0 16px 48px rgba(0, 0, 0, 0.50), 0 4px 16px rgba(0, 0, 0, 0.35);
-  --ws-glass-shadow-sm:     0 4px 16px rgba(0, 0, 0, 0.25), 0 1px 4px rgba(0, 0, 0, 0.20);
+  /* CLEAN DARK */
+  --ws-glass-bg:            rgba(255, 255, 255, 0.05);
+  --ws-glass-bg-hover:      rgba(255, 255, 255, 0.08);
+  --ws-glass-border:        rgba(255, 255, 255, 0.12);
+  --ws-glass-border-strong: rgba(255, 255, 255, 0.20);
+  --ws-glass-shadow:        0 1px 3px rgba(0, 0, 0, 0.40);
+  --ws-glass-shadow-lg:     0 4px 12px rgba(0, 0, 0, 0.50);
+  --ws-glass-shadow-sm:     0 1px 2px rgba(0, 0, 0, 0.30);
 
   /* PAGE BG DARK */
   --ws-page-bg:       linear-gradient(135deg, #0E142A 0%, #141C38 50%, #0E142A 100%);
