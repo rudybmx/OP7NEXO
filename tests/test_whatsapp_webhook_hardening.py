@@ -397,6 +397,22 @@ def _build_message_payload():
     }
 
 
+def _build_newsletter_message_payload():
+    return {
+        "event": "Message",
+        "data": {
+            "Info": {
+                "Chat": "120363163409972131@newsletter",
+                "Sender": "120363163409972131@newsletter",
+                "IsFromMe": False,
+                "ID": "",
+                "PushName": "Canal",
+            },
+            "Message": {"conversation": "Atualização de canal"},
+        },
+    }
+
+
 def _build_media_message_payload():
     return {
         "event": "Message",
@@ -571,6 +587,22 @@ def test_enqueue_evolution_event_e_replay_idempotente_sem_provider_id():
     assert len(db.jobs_by_raw_event_id) == 1
 
 
+def test_enqueue_evolution_event_ignora_newsletter_sem_persistir():
+    canal = SimpleNamespace(id=uuid.uuid4(), workspace_id=uuid.uuid4(), evolution_instance_id="op7-instance")
+    db = _QueueDb()
+    payload = _build_newsletter_message_payload()
+
+    result = whatsapp_event_queue.enqueue_evolution_event(db, canal, "Message", payload)
+
+    assert result["ignored"] is True
+    assert result["inserted"] is False
+    assert result["queued"] is False
+    assert result["event_id"] is None
+    assert db.events_by_hash == {}
+    assert db.jobs_by_raw_event_id == {}
+    assert db.calls == []
+
+
 def test_process_evolution_message_fallback_hash_nao_duplica_sem_provider_id(monkeypatch):
     canal = SimpleNamespace(
         id=uuid.uuid4(),
@@ -601,6 +633,23 @@ def test_process_evolution_message_fallback_hash_nao_duplica_sem_provider_id(mon
     assert db.commits == 1
     assert len(db.messages_by_hash) == 1
     assert len(published) == 1
+
+
+def test_process_evolution_message_ignora_newsletter_sem_criar_registros():
+    canal = SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        evolution_instance_id="op7-instance",
+        numero_telefone="5511999999999",
+    )
+    db = _PersistenceDb()
+    payload = _build_newsletter_message_payload()
+
+    result = whatsapp_crm_persistence.process_evolution_message(db, canal, deepcopy(payload))
+
+    assert result is None
+    assert db.calls == []
+    assert db.commits == 0
 
 
 def test_process_waha_message_any_from_me_cria_outbound_sem_envio_previo(monkeypatch):

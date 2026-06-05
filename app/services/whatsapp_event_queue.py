@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.canal_entrada import CanalEntrada
+from app.services.whatsapp_jid_filters import is_ignored_whatsapp_jid
 from app.services.whatsapp_normalizer import (
     CONNECTION_EVENT_TYPES,
     MESSAGE_EVENT_TYPES,
@@ -98,6 +99,18 @@ def enqueue_evolution_event(
     event_type = normalize_event_type(event)
     identifiers = extract_event_identifiers(payload, event_type)
     instance = canal.evolution_instance_id or identifiers.get("instance") or "opcl"
+    remote_jid = identifiers.get("remote_jid")
+    if is_ignored_whatsapp_jid(remote_jid):
+        return {
+            "event_id": None,
+            "event_type": event_type,
+            "event_hash": None,
+            "inserted": False,
+            "queued": False,
+            "ignored": True,
+            "supported": event_type in SUPPORTED_EVENT_TYPES,
+        }
+
     event_hash = build_event_hash(
         workspace_id=canal.workspace_id,
         canal_id=canal.id,
@@ -181,5 +194,6 @@ def enqueue_evolution_event(
         "event_hash": event_hash,
         "inserted": inserted,
         "queued": queued,
+        "ignored": False,
         "supported": event_type in SUPPORTED_EVENT_TYPES,
     }

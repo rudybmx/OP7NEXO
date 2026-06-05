@@ -12,6 +12,7 @@ from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_aces
 from app.models.canal_entrada import CanalEntrada
 from app.models.crm import Contato, Conversa
 from app.models.user import RoleUsuario, User
+from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
 from app.services.whatsapp_crm_persistence import record_assignment_event
 
 router = APIRouter(prefix="/conversas", tags=["conversas"])
@@ -284,6 +285,7 @@ def listar_conversas(
 
     verificar_acesso_workspace(usuario, workspace_target, db)
     q = q.filter(Conversa.workspace_id == workspace_target)
+    q = q.filter(visible_whatsapp_jid_clause(Conversa.remote_jid))
 
     if status:
         q = q.filter(Conversa.status == status)

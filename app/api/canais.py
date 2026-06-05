@@ -2600,7 +2600,7 @@ async def receber_webhook_evolution(
         "recebido": True,
         "event_id": queued.get("event_id"),
         "queued": queued.get("queued", False),
-        "duplicate": not queued.get("inserted", False),
+        "duplicate": not queued.get("inserted", False) and not queued.get("ignored", False),
     }
 
 
@@ -2635,7 +2635,7 @@ async def receber_webhook_waha(
         logger.exception("[webhook-waha] falha ao enfileirar canal=%s", canal.nome)
         raise HTTPException(status_code=500, detail="Falha ao enfileirar webhook")
 
-    return {"ok": True, "queued": queued.get("queued", False)}
+    return {"ok": True, "queued": queued.get("queued", False), "ignored": queued.get("ignored", False)}
 
 
 def _processar_evento_evolution(

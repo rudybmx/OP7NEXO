@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.models.canal_entrada import CanalEntrada
 from app.services.lead_origin import extract_lead_origin, has_lead_origin
 from app.services.redis_pub import publish_whatsapp_event
+from app.services.whatsapp_jid_filters import is_ignored_whatsapp_jid
 from app.services.whatsapp_media import enqueue_inbound_media_download
 from app.services.whatsapp_normalizer import (
     CONNECTION_EVENT_TYPES,
@@ -30,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 
 _INVALID_DISPLAY_NAMES = {"contato", "contato whatsapp"}
-_IGNORED_WAHA_CHAT_SUFFIXES = ("@newsletter", "@broadcast")
 
 
 def _digits(value: str) -> str:
@@ -45,14 +45,6 @@ def _is_jid_like(value: str) -> bool:
         or text.endswith("@g.us")
         or text.endswith("@lid")
     )
-
-
-def _is_ignored_waha_crm_update(*values: str) -> bool:
-    for value in values:
-        text = str(value or "").strip().lower()
-        if text and (text == "status@broadcast" or text.endswith(_IGNORED_WAHA_CHAT_SUFFIXES)):
-            return True
-    return False
 
 
 def _format_phone_display(value: str) -> str | None:
@@ -188,9 +180,10 @@ def process_evolution_message(
     canal_id = str(canal.id)
     raw_event_id_str = str(raw_event_id) if raw_event_id else None
 
-    if provider == "whatsapp_waha" and _is_ignored_waha_crm_update(remote_jid, waha_chat_id):
+    if any(is_ignored_whatsapp_jid(value) for value in (remote_jid, participant_jid, waha_chat_id)):
         logger.info(
-            "[webhook-process] WAHA channel/broadcast update ignored remote_jid=%s chat_id=%s msg_id=%s",
+            "[webhook-process] channel/broadcast update ignored provider=%s remote_jid=%s chat_id=%s msg_id=%s",
+            provider,
             remote_jid,
             waha_chat_id,
             evolution_msg_id,

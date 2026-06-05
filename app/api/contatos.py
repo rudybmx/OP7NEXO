@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
 from app.models.crm import Contato, Conversa
 from app.models.user import User
+from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
 from app.services.whatsapp_crm_persistence import record_assignment_event
 
 router = APIRouter(prefix="/contatos", tags=["contatos"])
@@ -208,6 +209,7 @@ def listar_contatos(
         joinedload(Contato.responsavel),
         joinedload(Contato.equipe),
     ).filter(Contato.ativo.is_(True))
+    q = q.filter(visible_whatsapp_jid_clause(Contato.jid))
 
     if workspace_filter is not None:
         if isinstance(workspace_filter, list):
@@ -242,7 +244,11 @@ def listar_contatos(
         from app.models.crm import Conversa
         counts_rows = (
             db.query(Conversa.contato_id, func.count(Conversa.id))
-            .filter(Conversa.contato_id.in_(contato_ids), Conversa.ativo.is_(True))
+            .filter(
+                Conversa.contato_id.in_(contato_ids),
+                Conversa.ativo.is_(True),
+                visible_whatsapp_jid_clause(Conversa.remote_jid),
+            )
             .group_by(Conversa.contato_id)
             .all()
         )
@@ -320,7 +326,11 @@ def detalhar_contato(
     from app.models.crm import Conversa
     conversation_count = (
         db.query(func.count(Conversa.id))
-        .filter(Conversa.contato_id == c.id, Conversa.ativo.is_(True))
+        .filter(
+            Conversa.contato_id == c.id,
+            Conversa.ativo.is_(True),
+            visible_whatsapp_jid_clause(Conversa.remote_jid),
+        )
         .scalar()
     ) or 0
 

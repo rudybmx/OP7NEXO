@@ -14,6 +14,8 @@ import os
 import re
 from urllib.parse import urlparse, urlunparse
 
+from app.services.whatsapp_jid_filters import is_ignored_whatsapp_jid
+
 logger = logging.getLogger(__name__)
 
 _WAHA_TYPE_TO_MSG_KEY: dict[str, str] = {
@@ -45,9 +47,6 @@ _WAHA_ACK_INT_MAP: dict[int, str] = {
     3:  "read",
     4:  "read",
 }
-
-_IGNORED_CHAT_SUFFIXES = ("@newsletter", "@broadcast")
-
 
 def _map_waha_ack_to_status(ack: int | None, ack_name: str | None) -> str | None:
     """Converte ACK WAHA em status interno. Retorna None se não reconhecido.
@@ -91,8 +90,7 @@ def _normalize_waha_jid(jid: str) -> str:
 
 def _is_ignored_waha_chat_id(jid: str) -> bool:
     """WAHA channel/broadcast updates are not CRM conversations."""
-    text = str(jid or "").strip().lower()
-    return bool(text) and (text == "status@broadcast" or text.endswith(_IGNORED_CHAT_SUFFIXES))
+    return is_ignored_whatsapp_jid(jid)
 
 
 def _extract_waha_chat_candidates(inner: dict, root: dict) -> list[str]:
