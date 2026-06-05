@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, Loader2, Plus, Search, X, CreditCard, RefreshCw, Check, CheckCircle2, XCircle, Clock3, ChevronLeft, AlertTriangle, Clock } from 'lucide-react'
+import { Building2, Loader2, Plus, Search, X, CreditCard, RefreshCw, Check, CheckCircle2, XCircle, Clock3, ChevronLeft, AlertTriangle, Clock, Pencil, Power, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { EditarContaDialog } from '@/components/administracao/contas-ads/editar-conta-dialog'
@@ -758,24 +758,18 @@ export default function ContasAdsPage() {
     const cooldownUntil = state?.cooldown_until && isFutureIso(state.cooldown_until) ? state.cooldown_until : null
     if (job?.status === 'done') {
       return (
-        <span
-          title={jobTooltip}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-green)' }}
-        >
-          <CheckCircle2 size={13} />
+        <Chip size="sm" variant="soft" color="success" title={jobTooltip}>
+          <CheckCircle2 size={11} className="mr-0.5" />
           Concluído
-        </span>
+        </Chip>
       )
     }
     if (job?.status === 'error') {
       return (
-        <span
-          title={jobTooltip}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-coral)', cursor: 'help' }}
-        >
-          <XCircle size={13} />
+        <Chip size="sm" variant="soft" color="danger" title={jobTooltip} className="cursor-help">
+          <XCircle size={11} className="mr-0.5" />
           Erro
-        </span>
+        </Chip>
       )
     }
     if (job?.status === 'pending' || job?.status === 'running') {
@@ -795,79 +789,45 @@ export default function ContasAdsPage() {
     }
     if (c.sync_paused) {
       return (
-        <span
-          title="Sync pausado. Despausar a conta antes de tentar novamente."
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-coral)', cursor: 'help' }}
-        >
-          <XCircle size={13} />
+        <Chip size="sm" variant="soft" color="danger" title="Sync pausado. Despausar a conta antes de tentar novamente." className="cursor-help">
+          <XCircle size={11} className="mr-0.5" />
           Pausado
-        </span>
+        </Chip>
       )
     }
     if (cooldownUntil) {
       return (
-        <span
-          title={`Cooldown até ${formatarDataHora(cooldownUntil)}`}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: '#c9a84c', cursor: 'help' }}
-        >
-          <Clock3 size={13} />
+        <Chip size="sm" variant="soft" title={`Cooldown até ${formatarDataHora(cooldownUntil)}`} className="cursor-help" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+          <Clock3 size={11} className="mr-0.5" />
           Cooldown
-        </span>
+        </Chip>
       )
     }
     if (state?.last_run_status === 'running') {
       return (
-        <span
-          title={state.last_run_at ? `Última execução iniciada em ${formatarDataHora(state.last_run_at)}` : 'Sync em execução'}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-blue)', cursor: 'help' }}
-        >
-          <Loader2 size={13} className="animate-spin" />
+        <Chip size="sm" variant="soft" color="accent" title={state.last_run_at ? `Última execução iniciada em ${formatarDataHora(state.last_run_at)}` : 'Sync em execução'} className="cursor-help">
+          <Loader2 size={11} className="animate-spin mr-0.5" />
           Executando
-        </span>
+        </Chip>
       )
     }
     if (state?.last_run_status === 'error') {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 110 }}>
-          <span
-            title={state.last_error_message || state.last_error_stage || 'Erro no último sync'}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, color: 'var(--ws-coral)', cursor: 'help' }}
-          >
-            <XCircle size={13} />
+        <div className="flex items-center gap-1">
+          <Chip size="sm" variant="soft" color="danger" title={state.last_error_message || state.last_error_stage || 'Erro no último sync'} className="cursor-help">
+            <XCircle size={11} className="mr-0.5" />
             Erro
-          </span>
-          <button
-            style={{
-              background: 'transparent',
-              border: '1px solid rgba(62,91,255,0.35)',
-              borderRadius: 6, padding: '4px 10px',
-              fontSize: 12, color: 'var(--ws-blue)',
-              cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-            }}
-            onClick={() => handleSync(c)}
-          >
-            <RefreshCw size={11} />
-            Sync
-          </button>
+          </Chip>
+          <HeroButton isIconOnly size="sm" variant="ghost" onClick={() => handleSync(c)} aria-label="Tentar sync novamente">
+            <RotateCcw size={13} />
+          </HeroButton>
         </div>
       )
     }
     return (
-      <button
-        style={{
-          background: 'transparent',
-          border: '1px solid rgba(62,91,255,0.35)',
-          borderRadius: 6, padding: '4px 10px',
-          fontSize: 12, color: 'var(--ws-blue)',
-          cursor: 'pointer',
-          display: 'inline-flex', alignItems: 'center', gap: 5,
-        }}
-        onClick={() => handleSync(c)}
-      >
-        <RefreshCw size={11} />
-        Sync
-      </button>
+      <HeroButton isIconOnly size="sm" variant="ghost" onPress={() => handleSync(c)} aria-label="Sincronizar conta">
+        <RotateCcw size={14} />
+      </HeroButton>
     )
   }
 
@@ -895,7 +855,7 @@ export default function ContasAdsPage() {
   const editPlatformBadge = editandoConta ? PLATFORM_BADGE[editandoConta.plataforma] : PLATFORM_BADGE.meta
 
   return (
-    <div style={{ padding: '32px 24px', maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ padding: '32px 32px', maxWidth: 1440, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
@@ -949,7 +909,7 @@ export default function ContasAdsPage() {
         background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)',
         borderRadius: 12, padding: '12px 16px',
         display: 'flex', alignItems: 'center', gap: 12,
-        marginBottom: 24, backdropFilter: 'blur(10px)',
+        marginBottom: 24,
       }}>
         <Search size={16} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
         <input
@@ -1069,169 +1029,152 @@ export default function ContasAdsPage() {
       </div>
 
       {/* Tabela */}
-      <div
-        style={{
-          background: 'var(--ws-glass-bg)',
-          border: '1px solid var(--ws-glass-border)',
-          boxShadow: 'var(--ws-glass-shadow)',
-          borderRadius: 14,
-          overflow: 'hidden',
-        }}
-      >
-        {carregando ? (
-          <div style={{ padding: 60, textAlign: 'center' }}>
-            <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ws-blue)' }} />
-            <p style={{ fontSize: 13, color: 'var(--ws-text-2)', marginTop: 12 }}>Carregando contas...</p>
-          </div>
-        ) : filtradas.length === 0 ? (
-          <div style={{ padding: 60, textAlign: 'center' }}>
-            <CreditCard size={32} style={{ color: 'var(--ws-text-3)', marginBottom: 12 }} />
-            <p style={{ fontSize: 14, color: 'var(--ws-text-2)' }}>
-              {busca || filtroPlataforma !== 'todas' ? 'Nenhuma conta encontrada' : 'Nenhuma conta cadastrada'}
+      {carregando ? (
+        <div style={{ padding: 60, textAlign: 'center', background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)', borderRadius: 14, boxShadow: 'var(--ws-glass-shadow)' }}>
+          <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ws-blue)' }} />
+          <p style={{ fontSize: 13, color: 'var(--ws-text-2)', marginTop: 12 }}>Carregando contas...</p>
+        </div>
+      ) : filtradas.length === 0 ? (
+        <div style={{ padding: 60, textAlign: 'center', background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)', borderRadius: 14, boxShadow: 'var(--ws-glass-shadow)' }}>
+          <CreditCard size={32} style={{ color: 'var(--ws-text-3)', marginBottom: 12 }} />
+          <p style={{ fontSize: 14, color: 'var(--ws-text-2)' }}>
+            {busca || filtroPlataforma !== 'todas' ? 'Nenhuma conta encontrada' : 'Nenhuma conta cadastrada'}
+          </p>
+          {!busca && filtroPlataforma === 'todas' && (
+            <p style={{ fontSize: 12, color: 'var(--ws-text-3)', marginTop: 4 }}>
+              Clique em "Nova Conta" para começar
             </p>
-            {!busca && filtroPlataforma === 'todas' && (
-              <p style={{ fontSize: 12, color: 'var(--ws-text-3)', marginTop: 4 }}>
-                Clique em "Nova Conta" para começar
-              </p>
-            )}
-          </div>
-        ) : (
-          <Table variant="secondary" aria-label="Contas Ads" className="w-full">
-            <TableScrollContainer className="overflow-x-auto">
-              <TableContent aria-label="Contas Ads" className="w-full border-separate border-spacing-0">
-                <TableHeader className="sticky top-0 z-10">
-                  {(['Plataforma', 'Account ID', 'Nome', 'Cliente', 'Período', 'Insights', 'Última Atualização', 'Ações'] as const).map(h => (
-                    <TableColumn
-                      key={h}
-                      className="px-3.5 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.06em] whitespace-nowrap border-b"
-                      style={{
-                        color: 'var(--ws-text-3)',
-                        background: 'rgba(62,91,255,0.04)',
-                        borderColor: 'var(--ws-divider)',
-                      }}
-                    >
-                      {h}
-                    </TableColumn>
-                  ))}
-                </TableHeader>
-                <TableBody>
-                  {filtradas.map(c => {
-                    const plat = PLATFORM_BADGE[c.plataforma]
-                    const insights = insightsBadge(c)
-                    return (
-                      <TableRow
-                        key={c.id}
-                        id={c.id}
-                        className="border-b transition-colors hover:bg-[rgba(62,91,255,0.03)]"
-                        style={{ borderColor: 'var(--ws-divider)' }}
-                      >
-                        {/* Plataforma */}
-                        <TableCell className="px-3.5 py-2.5 whitespace-nowrap">
-                          <Chip
-                            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold"
-                            style={{ background: plat.bg, color: plat.color }}
-                          >
-                            {plat.label}
-                          </Chip>
-                        </TableCell>
-                        {/* Account ID */}
-                        <TableCell className="px-3.5 py-2.5 whitespace-nowrap">
-                          <code className="font-mono text-[11px]" style={{ color: 'var(--ws-text-3)' }}>
-                            {c.account_id}
-                          </code>
-                        </TableCell>
-                        {/* Nome */}
-                        <TableCell className="px-3.5 py-2.5 max-w-[180px]">
-                          <span className="block truncate text-[13px] font-medium" style={{ color: 'var(--ws-text-1)' }}>
-                            {c.nome}
+          )}
+        </div>
+      ) : (
+        <Table variant="primary" aria-label="Contas Ads" className="w-full">
+          <TableScrollContainer>
+            <TableContent aria-label="Contas Ads" className="min-w-[900px]">
+              <TableHeader>
+                <TableColumn isRowHeader id="plataforma">Plataforma</TableColumn>
+                <TableColumn id="account_id">Account ID</TableColumn>
+                <TableColumn id="nome">Nome</TableColumn>
+                <TableColumn id="cliente">Cliente</TableColumn>
+                <TableColumn id="periodo">Período</TableColumn>
+                <TableColumn id="insights">Insights</TableColumn>
+                <TableColumn id="atualizado" className="min-w-[160px]">Última Atualização</TableColumn>
+                <TableColumn id="acoes" className="text-end">Ações</TableColumn>
+              </TableHeader>
+              <TableBody>
+                {filtradas.map(c => {
+                  const plat = PLATFORM_BADGE[c.plataforma]
+                  const insights = insightsBadge(c)
+                  return (
+                    <TableRow key={c.id} id={c.id}>
+                      {/* Plataforma */}
+                      <TableCell>
+                        <Chip
+                          size="sm"
+                          className="font-semibold"
+                          style={{ background: plat.bg, color: plat.color }}
+                        >
+                          {plat.label}
+                        </Chip>
+                      </TableCell>
+                      {/* Account ID */}
+                      <TableCell>
+                        <code className="font-mono text-[11px]" style={{ color: 'var(--ws-text-3)' }}>
+                          {c.account_id}
+                        </code>
+                      </TableCell>
+                      {/* Nome */}
+                      <TableCell className="max-w-[180px]">
+                        <span className="block truncate text-[13px] font-medium" style={{ color: 'var(--ws-text-1)' }}>
+                          {c.nome}
+                        </span>
+                      </TableCell>
+                      {/* Cliente */}
+                      <TableCell className="max-w-[140px]">
+                        <span className="block truncate text-[13px]" style={{ color: 'var(--ws-text-2)' }}>
+                          {c.workspace_nome || '—'}
+                        </span>
+                      </TableCell>
+                      {/* Período */}
+                      <TableCell className="text-[13px] whitespace-nowrap" style={{ color: 'var(--ws-text-3)' }}>
+                        {c.periodo_sync_inicio ? formatarPeriodo(c.periodo_sync_inicio) : '—'}
+                      </TableCell>
+                      {/* Insights */}
+                      <TableCell>
+                        <Chip
+                          size="sm"
+                          className="font-semibold"
+                          style={{ background: insights.bg, color: insights.color }}
+                        >
+                          <span className="size-1.5 rounded-full flex-shrink-0 mr-1" style={{ background: insights.color }} />
+                          {insights.label}
+                        </Chip>
+                      </TableCell>
+                      {/* Última Atualização */}
+                      <TableCell className="text-[13px]" style={{ color: 'var(--ws-text-3)' }}>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="flex items-center gap-1.5">
+                            {(() => {
+                              const status = c.sync_state?.last_run_status
+                              const hasCooldown = c.sync_state?.cooldown_until && isFutureIso(c.sync_state.cooldown_until)
+                              const isRunning = syncJobs[c.id]?.status === 'running' || syncJobs[c.id]?.status === 'pending'
+                              if (isRunning) return <Loader2 size={13} style={{ color: 'var(--ws-blue)', flexShrink: 0 }} className="animate-spin" />
+                              if (hasCooldown) return <Clock size={13} style={{ color: '#c9a84c', flexShrink: 0 }} />
+                              if (status === 'error') return <AlertTriangle size={13} style={{ color: 'var(--ws-coral)', flexShrink: 0 }} />
+                              if (status === 'success') return <CheckCircle2 size={13} style={{ color: 'var(--ws-green)', flexShrink: 0 }} />
+                              return null
+                            })()}
+                            {c.sincronizado_em ? formatarDataHora(c.sincronizado_em) : 'Nunca sincronizado'}
                           </span>
-                        </TableCell>
-                        {/* Cliente */}
-                        <TableCell className="px-3.5 py-2.5 max-w-[140px]">
-                          <span className="block truncate text-[13px]" style={{ color: 'var(--ws-text-2)' }}>
-                            {c.workspace_nome || '—'}
-                          </span>
-                        </TableCell>
-                        {/* Período */}
-                        <TableCell className="px-3.5 py-2.5 whitespace-nowrap text-[13px]" style={{ color: 'var(--ws-text-3)' }}>
-                          {c.periodo_sync_inicio ? formatarPeriodo(c.periodo_sync_inicio) : '—'}
-                        </TableCell>
-                        {/* Insights */}
-                        <TableCell className="px-3.5 py-2.5 whitespace-nowrap">
-                          <Chip
-                            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold"
-                            style={{ background: insights.bg, color: insights.color }}
-                          >
-                            <span className="size-1.5 rounded-full flex-shrink-0" style={{ background: insights.color }} />
-                            {insights.label}
-                          </Chip>
-                        </TableCell>
-                        {/* Última Atualização */}
-                        <TableCell className="px-3.5 py-2.5 min-w-[160px] text-[13px]" style={{ color: 'var(--ws-text-3)' }}>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="flex items-center gap-1.5">
-                              {(() => {
-                                const status = c.sync_state?.last_run_status
-                                const hasCooldown = c.sync_state?.cooldown_until && isFutureIso(c.sync_state.cooldown_until)
-                                const isRunning = syncJobs[c.id]?.status === 'running' || syncJobs[c.id]?.status === 'pending'
-                                if (isRunning) return <Loader2 size={13} style={{ color: 'var(--ws-blue)', flexShrink: 0 }} className="animate-spin" />
-                                if (hasCooldown) return <Clock size={13} style={{ color: '#c9a84c', flexShrink: 0 }} />
-                                if (status === 'error') return <AlertTriangle size={13} style={{ color: 'var(--ws-coral)', flexShrink: 0 }} />
-                                if (status === 'success') return <CheckCircle2 size={13} style={{ color: 'var(--ws-green)', flexShrink: 0 }} />
-                                return null
-                              })()}
-                              {c.sincronizado_em ? formatarDataHora(c.sincronizado_em) : 'Nunca sincronizado'}
+                          {c.sync_state?.last_success_at && c.sync_state.last_success_at !== c.sincronizado_em && (
+                            <span className="text-[11px]" style={{ color: 'var(--ws-text-2)' }}>
+                              Último sucesso: {formatarDataHora(c.sync_state.last_success_at)}
                             </span>
-                            {c.sync_state?.last_success_at && c.sync_state.last_success_at !== c.sincronizado_em && (
-                              <span className="text-[11px]" style={{ color: 'var(--ws-text-2)' }}>
-                                Último sucesso: {formatarDataHora(c.sync_state.last_success_at)}
-                              </span>
-                            )}
-                            {c.sync_state?.last_run_status === 'error' && c.sync_state.last_error_stage && (
-                              <span className="text-[11px]" style={{ color: 'var(--ws-coral)' }}>
-                                Falha em {c.sync_state.last_error_stage}
-                                {c.sync_state.last_error_message ? `: ${c.sync_state.last_error_message}` : ''}
-                              </span>
-                            )}
-                            {c.sync_state?.cooldown_until && isFutureIso(c.sync_state.cooldown_until) && (
-                              <span className="text-[11px]" style={{ color: '#c9a84c' }}>
-                                Cooldown até {formatarDataHora(c.sync_state.cooldown_until)}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        {/* Ações */}
-                        <TableCell className="px-3.5 py-2.5 whitespace-nowrap">
-                          <div className="inline-flex items-center gap-2">
-                            <HeroButton
-                              onPress={() => abrirEdicaoConta(c)}
-                              className="rounded-md border px-3 py-1 text-xs cursor-pointer bg-transparent transition-colors hover:bg-[rgba(62,91,255,0.06)] outline-none"
-                              style={{ borderColor: 'var(--ws-glass-border)', color: 'var(--ws-text-2)' }}
-                            >
-                              Editar
-                            </HeroButton>
-                            {renderSyncCell(c)}
-                            <HeroButton
-                              onPress={() => setConfirmToggle(c)}
-                              className="rounded-md border px-3 py-1 text-xs cursor-pointer bg-transparent transition-colors outline-none"
-                              style={{
-                                borderColor: c.ativo ? 'rgba(255,92,141,0.35)' : 'rgba(15,168,86,0.35)',
-                                color: c.ativo ? 'var(--ws-coral)' : 'var(--ws-green)',
-                              }}
-                            >
-                              {c.ativo ? 'Desativar' : 'Ativar'}
-                            </HeroButton>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </TableContent>
-            </TableScrollContainer>
-          </Table>
-        )}
-      </div>
+                          )}
+                          {c.sync_state?.last_run_status === 'error' && c.sync_state.last_error_stage && (
+                            <span className="text-[11px]" style={{ color: 'var(--ws-coral)' }}>
+                              Falha em {c.sync_state.last_error_stage}
+                              {c.sync_state.last_error_message ? `: ${c.sync_state.last_error_message}` : ''}
+                            </span>
+                          )}
+                          {c.sync_state?.cooldown_until && isFutureIso(c.sync_state.cooldown_until) && (
+                            <span className="text-[11px]" style={{ color: '#c9a84c' }}>
+                              Cooldown até {formatarDataHora(c.sync_state.cooldown_until)}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      {/* Ações */}
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
+                          <HeroButton
+                            isIconOnly size="sm" variant="ghost"
+                            onPress={() => abrirEdicaoConta(c)}
+                            aria-label="Editar conta"
+                          >
+                            <Pencil size={14} />
+                          </HeroButton>
+                          {renderSyncCell(c)}
+                          <HeroButton
+                            isIconOnly size="sm" variant="ghost"
+                            onPress={() => setConfirmToggle(c)}
+                            aria-label={c.ativo ? 'Desativar conta' : 'Ativar conta'}
+                            className={c.ativo
+                              ? 'text-[var(--ws-coral)] hover:bg-[var(--ws-coral-soft)]'
+                              : 'text-[var(--ws-green)] hover:bg-[var(--ws-green-soft)]'
+                            }
+                          >
+                            <Power size={14} />
+                          </HeroButton>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </TableContent>
+          </TableScrollContainer>
+        </Table>
+      )}
 
       {/* Drawer Nova Conta */}
       <Sheet open={drawerAberto} onOpenChange={open => !open && fecharDrawer()}>

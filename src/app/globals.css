@@ -12,6 +12,11 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import 'reactflow/dist/style.css';
+@import "@heroui/styles/components/button.css" layer(components);
+@import "@heroui/styles/components/chip.css" layer(components);
+@import "@heroui/styles/components/table.css" layer(components);
+@import "@heroui/styles/utilities";
+@import "@heroui/styles/variants";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -54,6 +59,34 @@
   --radius-4xl: 16px;
 }
 
+/* HeroUI Tailwind theme tokens — apenas os não conflitantes */
+@theme inline {
+  --color-focus:                    var(--focus);
+  --color-default:                  var(--default);
+  --color-default-foreground:       var(--default-foreground);
+  --color-default-hover:            var(--default-hover);
+  --color-surface:                  var(--ws-surface);
+  --color-surface-secondary:        var(--surface-secondary);
+  --color-separator:                var(--separator);
+  --color-separator-tertiary:       var(--separator-tertiary);
+  --color-success:                  var(--success);
+  --color-success-foreground:       var(--success-foreground);
+  --color-success-soft:             var(--success-soft);
+  --color-success-soft-foreground:  var(--success-soft-foreground);
+  --color-danger:                   var(--danger);
+  --color-danger-foreground:        var(--danger-foreground);
+  --color-danger-soft:              var(--danger-soft);
+  --color-danger-soft-foreground:   var(--danger-soft-foreground);
+  --color-warning:                  var(--warning);
+  --color-warning-foreground:       var(--warning-foreground);
+  --color-warning-soft:             var(--warning-soft);
+  --color-warning-soft-foreground:  var(--warning-soft-foreground);
+  --color-accent:                   var(--accent);
+  --color-accent-foreground:        var(--accent-foreground);
+  --color-accent-soft:              var(--accent-soft);
+  --color-accent-soft-foreground:   var(--accent-soft-foreground);
+}
+
 :root {
   --bg: #f4f4f5;
   --bg2: #ffffff;
@@ -88,7 +121,7 @@
   --border-color: var(--border);
   --input: var(--border2);
   --ring: var(--gold);
-  --radius: 0.375rem;
+  --radius: 0.5rem;
   --sidebar: var(--navy);
   --sidebar-foreground: #ffffff;
   --sidebar-primary: var(--gold);
@@ -216,6 +249,42 @@ button {
   /* TRANSITIONS */
   --ws-transition:    all 0.18s ease;
   --ws-transition-slow: all 0.28s ease;
+
+  /* ── HeroUI component tokens (sem @theme, sem conflito) ── */
+  --disabled-opacity:         0.5;
+  --cursor-disabled:          not-allowed;
+  --cursor-interactive:       pointer;
+  --ease-out:                 cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-smooth:              cubic-bezier(0.4, 0, 0.2, 1);
+  --ring-offset-width:        2px;
+  --default:                  rgba(0, 0, 0, 0.05);
+  --default-hover:            rgba(0, 0, 0, 0.08);
+  --default-foreground:       var(--ws-text-1);
+  --default-soft:             rgba(0, 0, 0, 0.04);
+  --default-soft-foreground:  var(--ws-text-2);
+  --accent:                   var(--ws-blue);
+  --accent-foreground:        #ffffff;
+  --accent-hover:             #004a78;
+  --accent-soft:              var(--ws-blue-soft);
+  --accent-soft-foreground:   var(--ws-blue);
+  --danger:                   var(--ws-coral);
+  --danger-foreground:        #ffffff;
+  --danger-hover:             #e04a77;
+  --danger-soft:              var(--ws-coral-soft);
+  --danger-soft-foreground:   var(--ws-coral);
+  --danger-soft-hover:        rgba(255, 92, 141, 0.18);
+  --success:                  var(--ws-green);
+  --success-foreground:       #ffffff;
+  --success-soft:             var(--ws-green-soft);
+  --success-soft-foreground:  var(--ws-green);
+  --warning:                  #c9a84c;
+  --warning-foreground:       #ffffff;
+  --warning-soft:             rgba(201, 168, 76, 0.12);
+  --warning-soft-foreground:  #c9a84c;
+  --focus:                    var(--ws-blue);
+  --surface-secondary:        var(--ws-surface-2);
+  --separator:                var(--ws-divider);
+  --separator-tertiary:       var(--ws-divider);
 }
 
 .dark {
