@@ -259,6 +259,19 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 - `painel-contato.tsx`: header usa `isGroup ? groupAvatarUrl : contato.avatarUrl`; renderiza `<img>` quando URL disponível; `displayName` respeita `groupName`; omite "Telefone Lead" para grupos
 
+### ✅ Implementado (2026-06-05) — Meta Ads Visão Geral: ajustes de saldo e filtros
+
+- `saldo-card.tsx`: card compact exibe soma dos saldos quando múltiplas contas filtradas; hover lista cada conta com nome, valor e ícone pix/visa/cartão
+- `tabela-contas.tsx` + `index.tsx`: coluna Saldo cruza `metaAccountId` com `FinanceiroConta.accountId` para usar saldo real do endpoint financeiro; coloração por `alertState` (critical → coral, warning → ouro)
+- `filtros-meta.tsx` + `pagina-meta-ads.tsx`: filtro de contas com largura dobrada (botão min-w-200, popover 560px); data/hora da última atualização exibida abaixo do filtro de datas
+
+### ✅ Implementado (2026-06-05) — API Routes WhatsApp (adaptação schema)
+
+- `/api/whatsapp/conversations/[id]/messages/route.ts`: adaptado para schema real Python/FastAPI
+- `/api/whatsapp/conversations/iniciar/route.ts`: novo endpoint para iniciar conversas
+- `/api/whatsapp/conversations/route.ts`: adaptado schema
+- Melhorias de formatação de contatos e avatars em PainelInbox, PainelChat, PainelContato e InputMensagem
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos
