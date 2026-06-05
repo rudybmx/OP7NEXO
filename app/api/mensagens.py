@@ -142,6 +142,50 @@ def _get_mensagem_or_404(
     return m
 
 
+def _dedup_midias(midias: list) -> list[dict]:
+    """Deduplica registros de mídia pelo tipo, mantendo apenas um por tipo.
+
+    Contexto: mensagens outbound podem gerar dois registros na tabela
+    crm_whatsapp_midia — um criado no envio e outro pelo echo do webhook
+    da Evolution. Deduplicamos por tipo, preferindo o registro com
+    storage_status='ready' e, em caso de empate, o de created_at mais antigo.
+    """
+    seen: dict[str, dict] = {}
+    for media in midias:
+        if not media.ativo:
+            continue
+        tipo = media.tipo or "unknown"
+        entry = {
+            "id": str(media.id),
+            "tipo": tipo,
+            "url": media.url_publica,
+            "minio_path": media.minio_path,
+            "mimetype": media.mimetype,
+            "tamanho": media.tamanho,
+            "filename": getattr(media, "filename", None),
+            "caption": getattr(media, "caption", None),
+            "storage_status": getattr(media, "storage_status", None),
+            "sha256": getattr(media, "sha256", None),
+            "_created_at": getattr(media, "criado_em", None),
+        }
+        if tipo not in seen:
+            seen[tipo] = entry
+        else:
+            existing = seen[tipo]
+            # Preferir storage_status='ready'; em empate, registro mais antigo
+            existing_ready = existing.get("storage_status") == "ready"
+            entry_ready = entry.get("storage_status") == "ready"
+            if entry_ready and not existing_ready:
+                seen[tipo] = entry
+            elif entry_ready == existing_ready:
+                # ambos têm mesmo status — manter o mais antigo (menor created_at)
+                existing_ts = existing.get("_created_at")
+                entry_ts = entry.get("_created_at")
+                if entry_ts and existing_ts and entry_ts < existing_ts:
+                    seen[tipo] = entry
+    return [{k: v for k, v in m.items() if k != "_created_at"} for m in seen.values()]
+
+
 def _mensagem_out(m: Mensagem) -> MensagemOut:
     mf = _derive_media_fields(m)
     return MensagemOut(
@@ -176,22 +220,7 @@ def _mensagem_out(m: Mensagem) -> MensagemOut:
         participant_jid=m.participant_jid,
         participant_name=m.participant_name,
         is_mentioned=m.is_mentioned,
-        midias=[
-            {
-                "id": str(media.id),
-                "tipo": media.tipo,
-                "url": media.url_publica,
-                "minio_path": media.minio_path,
-                "mimetype": media.mimetype,
-                "tamanho": media.tamanho,
-                "filename": getattr(media, "filename", None),
-                "caption": getattr(media, "caption", None),
-                "storage_status": getattr(media, "storage_status", None),
-                "sha256": getattr(media, "sha256", None),
-            }
-            for media in (m.midias or [])
-            if media.ativo
-        ],
+        midias=_dedup_midias(m.midias or []),
         ativo=m.ativo,
         criado_em=m.criado_em,
         atualizado_em=getattr(m, 'atualizado_em', None),
