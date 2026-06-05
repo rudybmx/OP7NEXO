@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, get_db
 from app.core.deps import exigir_platform_admin
 from app.models.ads_account import AdsAccount
+from app.models.meta_sync_log import MetaSyncLog
 from app.models.sync_job import SyncJob
 from app.models.user import User
 from app.services.meta_graph import MetaRateLimitError
@@ -461,6 +462,50 @@ def listar_sync_jobs_ativos(
         q = q.where(SyncJob.ads_account_id == ads_account_id)
     jobs = db.execute(q.order_by(SyncJob.created_at.desc())).scalars().all()
     return [_sync_job_out(job) for job in jobs]
+
+
+@router.get("/sync/historico/{ads_account_id}")
+def get_sync_historico(
+    ads_account_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    conta = db.get(AdsAccount, ads_account_id)
+    if not conta:
+        raise HTTPException(status_code=404, detail="Conta não encontrada")
+
+    logs = (
+        db.query(MetaSyncLog)
+        .filter(MetaSyncLog.ads_account_id == conta.id)
+        .order_by(MetaSyncLog.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    result = []
+    for entry in logs:
+        duracao = None
+        if entry.finished_at and entry.started_at:
+            duracao = int((entry.finished_at - entry.started_at).total_seconds())
+        result.append({
+            "id": str(entry.id),
+            "ads_account_id": str(entry.ads_account_id),
+            "sync_mode": entry.sync_mode,
+            "started_at": entry.started_at.isoformat() if entry.started_at else None,
+            "finished_at": entry.finished_at.isoformat() if entry.finished_at else None,
+            "status": entry.status,
+            "stage_failed": entry.stage_failed,
+            "error_message": entry.error_message,
+            "campaigns_upserted": entry.campaigns_upserted,
+            "adsets_upserted": entry.adsets_upserted,
+            "ads_upserted": entry.ads_upserted,
+            "insights_days": entry.insights_days,
+            "request_count": entry.request_count,
+            "rate_limit_usage_pct": entry.rate_limit_usage_pct,
+            "duracao_segundos": duracao,
+        })
+    return result
 
 
 @router.get("/sync/scheduler", response_model=SyncSchedulerOut)

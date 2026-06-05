@@ -170,8 +170,14 @@ class MetaGraphClient:
         self.last_usage_percent: int | None = None
         self.last_cooldown_seconds = 0.0
         self.rate_limit_retries = 0
+        self._request_count: int = 0
+
+    @property
+    def request_count(self) -> int:
+        return self._request_count
 
     def get(self, url: str, params: dict[str, Any] | None = None, **kwargs: Any) -> httpx.Response:
+        self._request_count += 1
         endpoint = graph_endpoint(url)
         max_retries = max(settings.META_SYNC_RATE_LIMIT_MAX_RETRIES, 0)
         attempt = 0

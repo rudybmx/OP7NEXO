@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models.ads_account import AdsAccount
 from app.models.meta_sync_state import MetaSyncState
+from app.models.meta_sync_log import MetaSyncLog
 from app.core.config import settings
 from app.services.meta_graph import (
     MetaGraphClient,
@@ -89,6 +90,19 @@ class MetaContaInacessivelError(RuntimeError):
         self.error_code = error_code
         self.error_subcode = error_subcode
         self.stage = stage
+
+
+def _watermark_to_ts(raw: Any) -> int | None:
+    """Converte watermark (ISO string ou datetime) para unix timestamp int para uso em updated_since."""
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return int(raw.timestamp())
+    try:
+        dt = datetime.fromisoformat(str(raw))
+        return int(dt.timestamp())
+    except Exception:
+        return None
 
 
 def _meta_sync_state_id(ads_account_id: str) -> uuid.UUID | None:
@@ -1853,15 +1867,36 @@ def _sync_catalogo(
     account_id: str,
     token: str,
     totais: dict,
+    watermarks_anteriores: dict | None = None,
 ) -> dict[str, Any]:
-    watermarks = {
+    prev = watermarks_anteriores or {}
+    camp_ts = _watermark_to_ts(prev.get("campaigns_updated_time"))
+    sets_ts = _watermark_to_ts(prev.get("adsets_updated_time"))
+    ads_ts  = _watermark_to_ts(prev.get("ads_updated_time"))
+
+    watermarks: dict[str, Any] = {
         "campaigns_updated_time": None,
         "adsets_updated_time": None,
         "ads_updated_time": None,
     }
-    watermarks["campaigns_updated_time"] = _sync_catalog_campanhas(client, db, conta, account_id, token, totais)
-    watermarks["adsets_updated_time"] = _sync_catalog_conjuntos(client, db, conta, account_id, token, totais)
-    watermarks["ads_updated_time"] = _sync_catalog_anuncios_criativos_videos(client, db, conta, account_id, token, totais)
+    watermarks["campaigns_updated_time"] = _sync_catalog_campanhas(
+        client, db, conta, account_id, token, totais, updated_since_ts=camp_ts
+    )
+    watermarks["adsets_updated_time"] = _sync_catalog_conjuntos(
+        client, db, conta, account_id, token, totais, updated_since_ts=sets_ts
+    )
+    watermarks["ads_updated_time"] = _sync_catalog_anuncios_criativos_videos(
+        client, db, conta, account_id, token, totais, updated_since_ts=ads_ts
+    )
+
+    # Preservar watermark anterior quando a API retorna lista vazia (nenhum item alterado)
+    if watermarks["campaigns_updated_time"] is None and prev.get("campaigns_updated_time"):
+        watermarks["campaigns_updated_time"] = _parse_meta_updated_time(prev["campaigns_updated_time"])
+    if watermarks["adsets_updated_time"] is None and prev.get("adsets_updated_time"):
+        watermarks["adsets_updated_time"] = _parse_meta_updated_time(prev["adsets_updated_time"])
+    if watermarks["ads_updated_time"] is None and prev.get("ads_updated_time"):
+        watermarks["ads_updated_time"] = _parse_meta_updated_time(prev["ads_updated_time"])
+
     return watermarks
 
 
@@ -1872,15 +1907,19 @@ def _sync_catalog_campanhas(
     account_id: str,
     token: str,
     totais: dict,
+    updated_since_ts: int | None = None,
 ) -> datetime | None:
+    params: dict[str, Any] = {
+        "access_token": token,
+        "fields": "id,name,effective_status,status,objective,start_time,stop_time,daily_budget,lifetime_budget,updated_time",
+        "limit": 500,
+    }
+    if updated_since_ts is not None:
+        params["updated_since"] = updated_since_ts
     rows = _paginar(
         client,
         f"{META_BASE}/{account_id}/campaigns",
-        {
-            "access_token": token,
-            "fields": "id,name,effective_status,status,objective,start_time,stop_time,daily_budget,lifetime_budget,updated_time",
-            "limit": 500,
-        },
+        params,
     )
     max_updated_time: datetime | None = None
     for r in rows:
@@ -1936,15 +1975,19 @@ def _sync_catalog_conjuntos(
     account_id: str,
     token: str,
     totais: dict,
+    updated_since_ts: int | None = None,
 ) -> datetime | None:
+    params: dict[str, Any] = {
+        "access_token": token,
+        "fields": "id,name,campaign_id,effective_status,status,start_time,end_time,daily_budget,lifetime_budget,bid_strategy,optimization_goal,billing_event,destination_type,updated_time",
+        "limit": 500,
+    }
+    if updated_since_ts is not None:
+        params["updated_since"] = updated_since_ts
     rows = _paginar(
         client,
         f"{META_BASE}/{account_id}/adsets",
-        {
-            "access_token": token,
-            "fields": "id,name,campaign_id,effective_status,status,start_time,end_time,daily_budget,lifetime_budget,bid_strategy,optimization_goal,billing_event,destination_type,updated_time",
-            "limit": 500,
-        },
+        params,
     )
     max_updated_time: datetime | None = None
     for r in rows:
@@ -2198,15 +2241,19 @@ def _sync_catalog_anuncios_criativos_videos(
     account_id: str,
     token: str,
     totais: dict,
+    updated_since_ts: int | None = None,
 ) -> datetime | None:
+    params: dict[str, Any] = {
+        "access_token": token,
+        "fields": "id,name,campaign_id,adset_id,effective_status,status,updated_time",
+        "limit": 100,
+    }
+    if updated_since_ts is not None:
+        params["updated_since"] = updated_since_ts
     rows = _paginar(
         client,
         f"{META_BASE}/{account_id}/ads",
-        {
-            "access_token": token,
-            "fields": "id,name,campaign_id,adset_id,effective_status,status,updated_time",
-            "limit": 100,
-        },
+        params,
     )
 
     ad_ids = [r.get("id") for r in rows if r.get("id")]
@@ -2805,6 +2852,7 @@ def sincronizar_conta(
     if not _try_sync_lock(db, ads_account_id):
         return {"skipped": True, "reason": SYNC_LOCK_NOT_ACQUIRED}
 
+    log_entry: MetaSyncLog | None = None
     try:
         cooldown_until = _cooldown_until(conta)
         now = datetime.now(timezone.utc)
@@ -2821,7 +2869,17 @@ def sincronizar_conta(
             last_run_mode=modo_sync,
             last_run_status="running",
         )
+        log_entry = MetaSyncLog(
+            ads_account_id=uuid.UUID(ads_account_id),
+            sync_mode=modo_sync,
+            started_at=now,
+            status="running",
+        )
+        db.add(log_entry)
+        db.flush()
+
         result = _sincronizar_conta_impl(ads_account_id, db, on_progress=on_progress, modo_sync=modo_sync)
+        totais_final = result.get("totais") or {}
         if result.get("skipped"):
             _upsert_meta_sync_state(
                 db,
@@ -2831,16 +2889,38 @@ def sincronizar_conta(
                 last_run_status="skipped",
                 last_error_meta={"reason": result.get("reason")},
             )
+            if log_entry is not None:
+                log_entry.finished_at = datetime.now(timezone.utc)
+                log_entry.status = "skipped"
+                log_entry.stage_failed = result.get("reason", "")[:80]
         else:
             _upsert_meta_sync_state(
                 db,
                 ads_account_id,
                 last_run_at=now,
                 last_run_mode=modo_sync,
-                **_state_payload_for_success(result.get("totais") or {}, result.get("watermarks") or {}),
+                **_state_payload_for_success(totais_final, result.get("watermarks") or {}),
             )
+            if log_entry is not None:
+                log_entry.finished_at = datetime.now(timezone.utc)
+                log_entry.status = "success"
+                log_entry.campaigns_upserted = totais_final.get("catalog_campanhas", 0)
+                log_entry.adsets_upserted = totais_final.get("catalog_conjuntos", 0)
+                log_entry.ads_upserted = totais_final.get("catalog_anuncios", 0)
+                log_entry.insights_days = totais_final.get("diarios", 0)
+                log_entry.request_count = totais_final.get("api_requests", 0)
+        db.flush()
         return result
     except MetaRateLimitError as exc:
+        if log_entry is not None:
+            try:
+                log_entry.finished_at = datetime.now(timezone.utc)
+                log_entry.status = "rate_limited"
+                log_entry.rate_limit_usage_pct = int(exc.usage_percent or 0)
+                log_entry.stage_failed = (exc.endpoint or "")[:80]
+                db.flush()
+            except Exception:
+                pass
         try:
             db.rollback()
         except Exception:
@@ -2850,6 +2930,15 @@ def sincronizar_conta(
             registrar_rate_limit_cooldown(db, conta, exc)
         raise
     except MetaContaInacessivelError as exc:
+        if log_entry is not None:
+            try:
+                log_entry.finished_at = datetime.now(timezone.utc)
+                log_entry.status = "error"
+                log_entry.stage_failed = (exc.stage or "terminal")[:80]
+                log_entry.error_message = str(exc)[:500]
+                db.flush()
+            except Exception:
+                pass
         try:
             db.rollback()
         except Exception:
@@ -2870,6 +2959,15 @@ def sincronizar_conta(
         )
         raise
     except Exception as exc:
+        if log_entry is not None:
+            try:
+                log_entry.finished_at = datetime.now(timezone.utc)
+                log_entry.status = "error"
+                log_entry.stage_failed = "sync"
+                log_entry.error_message = str(exc)[:500]
+                db.flush()
+            except Exception:
+                pass
         try:
             db.rollback()
         except Exception:
@@ -3022,7 +3120,12 @@ def _sincronizar_conta_impl(
         _progress("balance", 10)
 
         _progress("catalogo", 12)
-        catalog_watermarks = _sync_catalogo(client, db, conta, meta_account_id, token, totais)
+        state_para_catalogo = _get_meta_sync_state(db, ads_account_id)
+        prev_watermarks = (state_para_catalogo.watermarks or {}) if state_para_catalogo else {}
+        catalog_watermarks = _sync_catalogo(
+            client, db, conta, meta_account_id, token, totais,
+            watermarks_anteriores=prev_watermarks,
+        )
         _progress("catalogo", 25)
 
         _progress("diarios", 27)
@@ -3082,6 +3185,7 @@ def _sincronizar_conta_impl(
         )
         _progress("finalizando", 98)
 
+    totais["api_requests"] = client.request_count
     conta.sincronizado_em = datetime.now(tz=timezone.utc)
     db.commit()
     log.info("Sync conta %s concluído: %s", meta_account_id, totais)

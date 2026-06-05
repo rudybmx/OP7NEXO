@@ -11,6 +11,7 @@ from app.models.user_permission import UserPermission, NivelPermissao
 from app.models.workspace import Workspace
 from app.models.ads_account import AdsAccount
 from app.models.meta_sync_state import MetaSyncState
+from app.models.meta_sync_log import MetaSyncLog
 from app.models.ads_account_workspace_access import AdsAccountWorkspaceAccess
 from app.models.canal_entrada import CanalEntrada
 from app.models.meta_token import MetaToken
@@ -48,6 +49,7 @@ __all__ = [
     "Workspace",
     "AdsAccount",
     "MetaSyncState",
+    "MetaSyncLog",
     "AdsAccountWorkspaceAccess",
     "CanalEntrada",
     "MetaToken",

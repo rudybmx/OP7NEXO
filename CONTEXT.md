@@ -81,6 +81,8 @@ Account
 - Polling: GET `/meta/sync/job/{job_id}` → campos: status (pending|running|done|error), etapa_atual, progresso (0-100), totais, erro
 - Sync automático: APScheduler 3x/dia (06h, 12h, 18h Brasília) via `app/services/scheduler.py`
 - Tabela `sync_jobs` persiste histórico de jobs — migration 018
+- **Sync incremental (migration 053)**: catálogo usa `updated_since` (unix ts) da Meta API baseado em watermarks salvos em `meta_sync_states.watermarks` — reduz ~80% das chamadas de catálogo em contas sem alterações
+- **Histórico de sync**: tabela `meta_sync_log` (migration 053) registra cada execução com status, contagens, duração e request_count; endpoint GET `/meta/sync/historico/{account_id}`
 - Após cadastro de conta: sync automático a implementar
 
 ### Filtros implementados
