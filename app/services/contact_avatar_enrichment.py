@@ -579,10 +579,58 @@ def process_lid_phone_enrichment_job(db: Session, job: dict[str, Any]) -> dict[s
         {"tel": digits, "cid": contact_id, "ws": workspace_id},
     )
     updated_phone = (result.rowcount or 0) > 0
+
+    resolved_jid = f"{digits}@s.whatsapp.net"
+
+    # B1 — Atualizar JID do contato
+    existing = db.execute(
+        text("""
+            SELECT id FROM public.crm_whatsapp_contatos
+            WHERE workspace_id = CAST(:ws AS uuid) AND jid = :resolved_jid
+        """),
+        {"ws": workspace_id, "resolved_jid": resolved_jid},
+    ).scalar()
+
+    updated_jid = False
+    if existing is None:
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_contatos
+                SET jid = :resolved_jid, numero_evo = :resolved_jid, updated_at = NOW()
+                WHERE id = CAST(:cid AS uuid) AND workspace_id = CAST(:ws AS uuid)
+            """),
+            {"resolved_jid": resolved_jid, "cid": contact_id, "ws": workspace_id},
+        )
+        updated_jid = True
+
+    # B2 — Atualizar remote_jid das conversas do contato @lid
+    db.execute(
+        text("""
+            UPDATE public.crm_whatsapp_conversas
+            SET remote_jid = :resolved_jid, updated_at = NOW()
+            WHERE canal_id = CAST(:canal AS uuid)
+              AND workspace_id = CAST(:ws AS uuid)
+              AND remote_jid = :lid_jid
+        """),
+        {"resolved_jid": resolved_jid, "canal": canal_id, "ws": workspace_id, "lid_jid": jid},
+    )
+
+    # B3 — Consolidar conversas duplicadas
+    from app.services.whatsapp_crm_persistence import _merge_duplicate_conversations  # noqa: PLC0415
+    merged = _merge_duplicate_conversations(
+        db,
+        workspace_id=workspace_id,
+        canal_id=canal_id,
+        canonical_jid=resolved_jid,
+    )
+    if merged:
+        logger.info("[lid-enrich] merged %d conversas duplicadas para %s", merged, resolved_jid)
+
+    # B4 — Commit único
     db.commit()
 
     logger.info(
-        "[lid-enrich] done session=%s workspace=%s updated_phone=%s",
-        session, str(workspace_id)[:8], updated_phone,
+        "[lid-enrich] done session=%s workspace=%s updated_phone=%s updated_jid=%s merged=%d",
+        session, str(workspace_id)[:8], updated_phone, updated_jid, merged,
     )
-    return {"status": "done", "updated_phone": updated_phone}
+    return {"status": "done", "updated_phone": updated_phone, "updated_jid": updated_jid, "merged_conversations": merged}

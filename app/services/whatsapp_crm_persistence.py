@@ -842,6 +842,95 @@ def _upsert_contact(
     return result.scalar()
 
 
+
+def _merge_duplicate_conversations(
+    db: Session,
+    *,
+    workspace_id: str,
+    canal_id: str,
+    canonical_jid: str,
+) -> int:
+    """Consolida conversas ativas não-resolvidas com o mesmo JID em uma só.
+
+    Escolhe a mais recente como canônica. Move mensagens, mídias, memorias_ia,
+    followups, assignments e lead_events. Soft-delete as antigas.
+    Retorna número de conversas mescladas (0 se não havia duplicatas).
+    """
+    rows = db.execute(
+        text("""
+            SELECT id
+            FROM public.crm_whatsapp_conversas
+            WHERE workspace_id = CAST(:ws AS uuid)
+              AND canal_id = CAST(:canal AS uuid)
+              AND remote_jid = :jid
+              AND ativo = true
+              AND status <> 'resolvido'
+            ORDER BY ultima_msg_at DESC NULLS LAST,
+                     updated_at DESC NULLS LAST,
+                     created_at DESC NULLS LAST,
+                     id DESC
+        """),
+        {"ws": workspace_id, "canal": canal_id, "jid": canonical_jid},
+    ).fetchall()
+
+    if len(rows) <= 1:
+        return 0
+
+    canonical_id = rows[0][0]
+    old_ids = [r[0] for r in rows[1:]]
+
+    # Move all related records to the canonical conversation
+    for table, col in [
+        ("crm_whatsapp_mensagens", "conversa_id"),
+        ("crm_whatsapp_midia", "conversa_id"),
+        ("crm_whatsapp_memorias_ia", "conversa_id"),
+        ("crm_conversation_assignments", "conversa_id"),
+        ("crm_followups", "conversa_id"),
+        ("crm_lead_origin_events", "conversa_id"),
+    ]:
+        db.execute(
+            text(f"UPDATE public.{table} SET {col} = :canonical WHERE {col} = ANY(:old_ids)"),
+            {"canonical": canonical_id, "old_ids": old_ids},
+        )
+
+    # Sum unread counts from old conversations
+    unread_total = db.execute(
+        text("""
+            SELECT COALESCE(SUM(nao_lidas), 0)
+            FROM public.crm_whatsapp_conversas
+            WHERE id = ANY(:old_ids)
+        """),
+        {"old_ids": old_ids},
+    ).scalar() or 0
+
+    # Soft-delete old conversations
+    db.execute(
+        text("""
+            UPDATE public.crm_whatsapp_conversas
+            SET ativo = false,
+                deleted_at = NOW(),
+                status = 'resolvido',
+                nao_lidas = 0,
+                updated_at = NOW()
+            WHERE id = ANY(:old_ids)
+        """),
+        {"old_ids": old_ids},
+    )
+
+    # Add unread counts to canonical
+    if unread_total:
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_conversas
+                SET nao_lidas = nao_lidas + :unread,
+                    updated_at = NOW()
+                WHERE id = :canonical
+            """),
+            {"unread": unread_total, "canonical": canonical_id},
+        )
+
+    return len(old_ids)
+
 def _upsert_conversation(
     db: Session,
     *,
