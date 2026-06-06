@@ -277,6 +277,14 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - `/api/whatsapp/conversations/route.ts`: adaptado schema
 - Melhorias de formatação de contatos e avatars em PainelInbox, PainelChat, PainelContato e InputMensagem
 
+### ✅ Implementado (2026-06-06) — Design System v2 (HeroUI v3.1)
+
+- `/design-system-v2`: biblioteca de referência do HeroUI v3.1 com 19 seções de componentes (preview renderizado + código copiável)
+- Seções: Button, Input/TextField, Select, Checkbox, Switch, Slider, Chip, Avatar, Card, Modal, Dropdown, Table, Tabs, Pagination, Tooltip, Progress, Spinner, Autocomplete, DateField
+- Todos usam a API compound correta do HeroUI v3.1 (dot notation: `Component.SubComponent`)
+- `PageShell` e `ContentGrid` em `src/components/layout/` como layout components reutilizáveis
+- CSS: ~40 novos imports de componentes HeroUI em `globals.css` (additive, produção intacta)
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos
