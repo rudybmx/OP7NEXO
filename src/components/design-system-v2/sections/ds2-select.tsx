@@ -35,7 +35,8 @@ import { ListBox, ListBoxItem } from 'react-aria-components'
           <Select.Root>
             <Label>Módulo</Label>
             <Select.Trigger>
-              <Select.Value />
+              {/* @ts-expect-error — placeholder é suportado em runtime via react-aria; ComponentPropsWithRef não o captura na tipagem */}
+              <Select.Value placeholder="Selecione..." />
               <Select.Indicator />
             </Select.Trigger>
             <Select.Popover>
@@ -61,7 +62,8 @@ import { ListBox, ListBoxItem } from 'react-aria-components'
               <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginBottom: 8, fontFamily: 'monospace' }}>variant=&quot;{v}&quot;</p>
               <Select.Root variant={v}>
                 <Select.Trigger>
-                  <Select.Value />
+                  {/* @ts-expect-error — placeholder é suportado em runtime via react-aria; ComponentPropsWithRef não o captura na tipagem */}
+                  <Select.Value placeholder="Selecione..." />
                   <Select.Indicator />
                 </Select.Trigger>
                 <Select.Popover>

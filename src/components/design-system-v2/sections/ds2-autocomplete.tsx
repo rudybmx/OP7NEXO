@@ -37,7 +37,8 @@ import { ListBox, ListBoxItem } from 'react-aria-components'
         <div style={{ width: '100%', maxWidth: 320 }}>
           <Autocomplete.Root>
             <Autocomplete.Trigger>
-              <Autocomplete.Value />
+              {/* @ts-expect-error — placeholder é suportado em runtime via react-aria; ComponentPropsWithRef não o captura na tipagem */}
+              <Autocomplete.Value placeholder="Buscar cidade..." />
               <Autocomplete.Indicator />
               <Autocomplete.ClearButton />
             </Autocomplete.Trigger>

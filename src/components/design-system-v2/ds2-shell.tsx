@@ -79,8 +79,16 @@ export function DS2Shell() {
         height: '100%',
         minHeight: 0,
         background: 'var(--bg)',
-        /* override accent to HeroUI default blue inside this showcase */
-        ['--accent' as string]: 'oklch(0.6204 0.195 253.83)',
+        /* Restore HeroUI canonical tokens — project overrides these with smaller values */
+        ['--accent' as string]:     'oklch(0.6204 0.195 253.83)',
+        ['--radius' as string]:     '0.5rem',
+        ['--radius-sm' as string]:  '4px',
+        ['--radius-md' as string]:  '6px',
+        ['--radius-lg' as string]:  '8px',
+        ['--radius-xl' as string]:  '12px',
+        ['--radius-2xl' as string]: '16px',
+        ['--radius-3xl' as string]: '24px',
+        ['--radius-4xl' as string]: '32px',
       }}
     >
       {/* Sidebar */}
