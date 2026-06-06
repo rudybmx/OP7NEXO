@@ -10,8 +10,8 @@ const rows = [
 export function DS2Table() {
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Table</h2>
-      <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Tabelas de dados com suporte a sorting, seleção e ações.</p>
+      <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Table</h2>
+      <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Tabelas de dados com suporte a sorting, seleção e ações.</p>
       <p style={{ fontSize: 11, color: 'var(--ws-text-3)', margin: '0 0 24px', fontFamily: 'monospace' }}>
         {'Table > Table.ScrollContainer > Table.Content > Table.Header + Table.Body > Table.Row > Table.Cell'}
       </p>

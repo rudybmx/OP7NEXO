@@ -8,8 +8,8 @@ export function DS2Modal() {
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Modal</h2>
-      <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Diálogos de sobreposição — compound component.</p>
+      <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Modal</h2>
+      <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Diálogos de sobreposição — compound component.</p>
       <p style={{ fontSize: 11, color: 'var(--ws-text-3)', margin: '0 0 24px', fontFamily: 'monospace' }}>
         {'Modal.Root > Modal.Trigger + Modal.Backdrop > Modal.Container > Modal.Dialog > ...'}
       </p>

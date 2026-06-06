@@ -5,8 +5,8 @@ import { I18nProvider } from '@heroui/react'
 export function DS2DatePicker() {
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Date Field / Picker</h2>
-      <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Input de data segmentado (DD/MM/AAAA) — compound component.</p>
+      <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Date Field / Picker</h2>
+      <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Input de data segmentado (DD/MM/AAAA) — compound component.</p>
       <p style={{ fontSize: 11, color: 'var(--ws-text-3)', margin: '0 0 24px', fontFamily: 'monospace' }}>
         {'DateField > Label + DateField.Group > DateField.Input > DateField.Segment'}
       </p>

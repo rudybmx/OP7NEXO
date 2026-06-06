@@ -5,8 +5,8 @@ import { Tooltip, Button } from '@heroui/react'
 export function DS2Tooltip() {
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Tooltip</h2>
-      <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Dicas contextuais — compound component.</p>
+      <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Tooltip</h2>
+      <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Dicas contextuais — compound component.</p>
       <p style={{ fontSize: 11, color: 'var(--ws-text-3)', margin: '0 0 24px', fontFamily: 'monospace' }}>
         {'Tooltip (TooltipTrigger) > Tooltip.Trigger + Tooltip.Content'}
       </p>

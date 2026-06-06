@@ -5,8 +5,8 @@ import { ListBox, ListBoxItem } from 'react-aria-components'
 export function DS2Select() {
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Select</h2>
-      <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Seleção de opções — compound component baseado em react-aria.</p>
+      <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Select</h2>
+      <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Seleção de opções — compound component baseado em react-aria.</p>
       <p style={{ fontSize: 11, color: 'var(--ws-text-3)', margin: '0 0 24px', fontFamily: 'monospace' }}>
         {'Select.Root > Label + Select.Trigger > Select.Value + Select.Indicator + Select.Popover > ListBox > ListBoxItem'}
       </p>

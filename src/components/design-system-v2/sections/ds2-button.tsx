@@ -4,8 +4,8 @@ import { Button, ButtonGroup } from '@heroui/react'
 export function DS2Button() {
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Button</h2>
-      <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Ações primárias e secundárias da interface.</p>
+      <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Button</h2>
+      <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Ações primárias e secundárias da interface.</p>
       <p style={{ fontSize: 11, color: 'var(--ws-text-3)', margin: '0 0 24px', fontFamily: 'monospace' }}>
         variant: &quot;primary&quot; | &quot;secondary&quot; | &quot;tertiary&quot; | &quot;danger&quot; | &quot;ghost&quot; | &quot;danger-soft&quot; | &quot;outline&quot;
       </p>

@@ -4,8 +4,8 @@ import { Card, Button } from '@heroui/react'
 export function DS2Card() {
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Card</h2>
-      <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Contêiner de conteúdo — compound component.</p>
+      <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Card</h2>
+      <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Contêiner de conteúdo — compound component.</p>
       <p style={{ fontSize: 11, color: 'var(--ws-text-3)', margin: '0 0 24px', fontFamily: 'monospace' }}>
         {'Card + Card.Header + Card.Title + Card.Description + Card.Content + Card.Footer'}
       </p>
@@ -34,7 +34,7 @@ export function DS2Card() {
             <Card.Description>Comparado ao mês anterior</Card.Description>
           </Card.Header>
           <Card.Content>
-            <p style={{ margin: '0 0 4px', fontSize: 28, fontWeight: 700, color: 'var(--ws-text-1)' }}>R$ 228.441</p>
+            <p style={{ margin: '0 0 4px', fontSize: 28, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)' }}>R$ 228.441</p>
             <p style={{ margin: 0, fontSize: 12, color: '#16a34a' }}>↑ 3.3% vs mês anterior</p>
           </Card.Content>
           <Card.Footer>
@@ -96,7 +96,7 @@ export function DS2Card() {
             <Card key={k.label}>
               <Card.Content>
                 <p style={{ margin: '0 0 4px', fontSize: 11, color: 'var(--ws-text-2)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{k.label}</p>
-                <p style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: 'var(--ws-text-1)' }}>{k.value}</p>
+                <p style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)' }}>{k.value}</p>
                 <span style={{ fontSize: 11, color: k.ok ? '#16a34a' : '#dc2626' }}>{k.delta}</span>
               </Card.Content>
             </Card>

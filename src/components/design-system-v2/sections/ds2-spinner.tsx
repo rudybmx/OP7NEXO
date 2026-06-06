@@ -4,8 +4,8 @@ import { Spinner } from '@heroui/react'
 export function DS2Spinner() {
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Spinner</h2>
-      <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '0 0 24px' }}>Indicador de carregamento animado. API simples — sem compound.</p>
+      <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Spinner</h2>
+      <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--ws-text-2)', margin: '0 0 24px' }}>Indicador de carregamento animado. API simples — sem compound.</p>
 
       <DS2CodePreview
         title="Tamanhos"
