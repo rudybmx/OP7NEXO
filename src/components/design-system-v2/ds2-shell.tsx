@@ -25,6 +25,7 @@ import { DS2DatePicker } from './sections/ds2-datepicker'
 import { DS2Atendimento } from './sections/ds2-atendimento'
 import { DS2Kanban } from './sections/ds2-kanban'
 import { DS2DataGrid } from './sections/ds2-datagrid'
+import { DS2Chat } from './sections/ds2-chat'
 
 const SECTIONS = [
   { id: 'button',       label: 'Button' },
@@ -49,6 +50,7 @@ const SECTIONS = [
   { id: 'atendimento',  label: 'Atendimento / Inbox' },
   { id: 'kanban',       label: 'Kanban' },
   { id: 'datagrid',     label: 'Data Grid' },
+  { id: 'chat',         label: 'Chat / AI' },
 ]
 
 const SECTION_MAP: Record<string, React.ReactNode> = {
@@ -74,6 +76,7 @@ const SECTION_MAP: Record<string, React.ReactNode> = {
   atendimento:  <DS2Atendimento />,
   kanban:       <DS2Kanban />,
   datagrid:     <DS2DataGrid />,
+  chat:         <DS2Chat />,
 }
 
 export function DS2Shell() {
