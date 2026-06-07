@@ -79,6 +79,7 @@ export function DS2Shell() {
         height: '100%',
         minHeight: 0,
         background: 'var(--bg)',
+        fontSize: 13, /* herança para Checkbox/Switch labels que não usam text-sm */
         /* Restore HeroUI canonical tokens — project overrides these with smaller values */
         ['--accent' as string]:     'oklch(0.6204 0.195 253.83)',
         ['--radius' as string]:     '0.5rem',
