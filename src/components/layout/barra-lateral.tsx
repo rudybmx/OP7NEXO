@@ -48,6 +48,8 @@ import { secoesNavegacao, useLayout } from "@/lib/contexto-layout"
 import { useTheme } from "@/components/provedores/provedor-tema"
 import { useAuth } from "@/hooks/use-auth"
 import { useWorkspace } from "@/lib/workspace-context"
+import { ModalMeuPerfil } from "@/components/layout/modal-meu-perfil"
+import { ModalConfigEmpresa } from "@/components/layout/modal-config-empresa"
 
 // Tokens de Design (Visual Parity with Design System)
 const W04 = "rgba(255,255,255,0.04)"
@@ -330,12 +332,27 @@ export function BarraLateral() {
   const { isCollapsed, toggleCollapse, setChatAberto } = useLayout()
   const pathname = usePathname()
   const { resolvedTheme, setTheme } = useTheme()
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const { workspaceAtual, workspaces, setWorkspaceAtual, canSwitchWorkspace } = useWorkspace()
   const workspacesAtivos = workspaces.filter((w) => w.ativo)
   const workspaceAtualItem = workspacesAtivos.find((w) => w.workspace_id === workspaceAtual) ?? workspacesAtivos[0] ?? null
 
+  const [perfilAberto, setPerfilAberto] = useState(false)
+  const [configEmpresaAberta, setConfigEmpresaAberta] = useState(false)
+
+  const ROLE_LABEL: Record<string, string> = {
+    platform_admin: 'Admin Plataforma',
+    network_admin: 'Admin da Rede',
+    network_viewer: 'Visualizador',
+    company_admin: 'Admin',
+    company_agent: 'Agente',
+  }
+
   const role = user?.role ?? ''
+  const iniciais = user?.nome
+    ? user.nome.trim().split(' ').filter(Boolean).map((p: string) => p[0]).slice(0, 2).join('').toUpperCase()
+    : '?'
+  const roleLabel = ROLE_LABEL[role] ?? role
 
   const gruposPermitidos = (secao: any) => {
     if (secao.administrativa) {
@@ -634,7 +651,7 @@ export function BarraLateral() {
                   transition: 'all 150ms ease',
                   fontSize: 11, fontWeight: 600, color: '#fff',
                 }}>
-                  RD
+                  {iniciais}
                 </div>
                 <span style={{
                   fontSize: 9, fontWeight: 400,
@@ -649,7 +666,7 @@ export function BarraLateral() {
             <DropdownMenuContent side="top" align="end" className="w-56 rounded-md border border-white/12 bg-[#0d2240] p-1 text-[rgba(255,255,255,0.75)]">
               <DropdownMenuLabel className="px-2 py-1 text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.3)]">Conta</DropdownMenuLabel>
               <DropdownMenuGroup>
-                <DropdownMenuItem className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
+                <DropdownMenuItem onClick={() => setPerfilAberto(true)} className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
                   <User className="h-[13px] w-[13px]" />
                   Meu perfil
                 </DropdownMenuItem>
@@ -665,17 +682,13 @@ export function BarraLateral() {
               <DropdownMenuSeparator className="bg-white/8" />
               <DropdownMenuLabel className="px-2 py-1 text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.3)]">Empresa</DropdownMenuLabel>
               <DropdownMenuGroup>
-                <DropdownMenuItem className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
+                <DropdownMenuItem onClick={() => setConfigEmpresaAberta(true)} className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
                   <Monitor className="h-[13px] w-[13px]" />
                   Config. da empresa
                 </DropdownMenuItem>
-                <DropdownMenuItem className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
-                  <CreditCard className="h-[13px] w-[13px]" />
-                  Plano e faturamento
-                </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator className="bg-white/8" />
-              <DropdownMenuItem variant="destructive" className="gap-2 rounded-md text-xs !text-[rgba(255,90,90,0.85)]">
+              <DropdownMenuItem onClick={() => logout()} variant="destructive" className="gap-2 rounded-md text-xs !text-[rgba(255,90,90,0.85)]">
                 <LogOut className="h-[13px] w-[13px]" />
                 Sair
               </DropdownMenuItem>
@@ -1010,12 +1023,12 @@ export function BarraLateral() {
           <DropdownMenuTrigger asChild>
             <div style={{ width: isCollapsed ? 30 : "100%", height: isCollapsed ? 30 : "auto", background: isCollapsed ? "transparent" : W06, border: isCollapsed ? "none" : `1px solid ${W08}`, borderRadius: isCollapsed ? "50%" : 10, padding: isCollapsed ? 0 : "8px 10px", display: "flex", alignItems: "center", justifyContent: isCollapsed ? "center" : "flex-start", gap: 8, cursor: "pointer", transition: "all 250ms ease" }}>
               <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg, ${BRAND_PRIMARY}, ${BRAND_SECONDARY})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
-                RD
+                {iniciais}
               </div>
               {!isCollapsed && (
                 <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                  <span style={{ fontSize: 12, fontWeight: 500, color: "#ffffff", lineHeight: 1.2 }}>Rudy Dias</span>
-                  <span style={{ fontSize: 10, color: W40, lineHeight: 1.2 }}>CTO · Admin</span>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: "#ffffff", lineHeight: 1.2 }}>{user?.nome ?? '—'}</span>
+                  <span style={{ fontSize: 10, color: W40, lineHeight: 1.2 }}>{roleLabel}</span>
                 </div>
               )}
             </div>
@@ -1023,7 +1036,7 @@ export function BarraLateral() {
           <DropdownMenuContent side="right" align="end" className="w-56 rounded-md border border-white/12 bg-[#0d2240] p-1 text-[rgba(255,255,255,0.75)]">
             <DropdownMenuLabel className="px-2 py-1 text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.3)]">Conta</DropdownMenuLabel>
             <DropdownMenuGroup>
-              <DropdownMenuItem className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
+              <DropdownMenuItem onClick={() => setPerfilAberto(true)} className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
                 <User className="h-[13px] w-[13px]" />
                 Meu perfil
               </DropdownMenuItem>
@@ -1031,7 +1044,6 @@ export function BarraLateral() {
                 <Settings className="h-[13px] w-[13px]" />
                 Configurações
               </DropdownMenuItem>
-              {/* THEME TOGGLE */}
               <DropdownMenuItem onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
                 {resolvedTheme === "dark" ? <Sun className="h-[13px] w-[13px]" /> : <Moon className="h-[13px] w-[13px]" />}
                 Modo {resolvedTheme === "dark" ? "Claro" : "Escuro"}
@@ -1040,22 +1052,21 @@ export function BarraLateral() {
             <DropdownMenuSeparator className="bg-white/8" />
             <DropdownMenuLabel className="px-2 py-1 text-[10px] uppercase tracking-[0.06em] text-[rgba(255,255,255,0.3)]">Empresa</DropdownMenuLabel>
             <DropdownMenuGroup>
-              <DropdownMenuItem className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
+              <DropdownMenuItem onClick={() => setConfigEmpresaAberta(true)} className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
                 <Monitor className="h-[13px] w-[13px]" />
                 Config. da empresa
               </DropdownMenuItem>
-              <DropdownMenuItem className="gap-2 rounded-md text-xs focus:bg-white/8 focus:text-white">
-                <CreditCard className="h-[13px] w-[13px]" />
-                Plano e faturamento
-              </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator className="bg-white/8" />
-            <DropdownMenuItem variant="destructive" className="gap-2 rounded-md text-xs !text-[rgba(255,90,90,0.85)]">
+            <DropdownMenuItem onClick={() => logout()} variant="destructive" className="gap-2 rounded-md text-xs !text-[rgba(255,90,90,0.85)]">
               <LogOut className="h-[13px] w-[13px]" />
               Sair
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <ModalMeuPerfil aberto={perfilAberto} onFechar={() => setPerfilAberto(false)} />
+        <ModalConfigEmpresa aberto={configEmpresaAberta} onFechar={() => setConfigEmpresaAberta(false)} />
       </div>
     </aside>
   )

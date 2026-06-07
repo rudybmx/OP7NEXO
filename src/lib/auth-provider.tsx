@@ -16,6 +16,7 @@ interface AuthContextValue {
   token: string | null
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  reloadUser: () => Promise<void>
   isLoading: boolean
 }
 
@@ -82,7 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, reloadUser: loadUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   )
