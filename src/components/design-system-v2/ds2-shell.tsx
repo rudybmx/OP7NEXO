@@ -22,6 +22,7 @@ import { DS2Progress } from './sections/ds2-progress'
 import { DS2Spinner } from './sections/ds2-spinner'
 import { DS2Autocomplete } from './sections/ds2-autocomplete'
 import { DS2DatePicker } from './sections/ds2-datepicker'
+import { DS2Atendimento } from './sections/ds2-atendimento'
 
 const SECTIONS = [
   { id: 'button',       label: 'Button' },
@@ -43,6 +44,7 @@ const SECTIONS = [
   { id: 'spinner',      label: 'Spinner' },
   { id: 'autocomplete', label: 'Autocomplete' },
   { id: 'datepicker',   label: 'Date Picker' },
+  { id: 'atendimento',  label: 'Atendimento / Inbox' },
 ]
 
 const SECTION_MAP: Record<string, React.ReactNode> = {
@@ -65,6 +67,7 @@ const SECTION_MAP: Record<string, React.ReactNode> = {
   spinner:      <DS2Spinner />,
   autocomplete: <DS2Autocomplete />,
   datepicker:   <DS2DatePicker />,
+  atendimento:  <DS2Atendimento />,
 }
 
 export function DS2Shell() {
