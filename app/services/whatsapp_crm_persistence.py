@@ -700,7 +700,7 @@ def _upsert_participant_contact(db: Session, *, workspace_id: str, participant_j
         {
             "ws": workspace_id,
             "jid": participant_jid,
-            "tel": participant_jid.split("@")[0] if "@" in participant_jid else participant_jid,
+            "tel": participant_jid.split("@")[0] if "@s.whatsapp.net" in participant_jid else None,
             "evo": participant_jid,
             "nome": display_name,
             "push": display_name,
