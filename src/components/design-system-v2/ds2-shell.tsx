@@ -89,6 +89,8 @@ export function DS2Shell() {
         ['--radius-2xl' as string]: '16px',
         ['--radius-3xl' as string]: '24px',
         ['--radius-4xl' as string]: '32px',
+        /* Tailwind v4: @apply text-sm expands to font-size: var(--text-sm) — override to match platform 13px */
+        ['--text-sm' as string]: '0.8125rem',
       }}
     >
       {/* Sidebar */}
