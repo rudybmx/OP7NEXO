@@ -7,7 +7,7 @@ export function DS2Tabs() {
       <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--ws-text-1)', margin: '0 0 4px' }}>Tabs</h2>
       <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--ws-text-2)', margin: '0 0 4px' }}>Navegação entre seções — compound component.</p>
       <p style={{ fontSize: 11, color: 'var(--ws-text-3)', margin: '0 0 24px', fontFamily: 'monospace' }}>
-        {'Tabs.Root > Tabs.ListContainer > Tabs.List > Tabs.Tab + Tabs.Indicator'}
+        {'Tabs.Root > Tabs.ListContainer > Tabs.List > Tabs.Tab | Tabs.Panel'}
       </p>
 
       <DS2CodePreview
@@ -20,7 +20,6 @@ export function DS2Tabs() {
       <Tabs.Tab id="overview">Visão Geral</Tabs.Tab>
       <Tabs.Tab id="sales">Vendas</Tabs.Tab>
       <Tabs.Tab id="expenses">Despesas</Tabs.Tab>
-      <Tabs.Indicator />
     </Tabs.List>
   </Tabs.ListContainer>
   <Tabs.Panel id="overview">Conteúdo Overview</Tabs.Panel>
@@ -34,7 +33,6 @@ export function DS2Tabs() {
               <Tabs.Tab id="overview">Visão Geral</Tabs.Tab>
               <Tabs.Tab id="sales">Vendas</Tabs.Tab>
               <Tabs.Tab id="expenses">Despesas</Tabs.Tab>
-              <Tabs.Indicator />
             </Tabs.List>
           </Tabs.ListContainer>
           <Tabs.Panel id="overview" style={{ padding: '16px 0', fontSize: 13, color: 'var(--ws-text-2)' }}>
@@ -64,7 +62,6 @@ export function DS2Tabs() {
                     <Tabs.Tab id="tab1">Campanhas</Tabs.Tab>
                     <Tabs.Tab id="tab2">Anúncios</Tabs.Tab>
                     <Tabs.Tab id="tab3">Relatórios</Tabs.Tab>
-                    <Tabs.Indicator />
                   </Tabs.List>
                 </Tabs.ListContainer>
               </Tabs.Root>
