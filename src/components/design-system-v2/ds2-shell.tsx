@@ -24,6 +24,7 @@ import { DS2Autocomplete } from './sections/ds2-autocomplete'
 import { DS2DatePicker } from './sections/ds2-datepicker'
 import { DS2Atendimento } from './sections/ds2-atendimento'
 import { DS2Kanban } from './sections/ds2-kanban'
+import { DS2DataGrid } from './sections/ds2-datagrid'
 
 const SECTIONS = [
   { id: 'button',       label: 'Button' },
@@ -47,6 +48,7 @@ const SECTIONS = [
   { id: 'datepicker',   label: 'Date Picker' },
   { id: 'atendimento',  label: 'Atendimento / Inbox' },
   { id: 'kanban',       label: 'Kanban' },
+  { id: 'datagrid',     label: 'Data Grid' },
 ]
 
 const SECTION_MAP: Record<string, React.ReactNode> = {
@@ -71,6 +73,7 @@ const SECTION_MAP: Record<string, React.ReactNode> = {
   datepicker:   <DS2DatePicker />,
   atendimento:  <DS2Atendimento />,
   kanban:       <DS2Kanban />,
+  datagrid:     <DS2DataGrid />,
 }
 
 export function DS2Shell() {
