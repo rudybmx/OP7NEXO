@@ -151,26 +151,49 @@ function formatarDataCurta(iso?: string | null): string {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
 }
 
-function origemParaCanais(origem?: string | null): Canal[] {
-  if (!origem) return ['organico']
-  const o = origem.toLowerCase()
-  if (o.includes('whatsapp')) return ['whatsapp']
-  if (o.includes('meta')) return ['messenger']
-  if (o.includes('instagram')) return ['instagram_dm']
-  if (o.includes('facebook')) return ['lead_form_facebook']
-  return ['organico']
+function origemParaCanais(origem?: string | null, jid?: string): Canal[] {
+  if (jid?.includes('@g.us')) return ['whatsapp']
+  switch (origem) {
+    case 'evolution': return ['whatsapp']
+    case 'grupo':     return ['whatsapp']
+    case 'webhook':   return ['lead_form_facebook']
+    case 'manual':    return ['organico']
+    default: {
+      if (!origem) return ['organico']
+      const o = origem.toLowerCase()
+      if (o.includes('whatsapp')) return ['whatsapp']
+      if (o.includes('instagram')) return ['instagram_dm']
+      if (o.includes('facebook') || o.includes('meta')) return ['lead_form_facebook']
+      return ['organico']
+    }
+  }
 }
 
 function etapaParaStage(etapa?: string | null): Stage {
   const map: Record<string, Stage> = {
-    'nova': 'novo',
+    'novo':        'novo',
+    'contato':     'contato',
+    'qualificado': 'qualificado',
+    'proposta':    'proposta',
+    'fechado':     'fechado',
+    'perdido':     'perdido',
+    // legado (valores antigos de Conversa.etapa_funil)
+    'nova':           'novo',
     'em_atendimento': 'contato',
-    'aguardando': 'qualificado',
-    'resgate': 'proposta',
-    'resolvido': 'fechado',
-    'arquivada': 'perdido',
+    'aguardando':     'qualificado',
+    'resgate':        'proposta',
+    'resolvido':      'fechado',
+    'arquivada':      'perdido',
   }
-  return map[etapa || ''] || 'novo'
+  return map[etapa || ''] ?? 'novo'
+}
+
+function extractTelefone(c: ContatoApi): string {
+  if (c.telefone) return c.telefone
+  if (c.jid.includes('@g.us') || c.jid.startsWith('webhook:')) return ''
+  const prefix = c.jid.split('@')[0]
+  if (/^\d{10,13}$/.test(prefix)) return prefix
+  return ''
 }
 
 function mapearContatoReal(c: ContatoApi): Contato {
@@ -178,12 +201,12 @@ function mapearContatoReal(c: ContatoApi): Contato {
   return {
     id: c.id,
     nome,
-    telefone: c.telefone || c.jid.split('@')[0] || '',
+    telefone: extractTelefone(c),
     email: undefined,
     avatarInitials: getIniciais(nome),
     avatarCor: corDoAvatar(c.id),
     avatarUrl: c.avatar_url,
-    canais: origemParaCanais(c.origem),
+    canais: origemParaCanais(c.origem, c.jid),
     campanhaOrigem: c.campanha_origem || undefined,
     adNome: c.meta_ad_id || undefined,
     stage: etapaParaStage(c.etapa_funil),
