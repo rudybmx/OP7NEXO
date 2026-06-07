@@ -1,59 +1,81 @@
-import type { CampanhaGoogle, DadosDiarios, BreakdownTipo, DistribuicaoQS, KpiGoogleVisaoGeral, FiltrosGoogle } from '@/types/google-ads'
-import { 
-  MOCK_CAMPANHAS_GOOGLE, 
-  MOCK_DADOS_DIARIOS_GOOGLE, 
-  MOCK_BREAKDOWN_TIPOS, 
-  MOCK_DISTRIBUICAO_QS_GOOGLE,
-  MOCK_INSIGHTS_GOOGLE
-} from '@/lib/mock-google-ads'
+'use client'
 
-export function useGoogleVisaoGeral(filtros: FiltrosGoogle) {
-  // Simulando busca de dados
-  const hasData = true // Aqui seria rpc/get_google_data
-  
-  let campanhas = hasData ? [...MOCK_CAMPANHAS_GOOGLE] : []
+import useSWR from 'swr'
+import api from '@/lib/api-client'
+import { useWorkspace } from '@/lib/workspace-context'
+import type {
+  FiltrosGoogle, KpiGoogleVisaoGeral, BreakdownTipo,
+  DistribuicaoQS, DadosDiarios, CampanhaGoogle,
+} from '@/types/google-ads'
 
-  if (filtros.tipoCampanha !== 'todas')
-    campanhas = campanhas.filter(c => c.tipo === filtros.tipoCampanha)
-  if (filtros.status !== 'todos')
-    campanhas = campanhas.filter(c => c.status === filtros.status)
+interface VisaoGeralResponse {
+  kpi: KpiGoogleVisaoGeral
+  breakdownTipos: BreakdownTipo[]
+  distribuicaoQS: DistribuicaoQS[]
+  dadosDiarios: DadosDiarios[]
+}
 
-  const len = campanhas.length || 1
-
-  const kpi: KpiGoogleVisaoGeral = {
-    investimentoTotal: campanhas.reduce((s, c) => s + c.investimento, 0),
-    cliquesTotal: campanhas.reduce((s, c) => s + c.cliques, 0),
-    conversoesTotal: campanhas.reduce((s, c) => s + c.conversoes, 0),
-    ctrMedio: campanhas.reduce((s, c) => s + c.ctr, 0) / len,
-    cpcMedio: campanhas.reduce((s, c) => s + c.cpcMedio, 0) / len,
-    roasMedio: campanhas.reduce((s, c) => s + c.roas * c.investimento, 0) /
-               Math.max(1, campanhas.reduce((s, c) => s + c.investimento, 0)),
-    impressionShareMedio: campanhas
-      .filter(c => c.impressionShare > 0)
-      .reduce((s, c) => s + c.impressionShare, 0) /
-      Math.max(1, campanhas.filter(c => c.impressionShare > 0).length),
-    qualityScoreMedio: campanhas
-      .filter(c => c.qualityScoreMedio > 0)
-      .reduce((s, c) => s + c.qualityScoreMedio, 0) /
-      Math.max(1, campanhas.filter(c => c.qualityScoreMedio > 0).length),
-    deltaInvestimento: 14.2,
-    deltaCliques: 8.6,
-    deltaConversoes: 22.1,
-    deltaCtr: 0.4,
-    deltaCpc: -6.2,
-    deltaRoas: 18.3,
+function mapCampanha(r: Record<string, unknown>): CampanhaGoogle {
+  return {
+    id: String(r.campaign_id ?? ''),
+    nome: String(r.campaign_name ?? ''),
+    tipo: (r.tipo_campanha as CampanhaGoogle['tipo']) ?? 'SEARCH',
+    status: (r.status as CampanhaGoogle['status']) ?? 'PAUSED',
+    orcamentoDiario: Number(r.orcamento_diario ?? 0),
+    investimento: Number(r.investimento ?? 0),
+    cliques: Number(r.cliques ?? 0),
+    impressoes: Number(r.impressoes ?? 0),
+    conversoes: Number(r.conversoes ?? 0),
+    valorConversoes: Number(r.valor_conversoes ?? 0),
+    ctr: Number(r.ctr ?? 0),
+    cpcMedio: Number(r.cpc_medio ?? 0),
+    cpm: Number(r.cpm ?? 0),
+    roas: Number(r.roas ?? 0),
+    taxaConversao: Number(r.taxa_conversao ?? 0),
+    custoConversao: Number(r.custo_conversao ?? 0),
+    impressionShare: Number(r.impression_share ?? 0),
+    isPeridoBudget: Number(r.is_perdido_budget ?? 0),
+    isPerdidoRank: Number(r.is_perdido_rank ?? 0),
+    absoluteTopIS: Number(r.absolute_top_is ?? 0),
+    qualityScoreMedio: Number(r.quality_score_medio ?? 0),
   }
+}
 
-  const breakdownTipos: BreakdownTipo[] = hasData ? MOCK_BREAKDOWN_TIPOS : []
-  const distribuicaoQS: DistribuicaoQS[] = hasData ? MOCK_DISTRIBUICAO_QS_GOOGLE : []
-  const insights = hasData ? MOCK_INSIGHTS_GOOGLE : []
+export function useGoogleVisaoGeral(filtros: FiltrosGoogle, adsAccountId?: string) {
+  const { workspaceAtivo } = useWorkspace()
+  const wsId = workspaceAtivo?.id
 
-  return { 
-    campanhas, 
-    kpi, 
-    dadosDiarios: hasData ? MOCK_DADOS_DIARIOS_GOOGLE : [], 
-    breakdownTipos, 
-    distribuicaoQS,
-    insights
+  const baseParams = new URLSearchParams({ periodo: filtros.periodo })
+  if (wsId) baseParams.set('workspace_id', wsId)
+  if (adsAccountId) baseParams.set('ads_account_id', adsAccountId)
+
+  // Visão geral (KPI, breakdown, QS, diários)
+  const { data: vg, isLoading: vgLoading } = useSWR<VisaoGeralResponse>(
+    wsId ? `/google-ads/visao-geral?${baseParams}` : null,
+    (p: string) => api.get<VisaoGeralResponse>(p),
+    { revalidateOnFocus: false }
+  )
+
+  // Campanhas — mesmo cache que useGoogleCampanhas se params iguais
+  const campParams = new URLSearchParams(baseParams)
+  if (filtros.tipoCampanha && filtros.tipoCampanha !== 'todas') campParams.set('tipo', filtros.tipoCampanha)
+  if (filtros.status && filtros.status !== 'todos') campParams.set('status', filtros.status)
+
+  const { data: campRaw, isLoading: campLoading } = useSWR<Record<string, unknown>[]>(
+    wsId ? `/google-ads/campanhas?${campParams}` : null,
+    (p: string) => api.get<Record<string, unknown>[]>(p),
+    { revalidateOnFocus: false }
+  )
+
+  const campanhas: CampanhaGoogle[] = (campRaw ?? []).map(mapCampanha)
+
+  return {
+    campanhas,
+    kpi: vg?.kpi ?? null,
+    dadosDiarios: vg?.dadosDiarios ?? [],
+    breakdownTipos: vg?.breakdownTipos ?? [],
+    distribuicaoQS: vg?.distribuicaoQS ?? [],
+    isLoading: vgLoading || campLoading,
+    refetch: () => {},
   }
 }

@@ -43,6 +43,9 @@ interface BackendConversaRow {
   followup_due_at?: string | null
   last_inbound_at?: string | null
   last_outbound_at?: string | null
+  favorita?: boolean | null
+  fixada?: boolean | null
+  etiquetas?: Array<{ id: string; nome: string; cor: string }> | null
 }
 
 function iso(value: Date | string | null | undefined) {
@@ -264,6 +267,9 @@ export async function GET(request: NextRequest) {
       equipe: row.equipe_id
         ? { id: row.equipe_id, nome: row.equipe_nome, membrosCount: 0 }
         : null,
+      favorita: row.favorita ?? false,
+      fixada: row.fixada ?? false,
+      etiquetas: row.etiquetas ?? [],
       mensagens: [], // mensagens são carregadas sob demanda no painel de chat
     }})
 

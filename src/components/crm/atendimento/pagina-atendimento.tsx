@@ -13,13 +13,15 @@ import { useAgentesDisponiveis } from '@/hooks/use-agentes-disponiveis'
 import { useEquipes } from '@/hooks/use-equipes'
 import { useIniciarConversa } from '@/hooks/use-iniciar-conversa'
 import { useWhatsappCanais } from '@/hooks/use-whatsapp-canais'
+import { useMarcarLido } from '@/hooks/use-marcar-lido'
+import { useAtualizarConversa } from '@/hooks/use-atualizar-conversa'
+import { useEtiquetas } from '@/hooks/use-etiquetas'
 import { PainelInbox } from './painel-inbox'
 import { PainelChat } from './painel-chat'
 import { PainelContato } from './painel-contato'
 import { ModalAssumir } from './modal-assumir'
 import { ModalTransferir } from './modal-transferir'
 import { ModalResolver } from './modal-resolver'
-import { ModalIniciarConversa } from './modal-iniciar-conversa'
 import { InputMensagem } from './input-mensagem'
 
 const AI_HANDOFF_ENABLED = false
@@ -34,7 +36,8 @@ export function PaginaAtendimento() {
   const [mostrarModalAssumir, setMostrarModalAssumir] = useState(false)
   const [mostrarModalTransferir, setMostrarModalTransferir] = useState(false)
   const [mostrarModalResolver, setMostrarModalResolver] = useState(false)
-  const [mostrarModalIniciar, setMostrarModalIniciar] = useState(false)
+  const [novaConversaAberta, setNovaConversaAberta] = useState(false)
+  const [conversaEfemeraId, setConversaEfemeraId] = useState<string | null>(null)
   const [textoMensagem, setTextoMensagem] = useState('')
   const [aoVivo, setAoVivo] = useState(false)
   const [canalSelecionadoId, setCanalSelecionadoId] = useState<string>('todos')
@@ -61,6 +64,9 @@ export function PaginaAtendimento() {
   const { transferir, isTransferindo, error: erroTransferir } = useTransferirConversa()
   const { resolver, isResolvendo, error: erroResolver } = useResolverConversa()
   const { iniciar: iniciarConversa, isIniciando, error: erroIniciar } = useIniciarConversa(workspaceAtual)
+  const { marcarLido, marcarNaoLido } = useMarcarLido()
+  const { atualizar: atualizarConversa } = useAtualizarConversa()
+  const { etiquetas, aplicar: aplicarEtiqueta, remover: removerEtiqueta } = useEtiquetas(workspaceAtual)
 
   const mensagensEndRef = useRef<HTMLDivElement>(null)
 
@@ -72,7 +78,8 @@ export function PaginaAtendimento() {
       setMostrarModalAssumir(false)
       setMostrarModalTransferir(false)
       setMostrarModalResolver(false)
-      setMostrarModalIniciar(false)
+      setNovaConversaAberta(false)
+      setConversaEfemeraId(null)
       setTextoMensagem('')
       setCanalSelecionadoId('todos')
     })
@@ -173,13 +180,28 @@ export function PaginaAtendimento() {
   }, [workspaceAtual, workspaceResolvido, refetch, refetchMensagens, conversaAtivaId])
 
   const handleSelectConversa = useCallback((id: string) => {
+    if (conversaEfemeraId) {
+      setConversaEfemeraId(null)
+      setNovaConversaAberta(false)
+    }
     const conversa = conversas.find(c => c.id === id)
     setConversaAtivaId(id)
+    // Marcar como lida ao abrir (fire and forget)
+    if (conversa && conversa.naoLidas > 0) {
+      marcarLido(id)
+    }
     // Mantido atrás de flag local para reativação futura.
     if (AI_HANDOFF_ENABLED && conversa && !conversa.responsavelId && conversa.status === 'nova') {
       setMostrarModalAssumir(true)
     }
-  }, [conversas])
+  }, [conversas, conversaEfemeraId, marcarLido])
+
+  const handleAbandonarEfemera = useCallback(() => {
+    if (!conversaEfemeraId) return
+    setConversaEfemeraId(null)
+    setNovaConversaAberta(false)
+    setConversaAtivaId(null)
+  }, [conversaEfemeraId])
 
   const handleAssumir = useCallback(async () => {
     if (!conversaAtivaId) return
@@ -230,6 +252,9 @@ export function PaginaAtendimento() {
     })
 
     if (ok) {
+      if (conversaEfemeraId === conversaAtiva?.id) {
+        setConversaEfemeraId(null)
+      }
       if (!isAudioMedia) {
         setTextoMensagem('')
       }
@@ -238,7 +263,7 @@ export function PaginaAtendimento() {
     } else {
       removerMensagemLocal(idOtimista)
     }
-  }, [textoMensagem, conversaAtiva, enviar, refetchMensagens, refetch, addMensagemLocal, removerMensagemLocal, workspaceAtual, canalSelecionadoId])
+  }, [textoMensagem, conversaAtiva, conversaEfemeraId, enviar, refetchMensagens, refetch, addMensagemLocal, removerMensagemLocal, workspaceAtual, canalSelecionadoId])
 
   const handleTransferir = useCallback(async (novoResponsavelId: string, novaEquipeId?: string) => {
     if (!conversaAtivaId) return
@@ -263,19 +288,55 @@ export function PaginaAtendimento() {
   const handleIniciarConversa = useCallback(async (numero: string) => {
     const conversa = await iniciarConversa(numero)
     if (conversa) {
-      setMostrarModalIniciar(false)
+      setNovaConversaAberta(false)
       setConversaAtivaId(conversa.id)
+      setConversaEfemeraId(conversa.id)
       refetch()
     }
   }, [iniciarConversa, refetch])
+
+  const handleMarcarNaoLido = useCallback(async (conversaId: string) => {
+    await marcarNaoLido(conversaId)
+    refetch()
+  }, [marcarNaoLido, refetch])
+
+  const handleToggleFavorita = useCallback(async (conversaId: string) => {
+    const conversa = conversas.find(c => c.id === conversaId)
+    if (!conversa) return
+    await atualizarConversa(conversaId, { favorita: !conversa.favorita })
+    refetch()
+  }, [conversas, atualizarConversa, refetch])
+
+  const handleToggleFixada = useCallback(async (conversaId: string) => {
+    const conversa = conversas.find(c => c.id === conversaId)
+    if (!conversa) return
+    await atualizarConversa(conversaId, { fixada: !conversa.fixada })
+    refetch()
+  }, [conversas, atualizarConversa, refetch])
+
+  const handleAplicarEtiqueta = useCallback(async (conversaId: string, etiquetaId: string) => {
+    await aplicarEtiqueta(conversaId, etiquetaId)
+    refetch()
+  }, [aplicarEtiqueta, refetch])
+
+  const handleRemoverEtiqueta = useCallback(async (conversaId: string, etiquetaId: string) => {
+    await removerEtiqueta(conversaId, etiquetaId)
+    refetch()
+  }, [removerEtiqueta, refetch])
+
+  const handleResolverPeloMenu = useCallback((conversaId: string) => {
+    setConversaAtivaId(conversaId)
+    setMostrarModalResolver(true)
+  }, [])
 
   const conversasFiltradas = useMemo(() => {
     if (!busca.trim()) return conversas
     const termo = busca.toLowerCase()
     return conversas.filter(c =>
-      c.contato.nome.toLowerCase().includes(termo) ||
-      c.contato.telefone.toLowerCase().includes(termo) ||
-      c.ultimaMensagem.toLowerCase().includes(termo)
+      (c.contato.nome ?? '').toLowerCase().includes(termo) ||
+      (c.contato.telefone ?? '').toLowerCase().includes(termo) ||
+      (c.ultimaMensagem ?? '').toLowerCase().includes(termo) ||
+      (c.groupName ?? '').toLowerCase().includes(termo)
     )
   }, [conversas, busca])
 
@@ -337,10 +398,22 @@ export function PaginaAtendimento() {
           onFiltroChange={setFiltroAtivo}
           onBuscaChange={setBusca}
           onRefetch={refetch}
-          onIniciarConversa={() => setMostrarModalIniciar(true)}
+          novaConversaAberta={novaConversaAberta}
+          onToggleNovaConversa={() => setNovaConversaAberta(v => !v)}
+          onCriarConversa={handleIniciarConversa}
+          isCriandoConversa={isIniciando}
+          erroIniciarConversa={erroIniciar}
+          onClicarAreaVazia={conversaEfemeraId ? handleAbandonarEfemera : undefined}
           canais={canais}
           canalSelecionadoId={canalSelecionadoId}
           onCanalChange={setCanalSelecionadoId}
+          etiquetasWorkspace={etiquetas}
+          onMarcarNaoLido={handleMarcarNaoLido}
+          onToggleFavorita={handleToggleFavorita}
+          onToggleFixada={handleToggleFixada}
+          onAplicarEtiqueta={handleAplicarEtiqueta}
+          onRemoverEtiqueta={handleRemoverEtiqueta}
+          onResolverConversa={handleResolverPeloMenu}
         />
       </div>
 
@@ -452,14 +525,6 @@ export function PaginaAtendimento() {
         />
       )}
 
-      {/* Modal Iniciar Conversa */}
-      <ModalIniciarConversa
-        aberto={mostrarModalIniciar}
-        onFechar={() => setMostrarModalIniciar(false)}
-        onCriar={handleIniciarConversa}
-        isCriando={isIniciando}
-        erro={erroIniciar}
-      />
         </>
       )}
     </div>

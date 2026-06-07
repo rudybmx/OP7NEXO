@@ -87,14 +87,11 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
-      background: 'rgba(255, 255, 255, 0.74)',
-      backdropFilter: 'blur(12px)',
       boxSizing: 'border-box',
-    }}>
-      <div style={{
+    }} className="atd-col-bg">
+      <div className="atd-header-bg" style={{
         padding: '12px 14px',
-        borderBottom: '1px solid rgba(15, 23, 42, 0.08)',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.92) 100%)',
+        borderBottom: '1px solid var(--ws-divider)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',

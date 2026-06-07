@@ -497,6 +497,47 @@ body {
 }
 
 /* ============================================
+   ATENDIMENTO — backgrounds tema-aware
+   ============================================ */
+.atd-col-bg {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px);
+}
+.dark .atd-col-bg {
+  background: var(--ws-surface);
+  backdrop-filter: none;
+}
+
+.atd-header-bg {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.92) 100%);
+}
+.dark .atd-header-bg {
+  background: var(--ws-surface);
+}
+
+.atd-composer-bg {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(247, 249, 252, 0.98) 100%);
+}
+.dark .atd-composer-bg {
+  background: var(--ws-surface);
+  box-shadow: none !important;
+}
+
+.atd-input-bg {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 255, 0.96) 100%);
+}
+.dark .atd-input-bg {
+  background: var(--ws-glass-bg);
+}
+
+.atd-list-bg {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.70) 0%, rgba(242, 246, 255, 0.96) 100%);
+}
+.dark .atd-list-bg {
+  background: var(--ws-surface-2);
+}
+
+/* ============================================
    CONTENT GRID — responsive cols
    ============================================ */
 @media (max-width: 1024px) {

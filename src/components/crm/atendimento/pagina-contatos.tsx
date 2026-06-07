@@ -348,7 +348,7 @@ function ModalContato({ contato, modo, onFechar, onSalvar, onExcluir }: ModalCon
 
   const inputStyle: React.CSSProperties = {
     width: '100%', height: 36, padding: '0 10px',
-    background: soLeitura ? 'rgba(14,20,42,0.02)' : 'rgba(255,255,255,0.80)',
+    background: soLeitura ? 'var(--ws-surface-2)' : 'var(--ws-glass-bg)',
     border: '1px solid var(--ws-glass-border)',
     borderRadius: 8, fontSize: 12, color: 'var(--ws-text-1)',
     outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const,
@@ -374,7 +374,7 @@ function ModalContato({ contato, modo, onFechar, onSalvar, onExcluir }: ModalCon
     >
       <div style={{
         width: 600, maxWidth: '95vw', maxHeight: '90vh',
-        background: 'rgba(255,255,255,0.94)',
+        background: 'var(--ws-glass-bg)',
         backdropFilter: 'blur(20px)',
         border: '1px solid var(--ws-glass-border)',
         borderRadius: 16, boxShadow: 'var(--ws-glass-shadow-lg)',

@@ -381,7 +381,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
   } as const
 
   return (
-    <div style={composerShellStyle}>
+    <div style={composerShellStyle} className="atd-composer-bg">
       {conversa.campanha && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12 }}>
           <span style={{ fontSize: 10, color: 'var(--ws-text-3)', fontStyle: 'italic' }}>
@@ -537,7 +537,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <div style={inputShellStyle}>
+          <div style={inputShellStyle} className="atd-input-bg">
             <textarea
               ref={textareaRef}
               value={valor}
@@ -580,11 +580,10 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
 const composerShellStyle: CSSProperties = {
   padding: '12px 20px 16px',
   borderTop: '1px solid var(--ws-divider)',
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(247,249,252,0.98) 100%)',
   width: '100%',
   minWidth: 0,
   boxSizing: 'border-box',
-  boxShadow: '0 -10px 24px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255,255,255,0.72)',
+  boxShadow: '0 -10px 24px rgba(15, 23, 42, 0.04)',
 }
 
 const composerRowStyle: CSSProperties = {
@@ -598,11 +597,10 @@ const inputShellStyle: CSSProperties = {
   minWidth: 0,
   display: 'flex',
   alignItems: 'center',
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)',
-  border: '1px solid rgba(15, 23, 42, 0.08)',
+  border: '1px solid var(--ws-glass-border)',
   borderRadius: 18,
   padding: '9px 12px',
-  boxShadow: '0 8px 18px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255,255,255,0.75)',
+  boxShadow: '0 8px 18px rgba(15, 23, 42, 0.05)',
 }
 
 const textareaStyle: CSSProperties = {
@@ -674,7 +672,7 @@ const recordingBarStyle: CSSProperties = {
   padding: '10px 14px',
   borderRadius: 16,
   border: '1px solid rgba(220, 38, 38, 0.18)',
-  background: 'linear-gradient(180deg, rgba(254, 226, 226, 0.72) 0%, rgba(255,255,255,0.98) 100%)',
+  background: 'var(--ws-glass-bg)',
   boxShadow: '0 10px 22px rgba(220, 38, 38, 0.08)',
 }
 

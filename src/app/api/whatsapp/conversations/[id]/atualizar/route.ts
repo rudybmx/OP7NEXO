@@ -1,0 +1,65 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { resolveWhatsappWorkspaceAccess } from '@/lib/whatsapp-workspace-access'
+import { getSql } from '@/lib/db'
+
+type RouteContext = { params: Promise<{ id: string }> }
+
+export const dynamic = 'force-dynamic'
+
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  try {
+    const access = await resolveWhatsappWorkspaceAccess(request)
+    if (access instanceof Response) return access
+
+    const { id } = await context.params
+    const body = await request.json() as { favorita?: boolean; fixada?: boolean }
+    const db = getSql()
+
+    const rows = await db`SELECT id, workspace_id FROM public.crm_whatsapp_conversas WHERE id = ${id}::uuid`
+    if (rows.length === 0) return NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 })
+    if (!access.allowedWorkspaceIds.has(rows[0].workspace_id)) {
+      return NextResponse.json({ error: 'Sem acesso' }, { status: 403 })
+    }
+
+    const updates: string[] = []
+    const values: unknown[] = []
+
+    if (typeof body.favorita === 'boolean') {
+      updates.push(`favorita = $${values.length + 1}`)
+      values.push(body.favorita)
+    }
+    if (typeof body.fixada === 'boolean') {
+      updates.push(`fixada = $${values.length + 1}`)
+      values.push(body.fixada)
+    }
+
+    if (updates.length === 0) {
+      return NextResponse.json({ error: 'Nenhum campo para atualizar' }, { status: 400 })
+    }
+
+    if (typeof body.favorita === 'boolean' && typeof body.fixada === 'boolean') {
+      await db`
+        UPDATE public.crm_whatsapp_conversas
+        SET favorita = ${body.favorita}, fixada = ${body.fixada}, updated_at = NOW()
+        WHERE id = ${id}::uuid
+      `
+    } else if (typeof body.favorita === 'boolean') {
+      await db`
+        UPDATE public.crm_whatsapp_conversas
+        SET favorita = ${body.favorita}, updated_at = NOW()
+        WHERE id = ${id}::uuid
+      `
+    } else if (typeof body.fixada === 'boolean') {
+      await db`
+        UPDATE public.crm_whatsapp_conversas
+        SET fixada = ${body.fixada}, updated_at = NOW()
+        WHERE id = ${id}::uuid
+      `
+    }
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Erro' }, { status: 500 })
+  }
+}

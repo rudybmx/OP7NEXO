@@ -108,7 +108,7 @@ export function ModalIniciarConversa({ aberto, onFechar, onCriar, isCriando, err
                 boxSizing: 'border-box',
                 padding: '10px 14px 10px 30px',
                 borderRadius: 10,
-                background: 'rgba(255,255,255,0.05)',
+                background: 'var(--ws-glass-bg)',
                 border: erroExibido ? '1px solid #ef4444' : '1px solid var(--ws-glass-border)',
                 color: 'var(--ws-text-1)',
                 fontSize: 15,

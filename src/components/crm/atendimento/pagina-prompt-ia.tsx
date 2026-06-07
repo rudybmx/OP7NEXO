@@ -83,7 +83,7 @@ export function PaginaPromptIA() {
     width: '100%',
     padding: '12px 14px',
     borderRadius: 'var(--ws-radius-md)',
-    background: 'rgba(255,255,255,0.03)',
+    background: 'var(--ws-glass-bg)',
     border: '1px solid var(--ws-glass-border)',
     color: 'var(--ws-text-1)',
     fontSize: '14px',
@@ -157,7 +157,7 @@ export function PaginaPromptIA() {
               width: '44px',
               height: '24px',
               borderRadius: '22px',
-              background: iaAtiva ? 'var(--ws-blue)' : 'rgba(255,255,255,0.1)',
+              background: iaAtiva ? 'var(--ws-blue)' : 'var(--ws-glass-border)',
               position: 'relative',
               cursor: 'pointer',
               transition: 'background 0.3s ease',
@@ -218,7 +218,7 @@ export function PaginaPromptIA() {
           <div style={{ 
             width: isMobile ? '100%' : '380px',
             padding: '16px',
-            background: 'rgba(255,255,255,0.03)',
+            background: 'var(--ws-glass-bg)',
             borderRadius: 'var(--ws-radius-md)',
             border: '1px solid var(--ws-glass-border)',
           }}>

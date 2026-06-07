@@ -2,7 +2,8 @@
 import { useState } from 'react'
 import { Avatar, Button, Chip, ScrollShadow, Input } from '@heroui/react'
 import { DS2CodePreview } from '../ds2-code-preview'
-import { Star, Reply, MoreHorizontal, Search } from 'lucide-react'
+import { Star, Reply, MoreHorizontal, Search, Paperclip } from 'lucide-react'
+import { PromptInput } from '../ds2-prompt-input'
 
 type Status = 'nova' | 'em_atendimento' | 'aguardando' | 'resolvido' | 'resgate'
 
@@ -200,6 +201,7 @@ function ConversaItem({ conversa, selected, onClick }: ConversaItemProps) {
 function InboxLayout() {
   const [selectedId, setSelectedId] = useState<string>('1')
   const [busca, setBusca] = useState('')
+  const [reply, setReply] = useState('')
 
   const conversa = mockConversas.find(c => c.id === selectedId)
   const msg = selectedId ? mockMensagens[selectedId] : null
@@ -305,8 +307,20 @@ function InboxLayout() {
             </ScrollShadow>
 
             {/* Reply box */}
-            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
-              <Input placeholder="Responder..." />
+            <div style={{ padding: '8px 12px 10px', borderTop: '1px solid var(--border)' }}>
+              <PromptInput
+                value={reply}
+                onValueChange={setReply}
+                onSubmit={() => setReply('')}
+                status="ready"
+                placeholder="Responder..."
+                maxHeight={120}
+                leadingActions={
+                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ws-text-3)', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center' }}>
+                    <Paperclip size={15} />
+                  </button>
+                }
+              />
             </div>
           </>
         ) : (

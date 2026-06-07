@@ -101,6 +101,9 @@ export interface ConversaApi {
   isGroup?: boolean
   groupName?: string | null
   groupAvatarUrl?: string | null
+  favorita?: boolean
+  fixada?: boolean
+  etiquetas?: Array<{ id: string; nome: string; cor: string }>
   contato: ContatoApi
   equipe: EquipeApi | null
   mensagens: MensagemApi[]

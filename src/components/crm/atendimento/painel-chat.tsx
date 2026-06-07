@@ -479,18 +479,15 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
       minHeight: 0,
       height: '100%',
       overflow: 'hidden',
-      background: 'rgba(255, 255, 255, 0.72)',
-      backdropFilter: 'blur(12px)',
-    }}>
+    }} className="atd-col-bg">
       {/* Header */}
-      <div style={{
+      <div className="atd-header-bg" style={{
         padding: '14px 20px',
-        borderBottom: '1px solid rgba(15, 23, 42, 0.08)',
+        borderBottom: '1px solid var(--ws-divider)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         gap: 16,
-        background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.92) 100%)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
           <div style={{
