@@ -189,10 +189,20 @@ function etapaParaStage(etapa?: string | null): Stage {
 }
 
 function extractTelefone(c: ContatoApi): string {
-  if (c.telefone) return c.telefone
-  if (c.jid.includes('@g.us') || c.jid.startsWith('webhook:')) return ''
-  const prefix = c.jid.split('@')[0]
-  if (/^\d{10,13}$/.test(prefix)) return prefix
+  const jid = c.jid
+  if (jid.includes('@g.us')) return ''
+  if (c.telefone) {
+    if (jid.includes('@lid')) {
+      const digits = c.telefone.replace(/\D/g, '')
+      const national = digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits
+      if (national.length > 11) return ''
+    }
+    return c.telefone
+  }
+  if (!jid.startsWith('webhook:') && !jid.includes('@lid')) {
+    const prefix = jid.split('@')[0]
+    if (/^\d{10,13}$/.test(prefix)) return prefix
+  }
   return ''
 }
 
