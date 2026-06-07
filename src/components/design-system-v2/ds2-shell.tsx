@@ -23,6 +23,7 @@ import { DS2Spinner } from './sections/ds2-spinner'
 import { DS2Autocomplete } from './sections/ds2-autocomplete'
 import { DS2DatePicker } from './sections/ds2-datepicker'
 import { DS2Atendimento } from './sections/ds2-atendimento'
+import { DS2Kanban } from './sections/ds2-kanban'
 
 const SECTIONS = [
   { id: 'button',       label: 'Button' },
@@ -45,6 +46,7 @@ const SECTIONS = [
   { id: 'autocomplete', label: 'Autocomplete' },
   { id: 'datepicker',   label: 'Date Picker' },
   { id: 'atendimento',  label: 'Atendimento / Inbox' },
+  { id: 'kanban',       label: 'Kanban' },
 ]
 
 const SECTION_MAP: Record<string, React.ReactNode> = {
@@ -68,6 +70,7 @@ const SECTION_MAP: Record<string, React.ReactNode> = {
   autocomplete: <DS2Autocomplete />,
   datepicker:   <DS2DatePicker />,
   atendimento:  <DS2Atendimento />,
+  kanban:       <DS2Kanban />,
 }
 
 export function DS2Shell() {
