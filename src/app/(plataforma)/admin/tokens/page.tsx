@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/ws-sheet'
 import { useAuth } from '@/hooks/use-auth'
 import { useMetaTokens, type MetaToken } from '@/hooks/use-meta-tokens'
+import { useGoogleAdsCredentials, type GoogleAdsCredential, type GoogleAdsCredentialIn } from '@/hooks/use-google-ads-credentials'
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -53,6 +54,10 @@ function emptyForm() {
   return { nome: '', token: '', valido_ate: '' }
 }
 
+function emptyGoogleForm(): GoogleAdsCredentialIn & { id?: string } {
+  return { nome: '', developer_token: '', client_id: '', client_secret: '', refresh_token: '', manager_customer_id: '' }
+}
+
 export default function GestaoTokensPage() {
   const { user, isLoading: authLoading } = useAuth()
   const router = useRouter()
@@ -64,6 +69,13 @@ export default function GestaoTokensPage() {
   const [editando, setEditando] = useState<MetaToken | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [form, setForm] = useState(emptyForm())
+
+  // Google Ads Credentials
+  const { credentials: googleCreds, isLoading: googleLoading, criar: criarGoogle, atualizar: atualizarGoogle, deletar: deletarGoogle, refetch: refetchGoogle } = useGoogleAdsCredentials()
+  const [googleDrawer, setGoogleDrawer] = useState(false)
+  const [googleEditando, setGoogleEditando] = useState<GoogleAdsCredential | null>(null)
+  const [googleSalvando, setGoogleSalvando] = useState(false)
+  const [googleForm, setGoogleForm] = useState(emptyGoogleForm())
 
   useEffect(() => {
     if (!authLoading && user && user.role !== 'platform_admin') router.push('/')
@@ -129,6 +141,64 @@ export default function GestaoTokensPage() {
       carregar(mostrarInativos)
     } catch (err: any) {
       toast.error(err.message || 'Erro ao atualizar token')
+    }
+  }
+
+  // ── Google handlers ──────────────────────────────────────────────────────
+
+  function abrirNovoGoogle() {
+    setGoogleEditando(null)
+    setGoogleForm(emptyGoogleForm())
+    setGoogleDrawer(true)
+  }
+
+  function abrirEditarGoogle(c: GoogleAdsCredential) {
+    setGoogleEditando(c)
+    setGoogleForm({ nome: c.nome, developer_token: c.developer_token, client_id: c.client_id, client_secret: '', refresh_token: '', manager_customer_id: c.manager_customer_id ?? '' })
+    setGoogleDrawer(true)
+  }
+
+  function fecharGoogleDrawer() {
+    setGoogleDrawer(false)
+    setGoogleEditando(null)
+    setGoogleForm(emptyGoogleForm())
+  }
+
+  async function salvarGoogle() {
+    if (!googleForm.nome.trim()) { toast.error('Nome é obrigatório'); return }
+    if (!googleEditando && !googleForm.developer_token.trim()) { toast.error('Developer Token é obrigatório'); return }
+    if (!googleEditando && !googleForm.client_id.trim()) { toast.error('Client ID é obrigatório'); return }
+    if (!googleEditando && !googleForm.client_secret.trim()) { toast.error('Client Secret é obrigatório'); return }
+    if (!googleEditando && !googleForm.refresh_token.trim()) { toast.error('Refresh Token é obrigatório'); return }
+    setGoogleSalvando(true)
+    try {
+      const payload: Partial<GoogleAdsCredentialIn> = { nome: googleForm.nome.trim() }
+      if (googleForm.developer_token.trim()) payload.developer_token = googleForm.developer_token.trim()
+      if (googleForm.client_id.trim()) payload.client_id = googleForm.client_id.trim()
+      if (googleForm.client_secret.trim()) payload.client_secret = googleForm.client_secret.trim()
+      if (googleForm.refresh_token.trim()) payload.refresh_token = googleForm.refresh_token.trim()
+      if (googleForm.manager_customer_id?.trim()) payload.manager_customer_id = googleForm.manager_customer_id.trim()
+      if (googleEditando) {
+        await atualizarGoogle(googleEditando.id, payload)
+        toast.success('Credencial atualizada!')
+      } else {
+        await criarGoogle(payload as GoogleAdsCredentialIn)
+        toast.success('Credencial criada!')
+      }
+      fecharGoogleDrawer()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao salvar credencial')
+    } finally {
+      setGoogleSalvando(false)
+    }
+  }
+
+  async function deletarGoogleCred(id: string) {
+    try {
+      await deletarGoogle(id)
+      toast.success('Credencial removida')
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao remover credencial')
     }
   }
 
@@ -381,6 +451,195 @@ export default function GestaoTokensPage() {
             >
               {salvando && <Loader2 size={16} className="animate-spin" />}
               {salvando ? 'Salvando...' : editando ? 'Salvar Alterações' : 'Criar Token'}
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Google Ads Credentials Section ────────────────────────── */}
+      <div style={{ marginTop: 48 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+          <div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--ws-text-1)', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 6, background: 'rgba(234,67,53,0.12)', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                </svg>
+              </span>
+              Google Ads — Credenciais OAuth
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--ws-text-2)', margin: '4px 0 0' }}>
+              Credenciais de API para acesso às contas Google Ads via MCC
+            </p>
+          </div>
+          <button
+            onClick={abrirNovoGoogle}
+            style={{
+              background: 'linear-gradient(135deg, #EA4335, #c0392b)',
+              border: 'none', padding: '0 20px', height: 42, borderRadius: 10,
+              fontSize: 13, fontWeight: 600, color: 'white', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 8,
+              boxShadow: '0 4px 12px rgba(234,67,53,0.30)',
+            }}
+          >
+            <Plus size={16} />
+            + Nova Credencial
+          </button>
+        </div>
+
+        <WSTableShell>
+          {googleLoading ? (
+            <div style={{ padding: 60, textAlign: 'center' }}>
+              <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ws-blue)' }} />
+            </div>
+          ) : googleCreds.length === 0 ? (
+            <div style={{ padding: 60, textAlign: 'center' }}>
+              <KeyRound size={32} style={{ color: 'var(--ws-text-3)', marginBottom: 12 }} />
+              <p style={{ fontSize: 14, color: 'var(--ws-text-2)' }}>Nenhuma credencial Google Ads cadastrada</p>
+              <p style={{ fontSize: 12, color: 'var(--ws-text-3)', marginTop: 4 }}>
+                Você precisará de um developer_token, client_id, client_secret e refresh_token do Google Cloud Console
+              </p>
+            </div>
+          ) : (
+            <WSTable minWidth={700}>
+              <thead>
+                <tr>
+                  {['Nome', 'Developer Token', 'Client ID', 'MCC Customer ID', 'Status', 'Ações'].map(h => (
+                    <th key={h} style={{
+                      padding: '8px 14px', fontSize: 10, fontWeight: 600,
+                      color: 'var(--ws-text-3)', textAlign: 'left',
+                      textTransform: 'uppercase', letterSpacing: '0.06em',
+                      whiteSpace: 'nowrap', background: 'rgba(234,67,53,0.04)',
+                      borderBottom: '1px solid var(--ws-divider)',
+                    }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {googleCreds.map(c => (
+                  <tr
+                    key={c.id}
+                    style={{ borderBottom: '1px solid var(--ws-divider)', transition: 'var(--ws-transition)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(234,67,53,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <td style={{ padding: '9px 14px', fontSize: 13, fontWeight: 500, color: 'var(--ws-text-1)', whiteSpace: 'nowrap' }}>{c.nome}</td>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
+                      <code style={{ fontSize: 11, color: 'var(--ws-text-3)', fontFamily: 'monospace' }}>{mascarar(c.developer_token)}</code>
+                    </td>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
+                      <code style={{ fontSize: 11, color: 'var(--ws-text-3)', fontFamily: 'monospace' }}>{mascarar(c.client_id)}</code>
+                    </td>
+                    <td style={{ padding: '9px 14px', fontSize: 13, color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>
+                      {c.manager_customer_id
+                        ? <code style={{ fontSize: 11, fontFamily: 'monospace' }}>{c.manager_customer_id}</code>
+                        : <span style={{ color: 'var(--ws-text-3)' }}>—</span>}
+                    </td>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '3px 10px', borderRadius: 6,
+                        background: c.ativo ? 'rgba(15,168,86,0.12)' : 'rgba(255,92,141,0.12)',
+                        color: c.ativo ? 'var(--ws-green)' : 'var(--ws-coral)',
+                        fontSize: 12, fontWeight: 600,
+                      }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: c.ativo ? 'var(--ws-green)' : 'var(--ws-coral)', flexShrink: 0 }} />
+                        {c.ativo ? 'Ativa' : 'Inativa'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '9px 14px', whiteSpace: 'nowrap' }}>
+                      <WSTableActions>
+                        <button
+                          onClick={() => abrirEditarGoogle(c)}
+                          style={{ background: 'transparent', border: '1px solid var(--ws-glass-border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, color: 'var(--ws-text-2)', cursor: 'pointer' }}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => deletarGoogleCred(c.id)}
+                          style={{ background: 'transparent', border: '1px solid rgba(255,92,141,0.35)', borderRadius: 6, padding: '4px 12px', fontSize: 12, color: 'var(--ws-coral)', cursor: 'pointer' }}
+                        >
+                          Remover
+                        </button>
+                      </WSTableActions>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </WSTable>
+          )}
+        </WSTableShell>
+      </div>
+
+      {/* Google Drawer */}
+      <Sheet open={googleDrawer} onOpenChange={open => !open && fecharGoogleDrawer()}>
+        <SheetContent
+          side="right"
+          style={{ width: 480, ...wsSheetCreamStyle, padding: 0, display: 'flex', flexDirection: 'column' }}
+        >
+          <div style={{
+            padding: '24px 28px 20px',
+            borderBottom: `1px solid ${wsSheetCreamTokens.border}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <div>
+              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--ws-text-1)' }}>
+                {googleEditando ? 'Editar Credencial Google Ads' : 'Nova Credencial Google Ads'}
+              </h2>
+              <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0' }}>
+                {googleEditando ? googleEditando.nome : 'Credencial global — acessa contas via MCC'}
+              </p>
+            </div>
+            <button onClick={fecharGoogleDrawer} style={{ ...wsSheetCreamCloseButtonStyle, borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--ws-text-2)' }}>
+              <X size={16} />
+            </button>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div>
+                <label style={labelStyle}>Nome *</label>
+                <input type="text" placeholder="ex: MCC Op7 Franquias" value={googleForm.nome} onChange={e => setGoogleForm(p => ({ ...p, nome: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Developer Token *{googleEditando && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}> (deixe vazio para manter)</span>}</label>
+                <input type="password" placeholder="Tst-XXXXXXXXXXXXXXXXX" value={googleForm.developer_token} onChange={e => setGoogleForm(p => ({ ...p, developer_token: e.target.value }))} style={{ ...inputStyle, fontFamily: 'monospace' }} />
+              </div>
+              <div>
+                <label style={labelStyle}>Client ID (OAuth2) *{googleEditando && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}> (deixe vazio para manter)</span>}</label>
+                <input type="text" placeholder="XXXXXXXXXXXX-XXXXXXXX.apps.googleusercontent.com" value={googleForm.client_id} onChange={e => setGoogleForm(p => ({ ...p, client_id: e.target.value }))} style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }} />
+              </div>
+              <div>
+                <label style={labelStyle}>Client Secret *{googleEditando && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}> (deixe vazio para manter)</span>}</label>
+                <input type="password" placeholder="GOCSPX-XXXXXXXXXXXX" value={googleForm.client_secret} onChange={e => setGoogleForm(p => ({ ...p, client_secret: e.target.value }))} style={{ ...inputStyle, fontFamily: 'monospace' }} />
+              </div>
+              <div>
+                <label style={labelStyle}>Refresh Token *{googleEditando && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}> (deixe vazio para manter)</span>}</label>
+                <textarea placeholder="1//XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" value={googleForm.refresh_token} onChange={e => setGoogleForm(p => ({ ...p, refresh_token: e.target.value }))} rows={3} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5 }} />
+              </div>
+              <div>
+                <label style={labelStyle}>MCC Customer ID <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(sem hífens — obrigatório para contas filho)</span></label>
+                <input type="text" placeholder="1234567890" value={googleForm.manager_customer_id ?? ''} onChange={e => setGoogleForm(p => ({ ...p, manager_customer_id: e.target.value }))} style={{ ...inputStyle, fontFamily: 'monospace' }} />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: '20px 28px', borderTop: `1px solid ${wsSheetCreamTokens.border}`, display: 'flex', gap: 12 }}>
+            <button onClick={fecharGoogleDrawer} style={{ flex: 1, height: 42, borderRadius: 10, background: 'transparent', border: `1px solid ${wsSheetCreamTokens.border}`, fontSize: 14, fontWeight: 500, color: 'var(--ws-text-2)', cursor: 'pointer' }}>
+              Cancelar
+            </button>
+            <button
+              onClick={salvarGoogle}
+              disabled={googleSalvando}
+              style={{ flex: 2, height: 42, borderRadius: 10, background: googleSalvando ? 'rgba(234,67,53,0.5)' : 'linear-gradient(135deg, #EA4335, #c0392b)', border: 'none', fontSize: 14, fontWeight: 600, color: 'white', cursor: googleSalvando ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: googleSalvando ? 'none' : '0 4px 12px rgba(234,67,53,0.30)' }}
+            >
+              {googleSalvando && <Loader2 size={16} className="animate-spin" />}
+              {googleSalvando ? 'Salvando...' : googleEditando ? 'Salvar Alterações' : 'Criar Credencial'}
             </button>
           </div>
         </SheetContent>

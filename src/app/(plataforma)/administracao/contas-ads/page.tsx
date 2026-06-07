@@ -332,6 +332,17 @@ export default function ContasAdsPage() {
   const [carregandoTokens, setCarregandoTokens] = useState(false)
   const [tokenSelecionadoId, setTokenSelecionadoId] = useState('')
 
+  // Google flow
+  const [googleStep, setGoogleStep] = useState<1 | 2>(1)
+  const [googleCredentials, setGoogleCredentials] = useState<Array<{ id: string; nome: string; manager_customer_id: string | null }>>([])
+  const [googleCredentialId, setGoogleCredentialId] = useState('')
+  const [googleContas, setGoogleContas] = useState<Array<{ customer_id: string; nome: string; currency: string; timezone: string; ja_cadastrada: boolean }>>([])
+  const [googleSelecionadas, setGoogleSelecionadas] = useState<string[]>([])
+  const [googleErro, setGoogleErro] = useState('')
+  const [buscandoGoogle, setBuscandoGoogle] = useState(false)
+  const [googleFiltro, setGoogleFiltro] = useState('')
+  const [carregandoGoogleCreds, setCarregandoGoogleCreds] = useState(false)
+
   // Sync jobs
   const [syncJobs, setSyncJobs] = useState<Record<string, SyncJobState>>(() => loadPersistedSyncJobs())
   const syncJobsRef = React.useRef<Record<string, SyncJobState>>({})
@@ -422,6 +433,24 @@ export default function ContasAdsPage() {
       loadMetaTokens()
     }
   }, [drawerAberto, metaTokens.length, carregandoTokens, loadMetaTokens])
+
+  const loadGoogleCredentials = useCallback(async () => {
+    setCarregandoGoogleCreds(true)
+    try {
+      const data = await api.get<Array<{ id: string; nome: string; manager_customer_id: string | null }>>('/google-ads/credentials')
+      setGoogleCredentials(data)
+    } catch {
+      setGoogleCredentials([])
+    } finally {
+      setCarregandoGoogleCreds(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (drawerAberto && form.plataforma === 'google' && googleCredentials.length === 0 && !carregandoGoogleCreds) {
+      loadGoogleCredentials()
+    }
+  }, [drawerAberto, form.plataforma, googleCredentials.length, carregandoGoogleCreds, loadGoogleCredentials])
 
   const loadSyncScheduler = useCallback(async () => {
     setCarregandoScheduler(true)
@@ -665,6 +694,53 @@ export default function ContasAdsPage() {
     }
   }
 
+  async function buscarContasGoogle() {
+    if (!googleCredentialId) { setGoogleErro('Selecione uma credencial primeiro'); return }
+    setGoogleErro('')
+    setBuscandoGoogle(true)
+    try {
+      const data = await api.get<Array<{ customer_id: string; nome: string; currency: string; timezone: string; ja_cadastrada: boolean }>>(`/google-ads/descobrir-contas?credential_id=${googleCredentialId}`)
+      setGoogleContas(data)
+      setGoogleSelecionadas([])
+      setGoogleStep(2)
+    } catch (err: any) {
+      setGoogleErro(err.message || 'Erro ao buscar contas Google Ads')
+    } finally {
+      setBuscandoGoogle(false)
+    }
+  }
+
+  async function importarContasGoogle() {
+    if (!form.workspace_id) { toast.error('Selecione um cliente'); return }
+    if (googleSelecionadas.length === 0) { toast.error('Selecione ao menos uma conta'); return }
+    setSalvando(true)
+    try {
+      for (const customerId of googleSelecionadas) {
+        const conta = googleContas.find(c => c.customer_id === customerId)
+        if (!conta) continue
+        try {
+          await api.post('/google-ads/vincular-conta', {
+            credential_id: googleCredentialId,
+            customer_id: customerId,
+            customer_name: conta.nome,
+            workspace_id: form.workspace_id,
+            currency: conta.currency,
+            timezone: conta.timezone,
+          })
+        } catch (err: any) {
+          if (!err.message?.includes('409')) toast.error(`${conta.nome}: ${err.message || 'Erro'}`)
+        }
+      }
+      toast.success(`${googleSelecionadas.length} conta(s) Google Ads importada(s)!`)
+      fecharDrawer()
+      loadContas()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao importar contas Google')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
   function fecharDrawer() {
     setDrawerAberto(false)
     setForm(emptyForm())
@@ -678,6 +754,12 @@ export default function ContasAdsPage() {
     setMetaFiltro('')
     setMetaTokens([])
     setTokenSelecionadoId('')
+    setGoogleStep(1)
+    setGoogleCredentialId('')
+    setGoogleContas([])
+    setGoogleSelecionadas([])
+    setGoogleErro('')
+    setGoogleFiltro('')
   }
 
   function abrirEdicaoConta(conta: AdsAccount) {
@@ -840,6 +922,7 @@ export default function ContasAdsPage() {
   }
 
   const isMeta = form.plataforma === 'meta'
+  const isGoogle = form.plataforma === 'google'
   const selectedToken = metaTokens.find(x => x.token === tokenSelecionadoId) ?? null
   const schedulerJob = syncScheduler?.jobs?.[0] ?? null
   const schedulerStatusLabel = syncScheduler?.running ? 'Ativo' : 'Parado'
@@ -1190,9 +1273,7 @@ export default function ContasAdsPage() {
           >
           <SheetTitle className="sr-only">Nova Conta Ads</SheetTitle>
           <SheetDescription className="sr-only">
-            {isMeta
-              ? `Importar via Meta — passo ${metaStep} de 3`
-              : 'Vincule uma conta de anúncios a um cliente'}
+            {isMeta ? `Importar via Meta — passo ${metaStep} de 3` : isGoogle ? `Importar via Google Ads — passo ${googleStep} de 2` : 'Vincule uma conta de anúncios a um cliente'}
           </SheetDescription>
           {/* Drawer header */}
           <div style={{
@@ -1205,9 +1286,7 @@ export default function ContasAdsPage() {
                 Nova Conta Ads
               </h2>
               <p style={{ fontSize: 12, color: 'var(--ws-text-2)', margin: '4px 0 0' }}>
-                {isMeta
-                  ? `Importar via Meta — passo ${metaStep} de 3`
-                  : 'Vincule uma conta de anúncios a um cliente'}
+                {isMeta ? `Importar via Meta — passo ${metaStep} de 3` : isGoogle ? `Importar via Google Ads — passo ${googleStep} de 2` : 'Vincule uma conta de anúncios a um cliente'}
               </p>
             </div>
             <button
@@ -1240,6 +1319,10 @@ export default function ContasAdsPage() {
                         onClick={() => {
                           setForm(prev => ({ ...prev, plataforma: p }))
                           setMetaStep(1)
+                          setGoogleStep(1)
+                          setGoogleContas([])
+                          setGoogleSelecionadas([])
+                          setGoogleErro('')
                         }}
                         style={{
                           padding: '8px 16px',
@@ -1549,8 +1632,161 @@ export default function ContasAdsPage() {
                     </>
                   )}
                 </>
+              ) : isGoogle ? (
+                /* Google Ads flow — 2 steps */
+                <>
+                  {/* Step indicator */}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {[1, 2].map(s => (
+                      <React.Fragment key={s}>
+                        <div style={{
+                          width: 28, height: 28, borderRadius: '50%',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 12, fontWeight: 700,
+                          background: googleStep > s ? 'var(--ws-green)' : googleStep === s ? '#EA4335' : wsSheetCreamTokens.surfaceHover,
+                          color: googleStep >= s ? 'white' : 'var(--ws-text-3)',
+                          border: googleStep === s ? '2px solid rgba(234,67,53,0.4)' : `1px solid ${wsSheetCreamTokens.border}`,
+                          flexShrink: 0,
+                        }}>
+                          {googleStep > s ? <Check size={12} /> : s}
+                        </div>
+                        {s < 2 && (
+                          <div style={{ flex: 1, height: 1, background: googleStep > s ? 'var(--ws-green)' : wsSheetCreamTokens.borderStrong }} />
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </div>
+
+                  {googleStep === 1 && (
+                    <>
+                      <div>
+                        <label style={labelStyle}>Cliente *</label>
+                        <select
+                          value={form.workspace_id}
+                          onChange={e => setForm(prev => ({ ...prev, workspace_id: e.target.value }))}
+                          style={{ ...inputStyle, cursor: 'pointer' }}
+                        >
+                          <option value="">Selecione um cliente...</option>
+                          {workspaces.map(w => (
+                            <option key={w.id} value={w.id}>{w.nome}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={labelStyle}>Credencial Google Ads *</label>
+                        {carregandoGoogleCreds ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0' }}>
+                            <Loader2 size={14} className="animate-spin" style={{ color: 'var(--ws-blue)' }} />
+                            <span style={{ fontSize: 13, color: 'var(--ws-text-2)' }}>Carregando credenciais...</span>
+                          </div>
+                        ) : googleCredentials.length === 0 ? (
+                          <p style={{ fontSize: 12, color: 'var(--ws-text-3)', padding: '8px 0' }}>
+                            Nenhuma credencial cadastrada.{' '}
+                            <a href="/admin/tokens" target="_blank" style={{ color: 'var(--ws-blue)', textDecoration: 'underline' }}>
+                              Cadastrar credencial
+                            </a>
+                          </p>
+                        ) : (
+                          <Select
+                            value={googleCredentialId}
+                            onValueChange={v => { setGoogleCredentialId(v); setGoogleErro('') }}
+                          >
+                            <SelectTrigger className="w-full h-10 text-sm border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] backdrop-blur-md">
+                              <SelectValue placeholder="Selecione uma credencial..." />
+                            </SelectTrigger>
+                            <SelectContent position="popper" className="z-[200]">
+                              {googleCredentials.map(c => (
+                                <SelectItem key={c.id} value={c.id} className="text-sm">
+                                  {c.nome}{c.manager_customer_id ? ` (MCC ${c.manager_customer_id})` : ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {googleErro && (
+                          <p style={{ fontSize: 12, color: 'var(--ws-coral)', marginTop: 6 }}>{googleErro}</p>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {googleStep === 2 && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <label style={{ ...labelStyle, marginBottom: 0 }}>
+                          Contas encontradas ({googleContas.length})
+                        </label>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={() => setGoogleSelecionadas(googleContas.filter(c => !c.ja_cadastrada).map(c => c.customer_id))} style={{ background: 'transparent', border: 'none', fontSize: 11, color: 'var(--ws-blue)', cursor: 'pointer', fontWeight: 600 }}>
+                            Selecionar novas
+                          </button>
+                          <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>·</span>
+                          <button onClick={() => setGoogleSelecionadas([])} style={{ background: 'transparent', border: 'none', fontSize: 11, color: 'var(--ws-text-3)', cursor: 'pointer', fontWeight: 600 }}>
+                            Limpar
+                          </button>
+                        </div>
+                      </div>
+                      <input type="text" placeholder="Filtrar contas..." value={googleFiltro} onChange={e => setGoogleFiltro(e.target.value)} style={{ ...inputStyle, marginBottom: 8 }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 400, overflowY: 'auto' }}>
+                        {[...googleContas]
+                          .sort((a, b) => a.nome.localeCompare(b.nome))
+                          .filter(c => !googleFiltro.trim() || c.nome.toLowerCase().includes(googleFiltro.toLowerCase()) || c.customer_id.includes(googleFiltro))
+                          .map(conta => {
+                            const selected = googleSelecionadas.includes(conta.customer_id)
+                            return (
+                              <button
+                                key={conta.customer_id}
+                                onClick={() => !conta.ja_cadastrada && setGoogleSelecionadas(prev => prev.includes(conta.customer_id) ? prev.filter(x => x !== conta.customer_id) : [...prev, conta.customer_id])}
+                                disabled={conta.ja_cadastrada}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 12,
+                                  padding: '12px 14px', borderRadius: 10,
+                                  background: conta.ja_cadastrada ? wsSheetCreamTokens.surfaceHover : selected ? 'rgba(234,67,53,0.08)' : wsSheetCreamTokens.surface,
+                                  border: selected ? '1px solid rgba(234,67,53,0.35)' : `1px solid ${wsSheetCreamTokens.border}`,
+                                  cursor: conta.ja_cadastrada ? 'default' : 'pointer',
+                                  textAlign: 'left', width: '100%', transition: 'all 0.15s', flexShrink: 0,
+                                  opacity: conta.ja_cadastrada ? 0.6 : 1,
+                                }}
+                              >
+                                <div style={{
+                                  width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                                  background: conta.ja_cadastrada ? wsSheetCreamTokens.surfaceHover : selected ? '#EA4335' : wsSheetCreamTokens.checkboxUncheckedBg,
+                                  border: selected ? '1px solid #EA4335' : `1px solid ${wsSheetCreamTokens.checkboxUncheckedBorder}`,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                  {(selected || conta.ja_cadastrada) && <Check size={11} color="white" />}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ws-text-1)', marginBottom: 2 }}>
+                                    {conta.nome}
+                                    {conta.ja_cadastrada && <span style={{ fontSize: 10, color: 'var(--ws-text-3)', marginLeft: 8, fontWeight: 400 }}>já cadastrada</span>}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <code style={{ fontSize: 11, color: 'var(--ws-text-3)', fontFamily: 'monospace' }}>{conta.customer_id}</code>
+                                    <span style={{ fontSize: 10, color: 'var(--ws-text-3)' }}>·</span>
+                                    <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>{conta.currency}</span>
+                                    <span style={{ fontSize: 10, color: 'var(--ws-text-3)' }}>·</span>
+                                    <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>{conta.timezone}</span>
+                                  </div>
+                                </div>
+                              </button>
+                            )
+                          })}
+                        {googleContas.length === 0 && (
+                          <p style={{ fontSize: 13, color: 'var(--ws-text-2)', textAlign: 'center', padding: '32px 0' }}>Nenhuma conta encontrada</p>
+                        )}
+                      </div>
+                      {googleSelecionadas.length > 0 && (
+                        <div style={{ marginTop: 12, padding: '8px 14px', borderRadius: 8, background: 'rgba(234,67,53,0.08)', border: '1px solid rgba(234,67,53,0.2)', fontSize: 12, color: '#EA4335', fontWeight: 600 }}>
+                          {googleSelecionadas.length} conta{googleSelecionadas.length !== 1 ? 's' : ''} selecionada{googleSelecionadas.length !== 1 ? 's' : ''} — cliente: <strong>{workspaces.find(w => w.id === form.workspace_id)?.nome ?? '—'}</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               ) : (
-                /* Manual form for non-Meta platforms */
+                /* Manual form for non-Meta/Google platforms */
                 <>
                   <div>
                     <label style={labelStyle}>Cliente *</label>
@@ -1625,9 +1861,12 @@ export default function ContasAdsPage() {
             borderTop: '1px solid var(--ws-glass-border)',
             display: 'flex', gap: 12,
           }}>
-            {isMeta && metaStep > 1 ? (
+            {(isMeta && metaStep > 1) || (isGoogle && googleStep > 1) ? (
               <button
-                onClick={() => setMetaStep(prev => (prev - 1) as 1 | 2 | 3)}
+                onClick={() => {
+                  if (isMeta) setMetaStep(prev => (prev - 1) as 1 | 2 | 3)
+                  else setGoogleStep(1)
+                }}
                 style={{
                   height: 42, borderRadius: 10, paddingInline: 16,
                   background: 'transparent',
@@ -1705,6 +1944,40 @@ export default function ContasAdsPage() {
                 >
                   {salvando ? <Loader2 size={16} className="animate-spin" /> : null}
                   {salvando ? 'Importando...' : 'Importar Contas'}
+                </button>
+              )
+            ) : isGoogle ? (
+              googleStep === 1 ? (
+                <button
+                  onClick={buscarContasGoogle}
+                  disabled={buscandoGoogle}
+                  style={{
+                    flex: 2, height: 42, borderRadius: 10,
+                    background: buscandoGoogle ? 'rgba(234,67,53,0.4)' : 'linear-gradient(135deg, #EA4335, #c0392b)',
+                    border: 'none', fontSize: 14, fontWeight: 600,
+                    color: 'white', cursor: buscandoGoogle ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    boxShadow: buscandoGoogle ? 'none' : '0 4px 12px rgba(234,67,53,0.30)',
+                  }}
+                >
+                  {buscandoGoogle ? <Loader2 size={16} className="animate-spin" /> : null}
+                  {buscandoGoogle ? 'Buscando contas...' : 'Descobrir Contas →'}
+                </button>
+              ) : (
+                <button
+                  onClick={importarContasGoogle}
+                  disabled={salvando || googleSelecionadas.length === 0}
+                  style={{
+                    flex: 2, height: 42, borderRadius: 10,
+                    background: salvando ? 'rgba(234,67,53,0.4)' : googleSelecionadas.length === 0 ? 'rgba(234,67,53,0.3)' : 'linear-gradient(135deg, #EA4335, #c0392b)',
+                    border: 'none', fontSize: 14, fontWeight: 600,
+                    color: 'white', cursor: (salvando || googleSelecionadas.length === 0) ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    boxShadow: (salvando || googleSelecionadas.length === 0) ? 'none' : '0 4px 12px rgba(234,67,53,0.30)',
+                  }}
+                >
+                  {salvando ? <Loader2 size={16} className="animate-spin" /> : null}
+                  {salvando ? 'Importando...' : `Importar ${googleSelecionadas.length > 0 ? `(${googleSelecionadas.length})` : ''} Contas`}
                 </button>
               )
             ) : (
