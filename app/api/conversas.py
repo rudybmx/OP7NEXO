@@ -18,6 +18,13 @@ from app.services.whatsapp_crm_persistence import record_assignment_event
 router = APIRouter(prefix="/conversas", tags=["conversas"])
 
 
+class EtiquetaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    nome: str
+    cor: str
+
+
 class ConversaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -65,6 +72,9 @@ class ConversaOut(BaseModel):
     ativo: bool
     criado_em: datetime
     atualizado_em: datetime
+    favorita: bool = False
+    fixada: bool = False
+    etiquetas: list[EtiquetaOut] = []
 
 
 class ConversaIn(BaseModel):
@@ -89,6 +99,9 @@ class ConversaUpdate(BaseModel):
     contexto_ia: dict | None = None
     lead_status: str | None = None
     followup_due_at: datetime | None = None
+    favorita: bool | None = None
+    fixada: bool | None = None
+    nao_lidas: int | None = None
 
 
 class AssumirIn(BaseModel):
@@ -251,6 +264,13 @@ def _conversa_out(c: Conversa) -> ConversaOut:
         ativo=c.ativo,
         criado_em=c.criado_em,
         atualizado_em=c.atualizado_em,
+        favorita=getattr(c, "favorita", False) or False,
+        fixada=getattr(c, "fixada", False) or False,
+        etiquetas=[
+            EtiquetaOut(id=str(e.id), nome=e.nome, cor=e.cor)
+            for e in (getattr(c, "etiquetas", None) or [])
+            if getattr(e, "ativo", True)
+        ],
     )
 
 
@@ -299,7 +319,7 @@ def listar_conversas(
             | Conversa.remote_jid.ilike(f"%{busca}%")
         )
 
-    q = q.order_by(Conversa.ultima_msg_at.desc().nullslast())
+    q = q.order_by(Conversa.fixada.desc(), Conversa.ultima_msg_at.desc().nullslast())
     total = q.offset(offset).limit(limit).all()
     return [_conversa_out(c) for c in total]
 
@@ -567,6 +587,12 @@ def atualizar_conversa(
         c.followup_due_at = data.followup_due_at
         if c.contato:
             c.contato.followup_due_at = data.followup_due_at
+    if data.favorita is not None:
+        c.favorita = data.favorita
+    if data.fixada is not None:
+        c.fixada = data.fixada
+    if data.nao_lidas is not None:
+        c.nao_lidas = max(0, data.nao_lidas)
 
     if data.responsavel_id is not None and data.responsavel_id != old_responsavel_id:
         record_assignment_event(
@@ -602,6 +628,79 @@ def atualizar_conversa(
     db.commit()
     db.refresh(c)
     return _conversa_out(c)
+
+
+@router.patch("/{conversa_id}/marcar-lido", response_model=ConversaOut)
+def marcar_conversa_lida(
+    conversa_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    c = _get_conversa_or_404(conversa_id, db, workspace_filter)
+    verificar_acesso_workspace(usuario, c.workspace_id, db)
+    c.nao_lidas = 0
+    db.commit()
+    db.refresh(c)
+    return _conversa_out(c)
+
+
+@router.patch("/{conversa_id}/marcar-nao-lido", response_model=ConversaOut)
+def marcar_conversa_nao_lida(
+    conversa_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    c = _get_conversa_or_404(conversa_id, db, workspace_filter)
+    verificar_acesso_workspace(usuario, c.workspace_id, db)
+    if c.nao_lidas == 0:
+        c.nao_lidas = 1
+    db.commit()
+    db.refresh(c)
+    return _conversa_out(c)
+
+
+@router.post("/{conversa_id}/etiquetas/{etiqueta_id}", status_code=status.HTTP_204_NO_CONTENT)
+def aplicar_etiqueta_na_conversa(
+    conversa_id: uuid.UUID,
+    etiqueta_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    from app.models.crm.etiqueta import CrmEtiqueta
+    c = _get_conversa_or_404(conversa_id, db, workspace_filter)
+    verificar_acesso_workspace(usuario, c.workspace_id, db)
+    etiqueta = db.query(CrmEtiqueta).filter(
+        CrmEtiqueta.id == etiqueta_id,
+        CrmEtiqueta.workspace_id == c.workspace_id,
+        CrmEtiqueta.ativo.is_(True),
+    ).first()
+    if not etiqueta:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Etiqueta não encontrada")
+    if etiqueta not in c.etiquetas:
+        c.etiquetas.append(etiqueta)
+        db.commit()
+    return None
+
+
+@router.delete("/{conversa_id}/etiquetas/{etiqueta_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remover_etiqueta_da_conversa(
+    conversa_id: uuid.UUID,
+    etiqueta_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    from app.models.crm.etiqueta import CrmEtiqueta
+    c = _get_conversa_or_404(conversa_id, db, workspace_filter)
+    verificar_acesso_workspace(usuario, c.workspace_id, db)
+    etiqueta = db.query(CrmEtiqueta).filter(CrmEtiqueta.id == etiqueta_id).first()
+    if etiqueta and etiqueta in c.etiquetas:
+        c.etiquetas.remove(etiqueta)
+        db.commit()
+    return None
 
 
 @router.delete("/{conversa_id}", status_code=status.HTTP_204_NO_CONTENT)

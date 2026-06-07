@@ -12,6 +12,7 @@ from app.api.auth import router as auth_router
 from app.api.canais import router as canais_router
 from app.api.conversas import router as conversas_router
 from app.api.contatos import router as contatos_router
+from app.api.etiquetas import router as etiquetas_router
 from app.api.followups import router as followups_router
 from app.api.mensagens import router as mensagens_router
 from app.api.pmp import router as pmp_router
@@ -21,6 +22,9 @@ from app.api.meta_catalog import router as meta_catalog_router
 from app.api.meta_financeiro import router as meta_financeiro_router
 from app.api.meta_insights import router as meta_insights_router
 from app.api.meta_tokens import router as meta_tokens_router
+from app.api.google_ads_credentials import router as google_ads_credentials_router
+from app.api.google_ads_accounts import router as google_ads_accounts_router
+from app.api.google_ads_data import router as google_ads_data_router
 from app.api.networks import router as networks_router
 from app.api.sftp import router as sftp_router
 from app.api.users import router as users_router
@@ -114,9 +118,13 @@ app.include_router(meta_catalog_router)
 app.include_router(meta_financeiro_router)
 app.include_router(meta_insights_router)
 app.include_router(meta_tokens_router)
+app.include_router(google_ads_credentials_router)
+app.include_router(google_ads_accounts_router)
+app.include_router(google_ads_data_router)
 app.include_router(canais_router)
 app.include_router(conversas_router)
 app.include_router(contatos_router)
+app.include_router(etiquetas_router)
 app.include_router(followups_router)
 app.include_router(mensagens_router)
 app.include_router(pmp_router)

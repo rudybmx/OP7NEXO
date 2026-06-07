@@ -255,10 +255,24 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - `_dedup_midias()` em `app/api/mensagens.py`: mensagens outbound gerariam dois registros em `crm_whatsapp_midia` (um no envio, outro pelo echo webhook da Evolution). A função deduplica por `tipo` em leitura, preferindo `storage_status='ready'` e desempatando por `created_at` mais antigo. Corrige players de áudio duplicados no painel de chat.
 - Migrações 048–051: WAHA LID enrichment, media pipeline hardening, Meta sync state incremental.
 
+### ✅ Implementado (2026-06-07) — Integração Google Ads (Fase 1+2+3+4)
+
+- **Migration 058**: tabela `google_ads_credentials` (global, sem workspace_id) para credenciais OAuth2 + developer_token + manager_customer_id (MCC)
+- **Migration 059**: tabelas de insights (`google_campanhas_insights`, `google_grupos_insights`, `google_keywords_insights`, `google_anuncios_insights`, `google_publicos_insights`, `google_dados_diarios`)
+- **API**: `GET/POST/PUT/DELETE /google-ads/credentials` (platform_admin)
+- **API**: `GET /google-ads/descobrir-contas?credential_id=` — lista contas acessíveis via MCC
+- **API**: `POST /google-ads/vincular-conta` — cria ads_account (plataforma='google') + workspace_access + dispara sync
+- **API**: `POST /google-ads/sync/{ads_account_id}` + `GET /google-ads/sync/job/{job_id}`
+- **API**: `GET /google-ads/visao-geral|campanhas|grupos|keywords|anuncios|publicos|dados-diarios` (todos com workspace_id obrigatório)
+- **Serviços**: `google_ads_client.py` (GoogleAdsClient com login_customer_id MCC, search_stream, 8 queries GAQL, conversão de micros correta) + `google_ads_sync.py` (upsert em lote)
+- **Front**: 6 hooks atualizados para dados reais via SWR + hook `use-google-ads-credentials.ts` novo
+- **Nota crítica**: QS sem `segments.date`, PMax usa `asset_group`, `conversions_value` NÃO divide por 1M
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos
 3. Sync automático ao cadastrar conta
+4. Google Ads: UI para cadastrar credenciais em /admin/tokens e vincular contas em /administracao/contas-ads
 
 ### 🔴 Débito técnico conhecido
 - Contatos `@lid` nunca terão avatar sem NOWEB Store habilitado (esperado)

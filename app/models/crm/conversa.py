@@ -107,6 +107,8 @@ class Conversa(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    favorita: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    fixada: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
 
     workspace: Mapped["Workspace"] = relationship(  # type: ignore[name-defined]
         foreign_keys=[workspace_id], lazy="select"
@@ -131,6 +133,12 @@ class Conversa(Base):
     )
     memorias_ia: Mapped[list["MemoriaIA"]] = relationship(
         back_populates="conversa", lazy="select"
+    )
+    etiquetas: Mapped[list] = relationship(
+        "CrmEtiqueta",
+        secondary="crm_conversa_etiquetas",
+        back_populates="conversas",
+        lazy="select",
     )
 
     __table_args__ = (
