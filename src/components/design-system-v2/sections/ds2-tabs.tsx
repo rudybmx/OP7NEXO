@@ -30,9 +30,9 @@ export function DS2Tabs() {
         <Tabs.Root defaultSelectedKey="overview">
           <Tabs.ListContainer>
             <Tabs.List aria-label="Seções">
-              <Tabs.Tab id="overview">Visão Geral</Tabs.Tab>
-              <Tabs.Tab id="sales">Vendas</Tabs.Tab>
-              <Tabs.Tab id="expenses">Despesas</Tabs.Tab>
+              <Tabs.Tab id="overview" className="!text-[13px]">Visão Geral</Tabs.Tab>
+              <Tabs.Tab id="sales" className="!text-[13px]">Vendas</Tabs.Tab>
+              <Tabs.Tab id="expenses" className="!text-[13px]">Despesas</Tabs.Tab>
             </Tabs.List>
           </Tabs.ListContainer>
           <Tabs.Panel id="overview" style={{ padding: '16px 0', fontSize: 13, color: 'var(--ws-text-2)' }}>
@@ -59,9 +59,9 @@ export function DS2Tabs() {
               <Tabs.Root variant={v} defaultSelectedKey="tab1">
                 <Tabs.ListContainer>
                   <Tabs.List aria-label={v}>
-                    <Tabs.Tab id="tab1">Campanhas</Tabs.Tab>
-                    <Tabs.Tab id="tab2">Anúncios</Tabs.Tab>
-                    <Tabs.Tab id="tab3">Relatórios</Tabs.Tab>
+                    <Tabs.Tab id="tab1" className="!text-[13px]">Campanhas</Tabs.Tab>
+                    <Tabs.Tab id="tab2" className="!text-[13px]">Anúncios</Tabs.Tab>
+                    <Tabs.Tab id="tab3" className="!text-[13px]">Relatórios</Tabs.Tab>
                   </Tabs.List>
                 </Tabs.ListContainer>
               </Tabs.Root>
