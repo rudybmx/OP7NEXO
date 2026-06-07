@@ -16,7 +16,7 @@ interface Props {
 }
 
 export function VisaoGeralGoogle({ filtros }: Props) {
-  const { campanhas, kpi, dadosDiarios, breakdownTipos, distribuicaoQS } = useGoogleVisaoGeral(filtros)
+  const { campanhas, kpi, dadosDiarios, breakdownTipos, distribuicaoQS, isLoading } = useGoogleVisaoGeral(filtros)
   const insights = useInsightsGoogle(campanhas)
 
   const [isMobile, setIsMobile] = React.useState(false)
@@ -30,7 +30,7 @@ export function VisaoGeralGoogle({ filtros }: Props) {
   return (
     <div className="space-y-4">
       <InsightsGoogle insights={insights} />
-      <KpiGoogle kpi={kpi} campanhas={campanhas} />
+      {kpi !== null && <KpiGoogle kpi={kpi} campanhas={campanhas} />}
       <GraficoTemporalGoogle dados={dadosDiarios} />
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
         <ImpressionShare campanhas={campanhas} />
