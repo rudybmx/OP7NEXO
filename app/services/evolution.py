@@ -1079,16 +1079,17 @@ def buscar_contato(instance_name: str, jid: str) -> list[dict[str, Any]]:
         return []
 
 
-def buscar_foto_perfil(instance_name: str, numero: str) -> dict[str, Any] | str | None:
+def buscar_foto_perfil(instance_name: str, numero: str, *, token: str | None = None) -> dict[str, Any] | str | None:
     """Busca a foto de perfil do contato."""
     digits = "".join(ch for ch in str(numero or "") if ch.isdigit())
     candidate = digits or str(numero or "")
+    headers = {"apikey": token, "Content-Type": "application/json"} if token else HEADERS
 
     try:
         with httpx.Client(timeout=15) as client:
             resp = client.post(
                 f"{META}/user/avatar",
-                headers=HEADERS,
+                headers=headers,
                 json={"number": candidate, "preview": True},
             )
             if resp.status_code < 400:
@@ -1098,7 +1099,7 @@ def buscar_foto_perfil(instance_name: str, numero: str) -> dict[str, Any] | str 
 
             legacy_resp = client.post(
                 f"{META}/chat/fetchProfilePictureUrl/{instance_name}",
-                headers=HEADERS,
+                headers=headers,
                 json={"number": candidate},
             )
             if legacy_resp.status_code == 404:
@@ -1115,13 +1116,14 @@ def buscar_foto_perfil(instance_name: str, numero: str) -> dict[str, Any] | str 
         return None
 
 
-def buscar_grupo(instance_name: str, group_jid: str) -> dict[str, Any] | None:
+def buscar_grupo(instance_name: str, group_jid: str, *, token: str | None = None) -> dict[str, Any] | None:
     """Busca informações de um grupo pelo JID."""
+    headers = {"apikey": token, "Content-Type": "application/json"} if token else HEADERS
     try:
         with httpx.Client(timeout=15) as client:
             resp = client.post(
                 f"{META}/group/info",
-                headers=HEADERS,
+                headers=headers,
                 json={"groupJid": group_jid},
             )
             if resp.status_code < 400:
@@ -1133,7 +1135,7 @@ def buscar_grupo(instance_name: str, group_jid: str) -> dict[str, Any] | None:
 
             legacy_resp = client.get(
                 f"{META}/group/findGroupInfos/{instance_name}",
-                headers=HEADERS,
+                headers=headers,
                 params={"groupJid": group_jid},
             )
             if legacy_resp.status_code == 404:

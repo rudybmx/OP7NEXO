@@ -279,6 +279,8 @@ def _load_canal_cfg(db: Session, *, workspace_id: str, canal_id: str) -> dict[st
     # Injeta metadados do canal para uso por fallbacks não-WAHA
     waha_cfg["_canal_tipo"] = str(row["tipo"] or "")
     waha_cfg["_evolution_instance"] = str(row["evolution_instance_id"] or "")
+    evo_cfg = full_cfg.get("evolution") or {}
+    waha_cfg["_evolution_instance_token"] = str(evo_cfg.get("instance_token") or "")
     return waha_cfg
 
 
@@ -357,9 +359,10 @@ def process_contact_avatar_enrichment_job(db: Session, job: dict[str, Any]) -> d
 
     elif canal_tipo == "whatsapp_evolution" and jt == "individual" and evolution_instance:
         # Fallback para canais Evolution API (sem WAHA): usa evo_service
+        evolution_instance_token = cfg.get("_evolution_instance_token", "")
         try:
             from app.services import evolution as evo_service
-            foto_info = evo_service.buscar_foto_perfil(evolution_instance, jid)
+            foto_info = evo_service.buscar_foto_perfil(evolution_instance, jid, token=evolution_instance_token or None)
             if isinstance(foto_info, dict):
                 url = foto_info.get("url") or None
             elif isinstance(foto_info, str) and foto_info.startswith("http"):
@@ -424,22 +427,55 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
     if cfg is None:
         raise RuntimeError(f"Canal não encontrado workspace={str(workspace_id)[:8]}")
 
-    # Sessão WAHA vem do config do canal
-    session = cfg.get("session") or str(payload.get("instance") or "")
-    if not session:
-        raise RuntimeError(f"Sessão WAHA não encontrada workspace={str(workspace_id)[:8]}")
+    canal_tipo = cfg.get("_canal_tipo", "")
+    evolution_instance = cfg.get("_evolution_instance", "") or str(payload.get("instance") or "")
+    is_waha_canal = bool(cfg.get("api_base_url"))
 
-    try:
-        nome = waha_service.buscar_nome_grupo(session, group_jid, cfg, timeout=5.0)
-        avatar_url = waha_service.buscar_avatar_chat(session, group_jid, cfg, timeout=5.0)
-    except WahaError as exc:
-        status_code = getattr(getattr(exc, "response", None), "status_code", None)
-        logger.warning(
-            "[group-enrich] falha session=%s workspace=%s status=%s",
-            session, str(workspace_id)[:8],
-            status_code or type(exc).__name__,
+    nome: str | None = None
+    avatar_url: str | None = None
+
+    if is_waha_canal:
+        session = cfg.get("session") or str(payload.get("instance") or "")
+        if not session:
+            raise RuntimeError(f"Sessão WAHA não encontrada workspace={str(workspace_id)[:8]}")
+        try:
+            nome = waha_service.buscar_nome_grupo(session, group_jid, cfg, timeout=5.0)
+            avatar_url = waha_service.buscar_avatar_chat(session, group_jid, cfg, timeout=5.0)
+        except WahaError as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            logger.warning(
+                "[group-enrich] falha session=%s workspace=%s status=%s",
+                session, str(workspace_id)[:8],
+                status_code or type(exc).__name__,
+            )
+            raise
+
+    elif canal_tipo == "whatsapp_evolution" and evolution_instance:
+        # Canais Evolution API: usa evo_service.buscar_grupo()
+        evolution_instance_token = cfg.get("_evolution_instance_token", "")
+        try:
+            from app.services import evolution as evo_service  # noqa: PLC0415
+            info = evo_service.buscar_grupo(evolution_instance, group_jid, token=evolution_instance_token or None)
+            if isinstance(info, dict):
+                nome = info.get("subject") or info.get("name") or None
+                avatar_url = info.get("pictureUrl") or None
+            logger.info(
+                "[group-enrich] evolution jid=%s instance=%s workspace=%s nome=%s has_avatar=%s",
+                group_jid, evolution_instance, str(workspace_id)[:8], nome, avatar_url is not None,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[group-enrich] evolution falhou jid=%s workspace=%s err=%s",
+                group_jid, str(workspace_id)[:8], exc,
+            )
+            raise
+
+    else:
+        logger.info(
+            "[group-enrich] skip (sem suporte) canal_tipo=%s workspace=%s",
+            canal_tipo, str(workspace_id)[:8],
         )
-        raise
+        return {"status": "skipped"}
 
     db.execute(
         text("""
