@@ -554,7 +554,7 @@ def _resolve_evolution_participant_phones(
 
         contact_id = str(existing[0])
 
-        # Evitar colisão: verificar se resolved_jid já pertence a outro contato
+        # Verificar se resolved_jid já pertence a outro contato (colisão)
         collision = db.execute(
             text("""
                 SELECT id FROM public.crm_whatsapp_contatos
@@ -563,6 +563,52 @@ def _resolve_evolution_participant_phones(
             {"ws": workspace_id, "resolved_jid": resolved_jid},
         ).fetchone()
         if collision:
+            # Contato @s.whatsapp.net já existe — mesclar @lid no canônico e remover @lid
+            canonical_contact_id = str(collision[0])
+
+            # Reassociar conversas do @lid → contato canônico + atualizar remote_jid
+            db.execute(
+                text("""
+                    UPDATE public.crm_whatsapp_conversas
+                    SET contato_id = CAST(:canonical_id AS uuid),
+                        remote_jid = :resolved_jid,
+                        updated_at = NOW()
+                    WHERE workspace_id = CAST(:ws AS uuid)
+                      AND canal_id = CAST(:canal AS uuid)
+                      AND contato_id = CAST(:lid_contact_id AS uuid)
+                """),
+                {
+                    "canonical_id": canonical_contact_id,
+                    "resolved_jid": resolved_jid,
+                    "ws": workspace_id,
+                    "canal": canal_id,
+                    "lid_contact_id": contact_id,
+                },
+            )
+
+            # Remover contato @lid órfão
+            db.execute(
+                text("""
+                    DELETE FROM public.crm_whatsapp_contatos
+                    WHERE id = CAST(:lid_id AS uuid)
+                      AND workspace_id = CAST(:ws AS uuid)
+                """),
+                {"lid_id": contact_id, "ws": workspace_id},
+            )
+
+            # Mesclar conversas duplicadas para o mesmo remote_jid canônico
+            _merge_duplicate_conversations(
+                db,
+                workspace_id=workspace_id,
+                canal_id=canal_id,
+                canonical_jid=resolved_jid,
+            )
+
+            logger.info(
+                "[group-enrich] lid_merged lid=%s → canonical=%s workspace=%s",
+                lid_jid, resolved_jid, str(workspace_id)[:8],
+            )
+            resolved += 1
             continue
 
         # Atualizar contato: jid + telefone
