@@ -56,12 +56,14 @@ export function useMetaInsights(filtros: FiltrosMeta, workspaceId: string | null
 
   const data: MetaInsightsVisaoGeral | null = raw
     ? {
-        leadsPorCanal: (raw.leads_por_canal ?? []).slice(0, 5).map(
+        leadsPorCanal: (raw.leads_por_canal ?? []).map(
           (lpc: any): LeadsByPlatform => ({
             platform: lpc.canal as any,
             label: lpc.canal,
             count: lpc.leads ?? 0,
             color: '#3E5BFF',
+            spend: lpc.spend ?? 0,
+            percentual: lpc.percentual ?? 0,
           })
         ),
         contas: (raw.contas ?? []).map(

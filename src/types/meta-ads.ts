@@ -13,6 +13,8 @@ export interface LeadsByPlatform {
   label: string
   count: number
   color: string
+  spend?: number
+  percentual?: number
 }
 
 export interface ComparativoPeriodo {
