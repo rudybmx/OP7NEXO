@@ -258,7 +258,8 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 ### ✅ Implementado (2026-06-07) — Integração Google Ads (Fase 1+2+3+4)
 
 - **Migration 058**: tabela `google_ads_credentials` (global, sem workspace_id) para credenciais OAuth2 + developer_token + manager_customer_id (MCC)
-- **Migration 059**: tabelas de insights (`google_campanhas_insights`, `google_grupos_insights`, `google_keywords_insights`, `google_anuncios_insights`, `google_publicos_insights`, `google_dados_diarios`)
+- **Migration 059**: tabelas de insights snapshot de janela (`google_campanhas_insights`, `google_grupos_insights`, `google_keywords_insights`, `google_anuncios_insights`, `google_publicos_insights`, `google_dados_diarios`)
+- **Migration 062**: tabelas diárias por entidade (`google_grupos_diarios`, `google_keywords_diarios`, `google_anuncios_diarios`, `google_publicos_diarios`) + `valor_conversoes` em `google_dados_diarios`. As `*_insights` viram snapshot de janela (metadados + impression_share + quality_score, não-somáveis); métricas somáveis vêm das `*_diarios` fatiadas por data. Os endpoints agregam `SUM ... WHERE data BETWEEN ... GROUP BY entidade` e fazem overlay no snapshot (padrão Meta). Sync popula ambos; IS/QS ficam a nível de janela.
 - **API**: `GET/POST/PUT/DELETE /google-ads/credentials` (platform_admin)
 - **API**: `GET /google-ads/descobrir-contas?credential_id=` — lista contas acessíveis via MCC
 - **API**: `POST /google-ads/vincular-conta` — cria ads_account (plataforma='google') + workspace_access + dispara sync
