@@ -151,7 +151,7 @@ export default function GanttChart({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 px-4 py-4" style={{ borderBottom: '1px solid var(--ws-glass-border)' }}>
+      <div className="flex flex-wrap items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid var(--ws-glass-border)' }}>
         <div className="inline-flex rounded-lg p-1" style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}>
           <button
             type="button"

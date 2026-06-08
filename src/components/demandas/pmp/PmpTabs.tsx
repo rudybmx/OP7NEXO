@@ -22,7 +22,7 @@ export default function PmpTabs({ activeTab, onChange }: PmpTabsProps) {
           type="button"
           onClick={() => onChange(tab.id)}
           className={cn(
-            'px-4 py-3 text-[13px] transition-colors duration-200 ease-out',
+            'px-4 py-2 text-[13px] transition-colors duration-200 ease-out',
             activeTab === tab.id
               ? 'border-b-2 border-[var(--ws-gold)] font-medium text-[#92722a]'
               : 'text-muted-foreground hover:text-foreground/70'

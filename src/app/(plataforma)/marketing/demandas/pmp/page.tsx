@@ -310,7 +310,7 @@ export default function Page() {
   if (!selectedPlan) return null
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-4 p-5">
       {/* Confirmação de exclusão de plano — banner inline sobre o header */}
       {confirmDeletePlan && (
         <div

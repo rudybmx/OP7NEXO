@@ -79,7 +79,7 @@ export default function PmpKpiBar({ plan }: PmpKpiBarProps) {
           style={glassCard}
         >
           <div className="mb-2 text-[10px] uppercase tracking-[0.05em] text-muted-foreground/70">{card.label}</div>
-          <div className={`text-[24px] font-bold ${card.valueClassName}`}>{card.value}</div>
+          <div className={`text-[20px] font-bold ${card.valueClassName}`}>{card.value}</div>
           <div className="mt-1 text-[12px] text-muted-foreground">{card.sublabel}</div>
         </article>
       ))}
@@ -89,7 +89,7 @@ export default function PmpKpiBar({ plan }: PmpKpiBarProps) {
         style={glassCard}
       >
         <div className="mb-2 text-[10px] uppercase tracking-[0.05em] text-muted-foreground/70">Progresso geral</div>
-        <div className="text-[24px] font-bold text-foreground">{metrics.averageProgress}%</div>
+        <div className="text-[20px] font-bold text-foreground">{metrics.averageProgress}%</div>
         <div className="mt-3">
           <Progress value={metrics.averageProgress} indicatorClassName="bg-[var(--ws-gold)]" />
         </div>

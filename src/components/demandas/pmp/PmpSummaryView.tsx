@@ -94,7 +94,7 @@ export default function PmpSummaryView({ plan }: PmpSummaryViewProps) {
   )
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-4">
       <div className="grid gap-4 xl:grid-cols-2">
         {phaseCards.map((phase) => (
           <article

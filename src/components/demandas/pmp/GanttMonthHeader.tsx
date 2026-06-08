@@ -32,7 +32,7 @@ export default function GanttMonthHeader({
               : `${taskColumnWidth}px repeat(${weeks.length}, ${columnWidth}px)`,
         }}
       >
-        <div className="sticky left-0 z-20 flex items-center border-r border-border/10 bg-muted/40 px-4 py-3 text-[11px] font-medium text-muted-foreground shadow-[2px_0_8px_rgba(0,0,0,0.12)]">
+        <div className="sticky left-0 z-20 flex items-center border-r border-border/10 bg-muted/40 px-4 py-2 text-[11px] font-medium text-muted-foreground shadow-[2px_0_8px_rgba(0,0,0,0.12)]">
           Entregas e fases
         </div>
 
@@ -40,7 +40,7 @@ export default function GanttMonthHeader({
           ? months.map((month) => (
               <div
                 key={`${month.year}-${month.month}`}
-                className="flex items-center justify-center border-r border-border/10 px-2 py-3 text-[11px] font-medium text-muted-foreground"
+                className="flex items-center justify-center border-r border-border/10 px-2 py-2 text-[11px] font-medium text-muted-foreground"
               >
                 {month.label}
               </div>
@@ -48,7 +48,7 @@ export default function GanttMonthHeader({
           : monthSpans.map((month) => (
               <div
                 key={month.label}
-                className="flex items-center justify-center border-r border-border/10 px-2 py-3 text-[11px] font-medium text-muted-foreground"
+                className="flex items-center justify-center border-r border-border/10 px-2 py-2 text-[11px] font-medium text-muted-foreground"
                 style={{ gridColumn: `span ${month.span}` }}
               >
                 {month.label}
