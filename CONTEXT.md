@@ -59,7 +59,7 @@ meta_videos_catalog         -- catálogo de vídeos com source_url, thumbnail_ur
 ```
 
 ### Migrations
-- Numeradas: `001_` ... `047_` (último arquivo: 047_crm_whatsapp_channel_not_null; conferir no banco o que está de fato aplicado)
+- Numeradas: `001_` ... `060_` (último: `060_matriz_investimento` — tabela `matriz_investimento` para planejamento de verba por canal/mês; `059_google_ads_*` — tabelas `google_campanhas_insights`, `google_grupos_insights`, `google_keywords_insights`, `google_anuncios_insights`, `google_publicos_insights`, `google_dados_diarios` para sincronização Google Ads)
 - Localização: `/root/op7nexo-api/alembic/versions/` (NÃO existe `migrations/` — ver constituição 2.5)
 - Sempre rodar após criar: `bash /root/deploy.sh api` + testar endpoint
 
