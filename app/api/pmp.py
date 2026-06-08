@@ -626,6 +626,12 @@ def atualizar_tarefa(
             sets.append(f"{col} = :{field}")
             params[field] = val
 
+    # Zerar completed_at quando status muda para fora de DONE (comportamento antigo)
+    if body.status is not None and body.status != "DONE":
+        sets = [s for s in sets if not s.startswith("completed_at")]
+        params.pop("completed_at", None)
+        sets.append("completed_at = NULL")
+
     updated = db.execute(
         text(f"""
             UPDATE public.pmp_tasks
