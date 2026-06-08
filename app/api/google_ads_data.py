@@ -93,6 +93,84 @@ def _resolver_datas(
     return _periodo_datas(periodo)
 
 
+# ─── Helpers de fatiamento diário ───────────────────────────────────────────
+# Métricas somáveis vêm das tabelas google_*_diarios (fatiadas por data);
+# metadados + impression_share + quality_score continuam do snapshot de janela.
+
+def _derivar(inv: float, clq: int, imp: int, conv: float, val: float) -> dict:
+    """Recalcula métricas derivadas a partir das somas da fatia selecionada."""
+    return {
+        "ctr": round((clq / imp * 100) if imp > 0 else 0, 6),
+        "cpc_medio": round(inv / clq if clq > 0 else 0, 2),
+        "cpm": round((inv / imp * 1000) if imp > 0 else 0, 2),
+        "roas": round(val / inv if inv > 0 else 0, 4),
+        "taxa_conversao": round((conv / clq * 100) if clq > 0 else 0, 6),
+        "custo_conversao": round(inv / conv if conv > 0 else 0, 2),
+    }
+
+
+def _agg_diario(db, tabela: str, key_cols: list[str], params: dict,
+                filtros: str = "", custo_col: str = "investimento",
+                com_valor: bool = True) -> dict:
+    """Agrega uma tabela diária por entidade na fatia de datas.
+
+    Retorna dict: chave = tupla (ads_account_id, *key_cols) em str;
+    valor = dict com investimento/cliques/impressoes/conversoes/valor_conversoes.
+    """
+    val_sel = "SUM(valor_conversoes) AS valor_conversoes" if com_valor else "0 AS valor_conversoes"
+    cols = ", ".join(key_cols)
+    rows = db.execute(text(f"""
+        SELECT ads_account_id, {cols},
+               SUM({custo_col}) AS investimento,
+               SUM(cliques) AS cliques,
+               SUM(impressoes) AS impressoes,
+               SUM(conversoes) AS conversoes,
+               {val_sel}
+        FROM {tabela}
+        WHERE ads_account_id = ANY(:ids) AND data BETWEEN :start AND :end AND ativo = true
+        {filtros}
+        GROUP BY ads_account_id, {cols}
+    """), params).mappings().all()
+    out: dict = {}
+    for r in rows:
+        key = (str(r["ads_account_id"]),) + tuple(str(r[c]) for c in key_cols)
+        out[key] = {
+            "investimento": float(r["investimento"] or 0),
+            "cliques": int(r["cliques"] or 0),
+            "impressoes": int(r["impressoes"] or 0),
+            "conversoes": float(r["conversoes"] or 0),
+            "valor_conversoes": float(r["valor_conversoes"] or 0),
+        }
+    return out
+
+
+def _overlay(snapshot_rows, daily_by_key, key_cols: list[str]) -> list[dict]:
+    """Sobrepõe métricas da fatia diária nos metadados do snapshot.
+
+    Mantém IS/quality_score/metadados do snapshot; substitui métricas somáveis
+    e derivadas pelos valores da fatia. Descarta entidades sem atividade na fatia
+    (padrão Meta: lista só o que teve atividade no range)."""
+    out: list[dict] = []
+    for r in snapshot_rows:
+        d = dict(r)
+        key = (str(d["ads_account_id"]),) + tuple(str(d[c]) for c in key_cols)
+        agg = daily_by_key.get(key)
+        if not agg:
+            continue
+        inv = agg["investimento"]; clq = agg["cliques"]; imp = agg["impressoes"]
+        conv = agg["conversoes"]; val = agg["valor_conversoes"]
+        d["investimento"] = round(inv, 2)
+        d["cliques"] = clq
+        d["impressoes"] = imp
+        d["conversoes"] = round(conv, 4)
+        if "valor_conversoes" in d:
+            d["valor_conversoes"] = round(val, 2)
+        d.update(_derivar(inv, clq, imp, conv, val))
+        out.append(d)
+    out.sort(key=lambda x: x.get("investimento", 0) or 0, reverse=True)
+    return out
+
+
 @router.get("/campanhas")
 def listar_campanhas(
     workspace_id: str = Query(...),
@@ -109,26 +187,27 @@ def listar_campanhas(
     if not account_ids:
         return []
     start, end = _resolver_datas(periodo, start_date, end_date)
-
-    filtros = "AND g.ads_account_id = ANY(:ids) AND g.periodo_inicio <= :end AND g.periodo_fim >= :start AND g.ativo = true"
     params: dict = {"ids": account_ids, "start": start, "end": end}
 
+    # Snapshot de janela (metadados + impression_share + quality_score)
+    snap_filtros = "AND g.ativo = true"
     if tipo and tipo != "todas":
-        filtros += " AND g.tipo_campanha = :tipo"
+        snap_filtros += " AND g.tipo_campanha = :tipo"
         params["tipo"] = tipo.upper()
     if status_filtro and status_filtro != "todos":
-        filtros += " AND g.status = :status"
+        snap_filtros += " AND g.status = :status"
         params["status"] = status_filtro.upper()
 
-    rows = db.execute(text(f"""
+    snap = db.execute(text(f"""
         SELECT g.*, aa.account_name
         FROM google_campanhas_insights g
         JOIN ads_accounts aa ON aa.id = g.ads_account_id
-        WHERE 1=1 {filtros}
-        ORDER BY g.investimento DESC
+        WHERE g.ads_account_id = ANY(:ids) {snap_filtros}
     """), params).mappings().all()
 
-    return [dict(r) for r in rows]
+    # Métricas somáveis fatiadas por data (google_dados_diarios usa coluna 'custo')
+    daily = _agg_diario(db, "google_dados_diarios", ["campaign_id"], params, custo_col="custo")
+    return _overlay(snap, daily, ["campaign_id"])
 
 
 @router.get("/visao-geral")
@@ -148,22 +227,25 @@ def visao_geral(
 
     params: dict = {"ids": account_ids, "start": start, "end": end}
 
-    rows = db.execute(text("""
-        SELECT * FROM google_campanhas_insights
-        WHERE ads_account_id = ANY(:ids)
-          AND periodo_inicio <= :end AND periodo_fim >= :start
-          AND ativo = true
-    """), params).mappings().all()
-
-    campanhas = [dict(r) for r in rows]
-    if not campanhas:
+    # Métricas somáveis fatiadas por data (por campanha)
+    daily_camp = _agg_diario(db, "google_dados_diarios", ["campaign_id"], params, custo_col="custo")
+    if not daily_camp:
         return _kpi_vazio()
 
-    total_inv = sum(float(c["investimento"] or 0) for c in campanhas)
-    total_cliques = sum(int(c["cliques"] or 0) for c in campanhas)
-    total_impressoes = sum(int(c["impressoes"] or 0) for c in campanhas)
-    total_conv = sum(float(c["conversoes"] or 0) for c in campanhas)
-    total_val = sum(float(c["valor_conversoes"] or 0) for c in campanhas)
+    total_inv = sum(v["investimento"] for v in daily_camp.values())
+    total_cliques = sum(v["cliques"] for v in daily_camp.values())
+    total_impressoes = sum(v["impressoes"] for v in daily_camp.values())
+    total_conv = sum(v["conversoes"] for v in daily_camp.values())
+    total_val = sum(v["valor_conversoes"] for v in daily_camp.values())
+
+    # Snapshot de janela — tipo_campanha + impression_share + quality_score
+    # (não-somáveis): restrito às campanhas com atividade na fatia.
+    snap_rows = db.execute(text("""
+        SELECT * FROM google_campanhas_insights
+        WHERE ads_account_id = ANY(:ids) AND ativo = true
+    """), params).mappings().all()
+    snap_by_camp = {(str(r["ads_account_id"]), str(r["campaign_id"])): dict(r) for r in snap_rows}
+    ativas = [snap_by_camp[k] for k in daily_camp if k in snap_by_camp]
 
     kpi = {
         "investimentoTotal": round(total_inv, 2),
@@ -173,12 +255,12 @@ def visao_geral(
         "cpcMedio": round(total_inv / total_cliques if total_cliques > 0 else 0, 2),
         "roasMedio": round(total_val / total_inv if total_inv > 0 else 0, 4),
         "impressionShareMedio": round(
-            sum(float(c["impression_share"] or 0) for c in campanhas if c["impression_share"]) /
-            max(1, sum(1 for c in campanhas if c["impression_share"])), 4
+            sum(float(c["impression_share"] or 0) for c in ativas if c.get("impression_share")) /
+            max(1, sum(1 for c in ativas if c.get("impression_share"))), 4
         ),
         "qualityScoreMedio": round(
-            sum(float(c["quality_score_medio"] or 0) for c in campanhas if c["quality_score_medio"]) /
-            max(1, sum(1 for c in campanhas if c["quality_score_medio"])), 2
+            sum(float(c["quality_score_medio"] or 0) for c in ativas if c.get("quality_score_medio")) /
+            max(1, sum(1 for c in ativas if c.get("quality_score_medio"))), 2
         ),
         # Deltas calculados via período anterior (simplificado — 0 se não há dado anterior)
         "deltaInvestimento": 0.0,
@@ -189,38 +271,41 @@ def visao_geral(
         "deltaRoas": 0.0,
     }
 
-    # Breakdown por tipo de campanha
-    tipos: dict[str, dict] = {}
+    # Breakdown por tipo de campanha (métricas da fatia; tipo via snapshot)
     CORES = {
         "SEARCH": "#3E5BFF", "DISPLAY": "#7A5AF8", "PERFORMANCE_MAX": "#00F5FF",
         "VIDEO": "#FF5C8D", "SHOPPING": "#0FA856", "DEMAND_GEN": "#C9A84C",
     }
-    for c in campanhas:
-        t = c["tipo_campanha"] or "OUTROS"
+    tipos: dict[str, dict] = {}
+    for key, agg in daily_camp.items():
+        snap_c = snap_by_camp.get(key)
+        t = (snap_c.get("tipo_campanha") if snap_c else None) or "OUTROS"
         if t not in tipos:
             tipos[t] = {"tipo": t, "label": t.replace("_", " ").title(),
-                        "investimento": 0, "cliques": 0, "conversoes": 0,
-                        "ctr": 0, "roas": 0, "cor": CORES.get(t, "#888")}
-        tipos[t]["investimento"] += float(c["investimento"] or 0)
-        tipos[t]["cliques"] += int(c["cliques"] or 0)
-        tipos[t]["conversoes"] += float(c["conversoes"] or 0)
+                        "investimento": 0.0, "cliques": 0, "conversoes": 0.0,
+                        "ctr": 0, "roas": 0, "cor": CORES.get(t, "#888"),
+                        "_imp": 0, "_val": 0.0}
+        tipos[t]["investimento"] += agg["investimento"]
+        tipos[t]["cliques"] += agg["cliques"]
+        tipos[t]["conversoes"] += agg["conversoes"]
+        tipos[t]["_imp"] += agg["impressoes"]
+        tipos[t]["_val"] += agg["valor_conversoes"]
 
     for t_data in tipos.values():
-        t_data["ctr"] = round(
-            (t_data["cliques"] / max(1, sum(int(c["impressoes"] or 0)
-             for c in campanhas if c["tipo_campanha"] == t_data["tipo"])) * 100), 4)
-        t_data["roas"] = round(
-            sum(float(c["valor_conversoes"] or 0) for c in campanhas if c["tipo_campanha"] == t_data["tipo"]) /
-            max(0.01, t_data["investimento"]), 4)
+        imp = t_data.pop("_imp"); val = t_data.pop("_val")
+        t_data["ctr"] = round((t_data["cliques"] / imp * 100) if imp > 0 else 0, 4)
+        t_data["roas"] = round(val / t_data["investimento"], 4) if t_data["investimento"] > 0 else 0
+        t_data["investimento"] = round(t_data["investimento"], 2)
+        t_data["conversoes"] = round(t_data["conversoes"], 2)
 
-    # Distribuição Quality Score
+    # Distribuição Quality Score (snapshot das campanhas ativas na fatia)
     faixas = [
         {"faixa": "9-10", "min": 9, "max": 10, "cor": "#0FA856"},
         {"faixa": "7-8", "min": 7, "max": 8, "cor": "#3E5BFF"},
         {"faixa": "4-6", "min": 4, "max": 6, "cor": "#C9A84C"},
         {"faixa": "0-3", "min": 0, "max": 3, "cor": "#FF5C8D"},
     ]
-    qs_vals = [float(c["quality_score_medio"] or 0) for c in campanhas if c["quality_score_medio"]]
+    qs_vals = [float(c["quality_score_medio"] or 0) for c in ativas if c.get("quality_score_medio")]
     distribuicao_qs = []
     for f in faixas:
         distribuicao_qs.append({
@@ -345,14 +430,14 @@ def listar_grupos(
         filtros += " AND campaign_id = :cid"
         params["cid"] = campaign_id
 
-    rows = db.execute(text(f"""
+    snap = db.execute(text(f"""
         SELECT * FROM google_grupos_insights
-        WHERE ads_account_id = ANY(:ids)
-          AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
+        WHERE ads_account_id = ANY(:ids) AND ativo = true
           {filtros}
-        ORDER BY investimento DESC
     """), params).mappings().all()
-    return [dict(r) for r in rows]
+    daily = _agg_diario(db, "google_grupos_diarios", ["grupo_id", "tipo_grupo"],
+                        params, filtros=filtros, custo_col="investimento")
+    return _overlay(snap, daily, ["grupo_id", "tipo_grupo"])
 
 
 @router.get("/keywords")
@@ -380,14 +465,14 @@ def listar_keywords(
         filtros += " AND ad_group_id = :agid"
         params["agid"] = ad_group_id
 
-    rows = db.execute(text(f"""
+    snap = db.execute(text(f"""
         SELECT * FROM google_keywords_insights
-        WHERE ads_account_id = ANY(:ids)
-          AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
+        WHERE ads_account_id = ANY(:ids) AND ativo = true
           {filtros}
-        ORDER BY investimento DESC
     """), params).mappings().all()
-    return [dict(r) for r in rows]
+    daily = _agg_diario(db, "google_keywords_diarios", ["criterion_id"],
+                        params, filtros=filtros, custo_col="investimento")
+    return _overlay(snap, daily, ["criterion_id"])
 
 
 @router.get("/anuncios")
@@ -411,14 +496,14 @@ def listar_anuncios(
         filtros += " AND campaign_id = :cid"
         params["cid"] = campaign_id
 
-    rows = db.execute(text(f"""
+    snap = db.execute(text(f"""
         SELECT * FROM google_anuncios_insights
-        WHERE ads_account_id = ANY(:ids)
-          AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
+        WHERE ads_account_id = ANY(:ids) AND ativo = true
           {filtros}
-        ORDER BY investimento DESC
     """), params).mappings().all()
-    return [dict(r) for r in rows]
+    daily = _agg_diario(db, "google_anuncios_diarios", ["ad_id"],
+                        params, filtros=filtros, custo_col="investimento")
+    return _overlay(snap, daily, ["ad_id"])
 
 
 @router.get("/publicos")
@@ -442,11 +527,31 @@ def listar_publicos(
         filtros += " AND campaign_id = :cid"
         params["cid"] = campaign_id
 
-    rows = db.execute(text(f"""
+    snap = db.execute(text(f"""
         SELECT * FROM google_publicos_insights
-        WHERE ads_account_id = ANY(:ids)
-          AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
+        WHERE ads_account_id = ANY(:ids) AND ativo = true
           {filtros}
-        ORDER BY investimento DESC
     """), params).mappings().all()
-    return [dict(r) for r in rows]
+    daily = _agg_diario(db, "google_publicos_diarios", ["criterion_id"],
+                        params, filtros=filtros, custo_col="investimento", com_valor=False)
+
+    itens = []
+    for r in snap:
+        d = dict(r)
+        key = (str(d["ads_account_id"]), str(d["criterion_id"]))
+        agg = daily.get(key)
+        if not agg:
+            continue
+        inv = agg["investimento"]; clq = agg["cliques"]; imp = agg["impressoes"]
+        leads = int(round(agg["conversoes"]))
+        d["investimento"] = round(inv, 2)
+        d["leads"] = leads
+        d["cpl"] = round(inv / leads, 2) if leads > 0 else 0.0
+        d["ctr"] = round((clq / imp * 100) if imp > 0 else 0, 6)
+        itens.append(d)
+
+    total_leads = sum(i["leads"] for i in itens) or 1
+    for i in itens:
+        i["percentual"] = round(i["leads"] / total_leads * 100, 4)
+    itens.sort(key=lambda x: x.get("investimento", 0) or 0, reverse=True)
+    return itens

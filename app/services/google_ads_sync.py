@@ -84,6 +84,10 @@ def sincronizar_conta_google(
 
     _prog("persistindo_diarios", 88)
     _upsert_diarios(db, dados["dados_diarios"], ads_account_id, workspace_id)
+    _upsert_grupos_diarios(db, dados.get("grupos_diarios", []), ads_account_id, workspace_id)
+    _upsert_keywords_diarios(db, dados.get("keywords_diarios", []), ads_account_id, workspace_id)
+    _upsert_anuncios_diarios(db, dados.get("anuncios_diarios", []), ads_account_id, workspace_id)
+    _upsert_publicos_diarios(db, dados.get("publicos_diarios", []), ads_account_id, workspace_id)
 
     # ── Atualiza timestamp da conta ───────────────────────────────────────
     _prog("finalizando", 95)
@@ -120,10 +124,18 @@ def _limpar_janela(db, ads_account_id: str, start_str: str, end_str: str) -> Non
     ):
         db.execute(text(f"DELETE FROM {tabela} WHERE ads_account_id = :aid"), {"aid": ads_account_id})
 
-    db.execute(text("""
-        DELETE FROM google_dados_diarios
-        WHERE ads_account_id = :aid AND data BETWEEN :start AND :end
-    """), {"aid": ads_account_id, "start": start_str, "end": end_str})
+    # Tabelas diárias por entidade: DELETE por range (preserva fora da janela)
+    for tabela in (
+        "google_dados_diarios",
+        "google_grupos_diarios",
+        "google_keywords_diarios",
+        "google_anuncios_diarios",
+        "google_publicos_diarios",
+    ):
+        db.execute(text(f"""
+            DELETE FROM {tabela}
+            WHERE ads_account_id = :aid AND data BETWEEN :start AND :end
+        """), {"aid": ads_account_id, "start": start_str, "end": end_str})
 
     db.commit()
 
@@ -338,24 +350,137 @@ def _upsert_publicos(db, publicos, ads_account_id, workspace_id, p_ini, p_fim):
 
 
 def _upsert_diarios(db, diarios, ads_account_id, workspace_id):
-    for d in diarios:
-        db.execute(text("""
-            INSERT INTO google_dados_diarios
-                (workspace_id, ads_account_id, campaign_id, data,
-                 cliques, impressoes, conversoes, custo, ctr, sincronizado_em)
-            VALUES
-                (:wid, :aid, :campaign_id, :data,
-                 :cliques, :impressoes, :conversoes, :custo, :ctr, NOW())
-            ON CONFLICT (ads_account_id, campaign_id, data)
-            DO UPDATE SET
-                cliques = EXCLUDED.cliques, impressoes = EXCLUDED.impressoes,
-                conversoes = EXCLUDED.conversoes, custo = EXCLUDED.custo,
-                ctr = EXCLUDED.ctr, sincronizado_em = NOW()
-        """), {
-            "wid": workspace_id, "aid": ads_account_id,
-            "campaign_id": d["campaign_id"], "data": d["data"],
-            "cliques": d.get("cliques", 0), "impressoes": d.get("impressoes", 0),
-            "conversoes": d.get("conversoes", 0), "custo": d.get("custo", 0),
-            "ctr": d.get("ctr", 0),
-        })
+    if not diarios:
+        return
+    params = [{
+        "wid": workspace_id, "aid": ads_account_id,
+        "campaign_id": d["campaign_id"], "data": d["data"],
+        "cliques": d.get("cliques", 0), "impressoes": d.get("impressoes", 0),
+        "conversoes": d.get("conversoes", 0),
+        "valor_conversoes": d.get("valor_conversoes", 0),
+        "custo": d.get("custo", 0), "ctr": d.get("ctr", 0),
+    } for d in diarios]
+    db.execute(text("""
+        INSERT INTO google_dados_diarios
+            (workspace_id, ads_account_id, campaign_id, data,
+             cliques, impressoes, conversoes, valor_conversoes, custo, ctr, sincronizado_em)
+        VALUES
+            (:wid, :aid, :campaign_id, :data,
+             :cliques, :impressoes, :conversoes, :valor_conversoes, :custo, :ctr, NOW())
+        ON CONFLICT (ads_account_id, campaign_id, data)
+        DO UPDATE SET
+            cliques = EXCLUDED.cliques, impressoes = EXCLUDED.impressoes,
+            conversoes = EXCLUDED.conversoes, valor_conversoes = EXCLUDED.valor_conversoes,
+            custo = EXCLUDED.custo, ctr = EXCLUDED.ctr, sincronizado_em = NOW()
+    """), params)
+    db.commit()
+
+
+def _upsert_grupos_diarios(db, diarios, ads_account_id, workspace_id):
+    if not diarios:
+        return
+    params = [{
+        "wid": workspace_id, "aid": ads_account_id,
+        "campaign_id": d["campaign_id"], "grupo_id": d["grupo_id"],
+        "tipo_grupo": d.get("tipo_grupo", "AD_GROUP"), "data": d["data"],
+        "investimento": d.get("investimento", 0), "cliques": d.get("cliques", 0),
+        "impressoes": d.get("impressoes", 0), "conversoes": d.get("conversoes", 0),
+        "valor_conversoes": d.get("valor_conversoes", 0),
+    } for d in diarios]
+    db.execute(text("""
+        INSERT INTO google_grupos_diarios
+            (workspace_id, ads_account_id, campaign_id, grupo_id, tipo_grupo, data,
+             investimento, cliques, impressoes, conversoes, valor_conversoes, sincronizado_em)
+        VALUES
+            (:wid, :aid, :campaign_id, :grupo_id, :tipo_grupo, :data,
+             :investimento, :cliques, :impressoes, :conversoes, :valor_conversoes, NOW())
+        ON CONFLICT (ads_account_id, grupo_id, tipo_grupo, data)
+        DO UPDATE SET
+            campaign_id = EXCLUDED.campaign_id,
+            investimento = EXCLUDED.investimento, cliques = EXCLUDED.cliques,
+            impressoes = EXCLUDED.impressoes, conversoes = EXCLUDED.conversoes,
+            valor_conversoes = EXCLUDED.valor_conversoes, sincronizado_em = NOW()
+    """), params)
+    db.commit()
+
+
+def _upsert_keywords_diarios(db, diarios, ads_account_id, workspace_id):
+    if not diarios:
+        return
+    params = [{
+        "wid": workspace_id, "aid": ads_account_id,
+        "campaign_id": d["campaign_id"], "ad_group_id": d["ad_group_id"],
+        "criterion_id": d["criterion_id"], "data": d["data"],
+        "investimento": d.get("investimento", 0), "cliques": d.get("cliques", 0),
+        "impressoes": d.get("impressoes", 0), "conversoes": d.get("conversoes", 0),
+        "valor_conversoes": d.get("valor_conversoes", 0),
+    } for d in diarios]
+    db.execute(text("""
+        INSERT INTO google_keywords_diarios
+            (workspace_id, ads_account_id, campaign_id, ad_group_id, criterion_id, data,
+             investimento, cliques, impressoes, conversoes, valor_conversoes, sincronizado_em)
+        VALUES
+            (:wid, :aid, :campaign_id, :ad_group_id, :criterion_id, :data,
+             :investimento, :cliques, :impressoes, :conversoes, :valor_conversoes, NOW())
+        ON CONFLICT (ads_account_id, criterion_id, data)
+        DO UPDATE SET
+            campaign_id = EXCLUDED.campaign_id, ad_group_id = EXCLUDED.ad_group_id,
+            investimento = EXCLUDED.investimento, cliques = EXCLUDED.cliques,
+            impressoes = EXCLUDED.impressoes, conversoes = EXCLUDED.conversoes,
+            valor_conversoes = EXCLUDED.valor_conversoes, sincronizado_em = NOW()
+    """), params)
+    db.commit()
+
+
+def _upsert_anuncios_diarios(db, diarios, ads_account_id, workspace_id):
+    if not diarios:
+        return
+    params = [{
+        "wid": workspace_id, "aid": ads_account_id,
+        "campaign_id": d["campaign_id"], "ad_group_id": d["ad_group_id"],
+        "ad_id": d["ad_id"], "data": d["data"],
+        "investimento": d.get("investimento", 0), "cliques": d.get("cliques", 0),
+        "impressoes": d.get("impressoes", 0), "conversoes": d.get("conversoes", 0),
+        "valor_conversoes": d.get("valor_conversoes", 0),
+    } for d in diarios]
+    db.execute(text("""
+        INSERT INTO google_anuncios_diarios
+            (workspace_id, ads_account_id, campaign_id, ad_group_id, ad_id, data,
+             investimento, cliques, impressoes, conversoes, valor_conversoes, sincronizado_em)
+        VALUES
+            (:wid, :aid, :campaign_id, :ad_group_id, :ad_id, :data,
+             :investimento, :cliques, :impressoes, :conversoes, :valor_conversoes, NOW())
+        ON CONFLICT (ads_account_id, ad_id, data)
+        DO UPDATE SET
+            campaign_id = EXCLUDED.campaign_id, ad_group_id = EXCLUDED.ad_group_id,
+            investimento = EXCLUDED.investimento, cliques = EXCLUDED.cliques,
+            impressoes = EXCLUDED.impressoes, conversoes = EXCLUDED.conversoes,
+            valor_conversoes = EXCLUDED.valor_conversoes, sincronizado_em = NOW()
+    """), params)
+    db.commit()
+
+
+def _upsert_publicos_diarios(db, diarios, ads_account_id, workspace_id):
+    if not diarios:
+        return
+    params = [{
+        "wid": workspace_id, "aid": ads_account_id,
+        "campaign_id": d["campaign_id"], "criterion_id": d["criterion_id"], "data": d["data"],
+        "investimento": d.get("investimento", 0), "cliques": d.get("cliques", 0),
+        "impressoes": d.get("impressoes", 0), "conversoes": d.get("conversoes", 0),
+    } for d in diarios]
+    db.execute(text("""
+        INSERT INTO google_publicos_diarios
+            (workspace_id, ads_account_id, campaign_id, criterion_id, data,
+             investimento, cliques, impressoes, conversoes, sincronizado_em)
+        VALUES
+            (:wid, :aid, :campaign_id, :criterion_id, :data,
+             :investimento, :cliques, :impressoes, :conversoes, NOW())
+        ON CONFLICT (ads_account_id, criterion_id, data)
+        DO UPDATE SET
+            campaign_id = EXCLUDED.campaign_id,
+            investimento = EXCLUDED.investimento, cliques = EXCLUDED.cliques,
+            impressoes = EXCLUDED.impressoes, conversoes = EXCLUDED.conversoes,
+            sincronizado_em = NOW()
+    """), params)
     db.commit()

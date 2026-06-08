@@ -97,10 +97,64 @@ QUERY_DADOS_DIARIOS = """
 SELECT
     campaign.id, segments.date,
     metrics.clicks, metrics.impressions, metrics.conversions,
-    metrics.cost_micros
+    metrics.conversions_value, metrics.cost_micros
 FROM campaign
 WHERE segments.date BETWEEN '{start}' AND '{end}'
   AND campaign.status != 'REMOVED'
+"""
+
+# ─── Queries DIÁRIAS por entidade (segments.date no SELECT → 1 linha/dia) ────
+# Alimentam as tabelas google_*_diarios; só métricas somáveis + identidade.
+# As métricas não-somáveis (impression_share, quality_score) e metadados
+# continuam vindo das queries de janela acima (snapshot).
+
+QUERY_GRUPOS_DIARIO = """
+SELECT
+    campaign.id, ad_group.id, segments.date,
+    metrics.cost_micros, metrics.clicks, metrics.impressions,
+    metrics.conversions, metrics.conversions_value
+FROM ad_group
+WHERE segments.date BETWEEN '{start}' AND '{end}'
+  AND ad_group.status != 'REMOVED'
+"""
+
+QUERY_ASSET_GROUPS_DIARIO = """
+SELECT
+    campaign.id, asset_group.id, segments.date,
+    metrics.cost_micros, metrics.clicks, metrics.impressions,
+    metrics.conversions, metrics.conversions_value
+FROM asset_group
+WHERE segments.date BETWEEN '{start}' AND '{end}'
+  AND asset_group.status != 'REMOVED'
+"""
+
+QUERY_KEYWORDS_DIARIO = """
+SELECT
+    campaign.id, ad_group.id, ad_group_criterion.criterion_id, segments.date,
+    metrics.cost_micros, metrics.clicks, metrics.impressions,
+    metrics.conversions, metrics.conversions_value
+FROM keyword_view
+WHERE segments.date BETWEEN '{start}' AND '{end}'
+  AND ad_group_criterion.status != 'REMOVED'
+"""
+
+QUERY_ANUNCIOS_DIARIO = """
+SELECT
+    campaign.id, ad_group.id, ad_group_ad.ad.id, segments.date,
+    metrics.cost_micros, metrics.clicks, metrics.impressions,
+    metrics.conversions, metrics.conversions_value
+FROM ad_group_ad
+WHERE segments.date BETWEEN '{start}' AND '{end}'
+  AND ad_group_ad.status != 'REMOVED'
+"""
+
+QUERY_PUBLICOS_DIARIO = """
+SELECT
+    campaign.id, ad_group_criterion.criterion_id, segments.date,
+    metrics.cost_micros, metrics.clicks, metrics.impressions,
+    metrics.conversions
+FROM audience_view
+WHERE segments.date BETWEEN '{start}' AND '{end}'
 """
 
 QUERY_GRUPOS = """
@@ -293,19 +347,21 @@ def buscar_dados_conta(cred: dict, customer_id: str, start: str, end: str) -> di
         scores = qs_por_campanha.get(c["campaign_id"], [])
         c["quality_score_medio"] = round(sum(scores) / len(scores), 2) if scores else 0.0
 
-    # ── Dados Diários ──────────────────────────────────────────────────────
+    # ── Dados Diários (campanhas) ──────────────────────────────────────────
     dados_diarios = []
     for row in stream(QUERY_DADOS_DIARIOS):
         inv = _m(row.metrics.cost_micros)
         cliques = int(row.metrics.clicks)
         imp = int(row.metrics.impressions)
         conv = _safe(row.metrics.conversions)
+        val = _safe(row.metrics.conversions_value)
         dados_diarios.append({
             "campaign_id": str(row.campaign.id),
             "data": row.segments.date,
             "cliques": cliques,
             "impressoes": imp,
             "conversoes": conv,
+            "valor_conversoes": val,
             "custo": inv,
             "ctr": (cliques / imp * 100) if imp > 0 else 0.0,
         })
@@ -426,12 +482,99 @@ def buscar_dados_conta(cred: dict, customer_id: str, start: str, end: str) -> di
         )
         publicos = []
 
+    # ── Diários por entidade (segments.date) ───────────────────────────────
+    def _stream_safe(query: str, label: str) -> list:
+        """Stream com fail-safe — alguns recursos (asset_group, audience_view)
+        podem rejeitar segments.date em certas contas."""
+        try:
+            return stream(query)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "query diária %s falhou (conta pode não suportar): %s", label, exc
+            )
+            return []
+
+    # Grupos diários (ad_group + asset_group/PMax)
+    grupos_diarios = []
+    for row in _stream_safe(QUERY_GRUPOS_DIARIO, "grupos"):
+        grupos_diarios.append({
+            "grupo_id": str(row.ad_group.id),
+            "tipo_grupo": "AD_GROUP",
+            "campaign_id": str(row.campaign.id),
+            "data": row.segments.date,
+            "investimento": _m(row.metrics.cost_micros),
+            "cliques": int(row.metrics.clicks),
+            "impressoes": int(row.metrics.impressions),
+            "conversoes": _safe(row.metrics.conversions),
+            "valor_conversoes": _safe(row.metrics.conversions_value),
+        })
+    for row in _stream_safe(QUERY_ASSET_GROUPS_DIARIO, "asset_groups"):
+        grupos_diarios.append({
+            "grupo_id": str(row.asset_group.id),
+            "tipo_grupo": "ASSET_GROUP",
+            "campaign_id": str(row.campaign.id),
+            "data": row.segments.date,
+            "investimento": _m(row.metrics.cost_micros),
+            "cliques": int(row.metrics.clicks),
+            "impressoes": int(row.metrics.impressions),
+            "conversoes": _safe(row.metrics.conversions),
+            "valor_conversoes": _safe(row.metrics.conversions_value),
+        })
+
+    # Keywords diárias
+    keywords_diarios = []
+    for row in _stream_safe(QUERY_KEYWORDS_DIARIO, "keywords"):
+        keywords_diarios.append({
+            "criterion_id": str(row.ad_group_criterion.criterion_id),
+            "ad_group_id": str(row.ad_group.id),
+            "campaign_id": str(row.campaign.id),
+            "data": row.segments.date,
+            "investimento": _m(row.metrics.cost_micros),
+            "cliques": int(row.metrics.clicks),
+            "impressoes": int(row.metrics.impressions),
+            "conversoes": _safe(row.metrics.conversions),
+            "valor_conversoes": _safe(row.metrics.conversions_value),
+        })
+
+    # Anúncios diários
+    anuncios_diarios = []
+    for row in _stream_safe(QUERY_ANUNCIOS_DIARIO, "anuncios"):
+        anuncios_diarios.append({
+            "ad_id": str(row.ad_group_ad.ad.id),
+            "ad_group_id": str(row.ad_group.id),
+            "campaign_id": str(row.campaign.id),
+            "data": row.segments.date,
+            "investimento": _m(row.metrics.cost_micros),
+            "cliques": int(row.metrics.clicks),
+            "impressoes": int(row.metrics.impressions),
+            "conversoes": _safe(row.metrics.conversions),
+            "valor_conversoes": _safe(row.metrics.conversions_value),
+        })
+
+    # Públicos diários
+    publicos_diarios = []
+    for row in _stream_safe(QUERY_PUBLICOS_DIARIO, "publicos"):
+        publicos_diarios.append({
+            "criterion_id": str(row.ad_group_criterion.criterion_id),
+            "campaign_id": str(row.campaign.id),
+            "data": row.segments.date,
+            "investimento": _m(row.metrics.cost_micros),
+            "cliques": int(row.metrics.clicks),
+            "impressoes": int(row.metrics.impressions),
+            "conversoes": _safe(row.metrics.conversions),
+        })
+
     return {
         "campanhas": campanhas,
         "dados_diarios": dados_diarios,
         "grupos": grupos,
+        "grupos_diarios": grupos_diarios,
         "keywords": keywords,
+        "keywords_diarios": keywords_diarios,
         "anuncios": anuncios,
+        "anuncios_diarios": anuncios_diarios,
         "publicos": publicos,
+        "publicos_diarios": publicos_diarios,
         "periodo": {"start": start, "end": end},
     }
