@@ -57,10 +57,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     await authLogout()
-    setUser(null)
-    setTokenState(null)
-    router.push('/login')
-  }, [router])
+    // Hard navigation evita re-render das páginas internas com estado vazio
+    // antes da transição, o que causava erro em tabelas (isRowHeader)
+    window.location.replace('/login')
+  }, [])
 
   if (isLoading) {
     return (
