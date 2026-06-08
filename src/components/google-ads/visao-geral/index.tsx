@@ -13,10 +13,11 @@ import { InsightsGoogle } from './insights-google'
 
 interface Props {
   filtros: FiltrosGoogle
+  adsAccountId?: string
 }
 
-export function VisaoGeralGoogle({ filtros }: Props) {
-  const { campanhas, kpi, dadosDiarios, breakdownTipos, distribuicaoQS, isLoading } = useGoogleVisaoGeral(filtros)
+export function VisaoGeralGoogle({ filtros, adsAccountId }: Props) {
+  const { campanhas, kpi, dadosDiarios, breakdownTipos, distribuicaoQS, isLoading } = useGoogleVisaoGeral(filtros, adsAccountId)
   const insights = useInsightsGoogle(campanhas)
 
   const [isMobile, setIsMobile] = React.useState(false)

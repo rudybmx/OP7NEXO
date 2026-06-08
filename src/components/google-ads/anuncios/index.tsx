@@ -2,8 +2,8 @@
 
 import { useGoogleAnuncios } from '@/hooks/use-google-anuncios'
 
-export function AbaAnunciosGoogle() {
-  const { anuncios } = useGoogleAnuncios()
+export function AbaAnunciosGoogle({ adsAccountId }: { adsAccountId?: string }) {
+  const { anuncios } = useGoogleAnuncios(undefined, adsAccountId)
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: 16 }}>

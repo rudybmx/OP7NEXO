@@ -10,7 +10,7 @@ import { FiltrosGrupos } from './filtros-grupos'
 import { TabelaGrupos } from './tabela-grupos'
 import { ModalGrupo } from './modal-grupo'
 
-export function AbaGruposGoogle() {
+export function AbaGruposGoogle({ adsAccountId }: { adsAccountId?: string }) {
   const [filtros, setFiltros] = useState<FiltrosGruposGoogle>({
     busca: '',
     campanhaId: 'todas',
@@ -21,7 +21,7 @@ export function AbaGruposGoogle() {
   })
   const [grupoModalId, setGrupoModalId] = useState<string | null>(null)
 
-  const { grupos, campanhasUnicas } = useGoogleGrupos(filtros)
+  const { grupos, campanhasUnicas } = useGoogleGrupos(filtros, undefined, adsAccountId)
   const insights = useInsightsGrupos(grupos)
 
   const grupoModal = grupos.find(g => g.id === grupoModalId) ?? null

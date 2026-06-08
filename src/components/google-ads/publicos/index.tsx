@@ -2,8 +2,8 @@
 
 import { useGooglePublicos } from '@/hooks/use-google-publicos'
 
-export function AbaPublicosGoogle() {
-  const { publicos } = useGooglePublicos()
+export function AbaPublicosGoogle({ adsAccountId }: { adsAccountId?: string }) {
+  const { publicos } = useGooglePublicos(undefined, adsAccountId)
 
   return (
     <div style={{

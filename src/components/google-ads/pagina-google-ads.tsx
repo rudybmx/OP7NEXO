@@ -1,17 +1,19 @@
 'use client'
 
-import { useState } from 'react'
-import { 
-  ChevronDown, 
-  Check, 
-  LayoutDashboard, 
-  Megaphone, 
-  Users, 
-  Type, 
-  Image, 
-  Globe 
+import { useState, useEffect } from 'react'
+import {
+  ChevronDown,
+  Check,
+  LayoutDashboard,
+  Megaphone,
+  Users,
+  Type,
+  Image,
+  Globe
 } from 'lucide-react'
 import type { FiltrosGoogle } from '@/types/google-ads'
+import { useWorkspace } from '@/lib/workspace-context'
+import api from '@/lib/api-client'
 import { VisaoGeralGoogle } from './visao-geral'
 import { AbaCampanhasGoogle } from './campanhas'
 import { AbaGruposGoogle } from './grupos'
@@ -106,10 +108,39 @@ export function PaginaGoogleAds() {
     status: 'todos',
   })
 
+  const { workspaceAtivo } = useWorkspace()
+  const wsId = workspaceAtivo?.id
+
+  const [contasGoogle, setContasGoogle] = useState<{ id: string; account_name: string }[]>([])
+  const [selectedContaId, setSelectedContaId] = useState<string>('')
+
+  useEffect(() => {
+    if (!wsId) return
+    api.get<{ id: string; account_name: string; plataforma: string }[]>(
+      `/workspaces/${wsId}/ads-accounts`
+    )
+      .then(all => setContasGoogle(all.filter(c => c.plataforma === 'google')))
+      .catch(() => {})
+  }, [wsId])
+
   return (
     <div style={{ padding: '24px 32px' }}>
       {/* Filtros globais */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        {/* Seletor de conta — primeiro na barra */}
+        {contasGoogle.length > 0 && (
+          <GlassSelect
+            label="Todas as contas"
+            value={selectedContaId}
+            onChange={setSelectedContaId}
+            minWidth={180}
+            options={[
+              { label: 'Todas as contas', value: '' },
+              ...contasGoogle.map(c => ({ label: c.account_name, value: c.id })),
+            ]}
+          />
+        )}
+
         <GlassSelect
           label="Todos os tipos"
           value={filtros.tipoCampanha}
@@ -204,12 +235,12 @@ export function PaginaGoogleAds() {
       </div>
 
       {/* Conteúdo das Abas */}
-      {abaAtiva === 'Visão geral' && <VisaoGeralGoogle filtros={filtros} />}
-      {abaAtiva === 'Campanhas' && <AbaCampanhasGoogle />}
-      {abaAtiva === 'Grupos de anúncios' && <AbaGruposGoogle />}
-      {abaAtiva === 'Palavras-chave' && <AbaPalavrasChaveGoogle />}
-      {abaAtiva === 'Anúncios' && <AbaAnunciosGoogle />}
-      {abaAtiva === 'Públicos' && <AbaPublicosGoogle />}
+      {abaAtiva === 'Visão geral'        && <VisaoGeralGoogle      filtros={filtros} adsAccountId={selectedContaId || undefined} />}
+      {abaAtiva === 'Campanhas'          && <AbaCampanhasGoogle     adsAccountId={selectedContaId || undefined} />}
+      {abaAtiva === 'Grupos de anúncios' && <AbaGruposGoogle        adsAccountId={selectedContaId || undefined} />}
+      {abaAtiva === 'Palavras-chave'     && <AbaPalavrasChaveGoogle adsAccountId={selectedContaId || undefined} />}
+      {abaAtiva === 'Anúncios'           && <AbaAnunciosGoogle      adsAccountId={selectedContaId || undefined} />}
+      {abaAtiva === 'Públicos'           && <AbaPublicosGoogle      adsAccountId={selectedContaId || undefined} />}
     </div>
   )
 }
