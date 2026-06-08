@@ -304,6 +304,20 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - `PageShell` e `ContentGrid` em `src/components/layout/` como layout components reutilizáveis
 - CSS: ~40 novos imports de componentes HeroUI em `globals.css` (additive, produção intacta)
 
+### ✅ Implementado (2026-06-07) — CRM Conversas Arquivadas
+
+- Nova aba `/crm/atendimento/arquivado`: página de conversas resolvidas
+- KPIs: total arquivadas, ganhas (convertidas), perdidas
+- Filtro por status de resolução
+- Componente: `PaginaArquivado` (`pagina-arquivado.tsx`)
+- API Routes novas:
+  - `/api/whatsapp/conversations/arquivadas` (GET)
+  - `/api/whatsapp/conversations/arquivadas/[id]` (PATCH)
+- API Route alterada:
+  - `/api/whatsapp/conversations/[id]/status` (PATCH): integrada ao fluxo de arquivamento
+- `use-resolver-conversa.ts`: suporte ao fluxo de arquivamento
+- `pagina-atendimento.tsx`, `pagina-agentes.tsx`: integrados ao novo fluxo
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos
