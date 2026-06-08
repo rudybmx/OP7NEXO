@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 
 interface UseResolverConversaReturn {
-  resolver: (conversaId: string, resolucao?: string) => Promise<boolean>
+  resolver: (conversaId: string, resolucao?: string, observacao?: string) => Promise<boolean>
   isResolvendo: boolean
   error: string | null
 }
@@ -12,7 +12,7 @@ export function useResolverConversa(): UseResolverConversaReturn {
   const [isResolvendo, setIsResolvendo] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const resolver = useCallback(async (conversaId: string, resolucao?: string): Promise<boolean> => {
+  const resolver = useCallback(async (conversaId: string, resolucao?: string, observacao?: string): Promise<boolean> => {
     if (!conversaId) return false
     try {
       setIsResolvendo(true)
@@ -20,7 +20,7 @@ export function useResolverConversa(): UseResolverConversaReturn {
       const res = await fetch(`/api/whatsapp/conversations/${conversaId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'resolvido', resolucao }),
+        body: JSON.stringify({ status: 'resolvido', resolucao, observacao }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))

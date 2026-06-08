@@ -33,23 +33,7 @@ interface Agente {
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
-const AGENTES_MOCK: Agente[] = [
-  { 
-    id: 'ag1', nome: 'Ana Lima', email: 'ana@op7-nexo-op7.com',
-    avatarInitials: 'AL', cor: '#3E5BFF', ativo: true,
-    canal: 'whatsapp', conversasAtivas: 3, totalAtendimentos: 142 
-  },
-  { 
-    id: 'ag2', nome: 'Carlos Melo', email: 'carlos@op7-nexo-op7.com',
-    avatarInitials: 'CM', cor: '#7A5AF8', ativo: true,
-    canal: 'todos', conversasAtivas: 1, totalAtendimentos: 89 
-  },
-  { 
-    id: 'ag3', nome: 'Beatriz Costa', email: 'beatriz@op7-nexo-op7.com',
-    avatarInitials: 'BC', cor: '#0fa856', ativo: false,
-    canal: 'messenger', conversasAtivas: 0, totalAtendimentos: 67 
-  },
-]
+const AGENTES_MOCK: Agente[] = []
 
 const CORES_PRESET = ['#3E5BFF', '#7A5AF8', '#0fa856', '#FF5C8D', '#EF9F27', '#FF3B3B']
 

@@ -277,7 +277,7 @@ export function PaginaAtendimento() {
 
   const handleResolver = useCallback(async (resolucao: string, observacao?: string) => {
     if (!conversaAtivaId) return
-    const ok = await resolver(conversaAtivaId, observacao ? `${resolucao}: ${observacao}` : resolucao)
+    const ok = await resolver(conversaAtivaId, resolucao, observacao)
     if (ok) {
       setMostrarModalResolver(false)
       refetch()

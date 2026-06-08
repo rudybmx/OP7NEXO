@@ -16,7 +16,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const { id } = await context.params
     const body = await request.json()
-    const { status, resolucao, ia_ativa } = body
+    const { status, resolucao, observacao, ia_ativa } = body
 
     const setIaAtiva = typeof ia_ativa === 'boolean'
 
@@ -79,6 +79,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           de: conversa.status,
           para: status,
           resolucao: resolucao || null,
+          observacao: observacao || null,
           quando: new Date().toISOString(),
           user_id: access.user.id,
         })
@@ -97,7 +98,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
               ELSE resolution_time
             END,
             ${setIaAtiva ? db`ia_ativa = ${ia_ativa},` : db``}
-            ${historicoEntry ? db`historico_transferencias = historico_transferencias || ${historicoEntry}::jsonb,` : db``}
+            ${historicoEntry ? db`historico_transferencias = COALESCE(historico_transferencias, '[]'::jsonb) || ${historicoEntry}::jsonb,` : db``}
             updated_at = NOW()
           WHERE id = ${id}::uuid
           RETURNING id, status, closed_at, ia_ativa, resolution_time, updated_at
