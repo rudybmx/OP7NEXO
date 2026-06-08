@@ -9,11 +9,34 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_usuario_atual, listar_workspaces_autorizados
+from app.core.deps import get_usuario_atual, listar_workspaces_autorizados, verificar_acesso_workspace
 from app.models.ads_account import AdsAccount
 from app.models.user import User
+from app.services.ads_account_access import listar_ads_account_ids_acessiveis
 
 router = APIRouter(prefix="/google-ads", tags=["google_ads"])
+
+
+def _conta_ids_google(
+    workspace_id: str,
+    ads_account_id: str | None,
+    db: Session,
+    usuario: User,
+) -> list:
+    """Resolve IDs de contas Google acessíveis ao workspace (padrão Meta Ads).
+
+    Usa ads_account_workspace_access para suportar cross-workspace access.
+    Se ads_account_id fornecido, filtra para aquela conta específica.
+    """
+    verificar_acesso_workspace(usuario, uuid.UUID(workspace_id), db)
+    ads_account_uuid = uuid.UUID(ads_account_id) if ads_account_id else None
+    return listar_ads_account_ids_acessiveis(
+        db,
+        uuid.UUID(workspace_id),
+        ads_account_uuid=ads_account_uuid,
+        plataforma="google",
+        include_inactive=True,
+    )
 
 
 def _verificar_acesso_workspace(workspace_id: str, usuario: User, db: Session) -> None:
@@ -82,15 +105,14 @@ def listar_campanhas(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
+    account_ids = _conta_ids_google(workspace_id, ads_account_id, db, usuario)
+    if not account_ids:
+        return []
     start, end = _resolver_datas(periodo, start_date, end_date)
 
-    filtros = "AND g.workspace_id = :wid AND g.periodo_inicio <= :end AND g.periodo_fim >= :start AND g.ativo = true"
-    params: dict = {"wid": workspace_id, "start": start, "end": end}
+    filtros = "AND g.ads_account_id = ANY(:ids) AND g.periodo_inicio <= :end AND g.periodo_fim >= :start AND g.ativo = true"
+    params: dict = {"ids": account_ids, "start": start, "end": end}
 
-    if ads_account_id:
-        filtros += " AND g.ads_account_id = :aid"
-        params["aid"] = ads_account_id
     if tipo and tipo != "todas":
         filtros += " AND g.tipo_campanha = :tipo"
         params["tipo"] = tipo.upper()
@@ -119,21 +141,18 @@ def visao_geral(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
+    account_ids = _conta_ids_google(workspace_id, ads_account_id, db, usuario)
+    if not account_ids:
+        return _kpi_vazio()
     start, end = _resolver_datas(periodo, start_date, end_date)
 
-    params: dict = {"wid": workspace_id, "start": start, "end": end}
-    filtro_aid = ""
-    if ads_account_id:
-        filtro_aid = " AND ads_account_id = :aid"
-        params["aid"] = ads_account_id
+    params: dict = {"ids": account_ids, "start": start, "end": end}
 
-    rows = db.execute(text(f"""
+    rows = db.execute(text("""
         SELECT * FROM google_campanhas_insights
-        WHERE workspace_id = :wid
+        WHERE ads_account_id = ANY(:ids)
           AND periodo_inicio <= :end AND periodo_fim >= :start
           AND ativo = true
-          {filtro_aid}
     """), params).mappings().all()
 
     campanhas = [dict(r) for r in rows]
@@ -211,17 +230,16 @@ def visao_geral(
         })
 
     # Dados diários agregados
-    diarios_rows = db.execute(text(f"""
+    diarios_rows = db.execute(text("""
         SELECT data,
                SUM(cliques) as cliques,
                SUM(impressoes) as impressoes,
                SUM(conversoes) as conversoes,
                SUM(custo) as custo
         FROM google_dados_diarios
-        WHERE workspace_id = :wid
+        WHERE ads_account_id = ANY(:ids)
           AND data BETWEEN :start AND :end
           AND ativo = true
-          {filtro_aid.replace('ads_account_id', 'ads_account_id')}
         GROUP BY data
         ORDER BY data
     """), params).mappings().all()
@@ -273,13 +291,12 @@ def dados_diarios(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
+    account_ids = _conta_ids_google(workspace_id, ads_account_id, db, usuario)
+    if not account_ids:
+        return []
     start, end = _resolver_datas(periodo, start_date, end_date)
-    params: dict = {"wid": workspace_id, "start": start, "end": end}
+    params: dict = {"ids": account_ids, "start": start, "end": end}
     filtros = ""
-    if ads_account_id:
-        filtros += " AND ads_account_id = :aid"
-        params["aid"] = ads_account_id
     if campaign_id:
         filtros += " AND campaign_id = :cid"
         params["cid"] = campaign_id
@@ -288,7 +305,7 @@ def dados_diarios(
         SELECT data, SUM(cliques) cliques, SUM(impressoes) impressoes,
                SUM(conversoes) conversoes, SUM(custo) custo
         FROM google_dados_diarios
-        WHERE workspace_id = :wid AND data BETWEEN :start AND :end AND ativo = true
+        WHERE ads_account_id = ANY(:ids) AND data BETWEEN :start AND :end AND ativo = true
         {filtros}
         GROUP BY data ORDER BY data
     """), params).mappings().all()
@@ -318,20 +335,19 @@ def listar_grupos(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
+    account_ids = _conta_ids_google(workspace_id, ads_account_id, db, usuario)
+    if not account_ids:
+        return []
     start, end = _resolver_datas(periodo, start_date, end_date)
-    params: dict = {"wid": workspace_id, "start": start, "end": end}
+    params: dict = {"ids": account_ids, "start": start, "end": end}
     filtros = ""
-    if ads_account_id:
-        filtros += " AND ads_account_id = :aid"
-        params["aid"] = ads_account_id
     if campaign_id:
         filtros += " AND campaign_id = :cid"
         params["cid"] = campaign_id
 
     rows = db.execute(text(f"""
         SELECT * FROM google_grupos_insights
-        WHERE workspace_id = :wid
+        WHERE ads_account_id = ANY(:ids)
           AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
           {filtros}
         ORDER BY investimento DESC
@@ -351,13 +367,12 @@ def listar_keywords(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
+    account_ids = _conta_ids_google(workspace_id, ads_account_id, db, usuario)
+    if not account_ids:
+        return []
     start, end = _resolver_datas(periodo, start_date, end_date)
-    params: dict = {"wid": workspace_id, "start": start, "end": end}
+    params: dict = {"ids": account_ids, "start": start, "end": end}
     filtros = ""
-    if ads_account_id:
-        filtros += " AND ads_account_id = :aid"
-        params["aid"] = ads_account_id
     if campaign_id:
         filtros += " AND campaign_id = :cid"
         params["cid"] = campaign_id
@@ -367,7 +382,7 @@ def listar_keywords(
 
     rows = db.execute(text(f"""
         SELECT * FROM google_keywords_insights
-        WHERE workspace_id = :wid
+        WHERE ads_account_id = ANY(:ids)
           AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
           {filtros}
         ORDER BY investimento DESC
@@ -386,20 +401,19 @@ def listar_anuncios(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
+    account_ids = _conta_ids_google(workspace_id, ads_account_id, db, usuario)
+    if not account_ids:
+        return []
     start, end = _resolver_datas(periodo, start_date, end_date)
-    params: dict = {"wid": workspace_id, "start": start, "end": end}
+    params: dict = {"ids": account_ids, "start": start, "end": end}
     filtros = ""
-    if ads_account_id:
-        filtros += " AND ads_account_id = :aid"
-        params["aid"] = ads_account_id
     if campaign_id:
         filtros += " AND campaign_id = :cid"
         params["cid"] = campaign_id
 
     rows = db.execute(text(f"""
         SELECT * FROM google_anuncios_insights
-        WHERE workspace_id = :wid
+        WHERE ads_account_id = ANY(:ids)
           AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
           {filtros}
         ORDER BY investimento DESC
@@ -418,20 +432,19 @@ def listar_publicos(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
+    account_ids = _conta_ids_google(workspace_id, ads_account_id, db, usuario)
+    if not account_ids:
+        return []
     start, end = _resolver_datas(periodo, start_date, end_date)
-    params: dict = {"wid": workspace_id, "start": start, "end": end}
+    params: dict = {"ids": account_ids, "start": start, "end": end}
     filtros = ""
-    if ads_account_id:
-        filtros += " AND ads_account_id = :aid"
-        params["aid"] = ads_account_id
     if campaign_id:
         filtros += " AND campaign_id = :cid"
         params["cid"] = campaign_id
 
     rows = db.execute(text(f"""
         SELECT * FROM google_publicos_insights
-        WHERE workspace_id = :wid
+        WHERE ads_account_id = ANY(:ids)
           AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
           {filtros}
         ORDER BY investimento DESC
