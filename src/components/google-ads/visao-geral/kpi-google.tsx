@@ -2,6 +2,10 @@
 
 import type { KpiGoogleVisaoGeral, CampanhaGoogle } from '@/types/google-ads'
 import { formatarMoeda, formatarNumeroCompacto, formatarPorcentagem } from '@/lib/formatar'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
+
+const NOTA_JANELA =
+  'Métrica agregada refletindo o período total de sincronização da conta (não o intervalo de datas selecionado). O Google Ads não fornece esta métrica de forma somável por dia.'
 
 interface Props {
   kpi: KpiGoogleVisaoGeral
@@ -122,7 +126,10 @@ export function KpiGoogle({ kpi, campanhas }: Props) {
       {/* Impression Share */}
       <div style={{ ...cardStyle, gridColumn: 'span 1' }}>
         <GlowLine />
-        <div style={labelStyle}>Impression Share</div>
+        <div style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 4 }}>
+          Impression Share
+          <InfoTooltip title="Impression Share" description={NOTA_JANELA} />
+        </div>
         <div style={valueStyle}>{(isMedia * 100).toFixed(0)}%</div>
         {/* Barras de IS */}
         <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -157,7 +164,10 @@ export function KpiGoogle({ kpi, campanhas }: Props) {
       {/* Quality Score */}
       <div style={cardStyle}>
         <GlowLine />
-        <div style={labelStyle}>Quality Score</div>
+        <div style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 4 }}>
+          Quality Score
+          <InfoTooltip title="Quality Score" description={NOTA_JANELA} />
+        </div>
         <div style={{ ...valueStyle, color: qs > 0 ? qsCor : 'var(--ws-text-3)' }}>
           {qs > 0 ? `${qs.toFixed(1).replace('.', ',')}/10` : 'N/A'}
         </div>
