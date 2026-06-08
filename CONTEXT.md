@@ -59,7 +59,7 @@ meta_videos_catalog         -- catálogo de vídeos com source_url, thumbnail_ur
 ```
 
 ### Migrations
-- Numeradas: `001_` ... `060_` (último: `060_matriz_investimento` — tabela `matriz_investimento` para planejamento de verba por canal/mês; `059_google_ads_*` — tabelas `google_campanhas_insights`, `google_grupos_insights`, `google_keywords_insights`, `google_anuncios_insights`, `google_publicos_insights`, `google_dados_diarios` para sincronização Google Ads)
+- Numeradas: `001_` ... `061_` (último: `061_pmp_unidades_e_campos` — tabela `pmp_unidades`; coluna `ativo` e `unidade_id` em `pmp_plans`; coluna `prioridade` em `pmp_tasks`. Anterior: `060_matriz_investimento` — tabela `matriz_investimento`)
 - Localização: `/root/op7nexo-api/alembic/versions/` (NÃO existe `migrations/` — ver constituição 2.5)
 - Sempre rodar após criar: `bash /root/deploy.sh api` + testar endpoint
 
@@ -267,6 +267,17 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - **Serviços**: `google_ads_client.py` (GoogleAdsClient com login_customer_id MCC, search_stream, 8 queries GAQL, conversão de micros correta) + `google_ads_sync.py` (upsert em lote)
 - **Front**: 6 hooks atualizados para dados reais via SWR + hook `use-google-ads-credentials.ts` novo
 - **Nota crítica**: QS sem `segments.date`, PMax usa `asset_group`, `conversions_value` NÃO divide por 1M
+
+### ✅ Implementado (2026-06-08) — PMP: Edição de Plano e Tarefa (backend)
+
+- **Migration 061**: tabela `pmp_unidades` (workspace_id FK, soft delete); `pmp_plans` ganha `ativo` (soft delete) e `unidade_id` (FK nullable); `pmp_tasks` ganha `prioridade VARCHAR(20) CHECK(baixa|media|alta)`
+- **`PATCH /pmp/plans/{id}`**: edição parcial (UPDATE dinâmico via `model_fields_set`)
+- **`DELETE /pmp/plans/{id}`**: soft delete; `GET /plans` e `GET /plans/{id}` agora filtram `ativo=true`
+- **`POST /pmp/plans/{id}/duplicate`**: clona plano + tarefas ativas (status reset para TODO)
+- **CRUD `/pmp/workspaces/{ws}/unidades`**: `GET`, `POST`, `PATCH /unidades/{id}`, `DELETE /unidades/{id}`
+- **`PATCH .../tasks/{task_id}`**: body ampliado para `TaskUpdate` (todos os campos opcionais); retrocompat com drawer (status-only); RETURNING projeção completa com `prioridade`
+- Spec: `docs/specs/pmp-edicao-plano-tarefa/` (spec.md, plan.md, tasks.md, contracts/)
+- **Pendente**: deploy + rodada 2 de front
 
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
