@@ -11,8 +11,10 @@ const ESTRATEGIA_CONFIG: Record<EstrategiaLance, { label: string; bg: string; bo
   MAXIMIZE_CLICKS:           { label: 'Max. Cliques',    bg: '#faeeda', border: '1px solid rgba(133,79,11,0.25)', txt: '#854f0b' },
 }
 
+const FALLBACK = { label: '', bg: 'rgba(14,20,42,0.06)', border: '1px solid rgba(14,20,42,0.12)', txt: '#5f5e5a' }
+
 export function BadgeEstrategia({ estrategia }: { estrategia: EstrategiaLance }) {
-  const c = ESTRATEGIA_CONFIG[estrategia]
+  const c = ESTRATEGIA_CONFIG[estrategia] ?? { ...FALLBACK, label: estrategia ? String(estrategia).replace(/_/g, ' ') : '—' }
   return (
     <span style={{
       background: c.bg,

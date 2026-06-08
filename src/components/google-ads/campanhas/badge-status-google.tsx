@@ -6,8 +6,10 @@ const STATUS_CONFIG: Record<StatusGoogle, { label: string; bg: string; border: s
   REMOVED: { label: 'Removida', bg: 'rgba(14,20,42,0.08)',  border: '1px solid rgba(14,20,42,0.15)', txt: '#8892b0' },
 }
 
+const FALLBACK = { label: '', bg: 'rgba(14,20,42,0.06)', border: '1px solid rgba(14,20,42,0.12)', txt: '#5f5e5a' }
+
 export function BadgeStatusGoogle({ status }: { status: StatusGoogle }) {
-  const c = STATUS_CONFIG[status]
+  const c = STATUS_CONFIG[status] ?? { ...FALLBACK, label: status ? String(status) : '—' }
   return (
     <span style={{
       background: c.bg,

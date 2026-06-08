@@ -9,8 +9,10 @@ const TIPO_CONFIG: Record<TipoCampanha, { label: string; bg: string; border: str
   DEMAND_GEN:      { label: 'Demand Gen',  bg: '#e1f5ee', border: '1px solid rgba(15,110,86,0.25)', txt: '#0f6e56' },
 }
 
+const FALLBACK = { label: '', bg: 'rgba(14,20,42,0.06)', border: '1px solid rgba(14,20,42,0.12)', txt: '#5f5e5a' }
+
 export function BadgeTipoCampanha({ tipo }: { tipo: TipoCampanha }) {
-  const c = TIPO_CONFIG[tipo]
+  const c = TIPO_CONFIG[tipo] ?? { ...FALLBACK, label: tipo ? String(tipo).replace(/_/g, ' ') : '—' }
   return (
     <span style={{
       background: c.bg,

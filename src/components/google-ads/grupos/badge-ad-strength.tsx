@@ -8,9 +8,11 @@ const STRENGTH_CONFIG: Record<AdStrength, { label: string; bg: string; border: s
   PENDING:   { label: '○ Pending',   bg: '#f0efec', border: '1px solid rgba(14,20,42,0.15)',   txt: '#5f5e5a' },
 }
 
+const FALLBACK = { label: '', bg: 'rgba(14,20,42,0.06)', border: '1px solid rgba(14,20,42,0.12)', txt: '#5f5e5a' }
+
 // Só exibir para tipo PERFORMANCE_MAX
 export function BadgeAdStrength({ strength }: { strength: AdStrength }) {
-  const c = STRENGTH_CONFIG[strength]
+  const c = STRENGTH_CONFIG[strength] ?? { ...FALLBACK, label: strength ? String(strength) : '—' }
   return (
     <span style={{
       background: c.bg,
