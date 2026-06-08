@@ -301,6 +301,16 @@ export default function ContasAdsPage() {
     }
   }, [])
 
+  // Reload silencioso (sem spinner/toast) para polling em background
+  const reloadContasSilent = useCallback(async () => {
+    try {
+      const data = await api.get<AdsAccount[]>('/ads-accounts')
+      setContas(data)
+    } catch {
+      // silencioso — não exibir erro em refresh automático
+    }
+  }, [])
+
   const loadWorkspaces = useCallback(async () => {
     try {
       const data = await api.get<Workspace[]>('/workspaces')
@@ -360,6 +370,17 @@ export default function ContasAdsPage() {
 
     return () => window.clearInterval(interval)
   }, [authLoading, user?.role, loadSyncScheduler])
+
+  // Polling automático do status de sync das contas (badges)
+  useEffect(() => {
+    if (authLoading || user?.role !== 'platform_admin') return
+
+    const interval = window.setInterval(() => {
+      void reloadContasSilent()
+    }, 60000)
+
+    return () => window.clearInterval(interval)
+  }, [authLoading, user?.role, reloadContasSilent])
 
   useEffect(() => {
     if (authLoading || user?.role !== 'platform_admin') return

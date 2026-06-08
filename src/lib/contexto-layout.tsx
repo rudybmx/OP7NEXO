@@ -66,7 +66,7 @@ export const secoesNavegacao: SecaoNavegacao[] = [
         abertoPadrao: false,
         itens: [
           { nome: "PMP",                    rota: "/marketing/demandas/pmp" },
-          { nome: "Design",                 rota: "/marketing/demandas/design" },
+          { nome: "Design" },
           { nome: "Estratégia" },
           { nome: "Matriz de Investimento", rota: "/marketing/demandas/matriz-investimento" },
           { nome: "Mapa Mental",            rota: "/marketing/demandas/mapa-mental" },
@@ -97,7 +97,7 @@ export const secoesNavegacao: SecaoNavegacao[] = [
           { nome: "Conversas",     rota: "/crm/atendimento/conversas" },
           { nome: "Contatos",      rota: "/crm/atendimento/contatos" },
           { nome: "Agentes",       rota: "/crm/atendimento/agentes" },
-          { nome: "Prompt IA",     rota: "/crm/atendimento/prompt-ia" },
+          { nome: "Arquivado",     rota: "/crm/atendimento/arquivado" },
           { nome: "Buscador CNPJ", rota: "/crm/atendimento/buscador-cnpj" },
         ],
       },
@@ -133,7 +133,6 @@ export const secoesNavegacao: SecaoNavegacao[] = [
         itens: [
           { nome: "Equipes" },
           { nome: "Usuários" },
-          { nome: "Canais" },
           { nome: "Geral" },
         ],
       },

@@ -1,56 +1,13 @@
 import { CANAL_CONFIG } from '@/lib/matriz-utils'
 import type { Canal, CanalRow, MatrizPlan, MonthValue } from '@/types/matriz'
 
-const CLIENTS = [
-  {
-    id: 'vila-mariana',
-    name: 'OdontoCompany - Vila Mariana',
-    updatedAt: '2025-04-10',
-    updatedBy: 'Fernanda Reis',
-    values: {
-      meta: [2500, 2500, 3000, 3000, 3500, 3500, 4000, 4000, 4500, 4500, 5000, 5500],
-      google: [1500, 1500, 1800, 1800, 2000, 2000, 2200, 2500, 2500, 2800, 3000, 3500],
-      tiktok: [500, 500, 600, 600, 700, 800, 800, 900, 900, 1000, 1200, 1500],
-      linkedin: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    },
-  },
-  {
-    id: 'tatuape',
-    name: 'OdontoCompany - Tatuapé',
-    updatedAt: '2025-04-09',
-    updatedBy: 'Marcos Dutra',
-    values: {
-      meta: [3000, 3200, 3500, 3500, 3800, 4000, 4200, 4500, 4500, 5000, 5500, 6000],
-      google: [2000, 2200, 2400, 2500, 2500, 2800, 3000, 3000, 3200, 3500, 3800, 4000],
-      tiktok: [600, 600, 700, 800, 900, 1000, 1000, 1200, 1200, 1500, 1500, 1800],
-      linkedin: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    },
-  },
-  {
-    id: 'santana',
-    name: 'OdontoCompany - Santana',
-    updatedAt: '2025-04-08',
-    updatedBy: 'Ana Lima',
-    values: {
-      meta: [2000, 2000, 2500, 2500, 2800, 3000, 3000, 3200, 3500, 3800, 4000, 4500],
-      google: [1200, 1200, 1500, 1500, 1800, 1800, 2000, 2000, 2200, 2500, 2800, 3000],
-      tiktok: [400, 400, 500, 500, 600, 700, 700, 800, 800, 900, 1000, 1200],
-      linkedin: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    },
-  },
-  {
-    id: 'pinheiros',
-    name: 'OdontoCompany - Pinheiros',
-    updatedAt: '2025-04-10',
-    updatedBy: 'Juliana Park',
-    values: {
-      meta: [4000, 4200, 4500, 4800, 5000, 5000, 5500, 5800, 6000, 6500, 7000, 7500],
-      google: [2500, 2500, 2800, 3000, 3200, 3500, 3500, 3800, 4000, 4200, 4500, 5000],
-      tiktok: [800, 900, 1000, 1200, 1200, 1500, 1500, 1800, 2000, 2000, 2500, 3000],
-      linkedin: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    },
-  },
-] as const
+const CLIENTS: {
+  id: string
+  name: string
+  updatedAt: string
+  updatedBy: string
+  values: Record<Canal, readonly number[]>
+}[] = []
 
 const PERFORMANCE_FACTORS: Record<Canal, number[]> = {
   meta: [0.97, 1.12, 0.99, 0.94],
