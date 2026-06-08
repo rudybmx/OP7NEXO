@@ -44,7 +44,7 @@ function mapCampanha(r: Record<string, unknown>): CampanhaGoogle {
 
 export function useGoogleVisaoGeral(filtros: FiltrosGoogle, adsAccountId?: string) {
   const { workspaceAtivo } = useWorkspace()
-  const wsId = workspaceAtivo?.id
+  const wsId = workspaceAtivo ?? undefined
 
   const baseParams = new URLSearchParams({
     start_date: format(filtros.dateRange.start, 'yyyy-MM-dd'),

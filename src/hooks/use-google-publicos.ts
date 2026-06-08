@@ -24,7 +24,7 @@ export function useGooglePublicos(
   campaignId?: string
 ) {
   const { workspaceAtivo } = useWorkspace()
-  const wsId = workspaceAtivo?.id
+  const wsId = workspaceAtivo ?? undefined
 
   const params = new URLSearchParams({
     start_date: format(dateRange.start, 'yyyy-MM-dd'),

@@ -111,7 +111,7 @@ export function PaginaGoogleAds() {
   })
 
   const { workspaceAtivo } = useWorkspace()
-  const wsId = workspaceAtivo?.id
+  const wsId = workspaceAtivo ?? undefined
 
   const [contasGoogle, setContasGoogle] = useState<{ id: string; account_name: string }[]>([])
   const [selectedContaId, setSelectedContaId] = useState<string>('')

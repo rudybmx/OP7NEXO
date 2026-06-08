@@ -74,7 +74,7 @@ export function useGoogleCampanhas(
   adsAccountId?: string
 ) {
   const { workspaceAtivo } = useWorkspace()
-  const wsId = workspaceAtivo?.id
+  const wsId = workspaceAtivo ?? undefined
 
   const campParams = new URLSearchParams({
     start_date: format(dateRange.start, 'yyyy-MM-dd'),
