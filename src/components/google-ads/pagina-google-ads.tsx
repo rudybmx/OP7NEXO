@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import type { FiltrosGoogle } from '@/types/google-ads'
 import { useWorkspace } from '@/lib/workspace-context'
+import { useAuth } from '@/hooks/use-auth'
 import api from '@/lib/api-client'
 import { VisaoGeralGoogle } from './visao-geral'
 import { AbaCampanhasGoogle } from './campanhas'
@@ -110,18 +111,31 @@ export function PaginaGoogleAds() {
 
   const { workspaceAtivo } = useWorkspace()
   const wsId = workspaceAtivo?.id
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'platform_admin'
 
   const [contasGoogle, setContasGoogle] = useState<{ id: string; account_name: string }[]>([])
   const [selectedContaId, setSelectedContaId] = useState<string>('')
 
   useEffect(() => {
-    if (!wsId) return
-    api.get<{ id: string; account_name: string; plataforma: string }[]>(
-      `/workspaces/${wsId}/ads-accounts`
-    )
-      .then(all => setContasGoogle(all.filter(c => c.plataforma === 'google')))
-      .catch(() => {})
-  }, [wsId])
+    const load = async () => {
+      try {
+        if (isAdmin) {
+          // Admin vê todas as contas Google de todos os workspaces
+          const all = await api.get<{ id: string; account_name: string; plataforma: string }[]>('/ads-accounts')
+          setContasGoogle(all.filter(c => c.plataforma === 'google'))
+        } else if (wsId) {
+          const all = await api.get<{ id: string; account_name: string; plataforma: string }[]>(
+            `/workspaces/${wsId}/ads-accounts`
+          )
+          setContasGoogle(all.filter(c => c.plataforma === 'google'))
+        }
+      } catch {
+        // silencioso
+      }
+    }
+    load()
+  }, [isAdmin, wsId])
 
   return (
     <div style={{ padding: '24px 32px' }}>

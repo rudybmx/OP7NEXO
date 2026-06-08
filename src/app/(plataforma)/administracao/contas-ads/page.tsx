@@ -367,7 +367,11 @@ export default function ContasAdsPage() {
       )
       for (const [contaId, job] of entries) {
         try {
-          const data = await api.get<SyncJobAPI>(`/meta/sync/job/${job.jobId}`)
+          const conta = contas.find(c => c.id === contaId)
+          const jobEndpoint = conta?.plataforma === 'google'
+            ? `/google-ads/sync/job/${job.jobId}`
+            : `/meta/sync/job/${job.jobId}`
+          const data = await api.get<SyncJobAPI>(jobEndpoint)
 
           atualizarSyncJobs(prev => ({
             ...prev,
@@ -420,7 +424,10 @@ export default function ContasAdsPage() {
       return
     }
     try {
-      const data = await api.post<SyncStartAPI>(`/meta/sync/${conta.id}`)
+      const endpoint = conta.plataforma === 'google'
+        ? `/google-ads/sync/${conta.id}`
+        : `/meta/sync/${conta.id}`
+      const data = await api.post<SyncStartAPI>(endpoint)
       if (data.status === 'skipped') {
         toast.warning(data.reason ? `Sync pausado: ${data.reason}` : 'Sync pausado')
         return
@@ -482,7 +489,6 @@ export default function ContasAdsPage() {
   })
 
   function renderSyncCell(c: AdsAccount) {
-    if (c.plataforma !== 'meta') return null
     const job = syncJobs[c.id]
     const jobTooltip = job ? formatarTooltipSyncJob(job) : undefined
     const state = c.sync_state
