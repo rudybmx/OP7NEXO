@@ -149,6 +149,31 @@ export function getMonthSpansForWeeks(start: string, end: string): Array<{ label
   return Array.from(spans.entries()).map(([label, span]) => ({ label, span }))
 }
 
+export type DeadlineTagVariant = 'vencido' | 'a_vencer' | 'pendente'
+
+export function calcDeadlineTag(
+  endDate: string,
+  statusDerived: TaskStatusDerived,
+): { label: string; variant: DeadlineTagVariant } | null {
+  if (statusDerived === 'done') return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const end = parseISO(endDate)
+  const diff = differenceInCalendarDays(end, today)
+  if (diff < 0) return { label: 'Vencido', variant: 'vencido' }
+  if (diff <= 3) return { label: 'A vencer', variant: 'a_vencer' }
+  return { label: 'Pendente', variant: 'pendente' }
+}
+
+export function getDeadlineTagClasses(variant: DeadlineTagVariant): string {
+  const map: Record<DeadlineTagVariant, string> = {
+    vencido: 'bg-[#a32d2d]/10 text-[#a32d2d] border-[#a32d2d]/30',
+    a_vencer: 'bg-[#854f0b]/10 text-[#854f0b] border-[#854f0b]/30',
+    pendente: 'bg-muted/30 text-muted-foreground border-border/20',
+  }
+  return map[variant]
+}
+
 export function getTodayOffsetPercent(planStart: string, planEnd: string, today = new Date()): number {
   const start = parseISO(planStart)
   const end = parseISO(planEnd)

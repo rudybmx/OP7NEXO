@@ -8,6 +8,7 @@ export type PmpTaskPhase = 'diagnostico' | 'identidade' | 'conteudo' | 'midia-pa
 export type PmpTaskCategory =
   | 'MIDIA_PAGA' | 'CONTEUDO' | 'SEO' | 'EVENTO'
   | 'REUNIAO' | 'EMAIL_MARKETING' | 'SOCIAL' | 'OUTRO'
+export type PmpTaskPrioridade = 'baixa' | 'media' | 'alta'
 
 export interface PmpTaskApi {
   id: string
@@ -19,6 +20,7 @@ export interface PmpTaskApi {
   responsible_id: string | null
   responsible_email: string | null
   category: PmpTaskCategory
+  prioridade: PmpTaskPrioridade
   status: PmpTaskStatus
   start_date: string
   end_date: string
@@ -27,6 +29,18 @@ export interface PmpTaskApi {
   display_order: number
   created_at: string
   updated_at: string
+}
+
+export interface TaskEditBody {
+  phase?: PmpTaskPhase
+  title?: string
+  category?: PmpTaskCategory
+  start_date?: string
+  end_date?: string
+  description?: string | null
+  responsible_email?: string | null
+  display_order?: number
+  prioridade?: PmpTaskPrioridade
 }
 
 export function usePmpTasks(planId: string | null) {
@@ -88,5 +102,12 @@ export function usePmpTasks(planId: string | null) {
     setTasks((prev) => prev.filter((t) => t.id !== taskId))
   }
 
-  return { tasks, isLoading, error, refetch: fetch, criarTarefa, atualizarStatus, excluirTarefa }
+  async function editarTarefa(taskId: string, body: TaskEditBody) {
+    if (!planId) return
+    const updated = await api.patch<PmpTaskApi>(`/pmp/plans/${planId}/tasks/${taskId}`, body)
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)))
+    return updated
+  }
+
+  return { tasks, isLoading, error, refetch: fetch, criarTarefa, atualizarStatus, excluirTarefa, editarTarefa }
 }

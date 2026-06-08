@@ -3,7 +3,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { calcTaskPosition, formatDateBR, getStatusColor, getStatusLabel, hashColor } from '@/lib/gantt-utils'
+import { calcDeadlineTag, calcTaskPosition, formatDateBR, getDeadlineTagClasses, getStatusColor, getStatusLabel, hashColor } from '@/lib/gantt-utils'
 import { cn } from '@/lib/utils'
 import type { PmpPhase, PmpTask } from '@/types/pmp'
 
@@ -152,6 +152,20 @@ export default function GanttTaskRow({
             >
               {getStatusLabel(task.statusDerived)}
             </Badge>
+            {(() => {
+              const tag = calcDeadlineTag(task.endDate, task.statusDerived)
+              if (!tag) return null
+              return (
+                <Badge
+                  className={cn(
+                    'rounded-full border px-2 py-0.5 text-[10px] font-medium',
+                    getDeadlineTagClasses(tag.variant)
+                  )}
+                >
+                  {tag.label}
+                </Badge>
+              )
+            })()}
           </div>
         </div>
       </div>

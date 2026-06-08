@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { FileText, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import GanttChart from '@/components/demandas/pmp/GanttChart'
 import PmpHeader from '@/components/demandas/pmp/PmpHeader'
 import PmpInsights from '@/components/demandas/pmp/PmpInsights'
@@ -9,11 +10,12 @@ import PmpKpiBar from '@/components/demandas/pmp/PmpKpiBar'
 import PmpSummaryView from '@/components/demandas/pmp/PmpSummaryView'
 import PmpTabs from '@/components/demandas/pmp/PmpTabs'
 import PmpTaskCreateModal from '@/components/demandas/pmp/PmpTaskCreateModal'
-import PmpTaskDrawer from '@/components/demandas/pmp/PmpTaskDrawer'
+import PmpTaskModal from '@/components/demandas/pmp/PmpTaskModal'
 import PmpPlanCreateModal from '@/components/demandas/pmp/PmpPlanCreateModal'
 import PmpVersionHistory from '@/components/demandas/pmp/PmpVersionHistory'
 import { usePmpPlans, type PmpPlanApi } from '@/hooks/use-pmp-plans'
 import { usePmpTasks, type PmpTaskApi } from '@/hooks/use-pmp-tasks'
+import { usePmpUnidades } from '@/hooks/use-pmp-unidades'
 import { useWorkspace } from '@/lib/workspace-context'
 import { calcularStatusDerived, FASES_LABELS } from '@/types/pmp'
 import type { PmpPlan, PmpPhase, PmpTask, TaskStatus, TaskStatusDerived } from '@/types/pmp'
@@ -42,7 +44,7 @@ function apiTaskToPmpTask(t: PmpTaskApi): PmpTask {
     endDate: t.end_date,
     status,
     statusDerived: 'todo',
-    priority: 'media',
+    priority: t.prioridade ?? 'media',
     progress: status === 'done' ? 100 : status === 'blocked' ? 0 : 50,
     description: t.description ?? undefined,
     completedAt: t.completed_at ?? undefined,
@@ -92,7 +94,16 @@ function getInitialExpandedPhases(plan: PmpPlan): Set<string> {
 export default function Page() {
   const { workspaceAtivo } = useWorkspace()
 
-  const { plans: apiPlans, isLoading: loadingPlans, criarPlano } = usePmpPlans(workspaceAtivo)
+  const {
+    plans: apiPlans,
+    isLoading: loadingPlans,
+    criarPlano,
+    atualizarPlano,
+    excluirPlano,
+    duplicarPlano,
+  } = usePmpPlans(workspaceAtivo)
+
+  const { unidades } = usePmpUnidades(workspaceAtivo)
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTab>('gantt')
@@ -104,9 +115,11 @@ export default function Page() {
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showPlanModal, setShowPlanModal] = useState(false)
+  const [showPlanEditModal, setShowPlanEditModal] = useState(false)
+  const [confirmDeletePlan, setConfirmDeletePlan] = useState(false)
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set())
 
-  const { tasks: apiTasks, criarTarefa, atualizarStatus } = usePmpTasks(selectedPlanId)
+  const { tasks: apiTasks, criarTarefa, atualizarStatus, excluirTarefa, editarTarefa } = usePmpTasks(selectedPlanId)
 
   // Auto-select first plan when list loads
   useEffect(() => {
@@ -191,6 +204,73 @@ export default function Page() {
     }
   }
 
+  async function handleEditarTarefa(taskId: string, body: Parameters<typeof editarTarefa>[1]) {
+    if (!editarTarefa) return
+    const updated = await editarTarefa(taskId, body)
+    if (updated && selectedTask?.id === taskId) {
+      setSelectedTask(apiTaskToPmpTask(updated))
+    }
+  }
+
+  async function handleDuplicarTarefa(task: PmpTask) {
+    await criarTarefa({
+      title: `${task.title} (cópia)`,
+      phase: task.phase,
+      category: task.category ?? 'OUTRO',
+      start_date: task.startDate,
+      end_date: task.endDate,
+      description: task.description,
+      responsible_email: task.responsibleEmail,
+    })
+  }
+
+  async function handleExcluirTarefa(taskId: string) {
+    await excluirTarefa(taskId)
+    setSelectedTask(null)
+  }
+
+  // Plano: editar
+  async function handleSalvarEdicaoPlano(data: {
+    client_name: string
+    title: string
+    start_date: string
+    end_date: string
+    unidade_id?: string | null
+  }) {
+    if (!selectedPlanId) return
+    await atualizarPlano(selectedPlanId, data)
+    setShowPlanEditModal(false)
+  }
+
+  // Plano: duplicar
+  async function handleDuplicarPlano() {
+    if (!selectedPlanId) return
+    try {
+      const novo = await duplicarPlano(selectedPlanId)
+      if (novo) {
+        setSelectedPlanId(novo.id)
+        toast.success('Plano duplicado!')
+      }
+    } catch {
+      toast.error('Erro ao duplicar plano')
+    }
+  }
+
+  // Plano: excluir (com confirmação via estado)
+  async function handleExcluirPlano() {
+    if (!selectedPlanId) return
+    try {
+      await excluirPlano(selectedPlanId)
+      setConfirmDeletePlan(false)
+      // Selecionar próximo plano disponível
+      const restantes = apiPlans.filter((p) => p.id !== selectedPlanId)
+      setSelectedPlanId(restantes[0]?.id ?? null)
+      toast.success('Plano excluído')
+    } catch {
+      toast.error('Erro ao excluir plano')
+    }
+  }
+
   // Loading state
   if (loadingPlans) {
     return (
@@ -220,6 +300,7 @@ export default function Page() {
         <PmpPlanCreateModal
           open={showPlanModal}
           onClose={() => setShowPlanModal(false)}
+          unidades={unidades}
           onSalvar={async (data) => { await criarPlano(data) }}
         />
       </>
@@ -229,7 +310,40 @@ export default function Page() {
   if (!selectedPlan) return null
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-4">
+      {/* Confirmação de exclusão de plano — banner inline sobre o header */}
+      {confirmDeletePlan && (
+        <div
+          className="flex items-center justify-between gap-4 rounded-2xl px-5 py-3"
+          style={{
+            background: 'rgba(163,45,45,0.08)',
+            border: '1px solid rgba(163,45,45,0.25)',
+            backdropFilter: 'blur(16px)',
+          }}
+        >
+          <span className="text-[13px] text-[#a32d2d]">
+            Excluir permanentemente o plano <strong>{selectedApiPlan?.client_name}</strong>? Esta ação não pode ser desfeita.
+          </span>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmDeletePlan(false)}
+              className="rounded-lg px-3 py-1.5 text-[12px] text-foreground hover:bg-muted/30"
+              style={{ border: '1px solid var(--ws-glass-border-strong)' }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleExcluirPlano}
+              className="rounded-lg bg-[#a32d2d] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#8b2525]"
+            >
+              Excluir
+            </button>
+          </div>
+        </div>
+      )}
+
       <PmpHeader
         clients={clientList}
         selectedClientId={selectedPlanId ?? ''}
@@ -245,6 +359,9 @@ export default function Page() {
         onNewVersion={() => setActiveTab('historico')}
         onNovaTarefa={() => setShowCreateModal(true)}
         onNovoPlano={() => setShowPlanModal(true)}
+        onEditarPlano={() => setShowPlanEditModal(true)}
+        onDuplicarPlano={handleDuplicarPlano}
+        onExcluirPlano={() => setConfirmDeletePlan(true)}
       />
 
       <PmpKpiBar plan={selectedPlan} />
@@ -271,13 +388,18 @@ export default function Page() {
       {activeTab === 'resumo' && <PmpSummaryView plan={selectedPlan} />}
       {activeTab === 'historico' && <PmpVersionHistory versions={selectedPlan.versions} />}
 
-      <PmpTaskDrawer
+      {/* Modal de tarefa (substitui PmpTaskDrawer) */}
+      <PmpTaskModal
         task={selectedTask}
         open={!!selectedTask}
         onClose={() => setSelectedTask(null)}
         onStatusChange={handleStatusChange}
+        onEdit={handleEditarTarefa}
+        onDuplicate={handleDuplicarTarefa}
+        onDelete={handleExcluirTarefa}
       />
 
+      {/* Modal nova tarefa */}
       <PmpTaskCreateModal
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
@@ -287,10 +409,32 @@ export default function Page() {
         }}
       />
 
+      {/* Modal criar plano */}
       <PmpPlanCreateModal
         open={showPlanModal}
         onClose={() => setShowPlanModal(false)}
+        unidades={unidades}
         onSalvar={async (data) => { await criarPlano(data) }}
+      />
+
+      {/* Modal editar plano */}
+      <PmpPlanCreateModal
+        open={showPlanEditModal}
+        onClose={() => setShowPlanEditModal(false)}
+        mode="editar"
+        initialData={
+          selectedApiPlan
+            ? {
+                client_name: selectedApiPlan.client_name,
+                title: selectedApiPlan.title,
+                start_date: selectedApiPlan.start_date,
+                end_date: selectedApiPlan.end_date,
+                unidade_id: selectedApiPlan.unidade_id,
+              }
+            : undefined
+        }
+        unidades={unidades}
+        onSalvar={handleSalvarEdicaoPlano}
       />
     </div>
   )

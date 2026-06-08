@@ -12,8 +12,17 @@ export interface PmpPlanApi {
   start_date: string
   end_date: string
   status: 'TODO' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED'
+  unidade_id: string | null
   created_at: string
   updated_at: string
+}
+
+export interface PlanEditBody {
+  client_name?: string
+  title?: string
+  start_date?: string
+  end_date?: string
+  unidade_id?: string | null
 }
 
 export function usePmpPlans(workspaceId: string | null) {
@@ -44,6 +53,7 @@ export function usePmpPlans(workspaceId: string | null) {
     title: string
     start_date: string
     end_date: string
+    unidade_id?: string | null
   }) {
     if (!workspaceId) return
     const plan = await api.post<PmpPlanApi>('/pmp/plans', { ...body, workspace_id: workspaceId })
@@ -51,5 +61,22 @@ export function usePmpPlans(workspaceId: string | null) {
     return plan
   }
 
-  return { plans, isLoading, error, refetch: fetch, criarPlano }
+  async function atualizarPlano(id: string, body: PlanEditBody) {
+    const updated = await api.patch<PmpPlanApi>(`/pmp/plans/${id}`, body)
+    setPlans((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)))
+    return updated
+  }
+
+  async function excluirPlano(id: string) {
+    await api.delete(`/pmp/plans/${id}`)
+    setPlans((prev) => prev.filter((p) => p.id !== id))
+  }
+
+  async function duplicarPlano(id: string) {
+    const novo = await api.post<PmpPlanApi>(`/pmp/plans/${id}/duplicate`)
+    setPlans((prev) => [novo, ...prev])
+    return novo
+  }
+
+  return { plans, isLoading, error, refetch: fetch, criarPlano, atualizarPlano, excluirPlano, duplicarPlano }
 }

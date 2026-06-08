@@ -1,8 +1,15 @@
 'use client'
 
-import { FileText, GitBranch, Plus } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Copy, FileText, GitBranch, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
@@ -29,6 +36,9 @@ interface PmpHeaderProps {
   onNewVersion: () => void
   onNovaTarefa?: () => void
   onNovoPlano?: () => void
+  onEditarPlano?: () => void
+  onDuplicarPlano?: () => void
+  onExcluirPlano?: () => void
 }
 
 export default function PmpHeader({
@@ -46,8 +56,12 @@ export default function PmpHeader({
   onNewVersion,
   onNovaTarefa,
   onNovoPlano,
+  onEditarPlano,
+  onDuplicarPlano,
+  onExcluirPlano,
 }: PmpHeaderProps) {
   const statusColor = getStatusColor(planStatus)
+  const hasPlanActions = !!(onEditarPlano || onDuplicarPlano || onExcluirPlano)
 
   return (
     <header
@@ -65,7 +79,7 @@ export default function PmpHeader({
           <FileText className="h-5 w-5" />
         </div>
         <div className="min-w-0">
-          <h1 className="text-[18px] font-semibold text-foreground">Plano de Marketing Personalizado</h1>
+          <h1 className="text-[16px] font-semibold text-foreground">Plano de Marketing Personalizado</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
             <span>{`v${selectedVersion} • Atualizado em ${formatDateBR(updatedAt)}`}</span>
             <Badge
@@ -83,18 +97,72 @@ export default function PmpHeader({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <Select value={selectedClientId} onValueChange={onClientChange}>
-          <SelectTrigger className="h-10 min-w-64 text-foreground" style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}>
-            <SelectValue placeholder="Selecionar cliente" />
-          </SelectTrigger>
-          <SelectContent style={{ background: 'var(--ws-glass-bg)', borderColor: 'var(--ws-glass-border)', backdropFilter: 'blur(16px)' }}>
-            {clients.map((client) => (
-              <SelectItem key={client.id} value={client.id}>
-                {client.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Seletor de cliente + kebab ações do plano */}
+        <div className="flex items-center gap-1">
+          <Select value={selectedClientId} onValueChange={onClientChange}>
+            <SelectTrigger
+              className="h-10 min-w-64 text-foreground"
+              style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}
+            >
+              <SelectValue placeholder="Selecionar cliente" />
+            </SelectTrigger>
+            <SelectContent style={{ background: 'var(--ws-glass-bg)', borderColor: 'var(--ws-glass-border)', backdropFilter: 'blur(16px)' }}>
+              {clients.map((client) => (
+                <SelectItem key={client.id} value={client.id}>
+                  {client.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {hasPlanActions && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 text-muted-foreground hover:bg-muted/30 hover:text-foreground"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                style={{
+                  background: 'var(--ws-glass-bg)',
+                  border: '1px solid var(--ws-glass-border)',
+                  backdropFilter: 'blur(16px)',
+                }}
+              >
+                {onEditarPlano && (
+                  <DropdownMenuItem onClick={onEditarPlano} className="gap-2 text-[13px]">
+                    <Pencil className="h-3.5 w-3.5" />
+                    Editar plano
+                  </DropdownMenuItem>
+                )}
+                {onDuplicarPlano && (
+                  <DropdownMenuItem onClick={onDuplicarPlano} className="gap-2 text-[13px]">
+                    <Copy className="h-3.5 w-3.5" />
+                    Duplicar plano
+                  </DropdownMenuItem>
+                )}
+                {onExcluirPlano && (onEditarPlano || onDuplicarPlano) && (
+                  <DropdownMenuSeparator />
+                )}
+                {onExcluirPlano && (
+                  <DropdownMenuItem
+                    onClick={onExcluirPlano}
+                    className="gap-2 text-[13px] text-[#a32d2d] focus:text-[#a32d2d]"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Excluir plano
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
 
         <Select value={String(selectedMonth)} onValueChange={(value) => onMonthChange(Number(value))}>
           <SelectTrigger className="h-10 min-w-32 text-foreground" style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}>
