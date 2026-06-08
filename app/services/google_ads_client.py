@@ -164,6 +164,55 @@ WHERE segments.date BETWEEN '{start}' AND '{end}'
 """
 
 
+def descobrir_janela_sync(cred: dict, customer_id: str) -> tuple[str, str]:
+    """Descobre a janela de sync ideal baseada na última atividade da conta.
+
+    Busca o último dia com impressões nos últimos 730 dias (2 anos) usando
+    BETWEEN explícito — mais compatível e com maior cobertura histórica.
+
+    Retorna (start, end):
+    - Se encontrou âncora: (ancora-90d, ancora)
+    - Se não encontrou (conta inativa há +2 anos): fallback últimos 30d
+    """
+    from datetime import date, timedelta
+    today = date.today()
+    end_2y = (today - timedelta(days=1)).isoformat()       # ontem
+    start_2y = (today - timedelta(days=730)).isoformat()   # 2 anos atrás
+
+    # Query âncora com janela de 2 anos explícita
+    query_ancora = f"""
+SELECT segments.date
+FROM campaign
+WHERE metrics.impressions > 0
+  AND segments.date BETWEEN '{start_2y}' AND '{end_2y}'
+ORDER BY segments.date DESC
+LIMIT 1
+"""
+    client = get_client(cred)
+    ga = client.get_service("GoogleAdsService")
+
+    ancora_str: str | None = None
+    try:
+        for batch in ga.search_stream(customer_id=customer_id, query=query_ancora):
+            for row in batch.results:
+                ancora_str = row.segments.date  # 'YYYY-MM-DD'
+                break
+            if ancora_str:
+                break
+    except Exception:
+        ancora_str = None
+
+    if ancora_str:
+        ancora_date = date.fromisoformat(ancora_str)
+        start = (ancora_date - timedelta(days=90)).isoformat()
+        end = ancora_str
+    else:
+        # Conta genuinamente inativa há +2 anos — fallback para os últimos 30d
+        start, end = _periodo_datas("30d")
+
+    return start, end
+
+
 def _m(v) -> float:
     """Converte micros para reais (divide por 1M). Retorna 0.0 se None."""
     return (v or 0) / 1_000_000.0
@@ -187,11 +236,13 @@ def _derive(investimento: float, cliques: int, impressoes: int,
     }
 
 
-def buscar_dados_conta(cred: dict, customer_id: str, periodo: str = "30d") -> dict:
-    """Executa todas as queries e retorna dados brutos parseados."""
+def buscar_dados_conta(cred: dict, customer_id: str, start: str, end: str) -> dict:
+    """Executa todas as queries e retorna dados brutos parseados.
+
+    start/end: datas no formato 'YYYY-MM-DD' (calculadas por descobrir_janela_sync).
+    """
     client = get_client(cred)
     ga = client.get_service("GoogleAdsService")
-    start, end = _periodo_datas(periodo)
 
     def stream(query: str) -> list:
         rows = []

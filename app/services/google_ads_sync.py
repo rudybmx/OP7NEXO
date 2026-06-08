@@ -17,11 +17,11 @@ def sincronizar_conta_google(
     ads_account_id: str,
     db: Session,
     on_progress: Callable[[str, int], None] | None = None,
-    periodo: str = "30d",
 ) -> dict:
     """Sincroniza uma conta Google Ads e persiste nas tabelas de insights.
 
-    Retorna totais para registro no sync_job.
+    Usa Janela Dinâmica: descobre automaticamente o período de atividade
+    real da conta antes de sincronizar. Retorna totais para o sync_job.
     """
     def _prog(etapa: str, pct: int) -> None:
         if on_progress:
@@ -51,13 +51,21 @@ def sincronizar_conta_google(
     customer_id = conta.account_id
     workspace_id = str(conta.workspace_id)
 
+    # ── Descobrir janela de sync (âncora dinâmica) ────────────────────────
+    _prog("descobrindo_janela", 6)
+    from app.services.google_ads_client import buscar_dados_conta, descobrir_janela_sync
+    start_str, end_str = descobrir_janela_sync(cred_dict, customer_id)
+
     # ── Buscar dados da API ───────────────────────────────────────────────
     _prog("consultando_google_api", 10)
-    from app.services.google_ads_client import buscar_dados_conta
-    dados = buscar_dados_conta(cred_dict, customer_id, periodo)
+    dados = buscar_dados_conta(cred_dict, customer_id, start=start_str, end=end_str)
 
     periodo_inicio = date.fromisoformat(dados["periodo"]["start"])
     periodo_fim = date.fromisoformat(dados["periodo"]["end"])
+
+    # ── Limpar dados anteriores (janela dinâmica — wipe + reinserção) ─────
+    _prog("limpando_dados_anteriores", 25)
+    _limpar_janela(db, ads_account_id, start_str, end_str)
 
     _prog("persistindo_campanhas", 30)
     _upsert_campanhas(db, dados["campanhas"], ads_account_id, workspace_id, periodo_inicio, periodo_fim)
@@ -95,6 +103,29 @@ def sincronizar_conta_google(
     }
     _prog("concluido", 100)
     return totais
+
+
+def _limpar_janela(db, ads_account_id: str, start_str: str, end_str: str) -> None:
+    """Limpa dados anteriores antes de reinserir.
+
+    Tabelas agregadas: wipe completo por conta (fonte única de verdade).
+    Tabela diária: DELETE por range de datas (preserva dados fora da janela).
+    """
+    for tabela in (
+        "google_campanhas_insights",
+        "google_grupos_insights",
+        "google_keywords_insights",
+        "google_anuncios_insights",
+        "google_publicos_insights",
+    ):
+        db.execute(text(f"DELETE FROM {tabela} WHERE ads_account_id = :aid"), {"aid": ads_account_id})
+
+    db.execute(text("""
+        DELETE FROM google_dados_diarios
+        WHERE ads_account_id = :aid AND data BETWEEN :start AND :end
+    """), {"aid": ads_account_id, "start": start_str, "end": end_str})
+
+    db.commit()
 
 
 def _upsert_campanhas(db, campanhas, ads_account_id, workspace_id, p_ini, p_fim):
