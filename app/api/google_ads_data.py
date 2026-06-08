@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, listar_workspaces_autorizados
+from app.models.ads_account import AdsAccount
 from app.models.user import User
 
 router = APIRouter(prefix="/google-ads", tags=["google_ads"])
@@ -23,6 +24,31 @@ def _verificar_acesso_workspace(workspace_id: str, usuario: User, db: Session) -
     ws_ids = {str(w.id) for w in listar_workspaces_autorizados(usuario, db)}
     if workspace_id not in ws_ids:
         raise HTTPException(status_code=403, detail="Acesso negado ao workspace")
+
+
+def _resolver_workspace_id(
+    workspace_id: str,
+    ads_account_id: str | None,
+    usuario: User,
+    db: Session,
+) -> str:
+    """Se ads_account_id fornecido, usa o workspace real da conta (cross-workspace fix).
+
+    Resolve o problema de admins que têm workspace ativo diferente do workspace
+    da conta selecionada. O frontend sempre envia workspaceAtivo.id, mas quando
+    uma conta de outro workspace é selecionada, o workspace_id deve ser sobrescrito.
+    """
+    if ads_account_id:
+        try:
+            acc = db.get(AdsAccount, uuid.UUID(ads_account_id))
+        except Exception:
+            acc = None
+        if acc:
+            ws_real = str(acc.workspace_id)
+            _verificar_acesso_workspace(ws_real, usuario, db)
+            return ws_real
+    _verificar_acesso_workspace(workspace_id, usuario, db)
+    return workspace_id
 
 
 def _periodo_datas(periodo: str) -> tuple[str, str]:
@@ -43,7 +69,7 @@ def listar_campanhas(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    _verificar_acesso_workspace(workspace_id, usuario, db)
+    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
     start, end = _periodo_datas(periodo)
 
     filtros = "AND g.workspace_id = :wid AND g.periodo_inicio <= :end AND g.periodo_fim >= :start AND g.ativo = true"
@@ -78,7 +104,7 @@ def visao_geral(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    _verificar_acesso_workspace(workspace_id, usuario, db)
+    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
     start, end = _periodo_datas(periodo)
 
     params: dict = {"wid": workspace_id, "start": start, "end": end}
@@ -230,7 +256,7 @@ def dados_diarios(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    _verificar_acesso_workspace(workspace_id, usuario, db)
+    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
     start, end = _periodo_datas(periodo)
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtros = ""
@@ -273,7 +299,7 @@ def listar_grupos(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    _verificar_acesso_workspace(workspace_id, usuario, db)
+    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
     start, end = _periodo_datas(periodo)
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtros = ""
@@ -287,7 +313,7 @@ def listar_grupos(
     rows = db.execute(text(f"""
         SELECT * FROM google_grupos_insights
         WHERE workspace_id = :wid
-          AND periodo_inicio >= :start AND periodo_fim <= :end AND ativo = true
+          AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
           {filtros}
         ORDER BY investimento DESC
     """), params).mappings().all()
@@ -304,7 +330,7 @@ def listar_keywords(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    _verificar_acesso_workspace(workspace_id, usuario, db)
+    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
     start, end = _periodo_datas(periodo)
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtros = ""
@@ -321,7 +347,7 @@ def listar_keywords(
     rows = db.execute(text(f"""
         SELECT * FROM google_keywords_insights
         WHERE workspace_id = :wid
-          AND periodo_inicio >= :start AND periodo_fim <= :end AND ativo = true
+          AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
           {filtros}
         ORDER BY investimento DESC
     """), params).mappings().all()
@@ -337,7 +363,7 @@ def listar_anuncios(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    _verificar_acesso_workspace(workspace_id, usuario, db)
+    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
     start, end = _periodo_datas(periodo)
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtros = ""
@@ -351,7 +377,7 @@ def listar_anuncios(
     rows = db.execute(text(f"""
         SELECT * FROM google_anuncios_insights
         WHERE workspace_id = :wid
-          AND periodo_inicio >= :start AND periodo_fim <= :end AND ativo = true
+          AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
           {filtros}
         ORDER BY investimento DESC
     """), params).mappings().all()
@@ -367,7 +393,7 @@ def listar_publicos(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    _verificar_acesso_workspace(workspace_id, usuario, db)
+    workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
     start, end = _periodo_datas(periodo)
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtros = ""
@@ -381,7 +407,7 @@ def listar_publicos(
     rows = db.execute(text(f"""
         SELECT * FROM google_publicos_insights
         WHERE workspace_id = :wid
-          AND periodo_inicio >= :start AND periodo_fim <= :end AND ativo = true
+          AND periodo_inicio <= :end AND periodo_fim >= :start AND ativo = true
           {filtros}
         ORDER BY investimento DESC
     """), params).mappings().all()
