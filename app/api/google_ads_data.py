@@ -59,18 +59,31 @@ def _periodo_datas(periodo: str) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
+def _resolver_datas(
+    periodo: str,
+    start_date: str | None,
+    end_date: str | None,
+) -> tuple[str, str]:
+    """Prefere start_date/end_date explícitos; fallback para período."""
+    if start_date and end_date:
+        return start_date, end_date
+    return _periodo_datas(periodo)
+
+
 @router.get("/campanhas")
 def listar_campanhas(
     workspace_id: str = Query(...),
     ads_account_id: str | None = Query(None),
     periodo: str = Query("30d"),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
     tipo: str | None = Query(None),
     status_filtro: str | None = Query(None, alias="status"),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
     workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
-    start, end = _periodo_datas(periodo)
+    start, end = _resolver_datas(periodo, start_date, end_date)
 
     filtros = "AND g.workspace_id = :wid AND g.periodo_inicio <= :end AND g.periodo_fim >= :start AND g.ativo = true"
     params: dict = {"wid": workspace_id, "start": start, "end": end}
@@ -101,11 +114,13 @@ def visao_geral(
     workspace_id: str = Query(...),
     ads_account_id: str | None = Query(None),
     periodo: str = Query("30d"),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
     workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
-    start, end = _periodo_datas(periodo)
+    start, end = _resolver_datas(periodo, start_date, end_date)
 
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtro_aid = ""
@@ -252,12 +267,14 @@ def dados_diarios(
     workspace_id: str = Query(...),
     ads_account_id: str | None = Query(None),
     periodo: str = Query("30d"),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
     campaign_id: str | None = Query(None),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
     workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
-    start, end = _periodo_datas(periodo)
+    start, end = _resolver_datas(periodo, start_date, end_date)
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtros = ""
     if ads_account_id:
@@ -295,12 +312,14 @@ def listar_grupos(
     workspace_id: str = Query(...),
     ads_account_id: str | None = Query(None),
     periodo: str = Query("30d"),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
     campaign_id: str | None = Query(None),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
     workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
-    start, end = _periodo_datas(periodo)
+    start, end = _resolver_datas(periodo, start_date, end_date)
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtros = ""
     if ads_account_id:
@@ -325,13 +344,15 @@ def listar_keywords(
     workspace_id: str = Query(...),
     ads_account_id: str | None = Query(None),
     periodo: str = Query("30d"),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
     campaign_id: str | None = Query(None),
     ad_group_id: str | None = Query(None),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
     workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
-    start, end = _periodo_datas(periodo)
+    start, end = _resolver_datas(periodo, start_date, end_date)
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtros = ""
     if ads_account_id:
@@ -359,12 +380,14 @@ def listar_anuncios(
     workspace_id: str = Query(...),
     ads_account_id: str | None = Query(None),
     periodo: str = Query("30d"),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
     campaign_id: str | None = Query(None),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
     workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
-    start, end = _periodo_datas(periodo)
+    start, end = _resolver_datas(periodo, start_date, end_date)
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtros = ""
     if ads_account_id:
@@ -389,12 +412,14 @@ def listar_publicos(
     workspace_id: str = Query(...),
     ads_account_id: str | None = Query(None),
     periodo: str = Query("30d"),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
     campaign_id: str | None = Query(None),
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
     workspace_id = _resolver_workspace_id(workspace_id, ads_account_id, usuario, db)
-    start, end = _periodo_datas(periodo)
+    start, end = _resolver_datas(periodo, start_date, end_date)
     params: dict = {"wid": workspace_id, "start": start, "end": end}
     filtros = ""
     if ads_account_id:
