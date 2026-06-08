@@ -119,6 +119,7 @@ export function NovaContaDialog({ open, onOpenChange, workspaces, onSaved }: Nov
   const [buscandoGoogle, setBuscandoGoogle] = useState(false)
   const [googleFiltro, setGoogleFiltro] = useState('')
   const [carregandoGoogleCreds, setCarregandoGoogleCreds] = useState(false)
+  const [googleCredsLoaded, setGoogleCredsLoaded] = useState(false)
 
   const isMeta = form.plataforma === 'meta'
   const isGoogle = form.plataforma === 'google'
@@ -143,6 +144,7 @@ export function NovaContaDialog({ open, onOpenChange, workspaces, onSaved }: Nov
     setGoogleSelecionadas([])
     setGoogleErro('')
     setGoogleFiltro('')
+    setGoogleCredsLoaded(false)
   }
 
   const loadMetaTokens = useCallback(async () => {
@@ -172,14 +174,15 @@ export function NovaContaDialog({ open, onOpenChange, workspaces, onSaved }: Nov
       setGoogleCredentials([])
     } finally {
       setCarregandoGoogleCreds(false)
+      setGoogleCredsLoaded(true)
     }
   }, [])
 
   useEffect(() => {
-    if (open && form.plataforma === 'google' && googleCredentials.length === 0 && !carregandoGoogleCreds) {
+    if (open && form.plataforma === 'google' && !googleCredsLoaded && !carregandoGoogleCreds) {
       loadGoogleCredentials()
     }
-  }, [open, form.plataforma, googleCredentials.length, carregandoGoogleCreds, loadGoogleCredentials])
+  }, [open, form.plataforma, googleCredsLoaded, carregandoGoogleCreds, loadGoogleCredentials])
 
   async function buscarContasMeta() {
     if (!form.workspace_id) { setMetaErro('Selecione um cliente primeiro'); return }
