@@ -140,9 +140,9 @@ def visao_geral(
     if not campanhas:
         return _kpi_vazio()
 
-    total_inv = sum(c["investimento"] or 0 for c in campanhas)
-    total_cliques = sum(c["cliques"] or 0 for c in campanhas)
-    total_impressoes = sum(c["impressoes"] or 0 for c in campanhas)
+    total_inv = sum(float(c["investimento"] or 0) for c in campanhas)
+    total_cliques = sum(int(c["cliques"] or 0) for c in campanhas)
+    total_impressoes = sum(int(c["impressoes"] or 0) for c in campanhas)
     total_conv = sum(float(c["conversoes"] or 0) for c in campanhas)
     total_val = sum(float(c["valor_conversoes"] or 0) for c in campanhas)
 
