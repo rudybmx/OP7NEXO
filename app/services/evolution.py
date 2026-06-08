@@ -489,10 +489,12 @@ def _normalize_group_entry(entry: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(participant, dict):
             continue
         jid = participant.get("jid") or participant.get("JID") or participant.get("id") or participant.get("remoteJid")
+        phone_jid = participant.get("PhoneNumber") or participant.get("phoneNumber") or participant.get("phone_number") or ""
         normalized_participants.append(
             {
                 "id": jid,
                 "jid": jid,
+                "phone_jid": str(phone_jid),
                 "admin": participant.get("admin") or participant.get("Admin") or participant.get("isAdmin") or participant.get("IsAdmin"),
                 "raw": participant,
             }

@@ -459,6 +459,20 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
             if isinstance(info, dict):
                 nome = info.get("subject") or info.get("name") or None
                 avatar_url = info.get("pictureUrl") or None
+                # Aproveitar participantes para resolver @lid → telefone
+                participants = info.get("participants") or []
+                if participants:
+                    resolved = _resolve_evolution_participant_phones(
+                        db,
+                        workspace_id=workspace_id,
+                        canal_id=canal_id,
+                        participants=participants,
+                    )
+                    if resolved:
+                        logger.info(
+                            "[group-enrich] evolution lid_resolvidos=%d jid=%s workspace=%s",
+                            resolved, group_jid, str(workspace_id)[:8],
+                        )
             logger.info(
                 "[group-enrich] evolution jid=%s instance=%s workspace=%s nome=%s has_avatar=%s",
                 group_jid, evolution_instance, str(workspace_id)[:8], nome, avatar_url is not None,
@@ -490,6 +504,116 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
     db.commit()
 
     return {"status": "done", "group_name": nome, "has_avatar": avatar_url is not None}
+
+
+# ---------------------------------------------------------------------------
+# Evolution: resolução de @lid via participantes de grupo
+# ---------------------------------------------------------------------------
+
+
+def _resolve_evolution_participant_phones(
+    db: Session,
+    *,
+    workspace_id: str,
+    canal_id: str,
+    participants: list[dict[str, Any]],
+) -> int:
+    """Usa a lista de participantes (Evolution Go /group/info) para resolver
+    @lid → @s.whatsapp.net e popular telefone nos contatos.
+
+    Equivalente ao process_lid_phone_enrichment_job do WAHA, mas sem chamada
+    de API extra — o Evolution Go já entrega PhoneNumber em cada participante.
+    Retorna o número de contatos atualizados.
+    """
+    from app.services.whatsapp_crm_persistence import _merge_duplicate_conversations  # noqa: PLC0415
+
+    resolved = 0
+    for p in participants:
+        lid_jid = str(p.get("jid") or p.get("id") or "")
+        phone_raw = str(p.get("phone_jid") or "")
+
+        if "@lid" not in lid_jid or not phone_raw:
+            continue
+
+        phone_digits = re.sub(r"\D", "", phone_raw.split("@")[0])
+        if not (phone_digits.startswith("55") and len(phone_digits) in (12, 13)):
+            continue
+
+        resolved_jid = f"{phone_digits}@s.whatsapp.net"
+
+        # Verificar se já existe contato com o @lid
+        existing = db.execute(
+            text("""
+                SELECT id FROM public.crm_whatsapp_contatos
+                WHERE workspace_id = CAST(:ws AS uuid) AND jid = :lid_jid
+            """),
+            {"ws": workspace_id, "lid_jid": lid_jid},
+        ).fetchone()
+        if not existing:
+            continue
+
+        contact_id = str(existing[0])
+
+        # Evitar colisão: verificar se resolved_jid já pertence a outro contato
+        collision = db.execute(
+            text("""
+                SELECT id FROM public.crm_whatsapp_contatos
+                WHERE workspace_id = CAST(:ws AS uuid) AND jid = :resolved_jid
+            """),
+            {"ws": workspace_id, "resolved_jid": resolved_jid},
+        ).fetchone()
+        if collision:
+            continue
+
+        # Atualizar contato: jid + telefone
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_contatos
+                SET jid = :resolved_jid,
+                    numero_evo = :resolved_jid,
+                    telefone = :phone,
+                    updated_at = NOW()
+                WHERE workspace_id = CAST(:ws AS uuid) AND jid = :lid_jid
+            """),
+            {"ws": workspace_id, "resolved_jid": resolved_jid, "phone": phone_digits, "lid_jid": lid_jid},
+        )
+
+        # Atualizar remote_jid das conversas
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_conversas
+                SET remote_jid = :resolved_jid, updated_at = NOW()
+                WHERE workspace_id = CAST(:ws AS uuid)
+                  AND canal_id = CAST(:canal AS uuid)
+                  AND remote_jid = :lid_jid
+            """),
+            {"ws": workspace_id, "canal": canal_id, "resolved_jid": resolved_jid, "lid_jid": lid_jid},
+        )
+
+        # Consolidar conversas duplicadas (mesmo contato com JIDs diferentes)
+        _merge_duplicate_conversations(
+            db,
+            workspace_id=workspace_id,
+            canal_id=canal_id,
+            canonical_jid=resolved_jid,
+        )
+
+        # Enfileirar avatar para o JID resolvido (antes era @lid, não buscava)
+        enqueue_contact_avatar_enrichment(
+            db,
+            workspace_id=workspace_id,
+            canal_id=canal_id,
+            contact_id=contact_id,
+            jid=resolved_jid,
+            instance="",
+        )
+
+        resolved += 1
+
+    if resolved:
+        db.commit()
+
+    return resolved
 
 
 # ---------------------------------------------------------------------------
