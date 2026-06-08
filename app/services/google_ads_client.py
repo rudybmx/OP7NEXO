@@ -72,7 +72,7 @@ def listar_contas_acessiveis(cred: dict) -> list[dict]:
 QUERY_CAMPANHAS = """
 SELECT
     campaign.id, campaign.name, campaign.advertising_channel_type,
-    campaign.status, campaign.campaign_budget.amount_micros,
+    campaign.status, campaign_budget.amount_micros,
     metrics.cost_micros, metrics.clicks, metrics.impressions,
     metrics.conversions, metrics.conversions_value,
     metrics.search_impression_share,
@@ -157,7 +157,6 @@ QUERY_PUBLICOS = """
 SELECT
     campaign.id,
     ad_group_criterion.criterion_id,
-    user_list.name,
     metrics.cost_micros, metrics.clicks, metrics.impressions,
     metrics.conversions
 FROM audience_view
@@ -216,7 +215,7 @@ def buscar_dados_conta(cred: dict, customer_id: str, periodo: str = "30d") -> di
             "campaign_name": row.campaign.name,
             "tipo_campanha": row.campaign.advertising_channel_type.name,
             "status": row.campaign.status.name,
-            "orcamento_diario": _m(row.campaign.campaign_budget.amount_micros),
+            "orcamento_diario": _m(row.campaign_budget.amount_micros),
             "investimento": inv,
             "cliques": cliques,
             "impressoes": imp,
@@ -349,23 +348,32 @@ def buscar_dados_conta(cred: dict, customer_id: str, periodo: str = "30d") -> di
         })
 
     # ── Públicos ───────────────────────────────────────────────────────────
+    # audience_view não é suportado em todos os tipos de conta — fail-safe
     publicos = []
-    for row in stream(QUERY_PUBLICOS):
-        inv = _m(row.metrics.cost_micros)
-        cliques = int(row.metrics.clicks)
-        imp = int(row.metrics.impressions)
-        conv = _safe(row.metrics.conversions)
-        leads = int(conv)
-        publicos.append({
-            "criterion_id": str(row.ad_group_criterion.criterion_id),
-            "campaign_id": str(row.campaign.id),
-            "audience_name": row.user_list.name if hasattr(row, "user_list") else "",
-            "leads": leads,
-            "investimento": inv,
-            "cpl": inv / leads if leads > 0 else 0.0,
-            "ctr": (cliques / imp * 100) if imp > 0 else 0.0,
-            "percentual": 0.0,
-        })
+    try:
+        for row in stream(QUERY_PUBLICOS):
+            inv = _m(row.metrics.cost_micros)
+            cliques = int(row.metrics.clicks)
+            imp = int(row.metrics.impressions)
+            conv = _safe(row.metrics.conversions)
+            leads = int(conv)
+            crit_id = str(row.ad_group_criterion.criterion_id)
+            publicos.append({
+                "criterion_id": crit_id,
+                "campaign_id": str(row.campaign.id),
+                "audience_name": f"Público {crit_id}",
+                "leads": leads,
+                "investimento": inv,
+                "cpl": inv / leads if leads > 0 else 0.0,
+                "ctr": (cliques / imp * 100) if imp > 0 else 0.0,
+                "percentual": 0.0,
+            })
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "audience_view query falhou (conta pode não suportar este recurso): %s", exc
+        )
+        publicos = []
 
     return {
         "campanhas": campanhas,
