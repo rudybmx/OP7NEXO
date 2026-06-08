@@ -261,3 +261,26 @@ def sync_conta_manual(
     ).start()
 
     return {"job_id": str(job.id), "status": "pending"}
+
+
+@router.get("/sync/job/{job_id}")
+def get_sync_job(
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Retorna o status de um job de sync Google Ads."""
+    job = db.get(SyncJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+    return {
+        "id": str(job.id),
+        "ads_account_id": job.ads_account_id,
+        "status": job.status,
+        "etapa_atual": job.etapa_atual,
+        "progresso": job.progresso,
+        "totais": job.totais,
+        "erro": job.erro,
+        "created_at": job.created_at.isoformat(),
+        "updated_at": job.updated_at.isoformat(),
+    }
