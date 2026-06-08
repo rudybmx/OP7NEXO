@@ -46,7 +46,7 @@ def listar_campanhas(
     _verificar_acesso_workspace(workspace_id, usuario, db)
     start, end = _periodo_datas(periodo)
 
-    filtros = "AND g.workspace_id = :wid AND g.periodo_inicio >= :start AND g.periodo_fim <= :end AND g.ativo = true"
+    filtros = "AND g.workspace_id = :wid AND g.periodo_inicio <= :end AND g.periodo_fim >= :start AND g.ativo = true"
     params: dict = {"wid": workspace_id, "start": start, "end": end}
 
     if ads_account_id:
@@ -90,7 +90,7 @@ def visao_geral(
     rows = db.execute(text(f"""
         SELECT * FROM google_campanhas_insights
         WHERE workspace_id = :wid
-          AND periodo_inicio >= :start AND periodo_fim <= :end
+          AND periodo_inicio <= :end AND periodo_fim >= :start
           AND ativo = true
           {filtro_aid}
     """), params).mappings().all()
