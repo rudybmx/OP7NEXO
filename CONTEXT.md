@@ -120,6 +120,25 @@ Account
 
 ---
 
+## GOOGLE ADS
+
+### Páginas
+- `/marketing/campanhas/google-ads` — dashboard Google Ads com abas: Visão geral, Campanhas, Grupos, Palavras-chave, Anúncios, Públicos
+- Componente principal: `src/components/google-ads/pagina-google-ads.tsx`
+- Seletor de conta: GlassSelect carrega `/workspaces/{wsId}/ads-accounts` filtrado por `plataforma === 'google'`; propaga `adsAccountId` para todas as abas
+
+### Hooks
+- `src/hooks/use-google-visao-geral.ts` — KPI, breakdown, QS, dadosDiarios
+- `src/hooks/use-google-campanhas.ts`, `use-google-grupos.ts`, `use-google-palavras.ts`, `use-google-anuncios.ts`, `use-google-publicos.ts`
+- Todos aceitam `adsAccountId?: string` como último parâmetro
+
+### Rota de API
+- `GET /google-ads/visao-geral?workspace_id&periodo&ads_account_id` 
+- `GET /google-ads/campanhas?workspace_id&periodo&ads_account_id&tipo&status`
+- Filtro de período usa **sobreposição** (`periodo_inicio <= :end AND periodo_fim >= :start`)
+
+---
+
 ## CANAIS — WhatsApp (Evolution API)
 
 ### Base URL

@@ -19,3 +19,10 @@ src/app/api/auth/me/route.ts
 src/app/api/meta/campanhas/route.ts
 src/app/api/auth/login/route.ts
 src/app/api/auth/refresh/route.ts
+src/app/api/whatsapp/conversations/[id]/atualizar/route.ts
+src/app/api/whatsapp/conversations/[id]/etiquetas/[etiquetaId]/route.ts
+src/app/api/whatsapp/conversations/[id]/marcar-lido/route.ts
+src/app/api/whatsapp/conversations/[id]/marcar-nao-lido/route.ts
+src/app/api/whatsapp/conversations/arquivadas/[id]/route.ts
+src/app/api/whatsapp/conversations/arquivadas/route.ts
+src/app/api/whatsapp/etiquetas/route.ts
