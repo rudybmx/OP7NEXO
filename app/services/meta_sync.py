@@ -1807,6 +1807,37 @@ def marcar_sync_jobs_ativos_como_interrompidos(motivo: str = SYNC_JOB_INTERRUPTE
             """),
             {"motivo": motivo},
         )
+        # Atualizar meta_sync_states para contas com meta_sync_log running
+        # mas sem sync_jobs (syncs agendados pelo scheduler não criam sync_jobs)
+        contas_log = db.execute(
+            text("""
+                SELECT DISTINCT ads_account_id
+                FROM meta_sync_log
+                WHERE status = 'error'
+                  AND stage_failed = 'interrompido'
+                  AND finished_at >= NOW() - INTERVAL '5 seconds'
+            """)
+        ).scalars().all()
+        contas_ids = {str(c) for c in contas if c}
+        contas_apenas_log = [c for c in contas_log if c and str(c) not in contas_ids]
+        if contas_apenas_log:
+            db.execute(
+                text("""
+                    UPDATE meta_sync_states
+                    SET last_run_at = NOW(),
+                        last_run_status = 'error',
+                        last_error_at = NOW(),
+                        last_error_stage = 'interrompido',
+                        last_error_message = :motivo,
+                        last_error_meta = CAST(:meta AS JSONB)
+                    WHERE ads_account_id = ANY(:ids)
+                """),
+                {
+                    "motivo": motivo,
+                    "meta": json.dumps({"reason": "service_restart", "source": "meta_sync_log"}),
+                    "ids": [uuid.UUID(str(c)) for c in contas_apenas_log],
+                },
+            )
         db.commit()
         return int(getattr(result, "rowcount", 0) or 0)
 
