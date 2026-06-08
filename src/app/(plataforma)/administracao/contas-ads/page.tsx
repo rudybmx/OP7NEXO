@@ -119,12 +119,13 @@ const PLATFORM_BADGE: Record<string, { label: string; bg: string; color: string 
 }
 
 const INSIGHTS_BADGE = {
-  com_dados: { label: 'Com dados', bg: 'rgba(15,168,86,0.15)', color: 'var(--ws-green)' },
-  aguardando: { label: 'Aguardando', bg: 'rgba(201,168,76,0.15)', color: '#c9a84c' },
-  erro: { label: 'Erro', bg: 'rgba(255,92,141,0.15)', color: 'var(--ws-coral)' },
-  cooldown: { label: 'Cooldown', bg: 'rgba(201,168,76,0.15)', color: '#c9a84c' },
-  executando: { label: 'Executando', bg: 'rgba(62,91,255,0.15)', color: 'var(--ws-blue)' },
-  pausado: { label: 'Pausado', bg: 'rgba(255,92,141,0.15)', color: 'var(--ws-coral)' },
+  com_dados:      { label: 'Com dados',    bg: 'rgba(15,168,86,0.15)',   color: 'var(--ws-green)' },
+  dados_com_erro: { label: 'Erro no sync', bg: 'rgba(201,168,76,0.15)', color: '#c9a84c' },
+  aguardando:     { label: 'Aguardando',   bg: 'rgba(201,168,76,0.15)', color: '#c9a84c' },
+  erro:           { label: 'Erro',         bg: 'rgba(255,92,141,0.15)', color: 'var(--ws-coral)' },
+  cooldown:       { label: 'Cooldown',     bg: 'rgba(201,168,76,0.15)', color: '#c9a84c' },
+  executando:     { label: 'Executando',   bg: 'rgba(62,91,255,0.15)',  color: 'var(--ws-blue)' },
+  pausado:        { label: 'Pausado',      bg: 'rgba(255,92,141,0.15)', color: 'var(--ws-coral)' },
 }
 
 function isFutureIso(iso?: string | null): boolean {
@@ -138,7 +139,10 @@ function insightsBadge(c: AdsAccount) {
   if (c.sync_paused) return INSIGHTS_BADGE.pausado
   if (state?.cooldown_until && isFutureIso(state.cooldown_until)) return INSIGHTS_BADGE.cooldown
   if (state?.last_run_status === 'running') return INSIGHTS_BADGE.executando
-  if (state?.last_run_status === 'error') return INSIGHTS_BADGE.erro
+  if (state?.last_run_status === 'error') {
+    if (state?.last_success_at || c.sincronizado_em) return INSIGHTS_BADGE.dados_com_erro
+    return INSIGHTS_BADGE.erro
+  }
   if (state?.last_success_at || c.sincronizado_em) return INSIGHTS_BADGE.com_dados
   return INSIGHTS_BADGE.aguardando
 }
