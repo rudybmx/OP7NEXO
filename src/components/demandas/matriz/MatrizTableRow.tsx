@@ -106,7 +106,14 @@ export default function MatrizTableRow({
               {CANAL_CONFIG[row.canal].icon}
             </div>
             <div className="min-w-0">
-              <div className="truncate text-[13px] font-medium text-foreground">{row.label}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-[13px] font-medium text-foreground">{row.label}</span>
+                {row.sem_integracao && (
+                  <span className="rounded-full border border-muted/60 bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    sem integração
+                  </span>
+                )}
+              </div>
               <div className="text-[12px] text-muted-foreground">Aprovado</div>
             </div>
           </div>
@@ -192,7 +199,7 @@ export default function MatrizTableRow({
 
       <tr className={highlighted ? 'ring-2 ring-[var(--ws-gold)] ring-inset' : undefined}>
         {viewMode === 'month' ? row.months.map((month) => {
-          const execucao = getExecution(month.aprovado, month.realizado)
+          const execucao = row.sem_integracao ? null : getExecution(month.aprovado, month.realizado)
           const isCurrentMonth = month.month === currentMonth
           const isFuture = month.realizado === 0
           return (
@@ -201,11 +208,13 @@ export default function MatrizTableRow({
               className={cn(
                 'h-[48px] w-[90px] px-2 text-center',
                 isCurrentMonth && 'bg-[var(--ws-gold)]/6',
-                isFuture && 'bg-muted/20'
+                !row.sem_integracao && isFuture && 'bg-muted/20'
               )}
               style={{ borderBottom: '1px solid var(--ws-glass-border)' }}
             >
-              <div className="text-[13px] tabular-nums text-muted-foreground">{formatBRL(month.realizado)}</div>
+              <div className="text-[13px] tabular-nums text-muted-foreground">
+                {row.sem_integracao ? '—' : formatBRL(month.realizado)}
+              </div>
               {execucao ? (
                 <div
                   className="mt-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"

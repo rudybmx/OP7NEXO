@@ -9,21 +9,14 @@ import MatrizKpiBar from '@/components/demandas/matriz/MatrizKpiBar'
 import MatrizAdditionalCharts from '@/components/demandas/matriz/MatrizAdditionalCharts'
 import MatrizTable from '@/components/demandas/matriz/MatrizTable'
 import { Toaster } from '@/components/ui/sonner'
-import { matrizClients, matrizPlans, matrizYears } from '@/lib/matriz-mock-data'
 import { deepCloneRows } from '@/lib/matriz-utils'
 import MatrizDistributionHorizontal from '@/components/demandas/matriz/MatrizDistributionHorizontal'
-import type { Canal, CanalRow, MatrizDraft, MatrizPlan } from '@/types/matriz'
+import { useWorkspace } from '@/lib/workspace-context'
+import { useMatrizInvestimento } from '@/hooks/use-matriz-investimento'
+import type { Canal, CanalRow, MatrizDraft } from '@/types/matriz'
 
-function buildInitialPlans(): MatrizPlan[] {
-  return matrizPlans.flatMap((plan) =>
-    matrizYears.map((year) => ({
-      ...plan,
-      id: `${plan.clientId}-${year}`,
-      year,
-      rows: deepCloneRows(plan.rows),
-    }))
-  )
-}
+const CURRENT_YEAR = new Date().getFullYear()
+const MATRIZ_YEARS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1]
 
 function countChangedCells(baseRows: CanalRow[], draftRows: CanalRow[]): number {
   return draftRows.reduce((sum, draftRow) => {
@@ -40,28 +33,25 @@ function countChangedCells(baseRows: CanalRow[], draftRows: CanalRow[]): number 
   }, 0)
 }
 
-function sleep(milliseconds: number) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
-}
-
 export default function Page() {
-  const [plans, setPlans] = useState<MatrizPlan[]>(() => buildInitialPlans())
-  const [selectedClientId, setSelectedClientId] = useState<string>(matrizClients[0]?.id ?? '')
-  const [selectedYear, setSelectedYear] = useState<number>(2026)
+  const { workspaceAtivo, workspaces } = useWorkspace()
+  const workspaceName = useMemo(
+    () => workspaces.find((w) => w.workspace_id === workspaceAtivo)?.workspace_nome ?? '',
+    [workspaces, workspaceAtivo],
+  )
+
+  const [selectedYear, setSelectedYear] = useState<number>(CURRENT_YEAR)
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState<MatrizDraft | null>(null)
   const [highlightedCanal, setHighlightedCanal] = useState<Canal | null>(null)
   const [changesCount, setChangesCount] = useState(0)
-  const [isSaving, setIsSaving] = useState(false)
   const [viewMode, setViewMode] = useState<'month' | 'day'>('month')
 
-  const selectedPlan = useMemo(
-    () =>
-      plans.find((plan) => plan.clientId === selectedClientId && plan.year === selectedYear) ??
-      plans.find((plan) => plan.clientId === selectedClientId) ??
-      plans[0],
-    [plans, selectedClientId, selectedYear]
+  const { plan, isLoading, isSaving, error, salvar } = useMatrizInvestimento(
+    workspaceAtivo,
+    workspaceName,
+    selectedYear,
   )
 
   useEffect(() => {
@@ -70,11 +60,18 @@ export default function Page() {
     return () => window.clearTimeout(timeout)
   }, [highlightedCanal])
 
+  // Reset edit state when year or workspace changes
+  useEffect(() => {
+    setDraft(null)
+    setIsEditing(false)
+    setChangesCount(0)
+  }, [selectedYear, workspaceAtivo])
+
   function handleEditToggle() {
-    if (!selectedPlan) return
+    if (!plan) return
 
     if (!isEditing) {
-      const clonedRows = JSON.parse(JSON.stringify(selectedPlan.rows)) as CanalRow[]
+      const clonedRows = JSON.parse(JSON.stringify(plan.rows)) as CanalRow[]
       setDraft({ rows: clonedRows, isDirty: false })
       setChangesCount(0)
       setIsEditing(true)
@@ -87,7 +84,7 @@ export default function Page() {
   }
 
   function handleCellChange(canal: Canal, month: number, value: number) {
-    if (!draft || !selectedPlan) return
+    if (!draft || !plan) return
 
     const nextRows = deepCloneRows(draft.rows)
     const row = nextRows.find((entry) => entry.canal === canal)
@@ -97,7 +94,7 @@ export default function Page() {
 
     targetMonth.aprovado = value
 
-    const nextChangesCount = countChangedCells(selectedPlan.rows, nextRows)
+    const nextChangesCount = countChangedCells(plan.rows, nextRows)
     setDraft({
       rows: nextRows,
       isDirty: nextChangesCount > 0,
@@ -106,29 +103,17 @@ export default function Page() {
   }
 
   async function handleSave() {
-    if (!draft || !selectedPlan) return
+    if (!draft || !plan) return
 
-    setIsSaving(true)
-    await sleep(500)
-
-    setPlans((current) =>
-      current.map((plan) =>
-        plan.id === selectedPlan.id
-          ? {
-              ...plan,
-              rows: JSON.parse(JSON.stringify(draft.rows)) as CanalRow[],
-              updatedAt: '2025-04-10',
-              updatedBy: 'Ana Lima',
-            }
-          : plan
-      )
-    )
-
-    setDraft(null)
-    setIsEditing(false)
-    setChangesCount(0)
-    setIsSaving(false)
-    toast.success('Matriz salva com sucesso')
+    try {
+      await salvar(draft.rows)
+      setDraft(null)
+      setIsEditing(false)
+      setChangesCount(0)
+      toast.success('Matriz salva com sucesso')
+    } catch {
+      toast.error('Erro ao salvar. Tente novamente.')
+    }
   }
 
   function handleCancel() {
@@ -137,57 +122,51 @@ export default function Page() {
     setChangesCount(0)
   }
 
-  function handleClientChange(clientId: string) {
-    setSelectedClientId(clientId)
-    setIsEditing(false)
-    setDraft(null)
-    setChangesCount(0)
-  }
-
   function handleYearChange(year: number) {
     setSelectedYear(year)
-    setIsEditing(false)
-    setDraft(null)
-    setChangesCount(0)
   }
 
   function handleMonthChange(month: number) {
     setSelectedMonth(month)
   }
 
-  if (!selectedPlan) {
-    return null
+  if (isLoading || !plan) {
+    return (
+      <div className="flex h-64 items-center justify-center text-muted-foreground text-sm">
+        {error ? `Erro: ${error}` : 'Carregando...'}
+      </div>
+    )
   }
+
+  const activePlan = draft ? { ...plan, rows: draft.rows } : plan
 
   return (
     <div className="flex flex-col gap-6 p-6 pb-20">
       <Toaster />
 
       <MatrizHeader
-        clients={matrizClients}
-        selectedClientId={selectedClientId}
-        onClientChange={handleClientChange}
-        years={matrizYears}
+        workspaceName={workspaceName}
+        years={MATRIZ_YEARS}
         selectedYear={selectedYear}
         onYearChange={handleYearChange}
         selectedMonth={selectedMonth}
         onMonthChange={handleMonthChange}
         isEditing={isEditing}
         onEditToggle={handleEditToggle}
-        updatedAt={selectedPlan.updatedAt}
-        updatedBy={selectedPlan.updatedBy}
+        updatedAt={plan.updatedAt}
+        updatedBy={plan.updatedBy}
       />
 
-      <MatrizKpiBar plan={draft ? { ...selectedPlan, rows: draft.rows } : selectedPlan} />
+      <MatrizKpiBar plan={activePlan} />
 
-      <MatrizInsights plan={draft ? { ...selectedPlan, rows: draft.rows } : selectedPlan} onCanalHighlight={setHighlightedCanal} />
+      <MatrizInsights plan={activePlan} onCanalHighlight={setHighlightedCanal} />
 
       <div className="flex flex-col gap-4">
-        <MatrizAdditionalCharts plan={draft ? { ...selectedPlan, rows: draft.rows } : selectedPlan} />
+        <MatrizAdditionalCharts plan={activePlan} />
 
         <div className="min-w-0 w-full overflow-hidden">
-          <MatrizDistributionHorizontal plan={draft ? { ...selectedPlan, rows: draft.rows } : selectedPlan} />
-          
+          <MatrizDistributionHorizontal plan={activePlan} />
+
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-foreground">Distribuição Orçamentária</h3>
             <div className="flex items-center gap-1 rounded-md border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] p-1 backdrop-blur-md">
@@ -215,7 +194,7 @@ export default function Page() {
           </div>
 
           <MatrizTable
-            plan={selectedPlan}
+            plan={plan}
             draft={draft}
             isEditing={isEditing}
             highlightedCanal={highlightedCanal}

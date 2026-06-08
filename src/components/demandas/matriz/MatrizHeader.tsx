@@ -13,9 +13,7 @@ import {
 import { formatDateBR } from '@/lib/gantt-utils'
 
 interface MatrizHeaderProps {
-  clients: { id: string; name: string }[]
-  selectedClientId: string
-  onClientChange: (id: string) => void
+  workspaceName: string
   years: number[]
   selectedYear: number
   onYearChange: (year: number) => void
@@ -28,9 +26,7 @@ interface MatrizHeaderProps {
 }
 
 export default function MatrizHeader({
-  clients,
-  selectedClientId,
-  onClientChange,
+  workspaceName,
   years,
   selectedYear,
   onYearChange,
@@ -57,9 +53,22 @@ export default function MatrizHeader({
           <BarChart3 className="h-5 w-5" />
         </div>
         <div className="min-w-0">
-          <h1 className="text-[18px] font-semibold text-foreground">Matriz de Investimento</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-[18px] font-semibold text-foreground">Matriz de Investimento</h1>
+            {workspaceName && (
+              <Badge
+                className="rounded-full border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+              >
+                {workspaceName}
+              </Badge>
+            )}
+          </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
-            <span>{`Atualizado em ${formatDateBR(updatedAt)} por ${updatedBy}`}</span>
+            {updatedAt && updatedBy ? (
+              <span>{`Atualizado em ${formatDateBR(updatedAt)} por ${updatedBy}`}</span>
+            ) : (
+              <span className="italic">Nenhum dado salvo ainda</span>
+            )}
             <Badge className="rounded-full border border-[var(--ws-gold)]/30 bg-[var(--ws-gold)]/10 px-2 py-0.5 text-[11px] font-medium text-[#92722a]">
               {selectedYear}
             </Badge>
@@ -68,19 +77,6 @@ export default function MatrizHeader({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <Select value={selectedClientId} onValueChange={onClientChange}>
-          <SelectTrigger className="h-10 min-w-64 text-foreground" style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}>
-            <SelectValue placeholder="Selecionar cliente" />
-          </SelectTrigger>
-          <SelectContent style={{ background: 'var(--ws-glass-bg)', borderColor: 'var(--ws-glass-border)', backdropFilter: 'blur(16px)' }}>
-            {clients.map((client) => (
-              <SelectItem key={client.id} value={client.id}>
-                {client.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         <Select value={String(selectedMonth)} onValueChange={(value) => onMonthChange(Number(value))}>
           <SelectTrigger className="h-10 min-w-32 text-foreground" style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}>
             <SelectValue placeholder="Mês" />

@@ -10,6 +10,7 @@ export interface CanalRow {
   canal: Canal
   label: string
   color: string
+  sem_integracao?: boolean
   months: MonthValue[]
 }
 
