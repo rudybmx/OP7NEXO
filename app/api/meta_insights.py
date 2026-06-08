@@ -1506,6 +1506,7 @@ def visao_geral(
             "WHERE ads_account_id = ANY(:ids) "
             "  AND data BETWEEN :ini AND :fim "
             "  AND breakdown_type = 'placement' "
+            "  AND campaign_id = 'ALL' "
             "GROUP BY breakdown_value "
             "ORDER BY leads DESC"
         ),
