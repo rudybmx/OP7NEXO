@@ -1,6 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
+import { format } from 'date-fns'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import type { GrupoAnunciosDetalhe, FiltrosGruposGoogle } from '@/types/google-ads'
@@ -43,13 +44,16 @@ function mapRow(r: Record<string, unknown>): GrupoAnunciosDetalhe {
 
 export function useGoogleGrupos(
   filtros: FiltrosGruposGoogle,
-  periodo: string = '30d',
+  dateRange: { start: Date; end: Date },
   adsAccountId?: string
 ) {
   const { workspaceAtivo } = useWorkspace()
   const wsId = workspaceAtivo?.id
 
-  const params = new URLSearchParams({ periodo })
+  const params = new URLSearchParams({
+    start_date: format(dateRange.start, 'yyyy-MM-dd'),
+    end_date: format(dateRange.end, 'yyyy-MM-dd'),
+  })
   if (wsId) params.set('workspace_id', wsId)
   if (adsAccountId) params.set('ads_account_id', adsAccountId)
   if (filtros.campanhaId && filtros.campanhaId !== 'todas') params.set('campaign_id', filtros.campanhaId)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { subDays, startOfDay, endOfDay } from 'date-fns'
 import {
   ChevronDown,
   Check,
@@ -22,6 +23,7 @@ import { AbaPalavrasChaveGoogle } from './palavras-chave'
 import { AbaAnunciosGoogle } from './anuncios'
 import { AbaPublicosGoogle } from './publicos'
 import { BreadcrumbMobile } from '@/components/ui/breadcrumb-mobile'
+import { GoogleDateRangePicker } from '@/components/ui/google-date-range-picker'
 import { siGoogle } from 'simple-icons'
 
 const ABAS_CONFIG = [
@@ -104,7 +106,7 @@ function GlassSelect({ label, value, onChange, options, minWidth = 160 }: {
 export function PaginaGoogleAds() {
   const [abaAtiva, setAbaAtiva] = useState<Aba>('Visão geral')
   const [filtros, setFiltros] = useState<FiltrosGoogle>({
-    periodo: '30d',
+    dateRange: { start: startOfDay(subDays(new Date(), 30)), end: endOfDay(new Date()) },
     tipoCampanha: 'todas',
     status: 'todos',
   })
@@ -180,36 +182,12 @@ export function PaginaGoogleAds() {
           ]}
         />
 
-        {/* Toggle Período */}
-        <div style={{
-          marginLeft: 'auto',
-          display: 'inline-flex',
-          border: '1px solid var(--ws-glass-border)',
-          borderRadius: 'var(--ws-radius-md)',
-          overflow: 'hidden',
-          background: 'var(--ws-glass-bg)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-        }}>
-          {(['7d', '30d', '90d'] as const).map((p, i) => (
-            <button
-              key={p}
-              onClick={() => setFiltros(f => ({ ...f, periodo: p }))}
-              style={{
-                height: 32, padding: '0 12px', fontSize: 12,
-                fontWeight: filtros.periodo === p ? 500 : 400,
-                background: filtros.periodo === p ? 'rgba(62,91,255,0.12)' : 'transparent',
-                color: filtros.periodo === p ? 'var(--ws-blue)' : 'var(--ws-text-3)',
-                border: 'none', cursor: 'pointer',
-                borderRight: i < 2 ? '1px solid var(--ws-divider)' : 'none',
-                transition: 'var(--ws-transition)', whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={e => { if (filtros.periodo !== p) e.currentTarget.style.background = 'rgba(62,91,255,0.06)' }}
-              onMouseLeave={e => { if (filtros.periodo !== p) e.currentTarget.style.background = 'transparent' }}
-            >
-              {p === '7d' ? '7 dias' : p === '30d' ? '30 dias' : '90 dias'}
-            </button>
-          ))}
+        {/* Date Range Picker */}
+        <div style={{ marginLeft: 'auto' }}>
+          <GoogleDateRangePicker
+            value={filtros.dateRange}
+            onChange={(range) => setFiltros(f => ({ ...f, dateRange: range }))}
+          />
         </div>
       </div>
 
@@ -250,11 +228,11 @@ export function PaginaGoogleAds() {
 
       {/* Conteúdo das Abas */}
       {abaAtiva === 'Visão geral'        && <VisaoGeralGoogle      filtros={filtros} adsAccountId={selectedContaId || undefined} />}
-      {abaAtiva === 'Campanhas'          && <AbaCampanhasGoogle     adsAccountId={selectedContaId || undefined} />}
-      {abaAtiva === 'Grupos de anúncios' && <AbaGruposGoogle        adsAccountId={selectedContaId || undefined} />}
-      {abaAtiva === 'Palavras-chave'     && <AbaPalavrasChaveGoogle adsAccountId={selectedContaId || undefined} />}
-      {abaAtiva === 'Anúncios'           && <AbaAnunciosGoogle      adsAccountId={selectedContaId || undefined} />}
-      {abaAtiva === 'Públicos'           && <AbaPublicosGoogle      adsAccountId={selectedContaId || undefined} />}
+      {abaAtiva === 'Campanhas'          && <AbaCampanhasGoogle     dateRange={filtros.dateRange} adsAccountId={selectedContaId || undefined} />}
+      {abaAtiva === 'Grupos de anúncios' && <AbaGruposGoogle        dateRange={filtros.dateRange} adsAccountId={selectedContaId || undefined} />}
+      {abaAtiva === 'Palavras-chave'     && <AbaPalavrasChaveGoogle dateRange={filtros.dateRange} adsAccountId={selectedContaId || undefined} />}
+      {abaAtiva === 'Anúncios'           && <AbaAnunciosGoogle      dateRange={filtros.dateRange} adsAccountId={selectedContaId || undefined} />}
+      {abaAtiva === 'Públicos'           && <AbaPublicosGoogle      dateRange={filtros.dateRange} adsAccountId={selectedContaId || undefined} />}
     </div>
   )
 }

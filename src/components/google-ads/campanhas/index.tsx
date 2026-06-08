@@ -7,7 +7,7 @@ import { BarraResumo } from './barra-resumo'
 import { FiltrosCampanhasGoogle as FiltrosCampanhasGoogleComp } from './filtros-campanhas-google'
 import { TabelaCampanhas } from './tabela-campanhas'
 
-export function AbaCampanhasGoogle({ adsAccountId }: { adsAccountId?: string }) {
+export function AbaCampanhasGoogle({ dateRange, adsAccountId }: { dateRange: { start: Date; end: Date }; adsAccountId?: string }) {
   const [filtros, setFiltros] = useState<FiltrosCampanhasGoogle>({
     busca: '',
     tipo: 'todos',
@@ -16,7 +16,7 @@ export function AbaCampanhasGoogle({ adsAccountId }: { adsAccountId?: string }) 
     ordem: 'desc',
   })
 
-  const { campanhas, grupos } = useGoogleCampanhas(filtros, undefined, adsAccountId)
+  const { campanhas, grupos } = useGoogleCampanhas(filtros, dateRange, adsAccountId)
 
   return (
     <div>

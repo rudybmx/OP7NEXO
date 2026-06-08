@@ -1,6 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
+import { format } from 'date-fns'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import type {
@@ -45,7 +46,10 @@ export function useGoogleVisaoGeral(filtros: FiltrosGoogle, adsAccountId?: strin
   const { workspaceAtivo } = useWorkspace()
   const wsId = workspaceAtivo?.id
 
-  const baseParams = new URLSearchParams({ periodo: filtros.periodo })
+  const baseParams = new URLSearchParams({
+    start_date: format(filtros.dateRange.start, 'yyyy-MM-dd'),
+    end_date: format(filtros.dateRange.end, 'yyyy-MM-dd'),
+  })
   if (wsId) baseParams.set('workspace_id', wsId)
   if (adsAccountId) baseParams.set('ads_account_id', adsAccountId)
 

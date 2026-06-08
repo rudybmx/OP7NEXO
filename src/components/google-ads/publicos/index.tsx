@@ -2,8 +2,8 @@
 
 import { useGooglePublicos } from '@/hooks/use-google-publicos'
 
-export function AbaPublicosGoogle({ adsAccountId }: { adsAccountId?: string }) {
-  const { publicos } = useGooglePublicos(undefined, adsAccountId)
+export function AbaPublicosGoogle({ dateRange, adsAccountId }: { dateRange: { start: Date; end: Date }; adsAccountId?: string }) {
+  const { publicos } = useGooglePublicos(dateRange, adsAccountId)
 
   return (
     <div style={{

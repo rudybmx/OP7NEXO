@@ -1,6 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
+import { format } from 'date-fns'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import type { CampanhaGoogle, GrupoAnunciosDetalhe, FiltrosCampanhasGoogle } from '@/types/google-ads'
@@ -69,13 +70,16 @@ function mapGrupo(r: Record<string, unknown>): GrupoAnunciosDetalhe {
 
 export function useGoogleCampanhas(
   filtros: FiltrosCampanhasGoogle,
-  periodo: string = '30d',
+  dateRange: { start: Date; end: Date },
   adsAccountId?: string
 ) {
   const { workspaceAtivo } = useWorkspace()
   const wsId = workspaceAtivo?.id
 
-  const campParams = new URLSearchParams({ periodo })
+  const campParams = new URLSearchParams({
+    start_date: format(dateRange.start, 'yyyy-MM-dd'),
+    end_date: format(dateRange.end, 'yyyy-MM-dd'),
+  })
   if (wsId) campParams.set('workspace_id', wsId)
   if (adsAccountId) campParams.set('ads_account_id', adsAccountId)
   if (filtros.tipo && filtros.tipo !== 'todos') campParams.set('tipo', filtros.tipo)
@@ -88,7 +92,10 @@ export function useGoogleCampanhas(
   )
 
   // Pré-carrega grupos para a função grupos(campanhaId)
-  const grupoParams = new URLSearchParams({ periodo })
+  const grupoParams = new URLSearchParams({
+    start_date: format(dateRange.start, 'yyyy-MM-dd'),
+    end_date: format(dateRange.end, 'yyyy-MM-dd'),
+  })
   if (wsId) grupoParams.set('workspace_id', wsId)
   if (adsAccountId) grupoParams.set('ads_account_id', adsAccountId)
 

@@ -2,8 +2,8 @@
 
 import { useGooglePalavras } from '@/hooks/use-google-palavras'
 
-export function AbaPalavrasChaveGoogle({ adsAccountId }: { adsAccountId?: string }) {
-  const { palavras } = useGooglePalavras(undefined, adsAccountId)
+export function AbaPalavrasChaveGoogle({ dateRange, adsAccountId }: { dateRange: { start: Date; end: Date }; adsAccountId?: string }) {
+  const { palavras } = useGooglePalavras(dateRange, adsAccountId)
 
   return (
     <div style={{

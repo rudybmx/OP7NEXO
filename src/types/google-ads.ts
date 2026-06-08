@@ -216,7 +216,7 @@ export interface PublicoGoogle {
 }
 
 export interface FiltrosGoogle {
-  periodo: '7d' | '30d' | '90d'
+  dateRange: { start: Date; end: Date }
   tipoCampanha: string
   status: string
 }
