@@ -16,6 +16,7 @@ from app.api.etiquetas import router as etiquetas_router
 from app.api.followups import router as followups_router
 from app.api.mensagens import router as mensagens_router
 from app.api.pmp import router as pmp_router
+from app.api.matriz_investimento import router as matriz_investimento_router
 from app.api.companies import router as companies_router
 from app.api.meta import router as meta_router
 from app.api.meta_catalog import router as meta_catalog_router
@@ -128,6 +129,7 @@ app.include_router(etiquetas_router)
 app.include_router(followups_router)
 app.include_router(mensagens_router)
 app.include_router(pmp_router)
+app.include_router(matriz_investimento_router)
 app.include_router(sftp_router)
 
 
