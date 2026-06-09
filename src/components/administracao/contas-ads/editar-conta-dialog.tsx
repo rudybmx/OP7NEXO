@@ -1,10 +1,12 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Building2, Check, Loader2, X, CheckCircle2, AlertTriangle, Clock, RefreshCw } from 'lucide-react'
+import { Building2, Loader2, X, ChevronDown, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { wsSheetCreamInputStyle, wsSheetCreamStyle, wsSheetCreamTokens, wsSheetCreamCloseButtonStyle } from '@/components/ui/ws-sheet'
 import api from '@/lib/api-client'
 
@@ -212,7 +214,7 @@ function SyncHistoricoPanel({ contaId }: { contaId: string }) {
 
 export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: EditarContaDialogProps) {
   const [editForm, setEditForm] = useState<EditContaForm>(emptyEditForm())
-  const [workspaceBusca, setWorkspaceBusca] = useState('')
+  const [addAberto, setAddAberto] = useState(false)
   const [salvando, setSalvando] = useState(false)
 
   useEffect(() => {
@@ -230,13 +232,13 @@ export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: Edita
       })
     } else {
       setEditForm(emptyEditForm())
-      setWorkspaceBusca('')
+      setAddAberto(false)
     }
   }, [conta])
 
   const handleClose = () => {
     setEditForm(emptyEditForm())
-    setWorkspaceBusca('')
+    setAddAberto(false)
     onClose()
   }
 
@@ -269,10 +271,28 @@ export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: Edita
   }
 
   const platformBadge = conta ? PLATFORM_BADGE[conta.plataforma] : PLATFORM_BADGE.meta
-  const termo = workspaceBusca.trim().toLowerCase()
-  const workspaceOptions = conta
-    ? workspaces.filter(ws => ws.id !== conta.workspace_id && (!termo || ws.nome.toLowerCase().includes(termo)))
+
+  // Nome do cliente principal — derivado client-side por match com conta.workspace_id
+  const principalNome = conta
+    ? (workspaces.find(w => w.id === conta.workspace_id)?.nome || conta.workspace_nome || 'Sem nome')
+    : 'Sem nome'
+
+  // Opções disponíveis para adicionar: exclui o principal e os já selecionados
+  const opcoesDisponiveis = conta
+    ? workspaces.filter(ws => ws.id !== conta.workspace_id && !editForm.workspace_ids_acesso.includes(ws.id))
     : []
+
+  const nomeWorkspace = (id: string) => workspaces.find(w => w.id === id)?.nome || id
+
+  const removerAcesso = (id: string) => {
+    setEditForm(prev => ({ ...prev, workspace_ids_acesso: prev.workspace_ids_acesso.filter(w => w !== id) }))
+  }
+
+  const adicionarAcesso = (id: string) => {
+    setEditForm(prev => prev.workspace_ids_acesso.includes(id)
+      ? prev
+      : { ...prev, workspace_ids_acesso: [...prev.workspace_ids_acesso, id] })
+  }
 
   return (
     <Dialog open={!!conta} onOpenChange={open => !open && handleClose()}>
@@ -459,22 +479,40 @@ export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: Edita
               </div>
             </div>
 
-            {/* Workspaces com acesso adicional */}
+            {/* Cliente principal (somente leitura) */}
+            <div>
+              <label style={labelStyle}>Cliente principal</label>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
+                borderRadius: 10, background: wsSheetCreamTokens.surface,
+                border: `1px solid ${wsSheetCreamTokens.border}`,
+              }}>
+                <Building2 size={14} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {principalNome}
+                </span>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center',
+                  padding: '3px 8px', borderRadius: 999,
+                  background: 'rgba(62,91,255,0.10)', color: 'var(--ws-blue)',
+                  fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap',
+                }}>
+                  Principal
+                </span>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 6 }}>
+                O cliente principal da conta é fixo e sempre mantém acesso.
+              </p>
+            </div>
+
+            {/* Clientes com acesso adicional */}
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-                <label style={{ ...labelStyle, marginBottom: 0 }}>Clientes com acesso adicional</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    type="button"
-                    onClick={() => setEditForm(prev => ({
-                      ...prev,
-                      workspace_ids_acesso: workspaces.filter(ws => !conta || ws.id !== conta.workspace_id).map(ws => ws.id),
-                    }))}
-                    style={{ background: 'transparent', border: 'none', fontSize: 11, color: 'var(--ws-blue)', cursor: 'pointer', fontWeight: 600 }}
-                  >
-                    Selecionar todas
-                  </button>
-                  <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>·</span>
+                <label style={{ ...labelStyle, marginBottom: 0 }}>
+                  Clientes com acesso adicional
+                  {editForm.workspace_ids_acesso.length > 0 ? ` (${editForm.workspace_ids_acesso.length})` : ''}
+                </label>
+                {editForm.workspace_ids_acesso.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setEditForm(prev => ({ ...prev, workspace_ids_acesso: [] }))}
@@ -482,74 +520,93 @@ export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: Edita
                   >
                     Limpar seleção
                   </button>
-                </div>
-              </div>
-
-              {workspaces.length > 1 && (
-                <input
-                  type="text"
-                  placeholder="Filtrar cliente..."
-                  value={workspaceBusca}
-                  onChange={e => setWorkspaceBusca(e.target.value)}
-                  style={{ ...inputStyle, marginBottom: 10 }}
-                />
-              )}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
-                {workspaceOptions.length > 0 ? workspaceOptions.map(ws => {
-                  const checked = editForm.workspace_ids_acesso.includes(ws.id)
-                  return (
-                    <button
-                      key={ws.id}
-                      type="button"
-                      onClick={() => setEditForm(prev => ({
-                        ...prev,
-                        workspace_ids_acesso: checked
-                          ? prev.workspace_ids_acesso.filter(id => id !== ws.id)
-                          : [...prev.workspace_ids_acesso, ws.id],
-                      }))}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                        borderRadius: 10,
-                        background: checked ? 'rgba(62,91,255,0.08)' : 'rgba(15,23,42,0.02)',
-                        border: checked ? '1px solid rgba(62,91,255,0.28)' : `1px solid ${wsSheetCreamTokens.border}`,
-                        cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s', flexShrink: 0,
-                      }}
-                    >
-                      <div style={{
-                        width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-                        background: checked ? '#3E5BFF' : wsSheetCreamTokens.checkboxUncheckedBg,
-                        border: checked ? '1px solid #3E5BFF' : `1px solid ${wsSheetCreamTokens.checkboxUncheckedBorder}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        {checked && <Check size={11} color="white" />}
-                      </div>
-                      <Building2 size={13} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ws-text-1)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {ws.nome}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>Cliente com acesso adicional à conta</div>
-                      </div>
-                      <span style={{ fontSize: 10, color: checked ? 'var(--ws-blue)' : 'var(--ws-text-3)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                        {checked ? 'Com acesso' : 'Sem acesso'}
-                      </span>
-                    </button>
-                  )
-                }) : (
-                  <div style={{
-                    padding: '18px 14px', borderRadius: 10,
-                    border: `1px dashed ${wsSheetCreamTokens.border}`,
-                    color: 'var(--ws-text-3)', fontSize: 13, lineHeight: 1.5,
-                  }}>
-                    {workspaces.length <= 1 ? 'Não há outros clientes disponíveis.' : 'Nenhum cliente encontrado.'}
-                  </div>
                 )}
               </div>
 
-              <p style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 8, lineHeight: 1.5 }}>
-                O cliente principal da conta é fixo e sempre mantém acesso.
-              </p>
+              {/* Chips dos selecionados */}
+              {editForm.workspace_ids_acesso.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                  {editForm.workspace_ids_acesso.map(id => (
+                    <span
+                      key={id}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '5px 8px 5px 10px', borderRadius: 999,
+                        background: 'rgba(62,91,255,0.08)', border: '1px solid rgba(62,91,255,0.28)',
+                        fontSize: 12, color: 'var(--ws-text-1)', maxWidth: '100%',
+                      }}
+                    >
+                      <Building2 size={12} style={{ color: 'var(--ws-blue)', flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {nomeWorkspace(id)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removerAcesso(id)}
+                        aria-label={`Remover ${nomeWorkspace(id)}`}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: 16, height: 16, borderRadius: 999, flexShrink: 0,
+                          background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ws-text-3)',
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div style={{
+                  padding: '14px', borderRadius: 10, marginBottom: 10,
+                  border: `1px dashed ${wsSheetCreamTokens.border}`,
+                  color: 'var(--ws-text-3)', fontSize: 12, lineHeight: 1.5,
+                }}>
+                  Nenhum cliente adicional. Use a busca abaixo para conceder acesso.
+                </div>
+              )}
+
+              {/* Combobox de busca para adicionar */}
+              <Popover open={addAberto} onOpenChange={setAddAberto}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                      padding: '10px 14px', borderRadius: 10,
+                      background: wsSheetCreamTokens.surface, border: `1px solid ${wsSheetCreamTokens.border}`,
+                      fontSize: 13, color: 'var(--ws-text-2)', cursor: 'pointer', textAlign: 'left',
+                    }}
+                  >
+                    <Plus size={14} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>Adicionar cliente...</span>
+                    <ChevronDown size={14} style={{ color: 'var(--ws-text-3)', flexShrink: 0 }} />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[var(--radix-popover-trigger-width)] p-1 bg-[rgba(255,255,255,0.97)] dark:bg-[rgba(20,28,56,0.97)] border-[1px] border-[rgba(14,20,42,0.10)] dark:border-[rgba(255,255,255,0.10)] rounded-[10px] shadow-[0_8px_32px_rgba(14,20,42,0.14),0_2px_8px_rgba(14,20,42,0.08)] backdrop-blur-[20px]"
+                  align="start"
+                >
+                  <Command className="bg-transparent">
+                    <CommandInput placeholder="Buscar cliente..." className="h-8 text-[12px]" />
+                    <CommandList>
+                      <CommandEmpty className="py-2 text-[11px] text-center">Nenhum cliente disponível</CommandEmpty>
+                      <CommandGroup>
+                        {opcoesDisponiveis.map(ws => (
+                          <CommandItem
+                            key={ws.id}
+                            value={ws.nome}
+                            onSelect={() => adicionarAcesso(ws.id)}
+                            className="text-[12px] rounded-[6px] px-[10px] py-[6px] cursor-pointer transition-colors text-[#0E142A] dark:text-[rgba(255,255,255,0.80)] hover:bg-[rgba(62,91,255,0.06)] dark:hover:bg-[rgba(62,91,255,0.15)] hover:text-[#3E5BFF]"
+                          >
+                            <Building2 className="mr-2 h-3.5 w-3.5 opacity-60" />
+                            {ws.nome}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Divider */}
