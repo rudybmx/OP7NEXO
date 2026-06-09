@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, Clock, FileText, PlayCircle, AlertCircle, User } from 'lucide-react'
+import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, Clock, FileText, PlayCircle, AlertCircle, User } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { CardRastreamento } from './card-rastreamento'
@@ -20,6 +20,8 @@ interface PainelChatProps {
   onTransferir: () => void
   onResolver: () => void
   mensagensEndRef: React.RefObject<HTMLDivElement | null>
+  /** Quando presente (mobile drill-down), exibe a seta "voltar" no header. */
+  onVoltar?: () => void
 }
 
 function formatarData(valor?: string | null) {
@@ -447,7 +449,7 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpen
   )
 }
 
-export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef }: PainelChatProps) {
+export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, onVoltar }: PainelChatProps) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
   const titulo = formatHeaderTitle(conversa)
@@ -490,6 +492,29 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
         gap: 16,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          {onVoltar && (
+            <button
+              type="button"
+              onClick={onVoltar}
+              aria-label="Voltar para a lista de conversas"
+              title="Voltar"
+              style={{
+                width: 44,
+                height: 44,
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 12,
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--ws-text-2)',
+                cursor: 'pointer',
+              }}
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )}
           <div style={{
             width: 44,
             height: 44,

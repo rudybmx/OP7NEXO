@@ -42,6 +42,24 @@ export function PaginaAtendimento() {
   const [aoVivo, setAoVivo] = useState(false)
   const [canalSelecionadoId, setCanalSelecionadoId] = useState<string>('todos')
 
+  // Breakpoint (padrão do projeto: window.innerWidth + resize). Default desktop p/ SSR.
+  const [larguraTela, setLarguraTela] = useState(1280)
+  useEffect(() => {
+    const check = () => setLarguraTela(window.innerWidth)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  const isMobile = larguraTela < 768
+  const isTablet = larguraTela >= 768 && larguraTela < 1024
+  const isDesktop = larguraTela >= 1024
+
+  // Painel de Contato: aberto por padrão só no desktop (coluna do grid).
+  // Fora do desktop vira overlay e deve iniciar fechado (não herdar o default true).
+  useEffect(() => {
+    setPainelAberto(isDesktop)
+  }, [isDesktop])
+
   const { canais } = useWhatsappCanais(workspaceAtual, workspaceResolvido)
 
   const { conversas, isLoading, error, refetch } = useConversas(
@@ -343,22 +361,27 @@ export function PaginaAtendimento() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: painelAberto
-        ? 'minmax(320px, 360px) minmax(0, 1fr) minmax(0, 320px)'
-        : 'minmax(320px, 360px) minmax(0, 1fr) 0px',
+      gridTemplateColumns: isMobile
+        ? '1fr'
+        : isTablet
+          ? 'minmax(300px, 360px) minmax(0, 1fr)'
+          : painelAberto
+            ? 'minmax(320px, 360px) minmax(0, 1fr) minmax(0, 320px)'
+            : 'minmax(320px, 360px) minmax(0, 1fr) 0px',
       width: '100%',
       height: '100%',
       minHeight: 0,
       maxWidth: '100%',
       minWidth: 0,
       overflow: 'hidden',
-      padding: 12,
+      // Mobile usa a tela inteira (sem "card chrome") p/ não desperdiçar área.
+      padding: isMobile ? 0 : 12,
       background: 'radial-gradient(circle at top left, rgba(37, 211, 102, 0.10), transparent 28%), linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(238, 242, 247, 0.98) 100%)',
       backdropFilter: 'blur(18px)',
       boxSizing: 'border-box',
-      border: '1px solid rgba(15, 23, 42, 0.08)',
-      borderRadius: 28,
-      boxShadow: '0 24px 80px rgba(15, 23, 42, 0.12)',
+      border: isMobile ? 'none' : '1px solid rgba(15, 23, 42, 0.08)',
+      borderRadius: isMobile ? 0 : 28,
+      boxShadow: isMobile ? 'none' : '0 24px 80px rgba(15, 23, 42, 0.12)',
       position: 'relative',
       isolation: 'isolate',
     }}>
@@ -377,12 +400,14 @@ export function PaginaAtendimento() {
         </div>
       ) : (
         <>
-      {/* Coluna 1 — Inbox */}
+      {/* Coluna 1 — Inbox (mobile: vista "lista". Baseia-se em conversaAtiva resolvida, não no id:
+          se a conversa some da lista (mudança de status/filtro) volta p/ a lista, sem dead-end) */}
+      {(!isMobile || !conversaAtiva) && (
       <div style={{
         minWidth: 0,
         minHeight: 0,
         overflow: 'hidden',
-        borderRight: '1px solid var(--ws-divider)',
+        borderRight: isMobile ? 'none' : '1px solid var(--ws-divider)',
         display: 'flex',
         flexDirection: 'column',
       }}>
@@ -416,8 +441,10 @@ export function PaginaAtendimento() {
           onResolverConversa={handleResolverPeloMenu}
         />
       </div>
+      )}
 
-      {/* Coluna 2 — Chat */}
+      {/* Coluna 2 — Chat (mobile: vista "chat", só quando há conversa resolvida) */}
+      {(!isMobile || !!conversaAtiva) && (
       <div style={{
         minWidth: 0,
         minHeight: 0,
@@ -449,6 +476,7 @@ export function PaginaAtendimento() {
               onTransferir={() => setMostrarModalTransferir(true)}
               onResolver={() => setMostrarModalResolver(true)}
               mensagensEndRef={mensagensEndRef}
+              onVoltar={isMobile ? () => setConversaAtivaId(null) : undefined}
             />
             <InputMensagem
               valor={textoMensagem}
@@ -461,8 +489,10 @@ export function PaginaAtendimento() {
           </>
         )}
       </div>
+      )}
 
-      {/* Coluna 3 — Painel do Contato */}
+      {/* Coluna 3 — Painel do Contato (desktop: coluna do grid) */}
+      {isDesktop && (
       <div style={{
         minWidth: 0,
         minHeight: 0,
@@ -489,6 +519,39 @@ export function PaginaAtendimento() {
           </div>
         )}
       </div>
+      )}
+
+      {/* Painel do Contato (tablet/mobile: overlay sobre o chat) */}
+      {!isDesktop && painelAberto && conversaAtiva && (
+        <>
+          <div
+            onClick={() => setPainelAberto(false)}
+            style={{ position: 'absolute', inset: 0, background: 'rgba(15, 23, 42, 0.45)', zIndex: 40 }}
+          />
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: isMobile ? '100%' : 360,
+            maxWidth: '100%',
+            zIndex: 41,
+            background: 'var(--bg)',
+            boxShadow: '-12px 0 40px rgba(15, 23, 42, 0.18)',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+            overflow: 'hidden',
+          }}>
+            <PainelContato
+              conversa={conversaAtiva}
+              workspaceId={workspaceAtual ?? undefined}
+              onAtualizar={refetch}
+              onTogglePainel={() => setPainelAberto(false)}
+            />
+          </div>
+        </>
+      )}
 
       {/* Modal Assumir */}
       {AI_HANDOFF_ENABLED && mostrarModalAssumir && conversaAtiva && (

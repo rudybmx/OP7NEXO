@@ -25,7 +25,7 @@ Módulo CRM completo: atendimento via WhatsApp em tempo real, follow-up automati
 ## Regras de comportamento
 
 ### Atendimento WhatsApp (Realtime)
-Layout: 3 colunas — Inbox | Chat | Contato
+Layout: 3 colunas — Inbox | Chat | Contato (desktop). Responsivo: 2 colunas + Contato em drawer (tablet) e coluna única com drill-down (mobile). Ver `docs/specs/atendimento-layout-responsivo/spec.md`.
 
 **Status de conversa:**
 ```
