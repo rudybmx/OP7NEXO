@@ -28,5 +28,5 @@
 22. [x] `pagina-atendimento.tsx`: Contato desktop achatado (wrapper duplo → célula única; largura via gridTemplateColumns); 3ª coluna só quando há conversa.
 23. [ ] (adiado) HeroUIProvider escopado em arquivado + 2 páginas admin (bug latente, não afeta Conversas).
 24. [ ] (segurado) Parte C — unificar 4 detecções de breakpoint na casca (sem verificação local; risco em todas as rotas).
-25. [ ] Erro `auth` no desktop: confirmar em Incognito se é extension (WebMCP/@modelcontextprotocol/sdk) vs app.
-26. [ ] Verificação visual desktop (flush, sem coluna vazia, sidebar alinhada) + deploy.
+25. [x] Erro `auth`: **confirmado NÃO ser do app** — reproduzido login+conversas em Chromium headless (sem extensions) sem nenhum erro `auth`. É extension do browser (WebMCP/@modelcontextprotocol/sdk faz parse de URL). Falta só o usuário confirmar em Incognito na máquina dele.
+26. [x] Verificação visual desktop+mobile via Playwright headless (login real na prod): desktop flush/sem coluna vazia/sidebar ok; mobile coluna única + bottom-nav. Build local restaurado (binário nativo @tailwindcss/oxide via --no-save).
