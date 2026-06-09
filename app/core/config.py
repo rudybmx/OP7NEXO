@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = ""
     openai_model: str = "gpt-4o-mini"
+    # Geração de imagem — chave OpenAI DEDICADA (api.openai.com, acesso a gpt-image-2).
+    # NÃO reusar openai_api_key/openai_base_url: esses apontam para o gateway de texto
+    # (opencode zen), que não tem modelos de imagem.
+    openai_image_api_key: str = ""
+    openai_image_base_url: str = "https://api.openai.com/v1"
+    openai_image_model: str = "gpt-image-2"
     EVOLUTION_API_URL: str = "https://evo.op7franquia.com.br"
     EVOLUTION_API_KEY: str = ""
     SERVER_URL: str = "https://api.op7franquia.com.br"
