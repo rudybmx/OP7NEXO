@@ -580,7 +580,7 @@ export default function ContasAdsPage() {
             <XCircle size={11} className="mr-0.5" />
             Erro
           </Chip>
-          <HeroButton isIconOnly size="sm" variant="ghost" onClick={() => handleSync(c)} aria-label="Tentar sync novamente">
+          <HeroButton isIconOnly size="sm" variant="ghost" onPress={() => handleSync(c)} aria-label="Tentar sync novamente">
             <RotateCcw size={13} />
           </HeroButton>
         </div>

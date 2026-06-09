@@ -36,20 +36,20 @@ function PromptSendButton({ status, onSubmit, onStop, onRetry }: {
 }) {
   if (status === 'streaming' || status === 'submitted') {
     return (
-      <Button isIconOnly size="sm" variant="primary" onClick={onStop}>
+      <Button isIconOnly size="sm" variant="primary" onPress={onStop}>
         <Square size={13} fill="currentColor" />
       </Button>
     )
   }
   if (status === 'error') {
     return (
-      <Button isIconOnly size="sm" variant="danger" onClick={onRetry}>
+      <Button isIconOnly size="sm" variant="danger" onPress={onRetry}>
         <RotateCcw size={13} />
       </Button>
     )
   }
   return (
-    <Button isIconOnly size="sm" variant="primary" onClick={onSubmit}>
+    <Button isIconOnly size="sm" variant="primary" onPress={onSubmit}>
       <Send size={13} />
     </Button>
   )

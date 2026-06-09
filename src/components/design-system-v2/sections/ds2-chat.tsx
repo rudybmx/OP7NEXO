@@ -375,7 +375,7 @@ function AttachmentDemo() {
       </ChatAttachmentGroup>
       <div style={{ display: 'flex', gap: 8 }}>
         <input ref={fileRef} type="file" multiple style={{ display: 'none' }} onChange={e => addFiles(e.target.files)} />
-        <Button size="sm" variant="ghost" onClick={() => fileRef.current?.click()}>
+        <Button size="sm" variant="ghost" onPress={() => fileRef.current?.click()}>
           <Plus size={13} />
           Adicionar arquivo
         </Button>
