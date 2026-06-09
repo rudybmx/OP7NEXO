@@ -68,6 +68,15 @@ interface SyncLogEntry {
   duracao_segundos: number | null
 }
 
+interface SyncResumo {
+  primeira_data: string | null
+  ultima_data: string | null
+  total_dias: number
+  dias_com_investimento: number
+  comecou_em: string | null
+  ultima_gravacao: string | null
+}
+
 interface Workspace {
   id: string
   nome: string
@@ -134,6 +143,70 @@ function formatDuracao(secs: number | null): string {
   const m = Math.floor(secs / 60)
   const s = secs % 60
   return s > 0 ? `${m}m ${s}s` : `${m}m`
+}
+
+function formatData(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+  } catch {
+    return iso
+  }
+}
+
+function ResumoDadosPanel({ contaId }: { contaId: string }) {
+  const [resumo, setResumo] = useState<SyncResumo | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!contaId) return
+    setLoading(true)
+    api.get<SyncResumo>(`/meta/sync/resumo/${contaId}`)
+      .then(setResumo)
+      .catch(() => setResumo(null))
+      .finally(() => setLoading(false))
+  }, [contaId])
+
+  const items: { label: string; valor: string }[] = [
+    { label: 'Cobertura', valor: resumo && resumo.primeira_data ? `${formatData(resumo.primeira_data)} → ${formatData(resumo.ultima_data)}` : '—' },
+    { label: 'Total de dias', valor: resumo ? String(resumo.total_dias) : '—' },
+    { label: 'Dias com investimento', valor: resumo ? String(resumo.dias_com_investimento) : '—' },
+    { label: 'Trazendo dados desde', valor: formatData(resumo?.comecou_em) },
+  ]
+
+  return (
+    <div style={{ marginTop: 6, marginBottom: 18 }}>
+      <div style={{ ...labelStyle, marginBottom: 10 }}>Resumo de dados</div>
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0', color: 'var(--ws-text-3)', fontSize: 12 }}>
+          <Loader2 size={14} className="animate-spin" /> Carregando resumo...
+        </div>
+      ) : (resumo && resumo.total_dias > 0) ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+          {items.map(it => (
+            <div
+              key={it.label}
+              style={{
+                padding: '10px 12px', borderRadius: 10,
+                background: wsSheetCreamTokens.surface, border: `1px solid ${wsSheetCreamTokens.border}`,
+              }}
+            >
+              <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ws-text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>
+                {it.label}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {it.valor}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: 'var(--ws-text-3)', padding: '12px 0' }}>
+          Nenhum insight no banco ainda.
+        </div>
+      )}
+    </div>
+  )
 }
 
 function SyncHistoricoPanel({ contaId }: { contaId: string }) {
@@ -612,7 +685,8 @@ export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: Edita
             {/* Divider */}
             <div style={{ borderTop: `1px solid ${wsSheetCreamTokens.border}`, margin: '4px 0' }} />
 
-            {/* Histórico de Sync */}
+            {/* Resumo de dados + Histórico de Sync */}
+            {conta && <ResumoDadosPanel contaId={conta.id} />}
             {conta && <SyncHistoricoPanel contaId={conta.id} />}
           </div>
         </div>
