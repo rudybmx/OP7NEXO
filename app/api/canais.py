@@ -761,15 +761,25 @@ def _reconciliar_waha_status(canais: list[CanalEntrada], db: Session) -> None:
         for c, session in items:
             info = sessoes.get(session)
             real = (info or {}).get("status")
-            # Sessão ausente no WAHA = desconectada; status desconhecido = não mexe
+            # FAILED = caiu após conectar (provável conflito/logout) → estado próprio.
+            # STOPPED/ausente = parada limpa / nunca conectou → disconnected.
+            # STARTING/SCAN_QR_CODE → connecting; WORKING → connected.
             if real is None:
                 novo = "disconnected"
+            elif real == "FAILED":
+                novo = "failed"
             else:
                 novo = waha_service.STATUS_MAP.get(real)
                 if novo is None:
                     continue
             if novo == c.connection_status:
                 continue
+            if novo == "failed":
+                logger.warning(
+                    "[canais] sessão WAHA em falha/conflito canal=%s session=%s "
+                    "— verifique se o número está vinculado em outra ferramenta",
+                    c.nome, session,
+                )
             c.connection_status = novo
             if novo == "connected":
                 if not c.conectado_em:
@@ -778,7 +788,7 @@ def _reconciliar_waha_status(canais: list[CanalEntrada], db: Session) -> None:
                 jid = me.get("id") if isinstance(me, dict) else None
                 if jid:
                     c.numero_telefone = str(jid).split("@")[0]
-            # Em disconnected/connecting: só reflete o status, sem apagar numero/conectado_em
+            # Em failed/disconnected/connecting: só reflete o status, sem apagar numero/conectado_em
             mudou = True
 
     if mudou:
@@ -945,8 +955,8 @@ def remover_canal(
     c = _get_canal_or_404(canal_id, db)
     _exigir_admin_canal(usuario, c, db)
 
-    # Bloquear exclusão de canal ainda conectado
-    if c.connection_status not in (None, "disconnected"):
+    # Bloquear exclusão de canal ainda conectado (failed = caído, pode excluir)
+    if c.connection_status not in (None, "disconnected", "failed"):
         raise HTTPException(
             status_code=409,
             detail="Inative o canal antes de excluir. Clique em 'Inativar' para desconectá-lo primeiro.",

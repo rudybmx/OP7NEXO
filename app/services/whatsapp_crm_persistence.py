@@ -1382,6 +1382,16 @@ def process_evolution_receipt_event(
     }
 
 
+def _waha_raw_status(data: dict[str, Any]) -> str:
+    """Extrai o status WAHA bruto (FAILED/STOPPED/...) do payload de connection.update."""
+    for src in (data, data.get("data") if isinstance(data, dict) else None):
+        if isinstance(src, dict):
+            val = src.get("status") or src.get("state")
+            if val:
+                return str(val).upper()
+    return ""
+
+
 def process_evolution_connection_event(
     db: Session,
     canal: CanalEntrada,
@@ -1411,7 +1421,17 @@ def process_evolution_connection_event(
     elif connection.state == "connecting":
         updates["connection_status"] = "connecting"
     elif connection.state == "disconnected":
-        updates.update({"status": "inativo", "connection_status": "disconnected"})
+        # WAHA FAILED = caiu após conectar (provável conflito/logout) → estado próprio,
+        # sem inativar o canal (mantém visível como falha). STOPPED/logout → disconnected.
+        if canal.tipo == "whatsapp_waha" and _waha_raw_status(data) == "FAILED":
+            updates["connection_status"] = "failed"
+            logger.warning(
+                "[webhook-connection] sessão WAHA em falha/conflito canal=%s "
+                "— verifique se o número está vinculado em outra ferramenta",
+                canal.id,
+            )
+        else:
+            updates.update({"status": "inativo", "connection_status": "disconnected"})
 
     set_clause = ", ".join(f"{column} = :{column}" for column in updates)
     db.execute(
