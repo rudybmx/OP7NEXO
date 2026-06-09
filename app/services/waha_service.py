@@ -67,6 +67,31 @@ def estado_sessao(session: str, cfg: dict) -> dict[str, Any]:
         raise WahaError(f"WAHA sessions/{session}: {exc}") from exc
 
 
+def listar_sessoes(cfg: dict, *, timeout: float = 4.0) -> dict[str, dict[str, Any]]:
+    """GET /api/sessions — retorna {session_name: {status, me}} de todas as sessões.
+
+    Uma única chamada cobre todos os canais do mesmo WAHA. Timeout curto: usado no
+    caminho de leitura (listagem de canais), então não pode travar a resposta.
+    """
+    base_url, headers = _headers(cfg)
+    try:
+        resp = httpx.get(f"{base_url}/api/sessions", headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA GET sessions: {exc.response.status_code} {exc.response.text[:200]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA GET sessions: {exc}") from exc
+    out: dict[str, dict[str, Any]] = {}
+    if isinstance(data, list):
+        for s in data:
+            if isinstance(s, dict) and s.get("name"):
+                out[str(s["name"])] = {"status": s.get("status"), "me": s.get("me")}
+    return out
+
+
 def criar_sessao(session: str, cfg: dict) -> dict[str, Any]:
     """POST /api/sessions — cria sessão. 422 = já existe (ignorado)."""
     base_url, headers = _headers(cfg)

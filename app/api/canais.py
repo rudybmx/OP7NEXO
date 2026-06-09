@@ -731,11 +731,66 @@ def _evolution_text_and_mentions(payload: dict | None, canal: CanalEntrada) -> t
 
 # ── CRUD ─────────────────────────────────────────────────────────────
 
+def _reconciliar_waha_status(canais: list[CanalEntrada], db: Session) -> None:
+    """Valida o connection_status dos canais WAHA contra o estado real no WAHA.
+
+    Faz 1 chamada batch (GET /api/sessions) por instância WAHA distinta e atualiza
+    o banco quando o status divergir. Reflete o estado real apenas — não reconecta.
+    Qualquer falha de rede com o WAHA é silenciada (fallback: mantém status do banco).
+    """
+    waha_canais = [c for c in canais if c.tipo == "whatsapp_waha"]
+    if not waha_canais:
+        return
+
+    # Agrupa por instância WAHA (base_url + api_key_ref) — 1 chamada por instância
+    grupos: dict[tuple[str, str], tuple[dict, list[tuple[CanalEntrada, str]]]] = {}
+    for c in waha_canais:
+        session, cfg = _waha_cfg(c)
+        if not session:
+            continue
+        chave = (str(cfg.get("api_base_url", "")), str(cfg.get("api_key_ref", "")))
+        grupos.setdefault(chave, (cfg, []))[1].append((c, session))
+
+    mudou = False
+    for cfg, items in grupos.values():
+        try:
+            sessoes = waha_service.listar_sessoes(cfg, timeout=4.0)
+        except waha_service.WahaError as exc:
+            logger.warning("[canais] reconciliar WAHA falhou (fallback DB): %s", exc)
+            continue
+        for c, session in items:
+            info = sessoes.get(session)
+            real = (info or {}).get("status")
+            # Sessão ausente no WAHA = desconectada; status desconhecido = não mexe
+            if real is None:
+                novo = "disconnected"
+            else:
+                novo = waha_service.STATUS_MAP.get(real)
+                if novo is None:
+                    continue
+            if novo == c.connection_status:
+                continue
+            c.connection_status = novo
+            if novo == "connected":
+                if not c.conectado_em:
+                    c.conectado_em = datetime.now(timezone.utc)
+                me = (info or {}).get("me") or {}
+                jid = me.get("id") if isinstance(me, dict) else None
+                if jid:
+                    c.numero_telefone = str(jid).split("@")[0]
+            # Em disconnected/connecting: só reflete o status, sem apagar numero/conectado_em
+            mudou = True
+
+    if mudou:
+        db.commit()
+
+
 @router.get("/canais", response_model=list[CanalOut], response_model_exclude_none=True)
 def listar_todos_canais(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
     workspace_acesso=Depends(get_workspace_atual),
+    validate_waha: bool = False,
 ):
     q = db.query(CanalEntrada)
     if workspace_acesso is None:
@@ -744,7 +799,13 @@ def listar_todos_canais(
         q = q.filter(CanalEntrada.workspace_id.in_(workspace_acesso))
     else:
         q = q.filter(CanalEntrada.workspace_id == workspace_acesso)
-    return [_canal_out(c) for c in q.all()]
+    canais = q.all()
+    if validate_waha:
+        try:
+            _reconciliar_waha_status(canais, db)
+        except Exception:
+            logger.exception("[canais] reconciliação WAHA falhou — retornando status do banco")
+    return [_canal_out(c) for c in canais]
 
 
 @router.get("/workspaces/{workspace_id}/canais", response_model=list[CanalOut], response_model_exclude_none=True)
