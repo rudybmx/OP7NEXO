@@ -161,7 +161,8 @@ Além dos estilos globais curados, o workspace pode **criar/editar/arquivar** se
 
 ## Assumptions
 
-- OpenAI `gpt-image-2` está disponível na conta/projeto configurado em `settings.openai_api_key`/`openai_base_url` e suporta `images.generate`/`images.edit`, `partial_images` e múltiplas referências.
+- **Chave OpenAI dedicada para imagem** (`settings.openai_image_api_key` / `openai_image_base_url=https://api.openai.com/v1` / `openai_image_model=gpt-image-2`). **NÃO** reusa `openai_api_key`/`openai_base_url`, que apontam para o gateway de texto (opencode zen, sem modelos de imagem). O cliente força `base_url` explícito para não herdar `OPENAI_BASE_URL` do ambiente. ✅ Validado: a chave acessa `gpt-image-2` e `images.generate` retorna a base + `usage`.
+- Forma verificada do `usage` (fonte da cobrança, spec separado): `{input_tokens, output_tokens, total_tokens, input_tokens_details:{text_tokens,image_tokens}, output_tokens_details:{text_tokens,image_tokens}}`. Ex.: base 1024² quality=low → output ~196 image_tokens.
 - O acesso à tela é liberado pelo módulo `marketing` (gate de plano existente); permissões seguem o padrão multi-tenant atual.
 - O MinIO existente (bucket de criativos) é reutilizado para bases, logos, máscaras e exportações.
 - O `op7nexo-worker` existente é a infraestrutura de jobs para o render/export (precisa de Chromium/Playwright na imagem).
