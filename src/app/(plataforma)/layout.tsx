@@ -1,24 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import { BarraLateral } from '@/components/layout/barra-lateral'
 import { PainelChat } from '@/components/layout/painel-chat'
 import { ProvedorLayout } from '@/lib/contexto-layout'
 import { AuthProvider } from '@/lib/auth-provider'
 import { WorkspaceProvider } from '@/lib/workspace-context'
+import { useBreakpoint } from '@/hooks/use-mobile'
 
 export default function LayoutPlataforma({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [isMobile, setIsMobile] = useState(false)
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
+  const { isMobile } = useBreakpoint()
 
   return (
     <AuthProvider>

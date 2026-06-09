@@ -329,7 +329,7 @@ const NavItem = ({
 }
 
 export function BarraLateral() {
-  const { isCollapsed, toggleCollapse, setChatAberto } = useLayout()
+  const { isCollapsed, toggleCollapse, setChatAberto, mobile: isMobile } = useLayout()
   const pathname = usePathname()
   const { resolvedTheme, setTheme } = useTheme()
   const { user, logout } = useAuth()
@@ -385,14 +385,7 @@ export function BarraLateral() {
   const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>({})
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null)
   const hoverTimerRef = React.useRef<NodeJS.Timeout | null>(null)
-
-  const [isMobile, setIsMobile] = useState(false)
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
+  // isMobile vem do contexto de layout (fonte única de breakpoint).
 
   const [flyupAberto, setFlyupAberto] = useState<string | null>(null)
   const [hoveredBottomItem, setHoveredBottomItem] = useState<string | null>(null)

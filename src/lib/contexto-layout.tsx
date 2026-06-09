@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react"
+import { useBreakpoint } from "@/hooks/use-mobile"
 
 type ItemNavegacao = {
   nome: string
@@ -228,7 +229,8 @@ export const gruposPorItem = secoesNavegacao.reduce<
 const ContextoLayout = createContext<ContextoLayoutValor | null>(null)
 
 export function ProvedorLayout({ children }: { children: React.ReactNode }) {
-  const [mobile, setMobile] = useState(false)
+  // Fonte única de breakpoint (mesmo hook usado em toda a casca e nas páginas).
+  const { isMobile: mobile } = useBreakpoint()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [chatAberto, setChatAberto] = useState(false)
   const [itemAtivo, setItemAtivo] = useState("Meta Ads")
@@ -251,20 +253,9 @@ export function ProvedorLayout({ children }: { children: React.ReactNode }) {
   }, [isCollapsed])
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 768px)")
-
-    const atualizarTela = () => {
-      const emMobile = window.innerWidth <= 768
-      setMobile(emMobile)
-      if (emMobile) {
-        setIsCollapsed(true)
-      }
-    }
-
-    atualizarTela()
-    mediaQuery.addEventListener("change", atualizarTela)
-    return () => mediaQuery.removeEventListener("change", atualizarTela)
-  }, [])
+    // No mobile, a sidebar entra colapsada (vira bottom-nav).
+    if (mobile) setIsCollapsed(true)
+  }, [mobile])
 
   const valor = useMemo(
     () => ({
