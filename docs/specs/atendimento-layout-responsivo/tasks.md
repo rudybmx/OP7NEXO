@@ -27,6 +27,6 @@
 21. [x] `pagina-atendimento.tsx`: container **flush** no main (sem card: padding/borda/raio/sombra removidos), edge-to-edge.
 22. [x] `pagina-atendimento.tsx`: Contato desktop achatado (wrapper duplo → célula única; largura via gridTemplateColumns); 3ª coluna só quando há conversa.
 23. [ ] (adiado) HeroUIProvider escopado em arquivado + 2 páginas admin (bug latente, não afeta Conversas).
-24. [ ] (segurado) Parte C — unificar 4 detecções de breakpoint na casca (sem verificação local; risco em todas as rotas).
+24. [x] Parte C — breakpoint unificado em `useBreakpoint` (contexto-layout, barra-lateral, (plataforma)/layout); threshold `<=768`→`<768` corrigido. Verificado por screenshot: desktop=sidebar, mobile=bottom-nav, sem regressão.
 25. [x] Erro `auth`: **confirmado NÃO ser do app** — reproduzido login+conversas em Chromium headless (sem extensions) sem nenhum erro `auth`. É extension do browser (WebMCP/@modelcontextprotocol/sdk faz parse de URL). Falta só o usuário confirmar em Incognito na máquina dele.
 26. [x] Verificação visual desktop+mobile via Playwright headless (login real na prod): desktop flush/sem coluna vazia/sidebar ok; mobile coluna única + bottom-nav. Build local restaurado (binário nativo @tailwindcss/oxide via --no-save).
