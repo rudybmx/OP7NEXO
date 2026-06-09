@@ -16,6 +16,7 @@ import { useWhatsappCanais } from '@/hooks/use-whatsapp-canais'
 import { useMarcarLido } from '@/hooks/use-marcar-lido'
 import { useAtualizarConversa } from '@/hooks/use-atualizar-conversa'
 import { useEtiquetas } from '@/hooks/use-etiquetas'
+import { useBreakpoint } from '@/hooks/use-mobile'
 import { PainelInbox } from './painel-inbox'
 import { PainelChat } from './painel-chat'
 import { PainelContato } from './painel-contato'
@@ -42,17 +43,8 @@ export function PaginaAtendimento() {
   const [aoVivo, setAoVivo] = useState(false)
   const [canalSelecionadoId, setCanalSelecionadoId] = useState<string>('todos')
 
-  // Breakpoint (padrão do projeto: window.innerWidth + resize). Default desktop p/ SSR.
-  const [larguraTela, setLarguraTela] = useState(1280)
-  useEffect(() => {
-    const check = () => setLarguraTela(window.innerWidth)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
-  const isMobile = larguraTela < 768
-  const isTablet = larguraTela >= 768 && larguraTela < 1024
-  const isDesktop = larguraTela >= 1024
+  // Breakpoint compartilhado (hook único; repassado por prop aos painéis).
+  const { isMobile, isTablet, isDesktop } = useBreakpoint()
 
   // Painel de Contato: aberto por padrão só no desktop (coluna do grid).
   // Fora do desktop vira overlay e deve iniciar fechado (não herdar o default true).
@@ -400,15 +392,15 @@ export function PaginaAtendimento() {
         </div>
       ) : (
         <>
-      {/* Coluna 1 — Inbox (mobile: vista "lista". Baseia-se em conversaAtiva resolvida, não no id:
-          se a conversa some da lista (mudança de status/filtro) volta p/ a lista, sem dead-end) */}
-      {(!isMobile || !conversaAtiva) && (
+      {/* Coluna 1 — Inbox. No mobile fica montado (preserva scroll/estado) e alterna por display:
+          vista "lista" = sem conversa resolvida. Baseia-se em conversaAtiva (não no id) p/ evitar
+          dead-end quando a conversa some da lista (mudança de status/filtro). */}
       <div style={{
         minWidth: 0,
         minHeight: 0,
         overflow: 'hidden',
         borderRight: isMobile ? 'none' : '1px solid var(--ws-divider)',
-        display: 'flex',
+        display: isMobile && conversaAtiva ? 'none' : 'flex',
         flexDirection: 'column',
       }}>
         <PainelInbox
@@ -439,16 +431,15 @@ export function PaginaAtendimento() {
           onAplicarEtiqueta={handleAplicarEtiqueta}
           onRemoverEtiqueta={handleRemoverEtiqueta}
           onResolverConversa={handleResolverPeloMenu}
+          isMobile={isMobile}
         />
       </div>
-      )}
 
-      {/* Coluna 2 — Chat (mobile: vista "chat", só quando há conversa resolvida) */}
-      {(!isMobile || !!conversaAtiva) && (
+      {/* Coluna 2 — Chat. No mobile fica montado e alterna por display: vista "chat" = com conversa. */}
       <div style={{
         minWidth: 0,
         minHeight: 0,
-        display: 'flex',
+        display: isMobile && !conversaAtiva ? 'none' : 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
       }}>
@@ -477,6 +468,7 @@ export function PaginaAtendimento() {
               onResolver={() => setMostrarModalResolver(true)}
               mensagensEndRef={mensagensEndRef}
               onVoltar={isMobile ? () => setConversaAtivaId(null) : undefined}
+              isMobile={isMobile}
             />
             <InputMensagem
               valor={textoMensagem}
@@ -485,11 +477,11 @@ export function PaginaAtendimento() {
               isEnviando={isEnviando}
               conversa={conversaAtiva}
               erro={erroEnvio}
+              isMobile={isMobile}
             />
           </>
         )}
       </div>
-      )}
 
       {/* Coluna 3 — Painel do Contato (desktop: coluna do grid) */}
       {isDesktop && (
@@ -548,6 +540,7 @@ export function PaginaAtendimento() {
               workspaceId={workspaceAtual ?? undefined}
               onAtualizar={refetch}
               onTogglePainel={() => setPainelAberto(false)}
+              isMobile={isMobile}
             />
           </div>
         </>

@@ -39,6 +39,7 @@ interface PainelInboxProps {
   onAplicarEtiqueta?: (conversaId: string, etiquetaId: string) => void
   onRemoverEtiqueta?: (conversaId: string, etiquetaId: string) => void
   onResolverConversa?: (conversaId: string) => void
+  isMobile?: boolean
 }
 
 function MenuContextoConversa({
@@ -241,11 +242,13 @@ function PainelNovaConversaInline({
   onCancelar,
   isCriando,
   erro,
+  isMobile = false,
 }: {
   onCriarConversa: (numero: string) => Promise<void>
   onCancelar: () => void
   isCriando?: boolean
   erro?: string | null
+  isMobile?: boolean
 }) {
   const [numero, setNumero] = useState('')
   const { contato, isLoading: isBuscando, notFound } = useBuscarContatoPorNumero(numero)
@@ -293,12 +296,12 @@ function PainelNovaConversaInline({
           style={{
             width: '100%',
             boxSizing: 'border-box',
-            padding: '9px 12px 9px 28px',
+            padding: isMobile ? '12px 12px 12px 28px' : '9px 12px 9px 28px',
             borderRadius: 8,
             background: 'rgba(255, 255, 255, 0.92)',
             border: erro ? '1px solid #ef4444' : '1px solid rgba(15, 23, 42, 0.10)',
             color: 'var(--ws-text-1)',
-            fontSize: 14,
+            fontSize: isMobile ? 16 : 14,
             fontVariantNumeric: 'tabular-nums',
             outline: 'none',
           }}
@@ -559,6 +562,7 @@ export function PainelInbox({
   onAplicarEtiqueta,
   onRemoverEtiqueta,
   onResolverConversa,
+  isMobile = false,
 }: PainelInboxProps) {
   const [menuContexto, setMenuContexto] = useState<{
     conversa: ConversaApi
@@ -603,8 +607,8 @@ export function PainelInbox({
   }
 
   const actionButtonStyle: CSSProperties = {
-    width: 32,
-    height: 32,
+    width: isMobile ? 40 : 32,
+    height: isMobile ? 40 : 32,
     borderRadius: 10,
     border: '1px solid var(--ws-glass-border)',
     background: 'var(--ws-glass-bg)',
@@ -631,12 +635,13 @@ export function PainelInbox({
   const searchInputStyle: CSSProperties = {
     width: '100%',
     boxSizing: 'border-box',
-    padding: '10px 14px 10px 40px',
+    // Mobile: altura ≥44 (touch) e fontSize 16 (evita auto-zoom do iOS ao focar).
+    padding: isMobile ? '12px 14px 12px 40px' : '10px 14px 10px 40px',
     borderRadius: 999,
     background: 'var(--ws-glass-bg)',
     border: '1px solid var(--ws-glass-border)',
     color: 'var(--ws-text-1)',
-    fontSize: 13,
+    fontSize: isMobile ? 16 : 13,
     outline: 'none',
     boxShadow: 'inset 0 1px 2px rgba(15, 23, 42, 0.04)',
   }
@@ -644,12 +649,12 @@ export function PainelInbox({
   const selectStyle: CSSProperties = {
     width: '100%',
     boxSizing: 'border-box',
-    padding: '10px 14px',
+    padding: isMobile ? '12px 14px' : '10px 14px',
     borderRadius: 14,
     background: 'var(--ws-glass-bg)',
     border: '1px solid var(--ws-glass-border)',
     color: 'var(--ws-text-1)',
-    fontSize: 12,
+    fontSize: isMobile ? 16 : 12,
     outline: 'none',
     boxShadow: 'inset 0 1px 2px rgba(15, 23, 42, 0.04)',
   }
@@ -779,9 +784,10 @@ export function PainelInbox({
                 type="button"
                 onClick={() => onFiltroChange(filtro.id)}
                 style={{
-                  padding: '6px 11px',
+                  padding: isMobile ? '9px 14px' : '6px 11px',
+                  minHeight: isMobile ? 36 : undefined,
                   borderRadius: 999,
-                  fontSize: 11,
+                  fontSize: isMobile ? 13 : 11,
                   fontWeight: 700,
                   cursor: 'pointer',
                   border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid rgba(15, 23, 42, 0.08)',
@@ -802,6 +808,7 @@ export function PainelInbox({
             onCancelar={onToggleNovaConversa}
             isCriando={isCriandoConversa}
             erro={erroIniciarConversa}
+            isMobile={isMobile}
           />
         )}
       </div>

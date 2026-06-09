@@ -522,7 +522,9 @@ export function BarraLateral() {
         <nav style={{
           position: 'fixed',
           bottom: 0, left: 0, right: 0,
-          height: 64,
+          height: 'calc(64px + env(safe-area-inset-bottom))',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          boxSizing: 'border-box',
           background: 'linear-gradient(160deg, rgba(30,40,80,0.97) 0%, rgba(14,20,42,0.99) 100%)',
           borderTop: '1px solid rgba(255,255,255,0.08)',
           display: 'flex',

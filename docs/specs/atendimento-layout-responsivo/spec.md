@@ -51,5 +51,22 @@ Tornar a página de Conversas (`/crm/atendimento/conversas`) responsiva e bem en
 - Manual: no mobile, fluxo lista → chat → contato → voltar.
 - Build: `next build` sem erros de tipo.
 
+## v2 — Aprofundamento mobile (touch / iOS / safe-area)
+
+Confirmado acesso mobile real (atendentes no celular). Refinamentos sobre o baseline:
+
+- **Breakpoint compartilhado**: hook `useBreakpoint` (em `src/hooks/use-mobile.ts`) consumido 1× em `pagina-atendimento` e repassado por prop `isMobile` aos painéis (sem múltiplos listeners).
+- **Sem desmontar no mobile**: Inbox e Chat ficam montados e alternam por `display` (preserva scroll/estado da lista ao voltar do chat).
+- **Touch targets ≥44** (§2): botões de ação do inbox 32→40; chips de filtro com `min-height`; ações do header do chat 32→40; "contato" vira icon-only no mobile.
+- **Anti-zoom iOS** (§5): inputs/textarea com `fontSize:16` no mobile (busca, select de canal, composer).
+- **Safe-area** (§2): composer com `paddingBottom: calc(16px + env(safe-area-inset-bottom))`; bottom-nav e `main` alinhados a `64px + env(safe-area-inset-bottom)`.
+- **Bolhas de mensagem**: `maxWidth` 70%→85% no mobile.
+
+### Critérios de aceite v2
+- [ ] Nenhum input dispara zoom ao focar no iOS (fontSize ≥16 no mobile).
+- [ ] Alvos de toque ≥44px no header do chat e ações do inbox.
+- [ ] Voltar do chat preserva a rolagem da lista (sem desmontar).
+- [ ] Composer e bottom-nav não colidem com a home-indicator (safe-area).
+
 ## Open Questions
-- Nenhuma (escopo confirmado com o usuário: responsivo completo, sem migração de tokens).
+- Nenhuma (escopo confirmado: só Conversas, celular+tablet, hook compartilhado).

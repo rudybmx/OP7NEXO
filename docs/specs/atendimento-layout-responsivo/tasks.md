@@ -8,4 +8,16 @@
 6. [x] `onVoltar={() => setConversaAtivaId(null)}` no `PainelChat` só no mobile.
 7. [~] Typecheck OK (build tolera TS via `ignoreBuildErrors`). **Verificação visual pendente**: Node local é v18 (<20.9 exigido pelo Next) → não roda `next dev` aqui; teste visual = deploy.
 8. [x] `crm/spec.md` aponta para este spec. (CONTEXT.md: sem mudança estrutural relevante.)
-9. [~] graphify update + commit local feitos. Push/deploy `front` pendente de aprovação.
+9. [x] graphify update + commit + push + deploy `front` (baseline) feitos.
+
+## v2 — Aprofundamento mobile
+10. [x] `use-mobile.ts`: hook `useBreakpoint` (mobile/tablet/desktop).
+11. [x] `pagina-atendimento.tsx`: consome hook; Inbox/Chat por `display` (preserva scroll); repassa `isMobile`.
+12. [x] `painel-inbox.tsx`: touch 40px; busca/select fontSize16; chips min-height.
+13. [x] `input-mensagem.tsx`: safe-area no composer; textarea fontSize16.
+14. [x] `painel-chat.tsx`: bolha 85% mobile; header (contato icon-only, ações ≥40).
+15. [x] `painel-contato.tsx`: fechar 40px no mobile.
+16. [x] `layout.tsx` + `barra-lateral.tsx`: bottom-nav + main alinhados a 64px+safe-area.
+17. [x] Typecheck sem erros novos; `next dev` (node 22) compila a rota.
+18. [ ] Verificação visual autenticada (375/414/768/1024) — via deploy/usuário.
+19. [ ] graphify update + commit + push + deploy `front` (v2).

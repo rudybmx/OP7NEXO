@@ -26,13 +26,14 @@ interface InputMensagemProps {
   isEnviando: boolean
   conversa: ConversaApi
   erro?: string | null
+  isMobile?: boolean
 }
 
 const DOCUMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,text/plain,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const AUDIO_ACCEPT = 'audio/*'
 const VIDEO_ACCEPT = 'video/*'
 
-export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa, erro }: InputMensagemProps) {
+export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa, erro, isMobile = false }: InputMensagemProps) {
   const documentInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
@@ -381,7 +382,12 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
   } as const
 
   return (
-    <div style={composerShellStyle} className="atd-composer-bg">
+    <div
+      style={isMobile
+        ? { ...composerShellStyle, paddingBottom: 'calc(16px + env(safe-area-inset-bottom))' }
+        : composerShellStyle}
+      className="atd-composer-bg"
+    >
       {conversa.campanha && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12 }}>
           <span style={{ fontSize: 10, color: 'var(--ws-text-3)', fontStyle: 'italic' }}>
@@ -554,7 +560,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
               placeholder="Digite uma mensagem..."
               disabled={isEnviando}
               rows={1}
-              style={textareaStyle}
+              style={isMobile ? { ...textareaStyle, fontSize: 16 } : textareaStyle}
             />
           </div>
 

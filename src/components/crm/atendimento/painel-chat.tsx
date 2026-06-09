@@ -22,6 +22,7 @@ interface PainelChatProps {
   mensagensEndRef: React.RefObject<HTMLDivElement | null>
   /** Quando presente (mobile drill-down), exibe a seta "voltar" no header. */
   onVoltar?: () => void
+  isMobile?: boolean
 }
 
 function formatarData(valor?: string | null) {
@@ -449,7 +450,7 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpen
   )
 }
 
-export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, onVoltar }: PainelChatProps) {
+export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, onVoltar, isMobile = false }: PainelChatProps) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
   const titulo = formatHeaderTitle(conversa)
@@ -651,8 +652,9 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
             type="button"
             onClick={onTogglePainel}
             style={{
-              minHeight: 32,
-              padding: '0 12px',
+              minHeight: isMobile ? 40 : 32,
+              width: isMobile ? 40 : undefined,
+              padding: isMobile ? 0 : '0 12px',
               borderRadius: 999,
               background: painelAberto
                 ? 'rgba(62, 91, 255, 0.10)'
@@ -676,17 +678,21 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
             aria-expanded={painelAberto}
           >
             <User size={14} />
-            <span style={{ fontSize: 12, fontWeight: 600 }}>
-              {painelAberto ? 'Fechar contato' : 'Abrir contato'}
-            </span>
-            {painelAberto ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            {!isMobile && (
+              <>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>
+                  {painelAberto ? 'Fechar contato' : 'Abrir contato'}
+                </span>
+                {painelAberto ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+              </>
+            )}
           </button>
           <button
             type="button"
             onClick={onTransferir}
             style={{
-              width: 32,
-              height: 32,
+              width: isMobile ? 40 : 32,
+              height: isMobile ? 40 : 32,
               borderRadius: 10,
               background: 'rgba(255, 255, 255, 0.90)',
               border: '1px solid rgba(15, 23, 42, 0.08)',
@@ -711,7 +717,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
               background: 'rgba(37, 211, 102, 0.12)',
               color: '#1D9E75',
               cursor: 'pointer',
-              padding: '8px 12px',
+              padding: isMobile ? '11px 14px' : '8px 12px',
               borderRadius: 999,
               display: 'flex',
               alignItems: 'center',
@@ -817,7 +823,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                     key={msg.id}
                     style={{
                       alignSelf: isEntrada ? 'flex-start' : 'flex-end',
-                      maxWidth: '70%',
+                      maxWidth: isMobile ? '85%' : '70%',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: 4,

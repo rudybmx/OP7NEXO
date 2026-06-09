@@ -44,3 +44,22 @@ Motivo: 5 pontos mutam `conversaAtivaId` (effect de workspace, `handleSelectConv
 
 ## Estratégia de teste
 Build local + verificação visual em 375/768/1024/1440 (resize). Deploy via `bash /root/deploy.sh front` somente após aprovação do usuário.
+
+---
+
+## v2 — Aprofundamento mobile (implementado)
+
+### Hook compartilhado — `src/hooks/use-mobile.ts`
+Estendido (não criado novo arquivo, reuso do existente `useIsMobile`) com `useBreakpoint(): { largura, isMobile, isTablet, isDesktop }` (cortes 768/1024, SSR default desktop, 1 listener de resize).
+
+### Mudanças por arquivo
+- `pagina-atendimento.tsx`: consome `useBreakpoint`; Inbox/Chat alternam por `display` (não desmontam); repassa `isMobile` aos painéis; overlay de Contato recebe `isMobile`.
+- `painel-inbox.tsx`: prop `isMobile`; `actionButtonStyle` 32→40; busca/select `fontSize:16` + altura ≥44; chips de filtro com `min-height`/padding maior.
+- `input-mensagem.tsx`: prop `isMobile`; `paddingBottom` safe-area no composer; `textarea fontSize:16`. (Menu de anexo já é Radix DropdownMenu → colisão automática, sem ajuste.)
+- `painel-chat.tsx`: prop `isMobile`; bolha `maxWidth` 85% mobile; header — "contato" icon-only, transferir/resolver ≥40.
+- `painel-contato.tsx`: prop `isMobile`; botão fechar 32→40 (root já era `width:100%/minWidth:0`).
+- `(plataforma)/layout.tsx` + `barra-lateral.tsx`: `main paddingBottom` e altura da bottom-nav alinhados a `64px + env(safe-area-inset-bottom)`.
+
+### Notas
+- Viewport raiz: Next injeta `width=device-width, initial-scale=1` por padrão (não sobrescrito) → zoom preservado, ok.
+- Typecheck: sem erros novos nos arquivos tocados (config tolera TS via `ignoreBuildErrors`).

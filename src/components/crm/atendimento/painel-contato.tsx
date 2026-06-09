@@ -11,6 +11,7 @@ interface PainelContatoProps {
   workspaceId?: string
   onAtualizar?: () => void
   onTogglePainel?: () => void
+  isMobile?: boolean
 }
 
 function InfoRow({ label, valor, icon }: { label: string; valor?: string | null; icon?: React.ReactNode }) {
@@ -43,7 +44,7 @@ function formatDateTimeLocal(value: Date) {
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`
 }
 
-export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePainel }: PainelContatoProps) {
+export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePainel, isMobile = false }: PainelContatoProps) {
   const [expandido, setExpandido] = useState(true)
   const [followupNota, setFollowupNota] = useState('')
   const [followupDueAt, setFollowupDueAt] = useState(() => {
@@ -113,8 +114,8 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
             title="Fechar painel do contato"
             aria-label="Fechar painel do contato"
             style={{
-              width: 32,
-              height: 32,
+              width: isMobile ? 40 : 32,
+              height: isMobile ? 40 : 32,
               borderRadius: 10,
               background: 'rgba(255,255,255,0.92)',
               border: '1px solid rgba(15, 23, 42, 0.08)',

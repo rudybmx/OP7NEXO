@@ -46,7 +46,7 @@ export default function LayoutPlataforma({
             minWidth: 0,
             background: 'var(--bg)',
             position: 'relative',
-            paddingBottom: isMobile ? 80 : 0,
+            paddingBottom: isMobile ? 'calc(64px + env(safe-area-inset-bottom))' : 0,
           }}
         >
           {children}
