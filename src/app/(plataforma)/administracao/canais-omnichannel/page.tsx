@@ -105,7 +105,7 @@ export default function CanaisOmnichannelPage() {
   const loadCanais = useCallback(async () => {
     setCarregando(true)
     try {
-      const data = await api.get<Canal[]>('/canais')
+      const data = await api.get<Canal[]>('/canais?validate_waha=1')
       setCanais(data)
     } catch (err: unknown) {
       toast.error(errorMessage(err, 'Erro ao carregar canais'))
