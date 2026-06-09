@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.deps import exigir_platform_admin
 from app.models.google_ads_credential import GoogleAdsCredential
 from app.models.user import User
+from app.services.google_ads_client import listar_contas_acessiveis
 
 router = APIRouter(prefix="/google-ads/credentials", tags=["google_ads"])
 
@@ -112,6 +113,27 @@ def atualizar_credential(
     db.commit()
     db.refresh(c)
     return _out(c)
+
+
+@router.post("/{cred_id}/test")
+def testar_credential(
+    cred_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    c = _get_or_404(cred_id, db)
+    cred_dict = {
+        "developer_token": c.developer_token,
+        "client_id": c.client_id,
+        "client_secret": c.client_secret,
+        "refresh_token": c.refresh_token,
+        "manager_customer_id": c.manager_customer_id,
+    }
+    try:
+        contas = listar_contas_acessiveis(cred_dict)
+        return {"ok": True, "message": f"Conexão OK — {len(contas)} conta(s) acessível(is)", "contas_count": len(contas)}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc), "contas_count": 0}
 
 
 @router.delete("/{cred_id}", status_code=status.HTTP_204_NO_CONTENT)
