@@ -59,7 +59,7 @@ meta_videos_catalog         -- catálogo de vídeos com source_url, thumbnail_ur
 ```
 
 ### Migrations
-- Numeradas: `001_` ... `061_` (último: `061_pmp_unidades_e_campos` — tabela `pmp_unidades`; coluna `ativo` e `unidade_id` em `pmp_plans`; coluna `prioridade` em `pmp_tasks`. Anterior: `060_matriz_investimento` — tabela `matriz_investimento`)
+- Numeradas: `001_` ... `063_` (último: `063_criativos_design` — Estúdio de Criativos, 7 tabelas `criativo_*`. Anterior: `062_google_ads_diarios` — tabelas `google_*_diarios`)
 - Localização: `/root/op7nexo-api/alembic/versions/` (NÃO existe `migrations/` — ver constituição 2.5)
 - Sempre rodar após criar: `bash /root/deploy.sh api` + testar endpoint
 
@@ -280,6 +280,13 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Spec: `docs/specs/pmp-edicao-plano-tarefa/` (spec.md, plan.md, tasks.md, contracts/)
 - **Pendente**: deploy + rodada 2 de front
 
+### ✅ Implementado (2026-06-10) — Estúdio de Criativos: base de dados (Fase 1)
+
+- **Migration 063 + models** (`app/models/criativo/`): 7 tabelas multi-tenant — `criativo_logos`, `criativo_templates`, `criativo_estilos`, `criativo_brand_kits`, `criativo_geracoes`, `criativo_projetos`, `criativo_export_jobs`. Estilos/templates com `workspace_id NULL = global`.
+- **Princípio**: `gpt-image-2` gera só a **base visual** (`criativo_geracoes`, com auditoria: model_snapshot/prompt_final/params_json/request_id/usage/error_code); o OP7NEXO monta o **criativo final editável** (`criativo_projetos`, com snapshots de brand kit/logo/template). Export = job no worker (`criativo_export_jobs`).
+- Spec: `docs/specs/gerador-criativos/` (spec.md, plan.md, tasks.md, contracts/design-api.md). Deployado e verificado (alembic_version=063).
+- **Próximo**: services (`image_gen`, `criativo_render`, `upload_validation`) → rotas `/design/*` → reescrita do front. Billing/vídeo em specs separados.
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos
@@ -297,7 +304,8 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 op7nexo-api/docs/specs/
 ├── auth-multitenancy/spec.md   — Auth JWT + hierarquia multi-tenant
 ├── meta-ads/spec.md            — Meta Ads sync + insights + scheduler
-└── canais-entrada/spec.md      — Canais WhatsApp/webhook
+├── canais-entrada/spec.md      — Canais WhatsApp/webhook
+└── gerador-criativos/spec.md   — Estúdio de Criativos (gpt-image-2 gera base; OP7NEXO monta criativo final)
 
 op7nexo-front/docs/specs/
 ├── marketing/spec.md           — Meta Ads UI, filtros, insights IA
