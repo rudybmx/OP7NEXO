@@ -478,6 +478,7 @@ export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: Edita
               <label style={labelStyle}>Nome da conta</label>
               <input
                 type="text"
+                autoComplete="off"
                 value={editForm.account_name}
                 onChange={e => setEditForm(prev => ({ ...prev, account_name: e.target.value }))}
                 placeholder="Nome interno da conta"
@@ -490,6 +491,7 @@ export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: Edita
               <label style={labelStyle}>BM ID <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
               <input
                 type="text"
+                autoComplete="off"
                 value={editForm.bm_id}
                 onChange={e => setEditForm(prev => ({ ...prev, bm_id: e.target.value }))}
                 placeholder="ID do Business Manager"
@@ -502,6 +504,7 @@ export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: Edita
               <label style={labelStyle}>Agrupamento <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
               <input
                 type="text"
+                autoComplete="off"
                 placeholder="ex: Franquias SP, Zona Sul"
                 value={editForm.agrupamento}
                 onChange={e => setEditForm(prev => ({ ...prev, agrupamento: e.target.value }))}
@@ -517,6 +520,7 @@ export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: Edita
               <label style={labelStyle}>Token de acesso <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
               <input
                 type="password"
+                autoComplete="new-password"
                 value={editForm.token_acesso}
                 onChange={e => setEditForm(prev => ({ ...prev, token_acesso: e.target.value }))}
                 placeholder="Deixe vazio para manter o token atual"
