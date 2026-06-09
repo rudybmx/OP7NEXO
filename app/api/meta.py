@@ -502,6 +502,43 @@ def get_sync_historico(
     return result
 
 
+@router.get("/sync/resumo/{ads_account_id}")
+def get_sync_resumo(
+    ads_account_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Resumo simples do que existe no banco de insights para a conta."""
+    conta = db.get(AdsAccount, ads_account_id)
+    if not conta:
+        raise HTTPException(status_code=404, detail="Conta não encontrada")
+
+    row = db.execute(text("""
+        SELECT
+            MIN(data) AS primeira_data,
+            MAX(data) AS ultima_data,
+            COUNT(*) AS total_dias,
+            COUNT(*) FILTER (WHERE spend > 0) AS dias_com_investimento,
+            MIN(criado_em) AS comecou_em,
+            MAX(criado_em) AS ultima_gravacao
+        FROM meta_insights_diarios
+        WHERE ads_account_id = :id
+    """), {"id": str(conta.id)}).fetchone()
+
+    def _iso(v):
+        return v.isoformat() if v is not None else None
+
+    return {
+        "ads_account_id": str(conta.id),
+        "primeira_data": _iso(row.primeira_data),
+        "ultima_data": _iso(row.ultima_data),
+        "total_dias": row.total_dias or 0,
+        "dias_com_investimento": row.dias_com_investimento or 0,
+        "comecou_em": _iso(row.comecou_em),
+        "ultima_gravacao": _iso(row.ultima_gravacao),
+    }
+
+
 @router.get("/sync/scheduler", response_model=SyncSchedulerOut)
 def get_sync_scheduler(_: User = Depends(exigir_platform_admin)):
     # Estado real do scheduler vem do worker via heartbeat no Redis (TTL 60s)

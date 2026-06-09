@@ -2882,6 +2882,56 @@ def reprocessar_imagens_hq_conta(db: Session, conta: AdsAccount) -> dict:
 
 # ── sync principal ─────────────────────────────────────────────────────────────
 
+def _finalizar_log_sync(
+    log_id: uuid.UUID | str | None,
+    status: str,
+    *,
+    totais: dict | None = None,
+    stage: str | None = None,
+    erro: str | None = None,
+    rate_pct: int | None = None,
+) -> None:
+    """Finaliza uma linha de meta_sync_log em transação independente.
+
+    Isolar a finalização numa sessão própria garante que ela sobreviva ao
+    db.rollback() dos caminhos de erro e não dependa de commit do caller no
+    sucesso — causa raiz das linhas presas em 'running'.
+    """
+    if not log_id:
+        return
+    totais = totais or {}
+    try:
+        with SessionLocal() as log_db:
+            log_db.execute(text("""
+                UPDATE meta_sync_log
+                SET status = :status,
+                    finished_at = NOW(),
+                    stage_failed = :stage,
+                    error_message = :erro,
+                    rate_limit_usage_pct = :rate_pct,
+                    campaigns_upserted = :campaigns,
+                    adsets_upserted = :adsets,
+                    ads_upserted = :ads,
+                    insights_days = :insights_days,
+                    request_count = :request_count
+                WHERE id = :id
+            """), {
+                "id": str(log_id),
+                "status": status,
+                "stage": (stage or None) and stage[:80],
+                "erro": (erro or None) and erro[:500],
+                "rate_pct": rate_pct,
+                "campaigns": totais.get("catalog_campanhas", 0),
+                "adsets": totais.get("catalog_conjuntos", 0),
+                "ads": totais.get("catalog_anuncios", 0),
+                "insights_days": totais.get("diarios", 0),
+                "request_count": totais.get("api_requests", 0),
+            })
+            log_db.commit()
+    except Exception:
+        log.exception("Falha ao finalizar meta_sync_log %s", log_id)
+
+
 def sincronizar_conta(
     ads_account_id: str,
     db: Session,
@@ -2896,6 +2946,7 @@ def sincronizar_conta(
         return {"skipped": True, "reason": SYNC_LOCK_NOT_ACQUIRED}
 
     log_entry: MetaSyncLog | None = None
+    log_id: uuid.UUID | None = None
     try:
         cooldown_until = _cooldown_until(conta)
         now = datetime.now(timezone.utc)
@@ -2920,6 +2971,7 @@ def sincronizar_conta(
         )
         db.add(log_entry)
         db.flush()
+        log_id = log_entry.id
 
         result = _sincronizar_conta_impl(ads_account_id, db, on_progress=on_progress, modo_sync=modo_sync)
         totais_final = result.get("totais") or {}
@@ -2932,10 +2984,7 @@ def sincronizar_conta(
                 last_run_status="skipped",
                 last_error_meta={"reason": result.get("reason")},
             )
-            if log_entry is not None:
-                log_entry.finished_at = datetime.now(timezone.utc)
-                log_entry.status = "skipped"
-                log_entry.stage_failed = result.get("reason", "")[:80]
+            _finalizar_log_sync(log_id, "skipped", stage=result.get("reason", ""))
         else:
             _upsert_meta_sync_state(
                 db,
@@ -2944,48 +2993,32 @@ def sincronizar_conta(
                 last_run_mode=modo_sync,
                 **_state_payload_for_success(totais_final, result.get("watermarks") or {}),
             )
-            if log_entry is not None:
-                log_entry.finished_at = datetime.now(timezone.utc)
-                log_entry.status = "success"
-                log_entry.campaigns_upserted = totais_final.get("catalog_campanhas", 0)
-                log_entry.adsets_upserted = totais_final.get("catalog_conjuntos", 0)
-                log_entry.ads_upserted = totais_final.get("catalog_anuncios", 0)
-                log_entry.insights_days = totais_final.get("diarios", 0)
-                log_entry.request_count = totais_final.get("api_requests", 0)
-        db.flush()
+            _finalizar_log_sync(log_id, "success", totais=totais_final)
         return result
     except MetaRateLimitError as exc:
-        if log_entry is not None:
-            try:
-                log_entry.finished_at = datetime.now(timezone.utc)
-                log_entry.status = "rate_limited"
-                log_entry.rate_limit_usage_pct = int(exc.usage_percent or 0)
-                log_entry.stage_failed = (exc.endpoint or "")[:80]
-                db.flush()
-            except Exception:
-                pass
         try:
             db.rollback()
         except Exception:
             pass
+        _finalizar_log_sync(
+            log_id, "rate_limited",
+            stage=exc.endpoint or "",
+            rate_pct=int(exc.usage_percent or 0),
+        )
         conta = db.get(AdsAccount, ads_account_id) or conta
         if conta:
             registrar_rate_limit_cooldown(db, conta, exc)
         raise
     except MetaContaInacessivelError as exc:
-        if log_entry is not None:
-            try:
-                log_entry.finished_at = datetime.now(timezone.utc)
-                log_entry.status = "error"
-                log_entry.stage_failed = (exc.stage or "terminal")[:80]
-                log_entry.error_message = str(exc)[:500]
-                db.flush()
-            except Exception:
-                pass
         try:
             db.rollback()
         except Exception:
             pass
+        _finalizar_log_sync(
+            log_id, "error",
+            stage=exc.stage or "terminal",
+            erro=str(exc),
+        )
         _upsert_meta_sync_state(
             db,
             ads_account_id,
@@ -3002,19 +3035,11 @@ def sincronizar_conta(
         )
         raise
     except Exception as exc:
-        if log_entry is not None:
-            try:
-                log_entry.finished_at = datetime.now(timezone.utc)
-                log_entry.status = "error"
-                log_entry.stage_failed = "sync"
-                log_entry.error_message = str(exc)[:500]
-                db.flush()
-            except Exception:
-                pass
         try:
             db.rollback()
         except Exception:
             pass
+        _finalizar_log_sync(log_id, "error", stage="sync", erro=str(exc))
         _upsert_meta_sync_state(
             db,
             ads_account_id,
