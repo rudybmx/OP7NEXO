@@ -48,6 +48,7 @@ const CONN_BADGE: Record<string, { label: string; bg: string; color: string }> =
   connected: { label: 'Conectado', bg: 'rgba(15,168,86,0.15)', color: 'var(--ws-green)' },
   connecting: { label: 'Conectando', bg: 'rgba(245,158,11,0.15)', color: '#F59E0B' },
   disconnected: { label: 'Desconectado', bg: 'rgba(163,45,45,0.15)', color: '#a32d2d' },
+  failed: { label: 'Falha / Conflito', bg: 'rgba(163,45,45,0.18)', color: '#a32d2d' },
 }
 
 const WEBHOOK_PROVIDER_OPTIONS: { value: WebhookProvider; label: string }[] = [
@@ -339,6 +340,18 @@ export function EditarCanalDialog({
                     {CONN_BADGE[canal.connection_status ?? 'disconnected']?.label ?? 'Desconectado'}
                   </span>
                 </div>
+
+                {canal.connection_status === 'failed' && (
+                  <div style={{
+                    marginBottom: 12, padding: '10px 12px', borderRadius: 8,
+                    background: 'rgba(163,45,45,0.08)', border: '1px solid rgba(163,45,45,0.25)',
+                    fontSize: 12, color: '#a32d2d', lineHeight: 1.5,
+                  }}>
+                    A sessão caiu após estar conectada. Causa provável: o número está vinculado em
+                    outra ferramenta de WhatsApp (conflito) ou foi desconectado no celular. Reconecte
+                    pelo QR; se cair de novo, verifique vínculos externos do número.
+                  </div>
+                )}
 
                 {qrCode && (
                   <div style={{ textAlign: 'center', marginBottom: 12 }}>

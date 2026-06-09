@@ -21,10 +21,12 @@ const FILTROS: { id: TipoCanal; label: string }[] = [
   ...TIPOS.map(t => ({ id: t.id, label: t.label })),
 ]
 
-const CONN_BADGE: Record<string, { label: string; bg: string; color: string }> = {
+const CONN_BADGE: Record<string, { label: string; bg: string; color: string; hint?: string }> = {
   connected:    { label: 'Conectado',    bg: 'rgba(15,168,86,0.15)',  color: 'var(--ws-green)' },
   connecting:   { label: 'Conectando',   bg: 'rgba(245,158,11,0.15)', color: '#F59E0B' },
   disconnected: { label: 'Desconectado', bg: 'rgba(163,45,45,0.15)',  color: '#a32d2d' },
+  failed:       { label: 'Falha / Conflito', bg: 'rgba(163,45,45,0.18)', color: '#a32d2d',
+    hint: 'A sessão caiu após estar conectada. Causa provável: o número está vinculado em outra ferramenta de WhatsApp (conflito) ou foi desconectado no celular. Reconecte pelo QR; se cair de novo, verifique vínculos externos do número.' },
 }
 
 const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = {
@@ -561,12 +563,16 @@ export default function CanaisOmnichannelPage() {
                       )}
                     </td>
                     <td style={{ padding: '14px 18px' }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '4px 10px', borderRadius: 6,
-                        background: badge.bg, color: badge.color,
-                        fontSize: 12, fontWeight: 600,
-                      }}>
+                      <span
+                        title={('hint' in badge ? (badge as { hint?: string }).hint : undefined) || undefined}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '4px 10px', borderRadius: 6,
+                          background: badge.bg, color: badge.color,
+                          fontSize: 12, fontWeight: 600,
+                          cursor: ('hint' in badge && (badge as { hint?: string }).hint) ? 'help' : 'default',
+                        }}
+                      >
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: badge.color, flexShrink: 0 }} />
                         {badge.label}
                       </span>
