@@ -20,4 +20,13 @@
 16. [x] `layout.tsx` + `barra-lateral.tsx`: bottom-nav + main alinhados a 64px+safe-area.
 17. [x] Typecheck sem erros novos; `next dev` (node 22) compila a rota.
 18. [ ] Verificação visual autenticada (375/414/768/1024) — via deploy/usuário.
-19. [ ] graphify update + commit + push + deploy `front` (v2).
+19. [x] graphify update + commit + push + deploy `front` (v2).
+
+## Fase 3 — Layout desktop limpo + erro de Link
+20. [x] `barra-lateral.tsx`: flyup mobile filtra itens sem `rota` → elimina `<Link href={undefined}>` (causa de "Cannot destructure property 'auth'" — parse de URL com input undefined).
+21. [x] `pagina-atendimento.tsx`: container **flush** no main (sem card: padding/borda/raio/sombra removidos), edge-to-edge.
+22. [x] `pagina-atendimento.tsx`: Contato desktop achatado (wrapper duplo → célula única; largura via gridTemplateColumns); 3ª coluna só quando há conversa.
+23. [ ] (adiado) HeroUIProvider escopado em arquivado + 2 páginas admin (bug latente, não afeta Conversas).
+24. [ ] (segurado) Parte C — unificar 4 detecções de breakpoint na casca (sem verificação local; risco em todas as rotas).
+25. [ ] Erro `auth` no desktop: confirmar em Incognito se é extension (WebMCP/@modelcontextprotocol/sdk) vs app.
+26. [ ] Verificação visual desktop (flush, sem coluna vazia, sidebar alinhada) + deploy.

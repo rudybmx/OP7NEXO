@@ -357,7 +357,7 @@ export function PaginaAtendimento() {
         ? '1fr'
         : isTablet
           ? 'minmax(300px, 360px) minmax(0, 1fr)'
-          : painelAberto
+          : (painelAberto && conversaAtiva)
             ? 'minmax(320px, 360px) minmax(0, 1fr) minmax(0, 320px)'
             : 'minmax(320px, 360px) minmax(0, 1fr) 0px',
       width: '100%',
@@ -366,14 +366,14 @@ export function PaginaAtendimento() {
       maxWidth: '100%',
       minWidth: 0,
       overflow: 'hidden',
-      // Mobile usa a tela inteira (sem "card chrome") p/ não desperdiçar área.
-      padding: isMobile ? 0 : 12,
+      // Flush no <main>: edge-to-edge, sem "card chrome" (radius/padding/sombra/borda).
+      padding: 0,
       background: 'radial-gradient(circle at top left, rgba(37, 211, 102, 0.10), transparent 28%), linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(238, 242, 247, 0.98) 100%)',
-      backdropFilter: 'blur(18px)',
       boxSizing: 'border-box',
-      border: isMobile ? 'none' : '1px solid rgba(15, 23, 42, 0.08)',
-      borderRadius: isMobile ? 0 : 28,
-      boxShadow: isMobile ? 'none' : '0 24px 80px rgba(15, 23, 42, 0.12)',
+      border: 'none',
+      borderRadius: 0,
+      boxShadow: 'none',
+      transition: 'grid-template-columns 300ms ease',
       position: 'relative',
       isolation: 'isolate',
     }}>
@@ -483,34 +483,26 @@ export function PaginaAtendimento() {
         )}
       </div>
 
-      {/* Coluna 3 — Painel do Contato (desktop: coluna do grid) */}
-      {isDesktop && (
-      <div style={{
-        minWidth: 0,
-        minHeight: 0,
-        width: painelAberto ? 300 : 0,
-        borderLeft: painelAberto ? '1px solid var(--ws-divider)' : 'none',
-        overflow: 'hidden',
-        opacity: painelAberto ? 1 : 0,
-        pointerEvents: painelAberto ? 'auto' : 'none',
-        transition: 'width 300ms ease, opacity 180ms ease, border-color 180ms ease',
-      }}>
-        {conversaAtiva && (
-          <div style={{
-            minWidth: 300,
-            height: '100%',
-            minHeight: 0,
-            transition: 'transform 300ms ease',
-          }}>
-            <PainelContato
-              conversa={conversaAtiva}
-              workspaceId={workspaceAtual ?? undefined}
-              onAtualizar={refetch}
-              onTogglePainel={() => setPainelAberto(false)}
-            />
-          </div>
-        )}
-      </div>
+      {/* Coluna 3 — Painel do Contato (desktop). Célula única do grid: a largura é
+          controlada pelo gridTemplateColumns (320px aberto / 0px fechado), sem wrapper
+          de largura extra. PainelContato (aside width:100%) preenche a célula. */}
+      {isDesktop && conversaAtiva && (
+        <div style={{
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+          borderLeft: painelAberto ? '1px solid var(--ws-divider)' : 'none',
+          opacity: painelAberto ? 1 : 0,
+          pointerEvents: painelAberto ? 'auto' : 'none',
+          transition: 'opacity 180ms ease, border-color 180ms ease',
+        }}>
+          <PainelContato
+            conversa={conversaAtiva}
+            workspaceId={workspaceAtual ?? undefined}
+            onAtualizar={refetch}
+            onTogglePainel={() => setPainelAberto(false)}
+          />
+        </div>
       )}
 
       {/* Painel do Contato (tablet/mobile: overlay sobre o chat) */}

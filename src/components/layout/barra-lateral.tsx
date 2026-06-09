@@ -484,7 +484,7 @@ export function BarraLateral() {
                   gridTemplateColumns: grupoFlyup.itens.length > 3 ? '1fr 1fr' : '1fr',
                   gap: 4,
                 }}>
-                  {grupoFlyup.itens.map((item: any) => (
+                  {grupoFlyup.itens.filter((item: any) => item.rota).map((item: any) => (
                     <Link key={item.nome} href={item.rota} onClick={() => setFlyupAberto(null)}>
                       <div style={{
                         padding: '8px 12px',
