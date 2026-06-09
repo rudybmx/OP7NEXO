@@ -48,6 +48,10 @@ export function useGoogleAdsCredentials(includeAll = false) {
     await mutate()
   }
 
+  async function testar(id: string): Promise<{ ok: boolean; message: string; contas_count: number }> {
+    return api.post(`/google-ads/credentials/${id}/test`, {})
+  }
+
   return {
     credentials: data ?? [],
     isLoading,
@@ -55,6 +59,7 @@ export function useGoogleAdsCredentials(includeAll = false) {
     criar,
     atualizar,
     deletar,
+    testar,
     refetch: mutate,
   }
 }
