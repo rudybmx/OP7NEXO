@@ -1788,6 +1788,7 @@ def marcar_sync_jobs_ativos_como_interrompidos(motivo: str = SYNC_JOB_INTERRUPTE
                         last_error_message = :motivo,
                         last_error_meta = CAST(:meta AS JSONB)
                     WHERE ads_account_id = ANY(:ads_account_ids)
+                      AND last_run_status = 'running'
                 """),
                 {
                     "motivo": motivo,
@@ -1831,6 +1832,7 @@ def marcar_sync_jobs_ativos_como_interrompidos(motivo: str = SYNC_JOB_INTERRUPTE
                         last_error_message = :motivo,
                         last_error_meta = CAST(:meta AS JSONB)
                     WHERE ads_account_id = ANY(:ids)
+                      AND last_run_status = 'running'
                 """),
                 {
                     "motivo": motivo,
