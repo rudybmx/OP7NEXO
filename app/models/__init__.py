@@ -30,6 +30,15 @@ from app.models.crm import (
     Midia,
     Permissao,
 )
+from app.models.criativo import (
+    CriativoBrandKit,
+    CriativoEstilo,
+    CriativoExportJob,
+    CriativoGeracao,
+    CriativoLogo,
+    CriativoProjeto,
+    CriativoTemplate,
+)
 
 __all__ = [
     "Base",
@@ -66,4 +75,11 @@ __all__ = [
     "LeadOriginEvent",
     "MessageJob",
     "MemoriaIA",
+    "CriativoBrandKit",
+    "CriativoEstilo",
+    "CriativoExportJob",
+    "CriativoGeracao",
+    "CriativoLogo",
+    "CriativoProjeto",
+    "CriativoTemplate",
 ]
