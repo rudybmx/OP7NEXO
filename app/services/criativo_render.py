@@ -246,7 +246,7 @@ def aplicar_logo(
         vy = "bottom" if any(t in pnorm for t in ("rodape", "inferior", "bottom")) else "top"
         hx = (
             "right" if any(t in pnorm for t in ("direita", "right"))
-            else "center" if any(t in pnorm for t in ("centro", "center"))
+            else "center" if any(t in pnorm for t in ("centro", "central", "center"))
             else "left"
         )
 
