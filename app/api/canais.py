@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import create_engine, text
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -849,7 +850,7 @@ def criar_canal(
     _get_workspace_or_404(workspace_id, db)
     verificar_acesso_workspace(usuario, workspace_id, db)
 
-    webhook_token = secrets.token_hex(32) if payload.tipo in ("webhook", "whatsapp_waha", "whatsapp_oficial") else None
+    webhook_token = secrets.token_hex(32) if payload.tipo in ("webhook", "whatsapp_waha", "whatsapp_oficial", "instagram") else None
     stored_config = payload.config or {}
     webhook_secret: str | None = None
     if payload.tipo == "webhook":
@@ -857,8 +858,8 @@ def criar_canal(
             stored_config,
             generate_secret=True,
         )
-    elif payload.tipo == "whatsapp_oficial":
-        # verify_token usado no handshake GET do webhook da Meta (hub.verify_token).
+    elif payload.tipo in ("whatsapp_oficial", "instagram"):
+        # verify_token usado no handshake GET do webhook da Meta/Instagram (hub.verify_token).
         # Gerado no servidor para o usuário colar no painel da Meta.
         if not stored_config.get("verify_token"):
             stored_config = {**stored_config, "verify_token": secrets.token_hex(16)}
@@ -1508,6 +1509,8 @@ def conectar_canal(
         return _conectar_waha(c, db)
     if c.tipo == "whatsapp_oficial":
         return _conectar_whatsapp_oficial(c, db)
+    if c.tipo == "instagram":
+        return _conectar_instagram(c, db)
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
     if _evolution_protected_name(c):
@@ -1640,6 +1643,8 @@ def status_evolution(
         return _status_waha(c, db)
     if c.tipo == "whatsapp_oficial":
         return _status_whatsapp_oficial(c, db)
+    if c.tipo == "instagram":
+        return _status_instagram(c, db)
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
 
@@ -1713,6 +1718,8 @@ def desconectar_canal(
         return _desconectar_waha(c, db)
     if c.tipo == "whatsapp_oficial":
         return _desconectar_whatsapp_oficial(c, db)
+    if c.tipo == "instagram":
+        return _desconectar_instagram(c, db)
     if c.tipo == "webhook":
         c.status = "inativo"
         db.commit()
@@ -1974,6 +1981,302 @@ def _desconectar_whatsapp_oficial(c: CanalEntrada, db: Session) -> dict:
     c.conectado_em = None
     db.commit()
     return {"status": "disconnected", "message": "Canal Meta Cloud desconectado (subscrição de webhook removida)."}
+
+
+# ── Instagram Direct (Instagram Login) ───────────────────────────────
+
+def _conectar_instagram(c: CanalEntrada, db: Session) -> ConectarOut:
+    """Conecta canal Instagram: valida ig_id + access_token. Sem QR/subscribed_apps
+    (a subscrição do webhook do Instagram é feita no nível do app no painel da Meta)."""
+    from app.services import instagram_cloud as ig
+
+    config = dict(c.config or {})
+    ig_id = config.get("ig_id", "")
+    access_token = config.get("access_token", "")
+    if not ig_id or not access_token:
+        raise HTTPException(status_code=400, detail="Canal Instagram incompleto. Informe ig_id e access_token.")
+
+    try:
+        info = ig.validar_credenciais(ig_id, access_token)
+    except ig.InstagramError as exc:
+        c.connection_status = "failed"
+        db.commit()
+        raise HTTPException(status_code=502, detail=f"Falha ao validar credenciais Instagram: {exc}")
+
+    username = info.get("username")
+    if username:
+        c.numero_telefone = f"@{username}"
+    c.status = "ativo"
+    c.connection_status = "connected"
+    c.conectado_em = datetime.now(timezone.utc)
+    db.commit()
+    return ConectarOut(
+        qr_code=None,
+        pairing_code=None,
+        connection_status="connected",
+        instance_id=ig_id,
+        message=f"Instagram conectado{(' (@' + username + ')') if username else ''}.",
+    )
+
+
+def _status_instagram(c: CanalEntrada, db: Session) -> dict:
+    """Revalida o token do Instagram (getSessionStatus)."""
+    from app.services import instagram_cloud as ig
+
+    config = dict(c.config or {})
+    ig_id = config.get("ig_id", "")
+    access_token = config.get("access_token", "")
+    if not ig_id or not access_token:
+        return {
+            "connection_status": c.connection_status or "disconnected",
+            "evolution_state": "unconfigured",
+            "instance_id": ig_id or None,
+            "error": "ig_id ou access_token ausentes",
+        }
+    try:
+        info = ig.validar_credenciais(ig_id, access_token)
+    except ig.InstagramError as exc:
+        c.connection_status = "failed"
+        db.commit()
+        return {
+            "connection_status": "failed",
+            "evolution_state": "auth_error",
+            "instance_id": ig_id,
+            "error": str(exc),
+        }
+    username = info.get("username")
+    if username:
+        c.numero_telefone = f"@{username}"
+    c.connection_status = "connected"
+    c.status = "ativo"
+    if not c.conectado_em:
+        c.conectado_em = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(c)
+    return {
+        "connection_status": c.connection_status,
+        "evolution_state": "open",
+        "instance_id": ig_id,
+        "numero_telefone": c.numero_telefone,
+        "username": username,
+        "conectado_em": c.conectado_em.isoformat() if c.conectado_em else None,
+        "qr_code": None,
+        "pairing_code": None,
+    }
+
+
+def _desconectar_instagram(c: CanalEntrada, db: Session) -> dict:
+    c.status = "inativo"
+    c.connection_status = "disconnected"
+    c.conectado_em = None
+    db.commit()
+    return {"status": "disconnected", "message": "Canal Instagram desconectado."}
+
+
+def _enviar_mensagem_instagram(
+    canal: CanalEntrada,
+    payload: "EnviarMensagemIn",
+    db: Session,
+    usuario: User,
+) -> "EnviarMensagemOut":
+    """Envia DM via Instagram Login API e persiste a mensagem outbound."""
+    from app.services import instagram_cloud as ig
+    from sqlalchemy import text
+
+    config = canal.config or {}
+    ig_id = config.get("ig_id", "")
+    access_token = config.get("access_token", "")
+    if not ig_id or not access_token:
+        raise HTTPException(status_code=400, detail="Canal Instagram não configurado. Verifique ig_id e access_token.")
+
+    to = None  # IGSID do destinatário
+    conversa_id = None
+    contato_id = None
+    if payload.conversa_id:
+        conv_row = db.execute(
+            text("""
+                SELECT c.id, c.contato_id, c.remote_jid
+                FROM public.crm_whatsapp_conversas c
+                WHERE c.id = :cid
+            """),
+            {"cid": payload.conversa_id},
+        ).fetchone()
+        if not conv_row:
+            raise HTTPException(status_code=404, detail="Conversa não encontrada")
+        conversa_id, contato_id, to = conv_row[0], conv_row[1], conv_row[2]
+    elif payload.numero:
+        to = payload.numero
+    else:
+        raise HTTPException(status_code=400, detail="Informe numero (IGSID) ou conversa_id")
+
+    try:
+        ig_resp = ig.enviar_mensagem_texto(ig_id, access_token, recipient_igsid=to, text=payload.texto or "")
+    except ig.InstagramError as exc:
+        logger.error("[canais] falha ao enviar DM Instagram: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    mid = ig_resp.get("message_id", "") if isinstance(ig_resp, dict) else ""
+
+    if not conversa_id:
+        contato_id = db.execute(
+            text("""
+                INSERT INTO public.crm_whatsapp_contatos (workspace_id, jid, telefone, nome, origem, created_at, updated_at)
+                VALUES (:ws, :jid, :tel, :nome, 'instagram', NOW(), NOW())
+                ON CONFLICT (workspace_id, jid) DO UPDATE SET updated_at = NOW()
+                RETURNING id
+            """),
+            {"ws": str(canal.workspace_id), "jid": to, "tel": None, "nome": to},
+        ).scalar()
+        conversa_id = db.execute(
+            text("""
+                INSERT INTO public.crm_whatsapp_conversas
+                (workspace_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
+                VALUES (:ws, :ct, 'instagram', :jid, 'em_atendimento', 0, :msg, 'saida', NOW(), NOW(), NOW())
+                RETURNING id
+            """),
+            {"ws": str(canal.workspace_id), "ct": str(contato_id), "jid": to, "msg": (payload.texto or "")[:500]},
+        ).scalar()
+    else:
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_conversas
+                SET ultima_mensagem = :msg, ultima_direcao = 'saida', ultima_msg_at = NOW(), updated_at = NOW()
+                WHERE id = :cid
+            """),
+            {"msg": (payload.texto or "")[:500], "cid": str(conversa_id)},
+        )
+
+    mensagem_id = db.execute(
+        text("""
+            INSERT INTO public.crm_whatsapp_mensagens
+            (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, status, recebida_em, created_at)
+            VALUES (:ws, :canal, :cid, :ct, :mid, 'instagram', :jid, 'saida', true, 'agente', :rn, :msg, 'conversation', 'enviada', NOW(), NOW())
+            RETURNING id
+        """),
+        {
+            "ws": str(canal.workspace_id),
+            "canal": str(canal.id),
+            "cid": str(conversa_id),
+            "ct": str(contato_id),
+            "mid": mid,
+            "jid": to,
+            "rn": usuario.nome or usuario.email or "agente",
+            "msg": payload.texto or "",
+        },
+    ).scalar()
+    db.commit()
+
+    try:
+        publish_whatsapp_event({
+            "type": "message.upsert",
+            "workspaceId": str(canal.workspace_id),
+            "conversaId": str(conversa_id),
+            "remoteJid": to,
+            "direction": "saida",
+            "text": payload.texto or "",
+            "instance": "instagram",
+            "messageType": "conversation",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:
+        logger.info("[enviar-instagram] REDIS FALHOU: %s", e)
+
+    return EnviarMensagemOut(ok=True, mensagem_id=str(mensagem_id), evolution_response=ig_resp)
+
+
+def _processar_mensagem_instagram(db: Session, canal: CanalEntrada, entry: dict) -> None:
+    """Persiste DM recebida do Instagram (instance='instagram', remote_jid=IGSID)."""
+    from datetime import datetime, timezone
+    from sqlalchemy import text
+
+    igsid = entry.get("igsid", "")
+    mid = entry.get("mid", "")
+    timestamp = entry.get("timestamp")
+    text_content = entry.get("text", "")
+    if not igsid or not mid:
+        logger.warning("[webhook-ig] ABORTANDO: igsid ou mid vazio")
+        return
+
+    if isinstance(timestamp, (int, float)):
+        recebida_em = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+    else:
+        recebida_em = datetime.now(timezone.utc)
+    workspace_id = str(canal.workspace_id)
+    instance = "instagram"
+
+    # Dedup por mid
+    if db.execute(
+        text("""SELECT 1 FROM public.crm_whatsapp_mensagens
+                WHERE workspace_id = :ws AND evolution_msg_id = :mid AND instance = :inst LIMIT 1"""),
+        {"ws": workspace_id, "mid": mid, "inst": instance},
+    ).fetchone():
+        logger.info("[webhook-ig] duplicado ignorado mid=%s", mid)
+        return
+
+    contato_id = db.execute(
+        text("""
+            INSERT INTO public.crm_whatsapp_contatos (workspace_id, jid, nome, origem, created_at, updated_at)
+            VALUES (:ws, :jid, :nome, 'instagram', NOW(), NOW())
+            ON CONFLICT (workspace_id, jid) DO UPDATE SET updated_at = NOW()
+            RETURNING id
+        """),
+        {"ws": workspace_id, "jid": igsid, "nome": igsid},
+    ).scalar()
+
+    conv_row = db.execute(
+        text("""SELECT id, status FROM public.crm_whatsapp_conversas
+                WHERE instance = :inst AND remote_jid = :jid ORDER BY updated_at DESC LIMIT 1"""),
+        {"inst": instance, "jid": igsid},
+    ).fetchone()
+
+    if conv_row and conv_row[1] != "resolvido":
+        conversa_id = conv_row[0]
+        db.execute(
+            text("""UPDATE public.crm_whatsapp_conversas
+                    SET ultima_mensagem = :msg, ultima_direcao = 'entrada', ultima_msg_at = :ts,
+                        nao_lidas = nao_lidas + 1, updated_at = NOW() WHERE id = :cid"""),
+            {"msg": (text_content[:500] if text_content else "[anexo]"), "ts": recebida_em, "cid": str(conversa_id)},
+        )
+    else:
+        conversa_id = db.execute(
+            text("""INSERT INTO public.crm_whatsapp_conversas
+                    (workspace_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
+                    VALUES (:ws, :ct, :inst, :jid, 'nova', 1, :msg, 'entrada', :ts, NOW(), NOW()) RETURNING id"""),
+            {"ws": workspace_id, "ct": str(contato_id), "inst": instance, "jid": igsid,
+             "msg": (text_content[:500] if text_content else "[anexo]"), "ts": recebida_em},
+        ).scalar()
+
+    db.execute(
+        text("""
+            INSERT INTO public.crm_whatsapp_mensagens
+            (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, payload, recebida_em, created_at)
+            VALUES (:ws, :canal, :cid, :ct, :mid, :inst, :jid, 'entrada', false, 'contato', :rn, :msg, :mt, :payload, :ts, NOW())
+            ON CONFLICT (workspace_id, canal_id, instance, evolution_msg_id)
+            WHERE evolution_msg_id IS NOT NULL AND evolution_msg_id != ''
+            DO NOTHING
+        """),
+        {
+            "ws": workspace_id, "canal": str(canal.id), "cid": str(conversa_id), "ct": str(contato_id),
+            "mid": mid, "inst": instance, "jid": igsid, "rn": igsid,
+            "msg": text_content if text_content else "[anexo]",
+            "mt": entry.get("message_type", "text"), "payload": json.dumps(entry), "ts": recebida_em,
+        },
+    )
+
+    try:
+        publish_whatsapp_event({
+            "type": "message.upsert",
+            "workspaceId": workspace_id,
+            "conversaId": str(conversa_id),
+            "remoteJid": igsid,
+            "direction": "entrada",
+            "text": text_content if text_content else "[anexo]",
+            "instance": instance,
+            "messageType": entry.get("message_type", "text"),
+            "timestamp": recebida_em.isoformat(),
+        })
+    except Exception as e:
+        logger.info("[webhook-ig] REDIS FALHOU: %s", e)
 
 
 # ── Enviar mensagem ──────────────────────────────────────────────────
@@ -2270,6 +2573,9 @@ def enviar_mensagem_canal(
 
     if c.tipo == "whatsapp_oficial":
         return _enviar_mensagem_meta_cloud(c, payload, db, usuario)
+
+    if c.tipo == "instagram":
+        return _enviar_mensagem_instagram(c, payload, db, usuario)
 
     if c.tipo == "webhook":
         provider = webhook_provider_from_config(c.config)
@@ -2816,7 +3122,8 @@ async def verificar_webhook_meta(
 
     if mode == "subscribe" and verify_token == expected_verify_token and challenge:
         logger.info("[webhook-meta] verificação OK canal=%s", canal.nome)
-        return int(challenge)  # Meta espera o challenge como resposta
+        # Challenge deve ser devolvido como texto puro (não JSON).
+        return PlainTextResponse(content=challenge)
 
     logger.warning("[webhook-meta] verificação FALHOU canal=%s", canal.nome)
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Verificação falhou")
@@ -2857,6 +3164,62 @@ async def receber_webhook_meta(
             _processar_mensagem_meta(db, canal, entry)
         elif entry["type"] == "status":
             _processar_status_meta(db, canal, entry)
+
+    db.commit()
+    return {"recebido": True}
+
+
+@router.get("/webhook/instagram/{token}")
+async def verificar_webhook_instagram(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Verificação do challenge do webhook do Instagram (subscribe)."""
+    canal = db.query(CanalEntrada).filter(CanalEntrada.webhook_token == token).first()
+    if not canal or canal.tipo != "instagram":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token inválido")
+
+    mode = request.query_params.get("hub.mode")
+    verify_token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+    expected = (canal.config or {}).get("verify_token", "")
+
+    if mode == "subscribe" and verify_token == expected and challenge is not None:
+        logger.info("[webhook-ig] verificação OK canal=%s", canal.nome)
+        # Challenge deve ser devolvido como texto puro (não JSON).
+        return PlainTextResponse(content=challenge)
+
+    logger.warning("[webhook-ig] verificação FALHOU canal=%s", canal.nome)
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Verificação falhou")
+
+
+@router.post("/webhook/instagram/{token}")
+async def receber_webhook_instagram(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Recebe DMs do Instagram (Instagram Login)."""
+    from app.services import instagram_cloud as ig
+
+    canal = db.query(CanalEntrada).filter(CanalEntrada.webhook_token == token).first()
+    if not canal or canal.tipo != "instagram":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token inválido")
+
+    body = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if not ig.verificar_assinatura(body, signature):
+        logger.warning("[webhook-ig] assinatura inválida canal=%s", canal.nome)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Assinatura inválida")
+
+    payload = json.loads(body) if body else {}
+    _salvar_evento_raw(db, canal.id, "instagram", "instagram_webhook", payload)
+
+    resultado = ig.processar_webhook(payload)
+    for entry in resultado.get("entries", []):
+        if entry["type"] == "message":
+            _processar_mensagem_instagram(db, canal, entry)
 
     db.commit()
     return {"recebido": True}
