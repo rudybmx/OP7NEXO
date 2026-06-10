@@ -12,6 +12,8 @@
 
 **Validado empiricamente:** o `gpt-image-2` renderiza texto em PT (com acentos) impecável e integra a logo (via `images.edit` multi-imagem) com fidelidade. Por isso o **padrão agora é geração integrada (one-shot)**: a IA gera o criativo COMPLETO — texto, composição e logo integrados — a partir de campos estruturados + um **Modelo de exemplo** (imagem de referência que guia estilo/composição/densidade) + a **logo** (multi-imagem). Endpoint `POST /design/gerar`. Modo **densidade**: `simples` (textos exatos, limpo) | `rico` (bullets+selo+copy, nível agência). Logo: estratégia **híbrida** — o modelo integra; `force_real_logo` aplica overlay inteligente da logo real (fallback de fidelidade).
 
+**`reference_usage`** (uso do Modelo de exemplo): `style` | `composition` | `style_and_composition` (inspiração solta — "sem copiar literalmente") | **`replica`** (Réplica Idêntica — replica layout/posições/proporções/paleta da referência, troca só textos+marca; nesse modo as cores da marca NÃO repintam, a referência manda na paleta). Próxima fase F3: prompt-reverso (visão→JSON→gera) para réplica editável e mais fiel.
+
 > **Princípio antigo (agora MODO DE PRECISÃO secundário):** A OpenAI gera só a **base visual** (sem texto/logo) e o OP7NEXO monta com template + logo + camadas editáveis (overlay DOM / export Pillow `criativo_render`). Permanece útil para edição de texto sem regenerar e compliance pixel-exato, mas não é o caminho principal.
 
 > **Fora do escopo desta Fase 1:** cobrança/créditos/custo por token (spec separado — esta feature apenas **registra** o `usage` retornado pela OpenAI), editor de vídeo (fase posterior), remoção de fundo/transparência, integração de publicação automática no Meta/WhatsApp (apenas atalhos de saída no front, sem automação).
