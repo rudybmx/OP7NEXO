@@ -8,9 +8,11 @@
 
 **Input**: User description: "Estúdio de geração de criativos na tela `/marketing/demandas/design`. Usuário escolhe estilo/tom/formato, dá um briefing, e a IA gera a base visual; o OP7NEXO monta o criativo final com template, logo real do cliente, textos editáveis (headline/subtítulo/CTA/preço) e marca, exportando no tamanho final. Modelo de imagem: OpenAI `gpt-image-2`. Suporte a referência e edição aproximada. Histórico e projetos editáveis."
 
-## Princípio central
+## ⚠️ Princípio central — REVISADO (2026-06-10): geração INTEGRADA é o padrão
 
-A OpenAI **não** é o editor final. O `gpt-image-2` gera/edita apenas a **base visual** (fundo, cena, produto, ambiente, composição — sem texto, sem logo, sem marca dentro do pixel). O **OP7NEXO monta o criativo final** aplicando template/layout, logo real do cliente, headline/subtítulo/CTA/preço como **camadas editáveis**, cores/regras da marca (Brand Kit) e exportação no tamanho final do canal.
+**Validado empiricamente:** o `gpt-image-2` renderiza texto em PT (com acentos) impecável e integra a logo (via `images.edit` multi-imagem) com fidelidade. Por isso o **padrão agora é geração integrada (one-shot)**: a IA gera o criativo COMPLETO — texto, composição e logo integrados — a partir de campos estruturados + um **Modelo de exemplo** (imagem de referência que guia estilo/composição/densidade) + a **logo** (multi-imagem). Endpoint `POST /design/gerar`. Modo **densidade**: `simples` (textos exatos, limpo) | `rico` (bullets+selo+copy, nível agência). Logo: estratégia **híbrida** — o modelo integra; `force_real_logo` aplica overlay inteligente da logo real (fallback de fidelidade).
+
+> **Princípio antigo (agora MODO DE PRECISÃO secundário):** A OpenAI gera só a **base visual** (sem texto/logo) e o OP7NEXO monta com template + logo + camadas editáveis (overlay DOM / export Pillow `criativo_render`). Permanece útil para edição de texto sem regenerar e compliance pixel-exato, mas não é o caminho principal.
 
 > **Fora do escopo desta Fase 1:** cobrança/créditos/custo por token (spec separado — esta feature apenas **registra** o `usage` retornado pela OpenAI), editor de vídeo (fase posterior), remoção de fundo/transparência, integração de publicação automática no Meta/WhatsApp (apenas atalhos de saída no front, sem automação).
 
