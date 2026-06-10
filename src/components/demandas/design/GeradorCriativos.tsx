@@ -58,12 +58,45 @@ export function GeradorCriativos() {
   const [cta, setCta] = useState('')
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [overlayLayout, setOverlayLayout] = useState<'inferior' | 'centro'>('inferior')
+  const [currentGenId, setCurrentGenId] = useState<string | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) { toast.error('Selecione um arquivo de imagem.'); return }
-    setLogoUrl(URL.createObjectURL(file))
+    const reader = new FileReader()
+    reader.onload = () => setLogoUrl(typeof reader.result === 'string' ? reader.result : null)
+    reader.readAsDataURL(file) // data URL: serve no <img> e vai como base64 no export
+  }
+
+  const handleExport = async () => {
+    if (!currentGenId || !wsId) { toast.error('Gere uma base antes de exportar.'); return }
+    setIsExporting(true)
+    try {
+      const res = await fetch('/api/proxy/design/exportar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken() ?? ''}` },
+        body: JSON.stringify({
+          workspace_id: wsId,
+          generation_id: currentGenId,
+          creative_format: FORMAT_TO_CREATIVE[selectedFormat] ?? 'feed_1x1',
+          layout: overlayLayout,
+          headline, subtitulo, cta,
+          logo_base64: logoUrl,
+        }),
+      })
+      if (!res.ok) throw new Error(`Falha ao exportar (HTTP ${res.status})`)
+      const data = await res.json()
+      if (data?.export_url) {
+        window.open(data.export_url, '_blank', 'noopener')
+        toast.success('Criativo exportado!')
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao exportar.')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const toggleTone = (tone: string) => {
@@ -123,6 +156,7 @@ export function GeradorCriativos() {
           const data = dataLine ? JSON.parse(dataLine) : null
           if (ev === 'generation.completed' && data?.base_image_url) {
             setResultImage(data.base_image_url)
+            setCurrentGenId(data.generation_id)
             setHistory(prev => [
               { id: data.generation_id, url: data.base_image_url, briefing: prompt.trim() || 'Criativo', at: Date.now() },
               ...prev,
@@ -455,6 +489,19 @@ export function GeradorCriativos() {
                 </div>
               </>
             )}
+            {resultImage && (
+              <button
+                onClick={handleExport}
+                disabled={isExporting}
+                className="mt-4 w-full py-2.5 bg-[var(--ws-gold)] hover:opacity-90 disabled:opacity-50 text-white text-[11px] font-bold uppercase tracking-wider rounded-[var(--ws-radius-lg)] shadow-sm transition-all flex items-center justify-center gap-2 shrink-0"
+              >
+                {isExporting ? (
+                  <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Exportando...</>
+                ) : (
+                  <><Download size={13} /> Baixar criativo</>
+                )}
+              </button>
+            )}
           </div>
         </div>
 
@@ -468,7 +515,7 @@ export function GeradorCriativos() {
               history.map(item => (
                 <button
                   key={item.id}
-                  onClick={() => { setResultImage(item.url); setError(null) }}
+                  onClick={() => { setResultImage(item.url); setCurrentGenId(item.id); setError(null) }}
                   className="flex items-center gap-3 p-2 rounded-lg bg-white/40 border border-white/60 hover:bg-white/60 transition-all text-left"
                 >
                   <div className="w-10 h-10 rounded bg-gray-200 overflow-hidden shrink-0">
