@@ -551,7 +551,104 @@ export function EditarCanalDialog({
               </div>
             )}
 
-            {canal?.tipo !== 'whatsapp_evolution' && canal?.tipo !== 'whatsapp_waha' && canal?.tipo !== 'whatsapp_oficial' && canal?.tipo !== 'webhook' && (
+            {canal?.tipo === 'instagram' && (
+              <div
+                style={{
+                  background: 'rgba(225,48,108,0.06)',
+                  border: '1px solid rgba(225,48,108,0.20)',
+                  borderRadius: 12,
+                  padding: '16px 18px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 20 }}>📷</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>Instagram Direct</div>
+                      <div style={{ fontSize: 12, color: 'var(--ws-text-3)', marginTop: 2 }}>
+                        {canal.numero_telefone ?? 'Conta não validada'}
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      padding: '3px 10px', borderRadius: 6,
+                      background: CONN_BADGE[canal.connection_status ?? 'disconnected']?.bg,
+                      color: CONN_BADGE[canal.connection_status ?? 'disconnected']?.color,
+                      fontSize: 11, fontWeight: 600,
+                    }}
+                  >
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: CONN_BADGE[canal.connection_status ?? 'disconnected']?.color }} />
+                    {CONN_BADGE[canal.connection_status ?? 'disconnected']?.label ?? 'Desconectado'}
+                  </span>
+                </div>
+
+                {canal.webhook_token && (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>Callback URL (Meta)</label>
+                    <div style={{
+                      background: wsSheetCreamTokens.surface,
+                      border: `1px solid ${wsSheetCreamTokens.border}`,
+                      borderRadius: 8, padding: '10px 12px',
+                    }}>
+                      <code style={{ fontSize: 11, color: 'var(--ws-text-1)', wordBreak: 'break-all', lineHeight: 1.5, display: 'block' }}>
+                        https://api.op7franquia.com.br/webhook/instagram/{canal.webhook_token}
+                      </code>
+                    </div>
+                    {typeof (canal.config as Record<string, unknown>)?.verify_token === 'string' && (
+                      <div style={{ marginTop: 8 }}>
+                        <label style={labelStyle}>Verify Token</label>
+                        <div style={{
+                          background: wsSheetCreamTokens.surface,
+                          border: `1px solid ${wsSheetCreamTokens.border}`,
+                          borderRadius: 8, padding: '10px 12px',
+                        }}>
+                          <code style={{ fontSize: 11, color: 'var(--ws-text-1)', wordBreak: 'break-all', lineHeight: 1.5, display: 'block' }}>
+                            {(canal.config as Record<string, unknown>).verify_token as string}
+                          </code>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {canal.connection_status === 'connected' ? (
+                    <button
+                      onClick={onDesconectar}
+                      style={{
+                        flex: 1, height: 38, borderRadius: 8,
+                        background: 'rgba(163,45,45,0.12)', border: '1px solid rgba(163,45,45,0.30)',
+                        fontSize: 13, fontWeight: 600, color: '#a32d2d', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      }}
+                    >
+                      <PowerOff size={14} />
+                      Desconectar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={onConectar}
+                      disabled={conectando}
+                      style={{
+                        flex: 1, height: 38, borderRadius: 8,
+                        background: conectando ? 'rgba(225,48,108,0.30)' : 'rgba(225,48,108,0.15)',
+                        border: '1px solid rgba(225,48,108,0.40)',
+                        fontSize: 13, fontWeight: 600, color: '#E1306C',
+                        cursor: conectando ? 'not-allowed' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      }}
+                    >
+                      {conectando ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} />}
+                      {conectando ? 'Validando...' : 'Conectar'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {canal?.tipo !== 'whatsapp_evolution' && canal?.tipo !== 'whatsapp_waha' && canal?.tipo !== 'whatsapp_oficial' && canal?.tipo !== 'instagram' && canal?.tipo !== 'webhook' && (
               <div
                 style={{
                   background: 'rgba(15,23,42,0.04)',

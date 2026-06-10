@@ -14,6 +14,7 @@ import {
   type Workspace,
 } from './canal-shared'
 import { MetaEmbeddedSignupButton } from './meta-embedded-signup'
+import { InstagramLoginButton } from './instagram-login'
 
 type WebhookCfg = {
   provider?: string
@@ -30,7 +31,7 @@ const WEBHOOK_PROVIDERS: { id: string; label: string; disponivel: boolean }[] = 
 ]
 
 // Macro-tipos criáveis nesta rodada. Os demais aparecem como "em breve".
-const TIPOS_CRIAVEIS = new Set<string>(['whatsapp_evolution', 'whatsapp_waha', 'whatsapp_oficial', 'webhook'])
+const TIPOS_CRIAVEIS = new Set<string>(['whatsapp_evolution', 'whatsapp_waha', 'whatsapp_oficial', 'instagram', 'webhook'])
 
 interface NovoCanalDialogProps {
   open: boolean
@@ -154,8 +155,10 @@ export function NovoCanalDialog({
           {canalCriado ? (
             (() => {
               const isMeta = canalCriado.tipo === 'whatsapp_oficial'
-              const webhookUrl = `${WEBHOOK_BASE}/${isMeta ? 'meta/' : ''}${canalCriado.webhook_token}`
-              const verifyToken = isMeta
+              const isInstagram = canalCriado.tipo === 'instagram'
+              const webhookPrefix = isMeta ? 'meta/' : isInstagram ? 'instagram/' : ''
+              const webhookUrl = `${WEBHOOK_BASE}/${webhookPrefix}${canalCriado.webhook_token}`
+              const verifyToken = (isMeta || isInstagram)
                 ? ((canalCriado.config as Record<string, unknown>)?.verify_token as string | undefined)
                 : undefined
               return (
@@ -172,13 +175,13 @@ export function NovoCanalDialog({
                     Canal &ldquo;{canalCriado.nome}&rdquo; criado
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--ws-text-2)', marginTop: 2 }}>
-                    Tipo: {isMeta ? 'WhatsApp Oficial (Meta Cloud)' : 'Webhook/API'}
+                    Tipo: {isMeta ? 'WhatsApp Oficial (Meta Cloud)' : isInstagram ? 'Instagram Direct' : 'Webhook/API'}
                   </div>
                 </div>
               </div>
 
               <div>
-                <label style={labelStyle}>{isMeta ? 'Callback URL (Meta)' : 'URL do Webhook'}</label>
+                <label style={labelStyle}>{(isMeta || isInstagram) ? 'Callback URL (Meta)' : 'URL do Webhook'}</label>
                 <div style={{
                   background: wsSheetCreamTokens.surface,
                   border: `1px solid ${wsSheetCreamTokens.border}`,
@@ -207,7 +210,7 @@ export function NovoCanalDialog({
                 </button>
               </div>
 
-              {isMeta && verifyToken && (
+              {(isMeta || isInstagram) && verifyToken && (
                 <div>
                   <label style={labelStyle}>Verify Token</label>
                   <div style={{
@@ -225,6 +228,8 @@ export function NovoCanalDialog({
               <p style={{ fontSize: 12, color: 'var(--ws-text-3)', margin: 0 }}>
                 {isMeta
                   ? 'No painel da Meta (WhatsApp → Configuração → Webhooks), cole a Callback URL e o Verify Token, assine o campo "messages" e depois volte aqui e clique em Conectar para validar e registrar.'
+                  : isInstagram
+                  ? 'No painel da Meta (app → Instagram → Webhooks), cole a Callback URL e o Verify Token, assine o campo "messages" e depois volte aqui e clique em Conectar para validar.'
                   : 'Configure esta URL como destino de webhook no sistema externo. O token é único e não poderá ser recuperado.'}
               </p>
             </div>
@@ -381,7 +386,48 @@ export function NovoCanalDialog({
                 </>
               )}
 
-              {(form.tipo === 'instagram' || form.tipo === 'facebook') && (
+              {form.tipo === 'instagram' && (
+                <>
+                  <div style={{
+                    background: 'rgba(225,48,108,0.07)',
+                    border: '1px solid rgba(225,48,108,0.25)',
+                    borderRadius: 10, padding: '14px 16px',
+                  }}>
+                    <p style={{ margin: 0, fontSize: 12, color: '#E1306C', lineHeight: 1.5 }}>
+                      📷 Instagram Direct (Instagram Login). Informe o ID da conta profissional e o
+                      access token. Ao salvar, o sistema gera a Callback URL + verify token para o
+                      webhook no painel da Meta; depois use <strong>Conectar</strong> para validar.
+                    </p>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Instagram ID (conta profissional) *</label>
+                    <input
+                      type="text"
+                      placeholder="ex: 17841400000000000"
+                      value={readStr('ig_id')}
+                      onChange={e => setConfig('ig_id', e.target.value)}
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Access Token *</label>
+                    <input
+                      type="text"
+                      placeholder="Instagram user access token"
+                      value={readStr('access_token')}
+                      onChange={e => setConfig('access_token', e.target.value)}
+                      style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }}
+                    />
+                    <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--ws-text-3)', lineHeight: 1.4 }}>
+                      Permissões: instagram_business_basic, instagram_business_manage_messages. O token é
+                      armazenado de forma segura e nunca é exibido novamente.
+                    </p>
+                  </div>
+                  <InstagramLoginButton />
+                </>
+              )}
+
+              {form.tipo === 'facebook' && (
                 <>
                   <div>
                     <label style={labelStyle}>Page ID</label>
