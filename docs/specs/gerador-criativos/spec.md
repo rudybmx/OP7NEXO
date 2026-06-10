@@ -125,7 +125,7 @@ Além dos estilos globais curados, o workspace pode **criar/editar/arquivar** se
 **Montagem e exportação (OP7NEXO — sem IA)**
 - **FR-013**: O sistema MUST montar o criativo final compondo template + logo (camada real) + camadas de texto (headline/subtítulo/CTA/preço) sobre a base, **sem** chamar a OpenAI.
 - **FR-014**: O sistema MUST permitir editar textos/logo/posições e re-renderizar **sem** nova geração de IA.
-- **FR-015**: O sistema MUST renderizar a exportação final como **job no worker** (`op7nexo-worker`), nunca no request síncrono da API; o front acompanha o estado do job.
+- **FR-015**: O sistema MUST renderizar a exportação final compondo base+logo+textos no tamanho do canal. **Decisão MVP:** render **síncrono com Pillow** no request (~300ms, sem Chromium) — `criativo_render.montar_criativo`. Upgrade futuro para Playwright/WYSIWYG como job no `op7nexo-worker` fica em aberto se a fidelidade pixel-perfect for necessária (o `criativo_export_jobs` já existe para isso).
 - **FR-016**: O sistema MUST separar os conceitos `creative_format`, `generation_size`, `export_size`, `output_format` (png/jpeg/webp) e exportar no `export_size` do canal.
 - **FR-017**: A exportação MUST ser visualmente consistente com o preview do front (mesma tipografia/layout).
 
