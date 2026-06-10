@@ -118,34 +118,34 @@ def _map_error(exc: Exception) -> tuple[str, str]:
     return "provider_error", "Falha ao gerar a imagem no provedor. Tente novamente."
 
 
-def gerar_base(
+def criar_geracao(
     db: Session,
     *,
     workspace_id: uuid.UUID,
     user_id: uuid.UUID | None,
     briefing: str,
     creative_format: str | None = None,
-    estilo=None,
+    estilo_id: uuid.UUID | None = None,
+    estilo_prompt_template: str | None = None,
     quality: str = "low",
     brand_kit: dict | None = None,
 ) -> CriativoGeracao:
-    """Gera a base visual e persiste o registro de geração (com auditoria).
+    """Insere o registro de geração em status `pending` e devolve com id.
 
-    Não faz streaming (fatia inicial, testável por curl). O endpoint SSE virá
-    por cima reusando esta lógica.
+    Separado de `executar_geracao` para o SSE emitir `generation.created` (com o
+    id, para recuperação/reconexão) ANTES da chamada bloqueante ao modelo.
     """
     size = resolve_generation_size(creative_format)
     prompt = montar_prompt(
-        estilo_prompt_template=getattr(estilo, "prompt_template", None),
+        estilo_prompt_template=estilo_prompt_template,
         briefing=briefing,
         creative_format=creative_format,
         brand_kit=brand_kit,
     )
-
     ger = CriativoGeracao(
         workspace_id=workspace_id,
         user_id=user_id,
-        estilo_id=getattr(estilo, "id", None),
+        estilo_id=estilo_id,
         briefing=briefing,
         creative_format=creative_format,
         generation_size=size,
@@ -157,22 +157,29 @@ def gerar_base(
     db.add(ger)
     db.commit()
     db.refresh(ger)
+    return ger
 
+
+def executar_geracao(db: Session, ger: CriativoGeracao) -> CriativoGeracao:
+    """Chama o gpt-image-2, salva a base no MinIO e atualiza o registro.
+
+    Em erro, persiste status=error + error_code mapeado. Sempre devolve o `ger`.
+    """
+    quality = (ger.params_json or {}).get("quality", "low")
     try:
         client = _image_client()
         raw = client.images.with_raw_response.generate(
             model=settings.openai_image_model,
-            prompt=prompt,
-            size=size,
+            prompt=ger.prompt_final,
+            size=ger.generation_size,
             quality=quality,
             n=1,
         )
         request_id = getattr(raw, "request_id", None)
         resp = raw.parse()
 
-        b64 = resp.data[0].b64_json
-        content = base64.b64decode(b64)
-        object_name = f"workspaces/{workspace_id}/criativos/bases/{ger.id}.png"
+        content = base64.b64decode(resp.data[0].b64_json)
+        object_name = f"workspaces/{ger.workspace_id}/criativos/bases/{ger.id}.png"
         put_bytes(settings.MINIO_BUCKET_CRIATIVOS, object_name, content, "image/png")
         url = public_url(settings.MINIO_BUCKET_CRIATIVOS, object_name)
 
@@ -193,5 +200,30 @@ def gerar_base(
         db.commit()
         db.refresh(ger)
         log.warning("[image_gen] falha geracao=%s code=%s err=%s", ger.id, code, str(exc)[:200])
-
     return ger
+
+
+def gerar_base(
+    db: Session,
+    *,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID | None,
+    briefing: str,
+    creative_format: str | None = None,
+    estilo=None,
+    quality: str = "low",
+    brand_kit: dict | None = None,
+) -> CriativoGeracao:
+    """Conveniência síncrona (criar + executar) — usada no teste direto/não-SSE."""
+    ger = criar_geracao(
+        db,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        briefing=briefing,
+        creative_format=creative_format,
+        estilo_id=getattr(estilo, "id", None),
+        estilo_prompt_template=getattr(estilo, "prompt_template", None),
+        quality=quality,
+        brand_kit=brand_kit,
+    )
+    return executar_geracao(db, ger)
