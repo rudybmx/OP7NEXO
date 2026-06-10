@@ -4,6 +4,7 @@ Fase 1 (imagem). Esta fatia: geração da BASE visual via gpt-image-2 com SSE,
 recuperação de estado por id e listagem de estilos. Montagem/export do criativo
 final (template+logo+textos) e demais rotas vêm nas fatias seguintes.
 """
+import base64
 import json
 import uuid
 from typing import Optional
@@ -13,11 +14,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.core.deps import get_usuario_atual, verificar_acesso_workspace
-from app.models.criativo import CriativoEstilo, CriativoGeracao
+from app.models.criativo import CriativoEstilo, CriativoGeracao, CriativoProjeto
 from app.models.user import User
-from app.services import image_gen
+from app.services import criativo_render, image_gen
+from app.services.object_storage import get_object, public_url, put_bytes
+from app.services.upload_validation import validar_e_normalizar_imagem
 
 router = APIRouter(prefix="/design", tags=["design"])
 
@@ -171,3 +175,90 @@ def obter_geracao(
         "error_code": ger.error_code,
         "error_message": ger.error_message,
     }
+
+
+class ExportarIn(BaseModel):
+    workspace_id: uuid.UUID
+    generation_id: uuid.UUID
+    creative_format: Optional[str] = None
+    layout: str = "inferior"
+    headline: Optional[str] = ""
+    subtitulo: Optional[str] = ""
+    cta: Optional[str] = ""
+    logo_base64: Optional[str] = None  # data URL ou base64 puro
+
+
+@router.post("/exportar")
+def exportar(
+    payload: ExportarIn,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Monta o criativo final (base + logo + textos) e exporta no tamanho do canal.
+
+    Render síncrono via Pillow (sem IA). Salva o PNG no MinIO e registra um
+    `criativo_projetos`. Devolve a URL de download servida pela API.
+    """
+    verificar_acesso_workspace(usuario, payload.workspace_id, db)
+
+    ger = (
+        db.query(CriativoGeracao)
+        .filter(
+            CriativoGeracao.id == payload.generation_id,
+            CriativoGeracao.workspace_id == payload.workspace_id,
+        )
+        .first()
+    )
+    if not ger or not ger.imagem_base_url:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Base não encontrada")
+
+    bucket = settings.MINIO_BUCKET_CRIATIVOS
+    base_name = f"workspaces/{ger.workspace_id}/criativos/bases/{ger.id}.png"
+    try:
+        base_bytes = get_object(bucket, base_name).read()
+    except Exception:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Arquivo da base indisponível")
+
+    logo_bytes = None
+    if payload.logo_base64:
+        try:
+            raw = base64.b64decode(payload.logo_base64.split(",")[-1])
+            logo_bytes, _, _, _ = validar_e_normalizar_imagem(raw, error_code="invalid_reference")
+        except Exception:
+            logo_bytes = None  # logo é best-effort no export
+
+    fmt = payload.creative_format or ger.creative_format
+    png = criativo_render.montar_criativo(
+        base_bytes,
+        creative_format=fmt,
+        layout=payload.layout,
+        headline=payload.headline or "",
+        subtitulo=payload.subtitulo or "",
+        cta=payload.cta or "",
+        logo_bytes=logo_bytes,
+    )
+
+    out_name = f"workspaces/{ger.workspace_id}/criativos/exports/{ger.id}-{uuid.uuid4().hex}.png"
+    put_bytes(bucket, out_name, png, "image/png")
+    url = public_url(bucket, out_name)
+
+    proj = CriativoProjeto(
+        workspace_id=payload.workspace_id,
+        user_id=usuario.id,
+        geracao_id=ger.id,
+        base_image_url=ger.imagem_base_url,
+        creative_format=fmt,
+        text_layers_json={
+            "headline": payload.headline or "",
+            "subtitulo": payload.subtitulo or "",
+            "cta": payload.cta or "",
+            "layout": payload.layout,
+        },
+        export_urls_json=[url],
+        status="exportado",
+    )
+    db.add(proj)
+    db.commit()
+    db.refresh(proj)
+
+    return {"projeto_id": str(proj.id), "export_url": url}
