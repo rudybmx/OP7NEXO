@@ -8,6 +8,12 @@ description: "Task list — Estúdio de Criativos (Fase 1: imagem)"
 
 **Tests**: incluídos apenas nos pontos críticos (validação de upload/máscara, `resolve_generation_size`, multi-tenant). Demais via verificação manual end-to-end.
 
+## Progresso (2026-06-10)
+
+**Feito e validado:** T001 (migration 063), T002 (models), T003 (config `OPENAI_IMAGE_*`), T005 (`upload_validation.py`), T007 (`image_gen.py` + `resolve_generation_size` + guardrail), T016 (parcial — `POST /design/gerar-base` SSE `created→completed|failed`; **partials progressivos pendentes**), T017 (`GET /design/gerar-base/{id}`), T015 (parcial — `GET /design/estilos`; falta `/templates`). Validado end-to-end com gpt-image-2 real via curl. Commits locais (sem push). **Descoberta:** chave de imagem é dedicada (não o gateway de texto zen); `base_url` explícito.
+
+**Próximo:** partials; `criativo_render` (Playwright no worker) + `/renderizar-criativo`/`/exportar`; brand-kit/logos; front.
+
 ## Format: `[ID] [P?] [Story] Description`
 - **[P]**: pode rodar em paralelo (arquivos diferentes, sem dependência).
 - **[Story]**: US1..US5 conforme spec.md. Caminhos exatos incluídos.

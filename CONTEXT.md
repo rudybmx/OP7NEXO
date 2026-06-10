@@ -284,8 +284,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 - **Migration 063 + models** (`app/models/criativo/`): 7 tabelas multi-tenant — `criativo_logos`, `criativo_templates`, `criativo_estilos`, `criativo_brand_kits`, `criativo_geracoes`, `criativo_projetos`, `criativo_export_jobs`. Estilos/templates com `workspace_id NULL = global`.
 - **Princípio**: `gpt-image-2` gera só a **base visual** (`criativo_geracoes`, com auditoria: model_snapshot/prompt_final/params_json/request_id/usage/error_code); o OP7NEXO monta o **criativo final editável** (`criativo_projetos`, com snapshots de brand kit/logo/template). Export = job no worker (`criativo_export_jobs`).
+- **Geração da base (gpt-image-2) funcionando**: `app/services/image_gen.py` (`criar_geracao`+`executar_geracao`, `resolve_generation_size`, guardrail anti-texto/logo), `upload_validation.py` (Pillow), config dedicado `OPENAI_IMAGE_*` (chave separada do gateway de texto; base_url explícito `api.openai.com`). Rotas `app/api/criativos_design.py`: `POST /design/gerar-base` (SSE: created→completed|failed), `GET /design/gerar-base/{id}` (recuperação), `GET /design/estilos`. Validado por curl na API pública.
 - Spec: `docs/specs/gerador-criativos/` (spec.md, plan.md, tasks.md, contracts/design-api.md). Deployado e verificado (alembic_version=063).
-- **Próximo**: services (`image_gen`, `criativo_render`, `upload_validation`) → rotas `/design/*` → reescrita do front. Billing/vídeo em specs separados.
+- **Próximo**: partial images progressivos; montagem do criativo final (template+logo+textos, `criativo_render` via Playwright no worker) + `/renderizar-criativo`/`/exportar`; brand-kit/logos; reescrita do front. Billing/vídeo em specs separados.
 
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
