@@ -133,7 +133,6 @@ export function GeradorCriativos() {
 
   const [formatsSel, setFormatsSel] = useState<string[]>(['45'])
   const [quality, setQuality] = useState('medium')
-  const [forceRealLogo, setForceRealLogo] = useState(false)
   const [estilo, setEstilo] = useState('Premium')
   const [showAdvanced, setShowAdvanced] = useState(false)
 
@@ -188,7 +187,6 @@ export function GeradorCriativos() {
       estilo,
       densidade,
       quality,
-      force_real_logo: forceRealLogo,
       reference_usage: referenceUsage,
       primary_color: primaryColor.trim() || undefined,
       secondary_color: secondaryColor.trim() || undefined,
@@ -283,18 +281,24 @@ export function GeradorCriativos() {
           )}
         </div>
 
-        {/* Cores da marca */}
-        <div className="space-y-3">
-          <label className={labelCls}><Palette size={14} className="text-[var(--ws-blue)]" /> Cores da marca</label>
-          <div className="flex items-stretch gap-2">
-            <ColorSwatch label="Primária" value={primaryColor} onChange={setPrimaryColor} />
-            <ColorSwatch label="Secundária" value={secondaryColor} onChange={setSecondaryColor} />
+        {/* Cores da marca (desativadas na Réplica idêntica — a referência manda na paleta) */}
+        {referenceUsage !== 'replica' ? (
+          <div className="space-y-3">
+            <label className={labelCls}><Palette size={14} className="text-[var(--ws-blue)]" /> Cores da marca</label>
+            <div className="flex items-stretch gap-2">
+              <ColorSwatch label="Primária" value={primaryColor} onChange={setPrimaryColor} />
+              <ColorSwatch label="Secundária" value={secondaryColor} onChange={setSecondaryColor} />
+            </div>
+            <button onClick={sugerirCores} disabled={!logoUrl}
+              className="w-full h-8 rounded-[var(--ws-radius-lg)] text-[11px] font-medium border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] backdrop-blur-md text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] disabled:opacity-40 transition-all flex items-center justify-center gap-2">
+              <Wand2 size={13} /> Sugerir cores da logo
+            </button>
           </div>
-          <button onClick={sugerirCores} disabled={!logoUrl}
-            className="w-full h-8 rounded-[var(--ws-radius-lg)] text-[11px] font-medium border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] backdrop-blur-md text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] disabled:opacity-40 transition-all flex items-center justify-center gap-2">
-            <Wand2 size={13} /> Sugerir cores da logo
-          </button>
-        </div>
+        ) : (
+          <div className="text-[11px] text-[var(--ws-text-3)] px-1 py-2 rounded-[var(--ws-radius-lg)] border border-dashed border-[var(--ws-glass-border)]">
+            Cores da marca desativadas no modo <b className="text-[var(--ws-text-2)]">Réplica idêntica</b> — a paleta segue o modelo de exemplo.
+          </div>
+        )}
 
         {/* O que anunciar */}
         <div className="space-y-3">
@@ -402,10 +406,6 @@ export function GeradorCriativos() {
                   ))}
                 </div>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={forceRealLogo} onChange={e => setForceRealLogo(e.target.checked)} className="accent-[var(--ws-blue)]" />
-                <span className="text-[11px] text-[var(--ws-text-2)]">Garantir logo fiel (aplica a logo real por cima)</span>
-              </label>
             </div>
           )}
         </div>
