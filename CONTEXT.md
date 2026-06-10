@@ -112,6 +112,16 @@ Account
 
 ---
 
+## CANAIS — Meta Oficial (WhatsApp Cloud + Instagram)
+
+Canais oficiais da Meta com conexão por **token manual** (MVP; login/OAuth atrás de flag).
+Versão da Graph API centralizada em `settings.META_GRAPH_API_VERSION`.
+
+- **WhatsApp Oficial** (`tipo=whatsapp_oficial`): `app/services/meta_cloud.py`. Config: `phone_number_id`, `waba_id`, `access_token` (write-only, redigido), `verify_token` (autogerado). Conectar = valida `GET /{phone}` + `subscribed_apps`. Webhook `GET/POST /webhook/meta/{token}` (challenge texto puro + HMAC `X-Hub-Signature-256`). Envio texto/template (erro `131047` → 409). Dedup por `wamid`.
+- **Instagram Direct** (`tipo=instagram`): `app/services/instagram_cloud.py` (graph.instagram.com). Config: `ig_id`, `access_token`, `verify_token`. Conectar = valida `GET /{ig_id}`. Webhook `GET/POST /webhook/instagram/{token}` (formato `messaging`). Persiste com `instance="instagram"`, `remote_jid=IGSID` (sem migration). Dedup por `mid`.
+- Stubs flag-gated (front): Embedded Signup (`NEXT_PUBLIC_META_EMBEDDED_SIGNUP`) e Instagram Login (`NEXT_PUBLIC_INSTAGRAM_LOGIN`).
+- Spec: `docs/specs/instagram-direct/spec.md`.
+
 ## CANAIS — WhatsApp (Evolution Go)
 
 ### Base URL
