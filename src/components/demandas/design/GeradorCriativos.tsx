@@ -1,7 +1,10 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Sparkles, Image as ImageIcon, Type, Palette, Layout, History, Send } from 'lucide-react'
+import { Sparkles, Image as ImageIcon, Type, Palette, Layout, History, Send, AlertCircle, Download } from 'lucide-react'
+import { toast } from 'sonner'
+import { getToken } from '@/lib/api-client'
+import { useWorkspace } from '@/lib/workspace-context'
 
 const COM_TONES = [
   'Sofisticado', 'Urgência', 'Confiança', 'Aspiracional', 
@@ -21,29 +24,110 @@ const FORMATS = [
   { id: '916', title: '9:16', sub: 'Stories/Reel' },
 ]
 
+// Mapeia o formato da UI para o creative_format que a API entende.
+const FORMAT_TO_CREATIVE: Record<string, string> = {
+  '45': 'feed_4x5',
+  '11': 'feed_1x1',
+  '916': 'story',
+}
+
+const QUALITIES = [
+  { id: 'low', title: 'Rápida' },
+  { id: 'medium', title: 'Equilibrada' },
+  { id: 'high', title: 'Alta' },
+]
+
+interface HistItem { id: string; url: string; briefing: string; at: number }
+
 export function GeradorCriativos() {
   const [prompt, setPrompt] = useState('')
   const [selectedStyle, setSelectedStyle] = useState('premium')
   const [selectedTones, setSelectedTones] = useState<string[]>(['Sofisticado'])
   const [selectedFormat, setSelectedFormat] = useState('45')
+  const [selectedQuality, setSelectedQuality] = useState('medium')
   const [isGenerating, setIsGenerating] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [resultImage, setResultImage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [history, setHistory] = useState<HistItem[]>([])
+  const { workspaceAtual: wsId } = useWorkspace()
 
   const toggleTone = (tone: string) => {
-    setSelectedTones(prev => 
+    setSelectedTones(prev =>
       prev.includes(tone) ? prev.filter(t => t !== tone) : [...prev, tone]
     )
   }
 
-  const handleGenerate = () => {
+  // Junta briefing + estilo + tom num único texto (a IA gera só a base visual).
+  const montarBriefing = () => {
+    const style = STYLES.find(s => s.id === selectedStyle)
+    const partes = [prompt.trim()]
+    if (style) partes.push(`Estilo ${style.title}: ${style.desc}`)
+    if (selectedTones.length) partes.push(`Tom: ${selectedTones.join(', ')}`)
+    return partes.filter(Boolean).join('. ')
+  }
+
+  const handleGenerate = async () => {
+    if (!prompt.trim()) { toast.error('Escreva um briefing para o criativo.'); return }
+    if (!wsId) { toast.error('Selecione um workspace antes de gerar.'); return }
+
     setIsGenerating(true)
     setResultImage(null)
-    // Simular geração
-    setTimeout(() => {
+    setError(null)
+
+    try {
+      const res = await fetch('/api/proxy/design/gerar-base', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken() ?? ''}`,
+        },
+        body: JSON.stringify({
+          workspace_id: wsId,
+          briefing: montarBriefing(),
+          creative_format: FORMAT_TO_CREATIVE[selectedFormat] ?? 'feed_1x1',
+          quality: selectedQuality,
+        }),
+      })
+      if (!res.ok || !res.body) throw new Error(`Falha ao gerar (HTTP ${res.status})`)
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let done = false
+      while (!done) {
+        const { done: d, value } = await reader.read()
+        done = d
+        if (value) buffer += decoder.decode(value, { stream: true })
+        let sep
+        while ((sep = buffer.indexOf('\n\n')) >= 0) {
+          const bloco = buffer.slice(0, sep)
+          buffer = buffer.slice(sep + 2)
+          const linhas = bloco.split('\n')
+          const ev = linhas.find(l => l.startsWith('event:'))?.slice(6).trim()
+          const dataLine = linhas.find(l => l.startsWith('data:'))?.slice(5).trim()
+          const data = dataLine ? JSON.parse(dataLine) : null
+          if (ev === 'generation.completed' && data?.base_image_url) {
+            setResultImage(data.base_image_url)
+            setHistory(prev => [
+              { id: data.generation_id, url: data.base_image_url, briefing: prompt.trim() || 'Criativo', at: Date.now() },
+              ...prev,
+            ].slice(0, 12))
+            toast.success('Base visual gerada!')
+          } else if (ev === 'generation.failed') {
+            const msg = data?.error_message || 'Falha na geração.'
+            setError(msg)
+            toast.error(msg)
+          }
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erro ao gerar o criativo.'
+      setError(msg)
+      toast.error(msg)
+    } finally {
       setIsGenerating(false)
-      setResultImage('https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7_dash_odc/exemplodesigodc.jpeg')
-    }, 2000)
+    }
   }
 
   const getFormatStyles = () => {
@@ -169,19 +253,27 @@ export function GeradorCriativos() {
           
           {showAdvanced && (
             <div className="mt-4 p-4 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[rgba(14,20,42,0.02)] space-y-4 animate-in slide-in-from-top-2 duration-300">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase text-[var(--ws-text-3)]">Modelo AI</label>
-                  <select className="w-full h-8 px-2 bg-white border border-[var(--ws-glass-border)] rounded-md text-[11px] focus:outline-none">
-                    <option>Flux.1 Dev</option>
-                    <option>DALL-E 3</option>
-                    <option>Stable Diffusion XL</option>
-                  </select>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase text-[var(--ws-text-3)]">Qualidade</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {QUALITIES.map(q => (
+                    <button
+                      key={q.id}
+                      type="button"
+                      onClick={() => setSelectedQuality(q.id)}
+                      className={`h-8 rounded-md text-[11px] font-medium border transition-all ${
+                        selectedQuality === q.id
+                        ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]'
+                        : 'bg-white text-[var(--ws-text-2)] border-[var(--ws-glass-border)] hover:border-[var(--ws-text-3)]'
+                      }`}
+                    >
+                      {q.title}
+                    </button>
+                  ))}
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase text-[var(--ws-text-3)]">Sampling Steps</label>
-                  <input type="number" defaultValue={25} className="w-full h-8 px-2 bg-white border border-[var(--ws-glass-border)] rounded-md text-[11px] focus:outline-none" />
-                </div>
+                <p className="text-[10px] text-[var(--ws-text-3)]">
+                  Maior qualidade consome mais tokens. Modelo: gpt-image-2 (OpenAI).
+                </p>
               </div>
             </div>
           )}
@@ -227,11 +319,25 @@ export function GeradorCriativos() {
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end p-4">
-                  <button className="w-full py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white text-[10px] font-bold uppercase rounded-md transition-all border border-white/20 shadow-sm">
-                    Baixar Criativo
-                  </button>
+                  <a
+                    href={resultImage}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                    className="w-full py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white text-[10px] font-bold uppercase rounded-md transition-all border border-white/20 shadow-sm flex items-center justify-center gap-2"
+                  >
+                    <Download size={12} /> Baixar base
+                  </a>
                 </div>
               </div>
+            ) : error ? (
+              <>
+                <div className="w-16 h-16 rounded-full bg-[rgba(163,45,45,0.10)] flex items-center justify-center mb-4">
+                  <AlertCircle size={32} className="text-[#a32d2d] opacity-70" />
+                </div>
+                <div className="text-sm font-medium text-[#a32d2d] mb-1">Não foi possível gerar</div>
+                <div className="text-[11px] text-[var(--ws-text-3)] max-w-[220px]">{error}</div>
+              </>
             ) : (
               <>
                 <div className="w-16 h-16 rounded-full bg-[var(--ws-blue-soft)] flex items-center justify-center mb-4">
@@ -241,9 +347,9 @@ export function GeradorCriativos() {
                   {isGenerating ? 'Processando...' : 'Aguardando geração...'}
                 </div>
                 <div className="text-[11px] text-[var(--ws-text-3)] max-w-[200px]">
-                  {isGenerating 
-                    ? 'A IA está transformando suas ideias em um design exclusivo.' 
-                    : 'O criativo gerado aparecerá aqui após o processamento.'}
+                  {isGenerating
+                    ? 'A IA está gerando a base visual (10–30s). Os textos e a logo entram na montagem.'
+                    : 'A base gerada aparecerá aqui. Ela é a matéria-prima; o criativo final é montado por cima.'}
                 </div>
               </>
             )}
@@ -256,16 +362,24 @@ export function GeradorCriativos() {
             <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--ws-text-1)]">Histórico</span>
           </div>
           <div className="flex-1 flex flex-col gap-2 p-3 overflow-y-auto scrollbar-hide">
-            {resultImage ? (
-              <div className="flex items-center gap-3 p-2 rounded-lg bg-white/40 border border-white/60">
-                <div className="w-10 h-10 rounded bg-gray-200 overflow-hidden shrink-0">
-                  <img src={resultImage} className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[10px] font-bold text-[var(--ws-text-1)] truncate">Implante Op7 Nexo</div>
-                  <div className="text-[9px] text-[var(--ws-text-3)]">Há 2 minutos</div>
-                </div>
-              </div>
+            {history.length > 0 ? (
+              history.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => { setResultImage(item.url); setError(null) }}
+                  className="flex items-center gap-3 p-2 rounded-lg bg-white/40 border border-white/60 hover:bg-white/60 transition-all text-left"
+                >
+                  <div className="w-10 h-10 rounded bg-gray-200 overflow-hidden shrink-0">
+                    <img src={item.url} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-bold text-[var(--ws-text-1)] truncate">{item.briefing}</div>
+                    <div className="text-[9px] text-[var(--ws-text-3)]">
+                      {new Date(item.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+                </button>
+              ))
             ) : (
               <div className="flex-1 flex items-center justify-center">
                 <span className="text-[10px] text-[var(--ws-text-3)] font-medium italic opacity-60">Nenhuma geração ainda</span>
