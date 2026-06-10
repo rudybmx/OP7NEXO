@@ -289,6 +289,8 @@ class GerarIn(BaseModel):
     creative_format: Optional[str] = "feed_1x1"
     estilo: Optional[str] = None
     tone: Optional[str] = None
+    primary_color: Optional[str] = None
+    secondary_color: Optional[str] = None
     briefing: Optional[str] = Field(default=None, max_length=4000)
     reference_usage: Optional[str] = "style_and_composition"
     force_real_logo: bool = False

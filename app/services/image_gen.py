@@ -266,6 +266,12 @@ def montar_prompt_integrado(
         L.append(f"Estilo visual: {g('estilo')}.")
     if g("tone"):
         L.append(f"Tom: {g('tone')}.")
+    cores = [c for c in (g("primary_color"), g("secondary_color")) if c]
+    if cores:
+        L.append(
+            "Paleta da MARCA (use como cores predominantes da arte — fundos, "
+            "destaques, formas e botão): " + ", ".join(cores) + "."
+        )
     if tem_referencia:
         uso = g("reference_usage") or "style_and_composition"
         traduz = {
@@ -289,7 +295,10 @@ def montar_prompt_integrado(
     if g("subheadline"):
         copy_parts.append(f'Subtítulo: "{g("subheadline")}"')
     if g("cta"):
-        copy_parts.append(f'CTA (botão arredondado evidente): "{g("cta")}"')
+        copy_parts.append(
+            f'CTA proporcional e no estilo do criativo de referência (botão discreto e '
+            f'elegante, NÃO um botão genérico grande ocupando muito espaço): "{g("cta")}"'
+        )
     rodape = g("footer") or (g("city") if g("show_city", True) else None)
     if rodape:
         copy_parts.append(f'Rodapé pequeno: "{rodape}"')
