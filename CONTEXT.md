@@ -318,6 +318,13 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - `use-resolver-conversa.ts`: suporte ao fluxo de arquivamento
 - `pagina-atendimento.tsx`, `pagina-agentes.tsx`: integrados ao novo fluxo
 
+### ✅ Implementado (2026-06-10) — Estúdio de Criativos: geração real (Fase 1)
+
+- `src/components/demandas/design/GeradorCriativos.tsx` (tela `/marketing/demandas/design`): mock `setTimeout` substituído por geração real via `gpt-image-2`.
+- Consome `POST /design/gerar-base` (SSE) pelo proxy `/api/proxy`, lendo `generation.completed`/`failed` por stream reader; `workspace_id` do `useWorkspace()`; token via `getToken()` (`@/lib/api-client`).
+- Briefing montado de estilo+tom; formato da UI mapeado para `creative_format`; "Avançado" agora tem seletor de **Qualidade** (low/medium/high) no lugar dos controles fake (Flux/DALL-E/steps). Histórico da sessão clicável + erros amigáveis.
+- Importante: a IA gera só a **base visual** (sem texto/logo). Montagem do criativo final (template+logo+textos) e export são fatias seguintes. Spec: `op7nexo-api/docs/specs/gerador-criativos/`.
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos
