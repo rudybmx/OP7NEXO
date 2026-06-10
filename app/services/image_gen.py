@@ -266,22 +266,33 @@ def montar_prompt_integrado(
         L.append(f"Estilo visual: {g('estilo')}.")
     if g("tone"):
         L.append(f"Tom: {g('tone')}.")
+    replica = tem_referencia and (g("reference_usage") == "replica")
+
+    # No modo réplica, a referência manda na paleta — as cores da marca NÃO repintam.
     cores = [c for c in (g("primary_color"), g("secondary_color")) if c]
-    if cores:
+    if cores and not replica:
         L.append(
             "Paleta da MARCA (use como cores predominantes da arte — fundos, "
             "destaques, formas e botão): " + ", ".join(cores) + "."
         )
     if tem_referencia:
-        uso = g("reference_usage") or "style_and_composition"
-        traduz = {
-            "style": "como direção de estilo",
-            "composition": "como direção de composição e hierarquia",
-            "style_and_composition": "como direção de estilo, composição e hierarquia",
-        }.get(uso, "como direção visual")
-        L.append(
-            f"Use a imagem de REFERÊNCIA enviada {traduz}, sem copiar literalmente."
-        )
+        if replica:
+            L.append(
+                "REPLIQUE EXATAMENTE a imagem de referência: mesmo layout, posições, "
+                "proporções, formas, composição e PALETA DE CORES. Troque APENAS os "
+                "textos pelos fornecidos abaixo e a marca/logo. Mantenha todo o resto "
+                "idêntico ao modelo — não invente novo layout nem mude as cores da arte."
+            )
+        else:
+            uso = g("reference_usage") or "style_and_composition"
+            traduz = {
+                "style": "como direção de estilo",
+                "composition": "como direção de composição e hierarquia",
+                "style_and_composition": "como direção de estilo, composição e hierarquia",
+            }.get(uso, "como direção visual")
+            L.append(
+                f"Use a imagem de REFERÊNCIA enviada {traduz}, sem copiar literalmente."
+            )
     if tem_logo:
         L.append(
             "Use a LOGO enviada de forma fiel (sem redesenhar nem distorcer), "
