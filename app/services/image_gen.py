@@ -301,8 +301,9 @@ def _prompt_reverso(cs: dict, densidade_ajuste: str) -> str:
     logo = regions.get("logo") or {}
     if logo.get("present"):
         L.append(
-            f"Deixe uma área LIMPA para a logo em {logo.get('position', 'topo')} "
-            f"(tamanho {logo.get('size', 'média')}) — a logo real será aplicada ali."
+            f"Deixe uma área LIMPA em {logo.get('position', 'topo')} "
+            f"(tamanho {logo.get('size', 'média')}) para a logo — NÃO desenhe nenhuma "
+            "logo, marca ou nome de marca você mesmo; a logo real será aplicada ali depois."
         )
     aj = (densidade_ajuste or "fiel").lower()
     if aj == "livre":
