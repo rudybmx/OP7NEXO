@@ -144,6 +144,10 @@ def _sanitize_canal_config(config: dict | None) -> dict:
     if isinstance(evolution, dict):
         evolution.pop("instance_token", None)
         sanitized["evolution"] = evolution
+    # Meta Cloud: access_token é write-only. Nunca retornar em claro; expõe só um flag.
+    if sanitized.get("access_token"):
+        sanitized["access_token_set"] = True
+        sanitized.pop("access_token", None)
     return sanitized
 
 
@@ -845,7 +849,7 @@ def criar_canal(
     _get_workspace_or_404(workspace_id, db)
     verificar_acesso_workspace(usuario, workspace_id, db)
 
-    webhook_token = secrets.token_hex(32) if payload.tipo in ("webhook", "whatsapp_waha") else None
+    webhook_token = secrets.token_hex(32) if payload.tipo in ("webhook", "whatsapp_waha", "whatsapp_oficial") else None
     stored_config = payload.config or {}
     webhook_secret: str | None = None
     if payload.tipo == "webhook":
@@ -853,6 +857,11 @@ def criar_canal(
             stored_config,
             generate_secret=True,
         )
+    elif payload.tipo == "whatsapp_oficial":
+        # verify_token usado no handshake GET do webhook da Meta (hub.verify_token).
+        # Gerado no servidor para o usuário colar no painel da Meta.
+        if not stored_config.get("verify_token"):
+            stored_config = {**stored_config, "verify_token": secrets.token_hex(16)}
 
     c = CanalEntrada(
         workspace_id=workspace_id,
@@ -1840,6 +1849,112 @@ def _status_whatsapp_oficial(c: CanalEntrada, db: Session) -> dict:
     }
 
 
+def _enviar_template_meta_cloud(
+    canal: CanalEntrada,
+    payload: "EnviarTemplateIn",
+    db: Session,
+    usuario: User,
+) -> "EnviarMensagemOut":
+    """Envia template HSM via Meta Cloud API e persiste a mensagem outbound."""
+    from app.services import meta_cloud as meta_service
+    from sqlalchemy import text
+
+    config = canal.config or {}
+    phone_number_id = config.get("phone_number_id", "")
+    access_token = config.get("access_token", "")
+    if not phone_number_id or not access_token:
+        raise HTTPException(status_code=400, detail="Canal Meta Cloud não configurado. Verifique phone_number_id e access_token.")
+
+    to = None
+    conversa_id = None
+    contato_id = None
+    if payload.conversa_id:
+        conv_row = db.execute(
+            text("""
+                SELECT c.id, c.contato_id, ct.jid, ct.telefone
+                FROM public.crm_whatsapp_conversas c
+                JOIN public.crm_whatsapp_contatos ct ON ct.id = c.contato_id
+                WHERE c.id = :cid
+            """),
+            {"cid": payload.conversa_id},
+        ).fetchone()
+        if not conv_row:
+            raise HTTPException(status_code=404, detail="Conversa não encontrada")
+        conversa_id, contato_id = conv_row[0], conv_row[1]
+        to = conv_row[2] or conv_row[3] or ""
+    elif payload.numero:
+        to = payload.numero.replace("@s.whatsapp.net", "").replace("@c.us", "")
+    else:
+        raise HTTPException(status_code=400, detail="Informe numero ou conversa_id")
+
+    try:
+        meta_resp = meta_service.enviar_template(
+            phone_number_id=phone_number_id,
+            access_token=access_token,
+            to=to,
+            template_name=payload.template_name,
+            language=payload.language,
+            components=payload.components,
+        )
+    except meta_service.MetaCloudError as exc:
+        logger.error("[canais] falha ao enviar template Meta Cloud: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    wamid = meta_resp.get("messages", [{}])[0].get("id", "") if isinstance(meta_resp, dict) else ""
+    resumo = f"[template: {payload.template_name}]"
+
+    if not conversa_id:
+        contato_id = db.execute(
+            text("""
+                INSERT INTO public.crm_whatsapp_contatos (workspace_id, jid, telefone, nome, origem, created_at, updated_at)
+                VALUES (:ws, :jid, :tel, :nome, 'meta', NOW(), NOW())
+                ON CONFLICT (workspace_id, jid) DO UPDATE SET updated_at = NOW()
+                RETURNING id
+            """),
+            {"ws": str(canal.workspace_id), "jid": to, "tel": to, "nome": to},
+        ).scalar()
+        conversa_id = db.execute(
+            text("""
+                INSERT INTO public.crm_whatsapp_conversas
+                (workspace_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
+                VALUES (:ws, :ct, 'meta', :jid, 'em_atendimento', 0, :msg, 'saida', NOW(), NOW(), NOW())
+                RETURNING id
+            """),
+            {"ws": str(canal.workspace_id), "ct": str(contato_id), "jid": to, "msg": resumo},
+        ).scalar()
+    else:
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_conversas
+                SET ultima_mensagem = :msg, ultima_direcao = 'saida', ultima_msg_at = NOW(), updated_at = NOW()
+                WHERE id = :cid
+            """),
+            {"msg": resumo, "cid": str(conversa_id)},
+        )
+
+    mensagem_id = db.execute(
+        text("""
+            INSERT INTO public.crm_whatsapp_mensagens
+            (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, status, recebida_em, created_at)
+            VALUES (:ws, :canal, :cid, :ct, :wamid, 'meta', :jid, 'saida', true, 'agente', :rn, :msg, 'template', 'enviada', NOW(), NOW())
+            RETURNING id
+        """),
+        {
+            "ws": str(canal.workspace_id),
+            "canal": str(canal.id),
+            "cid": str(conversa_id),
+            "ct": str(contato_id),
+            "wamid": wamid,
+            "jid": to,
+            "rn": usuario.nome or usuario.email or "agente",
+            "msg": resumo,
+        },
+    ).scalar()
+    db.commit()
+
+    return EnviarMensagemOut(ok=True, mensagem_id=str(mensagem_id), evolution_response=meta_resp)
+
+
 def _desconectar_whatsapp_oficial(c: CanalEntrada, db: Session) -> dict:
     """Cancela a subscrição do app no WABA e inativa o canal."""
     from app.services import meta_cloud as meta_service
@@ -1975,6 +2090,14 @@ def _enviar_mensagem_meta_cloud(
         )
     except meta_service.MetaCloudError as exc:
         logger.error("[canais] falha ao enviar mensagem Meta Cloud: %s", exc)
+        if getattr(exc, "code", None) == meta_service.ERRO_FORA_JANELA_24H:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "fora_janela_24h",
+                    "message": "Janela de 24h fechada. Para reabrir a conversa envie um template aprovado (tipo='template').",
+                },
+            )
         raise HTTPException(status_code=502, detail=str(exc))
 
     wamid = meta_resp.get("messages", [{}])[0].get("id", "") if isinstance(meta_resp, dict) else ""
@@ -2031,11 +2154,13 @@ def _enviar_mensagem_meta_cloud(
     msg_result = db.execute(
         text("""
             INSERT INTO public.crm_whatsapp_mensagens
-            (conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, status, recebida_em, created_at)
-            VALUES (:cid, :ct, :wamid, 'meta', :jid, 'saida', true, 'agente', :rn, :msg, 'conversation', 'enviada', NOW(), NOW())
+            (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, status, recebida_em, created_at)
+            VALUES (:ws, :canal, :cid, :ct, :wamid, 'meta', :jid, 'saida', true, 'agente', :rn, :msg, 'conversation', 'enviada', NOW(), NOW())
             RETURNING id
         """),
         {
+            "ws": str(canal.workspace_id),
+            "canal": str(canal.id),
             "cid": str(conversa_id),
             "ct": str(contato_id),
             "wamid": wamid,
@@ -2451,12 +2576,15 @@ def enviar_template_canal(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    """Envia template HSM via Evolution API (não requer janela de 24h)."""
+    """Envia template HSM (não requer janela de 24h) — Evolution ou Meta Cloud."""
     c = _get_canal_or_404(canal_id, db)
     _exigir_admin_canal(usuario, c, db)
 
+    if c.tipo == "whatsapp_oficial":
+        return _enviar_template_meta_cloud(c, payload, db, usuario)
+
     if c.tipo != "whatsapp_evolution":
-        raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
+        raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution ou Meta Cloud")
 
     instance, instance_id, instance_token = _evolution_meta(c)
     from sqlalchemy import text
@@ -3907,32 +4035,32 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
         )
         conversa_id = new_conv.scalar()
 
-    # 3. Salva mensagem
-    try:
-        db.execute(
-            text("""
-                INSERT INTO public.crm_whatsapp_mensagens
-                (conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, payload, recebida_em, created_at)
-                VALUES (:cid, :ct, :wamid, :inst, :jid, 'entrada', false, 'contato', :rn, :msg, :mt, :payload, :ts, NOW())
-            """),
-            {
-                "cid": str(conversa_id),
-                "ct": str(contato_id),
-                "wamid": wamid,
-                "inst": instance,
-                "jid": wa_id,
-                "rn": push_name or wa_id,
-                "msg": text_content if text_content else "[mídia]",
-                "mt": message_type,
-                "payload": json.dumps(entry),
-                "ts": recebida_em,
-            },
-        )
-    except Exception as e:
-        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
-            logger.info("[webhook-meta-msg] Mensagem duplicada ignorada: %s", wamid)
-        else:
-            raise
+    # 3. Salva mensagem (workspace_id/canal_id alimentam o índice único de dedup
+    #    uq_crm_msg_workspace_canal_provider_id; ON CONFLICT evita abortar a transação)
+    db.execute(
+        text("""
+            INSERT INTO public.crm_whatsapp_mensagens
+            (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, payload, recebida_em, created_at)
+            VALUES (:ws, :canal, :cid, :ct, :wamid, :inst, :jid, 'entrada', false, 'contato', :rn, :msg, :mt, :payload, :ts, NOW())
+            ON CONFLICT (workspace_id, canal_id, instance, evolution_msg_id)
+            WHERE evolution_msg_id IS NOT NULL AND evolution_msg_id != ''
+            DO NOTHING
+        """),
+        {
+            "ws": workspace_id,
+            "canal": str(canal.id),
+            "cid": str(conversa_id),
+            "ct": str(contato_id),
+            "wamid": wamid,
+            "inst": instance,
+            "jid": wa_id,
+            "rn": push_name or wa_id,
+            "msg": text_content if text_content else "[mídia]",
+            "mt": message_type,
+            "payload": json.dumps(entry),
+            "ts": recebida_em,
+        },
+    )
 
     # 4. Publica no Redis
     try:
