@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual
 from app.core.security import criar_token, hash_senha, verificar_senha
@@ -43,12 +44,17 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     if not usuario or not verificar_senha(payload.senha, usuario.senha_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais inválidas")
 
-    token = criar_token({
-        "sub": str(usuario.id),
-        "role": usuario.role.value,
-        "workspace_id": str(usuario.workspace_id) if usuario.workspace_id else None,
-    })
-    return TokenOut(access_token=token)
+    # "Manter logado": 30 dias; caso contrário, expiração padrão (24h).
+    minutos = 43200 if payload.remember else settings.JWT_EXPIRE_MINUTES
+    token = criar_token(
+        {
+            "sub": str(usuario.id),
+            "role": usuario.role.value,
+            "workspace_id": str(usuario.workspace_id) if usuario.workspace_id else None,
+        },
+        expira_minutos=minutos,
+    )
+    return TokenOut(access_token=token, expires_in=minutos * 60)
 
 
 @router.get("/me", response_model=UsuarioOut)

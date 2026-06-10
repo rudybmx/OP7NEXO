@@ -1497,6 +1497,8 @@ def conectar_canal(
 
     if c.tipo == "whatsapp_waha":
         return _conectar_waha(c, db)
+    if c.tipo == "whatsapp_oficial":
+        return _conectar_whatsapp_oficial(c, db)
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
     if _evolution_protected_name(c):
@@ -1627,6 +1629,8 @@ def status_evolution(
 
     if c.tipo == "whatsapp_waha":
         return _status_waha(c, db)
+    if c.tipo == "whatsapp_oficial":
+        return _status_whatsapp_oficial(c, db)
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
 
@@ -1698,6 +1702,8 @@ def desconectar_canal(
 
     if c.tipo == "whatsapp_waha":
         return _desconectar_waha(c, db)
+    if c.tipo == "whatsapp_oficial":
+        return _desconectar_whatsapp_oficial(c, db)
     if c.tipo == "webhook":
         c.status = "inativo"
         db.commit()
@@ -1721,6 +1727,138 @@ def desconectar_canal(
     c.conectado_em = None
     db.commit()
     return {"status": "disconnected", "message": "WhatsApp desconectado. A instância foi preservada na Evolution."}
+
+
+# ── WhatsApp Oficial (Meta Cloud API) ────────────────────────────────
+
+def _conectar_whatsapp_oficial(c: CanalEntrada, db: Session) -> ConectarOut:
+    """Conecta canal Meta Cloud: valida credenciais e subscreve o app no WABA.
+
+    Diferente de Evolution/WAHA não há QR — a "conexão" é validar o token e
+    registrar o webhook (subscribed_apps), de forma idempotente.
+    """
+    from app.services import meta_cloud as meta_service
+
+    config = dict(c.config or {})
+    phone_number_id = config.get("phone_number_id", "")
+    waba_id = config.get("waba_id", "")
+    access_token = config.get("access_token", "")
+
+    if not phone_number_id or not access_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Canal Meta Cloud incompleto. Informe phone_number_id e access_token.",
+        )
+
+    try:
+        info = meta_service.validar_credenciais(phone_number_id, access_token)
+    except meta_service.MetaCloudError as exc:
+        c.connection_status = "failed"
+        db.commit()
+        raise HTTPException(status_code=502, detail=f"Falha ao validar credenciais Meta: {exc}")
+
+    # Subscreve o app no WABA para receber webhooks (idempotente)
+    subscrito = False
+    if waba_id:
+        try:
+            meta_service.subscrever_app(waba_id, access_token)
+            subscrito = True
+        except meta_service.MetaCloudError as exc:
+            logger.warning("[canais] subscribed_apps falhou canal=%s: %s", c.id, exc)
+
+    numero = info.get("display_phone_number") or info.get("verified_name")
+    if numero:
+        c.numero_telefone = numero
+    c.status = "ativo"
+    c.connection_status = "connected"
+    c.conectado_em = datetime.now(timezone.utc)
+    db.commit()
+
+    msg = "Canal Meta Cloud conectado."
+    if waba_id and not subscrito:
+        msg = "Credenciais válidas, mas falha ao subscrever webhooks no WABA. Verifique o waba_id e as permissões do token."
+    elif not waba_id:
+        msg = "Credenciais válidas. Informe o waba_id para registrar os webhooks automaticamente."
+    return ConectarOut(
+        qr_code=None,
+        pairing_code=None,
+        connection_status="connected",
+        instance_id=phone_number_id,
+        message=msg,
+    )
+
+
+def _status_whatsapp_oficial(c: CanalEntrada, db: Session) -> dict:
+    """Revalida o token e a subscrição do app (getSessionStatus do canal oficial)."""
+    from app.services import meta_cloud as meta_service
+
+    config = dict(c.config or {})
+    phone_number_id = config.get("phone_number_id", "")
+    waba_id = config.get("waba_id", "")
+    access_token = config.get("access_token", "")
+
+    if not phone_number_id or not access_token:
+        return {
+            "connection_status": c.connection_status or "disconnected",
+            "evolution_state": "unconfigured",
+            "instance_id": phone_number_id or None,
+            "error": "phone_number_id ou access_token ausentes",
+        }
+
+    try:
+        info = meta_service.validar_credenciais(phone_number_id, access_token)
+    except meta_service.MetaCloudError as exc:
+        c.connection_status = "failed"
+        db.commit()
+        return {
+            "connection_status": "failed",
+            "evolution_state": "auth_error",
+            "instance_id": phone_number_id,
+            "error": str(exc),
+        }
+
+    numero = info.get("display_phone_number") or info.get("verified_name")
+    if numero:
+        c.numero_telefone = numero
+    c.connection_status = "connected"
+    c.status = "ativo"
+    if not c.conectado_em:
+        c.conectado_em = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(c)
+    return {
+        "connection_status": c.connection_status,
+        "evolution_state": "open",
+        "instance_id": phone_number_id,
+        "waba_id": waba_id or None,
+        "numero_telefone": c.numero_telefone,
+        "verified_name": info.get("verified_name"),
+        "quality_rating": info.get("quality_rating"),
+        "conectado_em": c.conectado_em.isoformat() if c.conectado_em else None,
+        "qr_code": None,
+        "pairing_code": None,
+    }
+
+
+def _desconectar_whatsapp_oficial(c: CanalEntrada, db: Session) -> dict:
+    """Cancela a subscrição do app no WABA e inativa o canal."""
+    from app.services import meta_cloud as meta_service
+
+    config = dict(c.config or {})
+    waba_id = config.get("waba_id", "")
+    access_token = config.get("access_token", "")
+
+    if waba_id and access_token:
+        try:
+            meta_service.cancelar_subscricao_app(waba_id, access_token)
+        except meta_service.MetaCloudError as exc:
+            logger.warning("[canais] cancelar subscribed_apps falhou canal=%s: %s", c.id, exc)
+
+    c.status = "inativo"
+    c.connection_status = "disconnected"
+    c.conectado_em = None
+    db.commit()
+    return {"status": "disconnected", "message": "Canal Meta Cloud desconectado (subscrição de webhook removida)."}
 
 
 # ── Enviar mensagem ──────────────────────────────────────────────────
@@ -3664,6 +3802,20 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
     recebida_em = datetime.fromtimestamp(int(timestamp), tz=timezone.utc) if timestamp and timestamp.isdigit() else datetime.now(timezone.utc)
     workspace_id = str(canal.workspace_id)
     instance = canal.evolution_instance_id or "meta"
+
+    # Dedup por wamid (Meta reenvia o webhook se não recebermos 200). Antes de tocar
+    # contato/conversa, ignora o evento se a mensagem já foi persistida.
+    ja_existe = db.execute(
+        text("""
+            SELECT 1 FROM public.crm_whatsapp_mensagens
+            WHERE workspace_id = :ws AND evolution_msg_id = :wamid AND instance = :inst
+            LIMIT 1
+        """),
+        {"ws": workspace_id, "wamid": wamid, "inst": instance},
+    ).fetchone()
+    if ja_existe:
+        logger.info("[webhook-meta-msg] duplicado ignorado wamid=%s", wamid)
+        return
 
     # Extrai nome do contato
     contacts = entry.get("contacts", [])

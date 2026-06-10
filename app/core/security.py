@@ -14,9 +14,10 @@ def verificar_senha(senha: str, hash: str) -> bool:
     return bcrypt.checkpw(senha.encode(), hash.encode())
 
 
-def criar_token(data: dict) -> str:
+def criar_token(data: dict, expira_minutos: int | None = None) -> str:
     payload = data.copy()
-    expira = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+    minutos = expira_minutos if expira_minutos is not None else settings.JWT_EXPIRE_MINUTES
+    expira = datetime.now(timezone.utc) + timedelta(minutes=minutos)
     payload["exp"] = expira
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 

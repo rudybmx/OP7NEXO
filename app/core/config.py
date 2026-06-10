@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     MINIO_BUCKET_CRIATIVOS: str = "criativos-meta"
     MINIO_PUBLIC_BASE_URL: str = "https://minio.op7franquia.com.br"
     META_APP_SECRET: str = ""  # para verificar assinatura de webhooks da Meta Cloud API
+    # Versão da Graph API usada por WhatsApp Cloud / Instagram. Centralizada para
+    # facilitar bumps (Meta deprecia versões a cada ~2 anos). Verificar a corrente
+    # em https://developers.facebook.com/docs/graph-api/changelog antes de subir.
+    META_GRAPH_API_VERSION: str = "v23.0"
+    # Embedded Signup (fase 2) — login na Meta via Facebook Login for Business.
+    # Quando META_EMBEDDED_SIGNUP_ENABLED=False o front esconde o botão e só o
+    # fluxo de token manual fica disponível.
+    META_APP_ID: str = ""
+    META_CONFIG_ID: str = ""  # config_id da Login configuration do Embedded Signup
+    META_EMBEDDED_SIGNUP_ENABLED: bool = False
     META_SYNC_REQUEST_DELAY_SECONDS: float = 0.5
     META_SYNC_ACCOUNT_DELAY_SECONDS: float = 5.0
     META_SYNC_RATE_LIMIT_MAX_RETRIES: int = 5

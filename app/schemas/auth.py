@@ -10,11 +10,13 @@ class RegistroIn(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     senha: str
+    remember: bool = False
 
 
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    expires_in: int = 0  # segundos até expirar
 
 
 class UsuarioOut(BaseModel):

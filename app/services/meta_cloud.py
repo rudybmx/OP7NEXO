@@ -12,23 +12,121 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-META_API_BASE = "https://graph.facebook.com/v18.0"
+META_API_BASE = f"https://graph.facebook.com/{settings.META_GRAPH_API_VERSION}"
 APP_SECRET = settings.META_APP_SECRET
+
+# Mensagem fora da janela de 24h: a Meta exige template aprovado.
+# https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes
+ERRO_FORA_JANELA_24H = 131047
 
 
 class MetaCloudError(Exception):
-    pass
+    def __init__(self, message: str, *, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _appsecret_proof(access_token: str) -> str | None:
+    """appsecret_proof recomendado pela Meta quando o app exige prova de segredo."""
+    if not APP_SECRET:
+        return None
+    return hmac.new(APP_SECRET.encode("utf-8"), access_token.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _params_com_proof(access_token: str, extra: dict | None = None) -> dict:
+    params = dict(extra or {})
+    proof = _appsecret_proof(access_token)
+    if proof:
+        params["appsecret_proof"] = proof
+    return params
 
 
 def _handle_error(resp: httpx.Response, ctx: str) -> None:
     if resp.status_code >= 400:
+        code = None
         try:
             data = resp.json()
-            msg = data.get("error", {}).get("message", resp.text)
+            err = data.get("error", {})
+            msg = err.get("message", resp.text)
+            code = err.get("code")
         except Exception:
             msg = resp.text
         logger.error("[meta-cloud] %s — HTTP %s: %s", ctx, resp.status_code, msg)
-        raise MetaCloudError(f"{ctx}: {msg}")
+        raise MetaCloudError(f"{ctx}: {msg}", code=code)
+
+
+def validar_credenciais(phone_number_id: str, access_token: str) -> dict:
+    """GET /{phone_number_id} — valida token e retorna metadados do número.
+
+    Usado como `getSessionStatus`/`ensureSession` na conexão do canal oficial.
+    """
+    url = f"{META_API_BASE}/{phone_number_id}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    params = _params_com_proof(access_token, {"fields": "verified_name,display_phone_number,quality_rating"})
+    with httpx.Client(timeout=30) as client:
+        resp = client.get(url, headers=headers, params=params)
+        _handle_error(resp, "validar_credenciais")
+        return resp.json()
+
+
+def subscrever_app(waba_id: str, access_token: str) -> dict:
+    """POST /{waba-id}/subscribed_apps — idempotente. Registra o app para receber webhooks."""
+    url = f"{META_API_BASE}/{waba_id}/subscribed_apps"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    with httpx.Client(timeout=30) as client:
+        resp = client.post(url, headers=headers, params=_params_com_proof(access_token))
+        _handle_error(resp, "subscrever_app")
+        return resp.json()
+
+
+def cancelar_subscricao_app(waba_id: str, access_token: str) -> dict:
+    """DELETE /{waba-id}/subscribed_apps — remove a subscrição do app."""
+    url = f"{META_API_BASE}/{waba_id}/subscribed_apps"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    with httpx.Client(timeout=30) as client:
+        resp = client.request("DELETE", url, headers=headers, params=_params_com_proof(access_token))
+        _handle_error(resp, "cancelar_subscricao_app")
+        return resp.json()
+
+
+def listar_subscricoes(waba_id: str, access_token: str) -> dict:
+    """GET /{waba-id}/subscribed_apps — lista apps subscritos (diagnóstico)."""
+    url = f"{META_API_BASE}/{waba_id}/subscribed_apps"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    with httpx.Client(timeout=30) as client:
+        resp = client.get(url, headers=headers, params=_params_com_proof(access_token))
+        _handle_error(resp, "listar_subscricoes")
+        return resp.json()
+
+
+def enviar_template(
+    phone_number_id: str,
+    access_token: str,
+    to: str,
+    template_name: str,
+    language: str = "pt_BR",
+    components: list | None = None,
+) -> dict:
+    """Envia mensagem de template (HSM) — necessário fora da janela de 24h."""
+    url = f"{META_API_BASE}/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    template: dict = {"name": template_name, "language": {"code": language}}
+    if components:
+        template["components"] = components
+    body = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "template",
+        "template": template,
+    }
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(url, headers=headers, json=body)
+        _handle_error(resp, "enviar_template")
+        return resp.json()
 
 
 def verificar_assinatura(payload_body: bytes, signature: str) -> bool:
