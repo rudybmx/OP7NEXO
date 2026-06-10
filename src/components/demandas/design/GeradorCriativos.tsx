@@ -52,6 +52,20 @@ export function GeradorCriativos() {
   const [history, setHistory] = useState<HistItem[]>([])
   const { workspaceAtual: wsId } = useWorkspace()
 
+  // Montagem (camadas sobre a base — preview ao vivo, sem IA)
+  const [headline, setHeadline] = useState('')
+  const [subtitulo, setSubtitulo] = useState('')
+  const [cta, setCta] = useState('')
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [overlayLayout, setOverlayLayout] = useState<'inferior' | 'centro'>('inferior')
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) { toast.error('Selecione um arquivo de imagem.'); return }
+    setLogoUrl(URL.createObjectURL(file))
+  }
+
   const toggleTone = (tone: string) => {
     setSelectedTones(prev =>
       prev.includes(tone) ? prev.filter(t => t !== tone) : [...prev, tone]
@@ -241,9 +255,49 @@ export function GeradorCriativos() {
           </div>
         </div>
 
+        {/* Section: Textos & Marca (montagem — camadas sobre a base) */}
+        <div className="space-y-3">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--ws-text-3)] flex items-center gap-2">
+            <Type size={14} className="text-[var(--ws-blue)]" />
+            Textos & Marca
+          </label>
+          <p className="text-[10px] text-[var(--ws-text-3)] -mt-1">
+            Aplicados como camadas sobre a base — a IA não desenha texto nem logo.
+          </p>
+          <div className="space-y-2">
+            <input value={headline} onChange={e => setHeadline(e.target.value)} placeholder="Headline"
+              className="w-full h-9 px-3 bg-[var(--ws-glass-bg)] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)] text-sm text-[var(--ws-text-1)] placeholder:text-[var(--ws-text-3)] focus:outline-none focus:border-[var(--ws-blue)]" />
+            <input value={subtitulo} onChange={e => setSubtitulo(e.target.value)} placeholder="Subtítulo (opcional)"
+              className="w-full h-9 px-3 bg-[var(--ws-glass-bg)] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)] text-sm text-[var(--ws-text-1)] placeholder:text-[var(--ws-text-3)] focus:outline-none focus:border-[var(--ws-blue)]" />
+            <input value={cta} onChange={e => setCta(e.target.value)} placeholder="CTA (ex.: Agende agora)"
+              className="w-full h-9 px-3 bg-[var(--ws-glass-bg)] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)] text-sm text-[var(--ws-text-1)] placeholder:text-[var(--ws-text-3)] focus:outline-none focus:border-[var(--ws-blue)]" />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="flex-1 cursor-pointer flex items-center justify-center gap-2 h-9 px-3 bg-[var(--ws-glass-bg)] border border-dashed border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)] text-[11px] font-medium text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] transition-all">
+              <ImageIcon size={14} /> {logoUrl ? 'Trocar logo' : 'Subir logo'}
+              <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+            </label>
+            {logoUrl && (
+              <button onClick={() => setLogoUrl(null)} className="h-9 px-3 text-[11px] text-[#a32d2d] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)]">Remover</button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {(['inferior', 'centro'] as const).map(l => (
+              <button key={l} onClick={() => setOverlayLayout(l)}
+                className={`h-8 rounded-md text-[11px] font-medium border transition-all ${
+                  overlayLayout === l
+                  ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]'
+                  : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'
+                }`}>
+                {l === 'inferior' ? 'Texto embaixo' : 'Texto centro'}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Advanced Settings */}
         <div className="pt-2">
-          <button 
+          <button
             onClick={() => setShowAdvanced(!showAdvanced)}
             className="text-[11px] font-bold uppercase tracking-wider text-[var(--ws-text-3)] hover:text-[var(--ws-text-2)] flex items-center gap-1 transition-colors"
           >
@@ -309,26 +363,74 @@ export function GeradorCriativos() {
           
           <div className="flex-1 flex flex-col items-center justify-center p-4 text-center overflow-hidden">
             {resultImage ? (
-              <div 
+              <div
                 className="relative rounded-[var(--ws-radius-lg)] overflow-hidden shadow-inner animate-in zoom-in duration-500 bg-[rgba(15,39,68,0.05)] mx-auto flex flex-col justify-center items-center"
-                style={getFormatStyles()}
+                style={{ ...getFormatStyles(), containerType: 'inline-size' }}
               >
-                <img 
-                  src={resultImage} 
-                  alt="Criativo Gerado" 
+                <img
+                  src={resultImage}
+                  alt="Criativo Gerado"
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end p-4">
-                  <a
-                    href={resultImage}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                    className="w-full py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white text-[10px] font-bold uppercase rounded-md transition-all border border-white/20 shadow-sm flex items-center justify-center gap-2"
+
+                {/* Camadas de montagem — preview ao vivo, sem IA */}
+                {(headline || subtitulo || cta) && (
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      background: overlayLayout === 'inferior'
+                        ? 'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.12) 40%, transparent 62%)'
+                        : 'rgba(0,0,0,0.32)',
+                    }}
+                  />
+                )}
+                {logoUrl && (
+                  <img
+                    src={logoUrl}
+                    alt="Logo"
+                    className="absolute object-contain pointer-events-none"
+                    style={{ top: '5%', left: '5%', height: '13cqw', maxWidth: '40%' }}
+                  />
+                )}
+                {(headline || subtitulo || cta) && (
+                  <div
+                    className="absolute pointer-events-none"
+                    style={
+                      overlayLayout === 'inferior'
+                        ? { left: '6%', right: '6%', bottom: '7%', textAlign: 'left' }
+                        : { left: '8%', right: '8%', top: '50%', transform: 'translateY(-50%)', textAlign: 'center' }
+                    }
                   >
-                    <Download size={12} /> Baixar base
-                  </a>
-                </div>
+                    {headline && (
+                      <div style={{ fontSize: '7.5cqw', lineHeight: 1.05, fontWeight: 800, color: '#fff', textShadow: '0 2px 12px rgba(0,0,0,0.55)' }}>
+                        {headline}
+                      </div>
+                    )}
+                    {subtitulo && (
+                      <div style={{ fontSize: '4cqw', marginTop: '2cqw', color: 'rgba(255,255,255,0.92)', textShadow: '0 1px 8px rgba(0,0,0,0.55)' }}>
+                        {subtitulo}
+                      </div>
+                    )}
+                    {cta && (
+                      <div style={{ marginTop: '3.5cqw' }}>
+                        <span style={{ display: 'inline-block', fontSize: '4cqw', fontWeight: 700, color: '#fff', background: 'var(--ws-gold)', padding: '2.2cqw 5cqw', borderRadius: '999px', boxShadow: '0 4px 14px rgba(0,0,0,0.28)' }}>
+                          {cta}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Baixar base (canto) */}
+                <a
+                  href={resultImage}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download
+                  className="absolute top-2 right-2 px-2.5 py-1.5 bg-black/45 hover:bg-black/65 backdrop-blur-md text-white text-[9px] font-bold uppercase rounded-md transition-all border border-white/20 flex items-center gap-1.5"
+                >
+                  <Download size={11} /> Base
+                </a>
               </div>
             ) : error ? (
               <>
