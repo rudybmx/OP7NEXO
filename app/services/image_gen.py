@@ -227,3 +227,179 @@ def gerar_base(
         brand_kit=brand_kit,
     )
     return executar_geracao(db, ger)
+
+
+# ───────────────────────── Geração INTEGRADA (one-shot) ─────────────────────
+# gpt-image-2 renderiza a arte COMPLETA: texto + composição integrados, e a
+# logo via multi-imagem (images.edit). Estratégia de logo: híbrida — o modelo
+# integra a logo do upload; se o usuário marcar force_real_logo, o sistema
+# aplica um overlay inteligente da logo real (fallback de fidelidade).
+
+_INTEGRADO_GUARDRAIL = (
+    "Ortografia em português do Brasil impecável. Texto integrado à arte de forma "
+    "elegante (não use texto solto/sobreposto sem composição). Hierarquia clara: "
+    "headline forte, subtítulo legível, CTA em botão evidente. Bastante espaço "
+    "negativo, alto contraste, área segura nas bordas para Meta Ads. Logo fiel, sem "
+    "distorcer. Evite: antes/depois, promessa de resultado, instrumentos clínicos "
+    "invasivos, sangue, visual brega, poluição visual, texto pequeno demais."
+)
+
+
+def montar_prompt_integrado(
+    spec: dict, *, tem_logo: bool = False, tem_referencia: bool = False
+) -> str:
+    g = spec.get
+    L: list[str] = [
+        "Você é diretor de arte de performance. Crie um criativo publicitário "
+        "PROFISSIONAL e premium, pronto para Meta Ads, com todo o texto e a marca "
+        "integrados de forma elegante na arte."
+    ]
+    if g("product"):
+        L.append(f"Produto/serviço: {g('product')}.")
+    if g("objective"):
+        L.append(f"Objetivo da campanha: {g('objective')}.")
+    if g("audience"):
+        L.append(f"Público: {g('audience')}.")
+    if g("estilo"):
+        L.append(f"Estilo visual: {g('estilo')}.")
+    if g("tone"):
+        L.append(f"Tom: {g('tone')}.")
+    if tem_referencia:
+        uso = g("reference_usage") or "style_and_composition"
+        traduz = {
+            "style": "como direção de estilo",
+            "composition": "como direção de composição e hierarquia",
+            "style_and_composition": "como direção de estilo, composição e hierarquia",
+        }.get(uso, "como direção visual")
+        L.append(
+            f"Use a imagem de REFERÊNCIA enviada {traduz}, sem copiar literalmente."
+        )
+    if tem_logo:
+        L.append(
+            "Use a LOGO enviada de forma fiel (sem redesenhar nem distorcer), "
+            "posicionada de forma discreta e profissional (topo ou rodapé)."
+        )
+    copy_parts: list[str] = []
+    if g("headline"):
+        copy_parts.append(f'Headline (texto mais forte): "{g("headline")}"')
+    if g("subheadline"):
+        copy_parts.append(f'Subtítulo: "{g("subheadline")}"')
+    if g("cta"):
+        copy_parts.append(f'CTA (botão arredondado evidente): "{g("cta")}"')
+    rodape = g("footer") or (g("city") if g("show_city", True) else None)
+    if rodape:
+        copy_parts.append(f'Rodapé pequeno: "{rodape}"')
+    if copy_parts:
+        L.append(
+            "Escreva na arte EXATAMENTE estes textos (não invente outros): "
+            + "; ".join(copy_parts)
+            + "."
+        )
+    L.append(f"Formato: {g('creative_format') or 'feed_1x1'}.")
+    L.append(f"No máximo ~{spec.get('max_words', 14)} palavras na arte.")
+    if g("briefing"):
+        L.append(f"Observações extras: {g('briefing')}.")
+    L.append(_INTEGRADO_GUARDRAIL)
+    return "\n".join(L)
+
+
+def criar_geracao_integrada(
+    db: Session,
+    *,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID | None,
+    spec: dict,
+    tem_logo: bool = False,
+    tem_referencia: bool = False,
+) -> CriativoGeracao:
+    size = resolve_generation_size(spec.get("creative_format"))
+    prompt = montar_prompt_integrado(spec, tem_logo=tem_logo, tem_referencia=tem_referencia)
+    ger = CriativoGeracao(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        briefing=spec.get("briefing"),
+        creative_format=spec.get("creative_format"),
+        generation_size=size,
+        model=settings.openai_image_model,
+        prompt_final=prompt,
+        params_json={**spec, "modo": "integrado", "tem_logo": tem_logo, "tem_referencia": tem_referencia},
+        status="pending",
+    )
+    db.add(ger)
+    db.commit()
+    db.refresh(ger)
+    return ger
+
+
+def executar_geracao_integrada(
+    db: Session,
+    ger: CriativoGeracao,
+    *,
+    logo_bytes: bytes | None = None,
+    referencia_bytes: bytes | None = None,
+) -> CriativoGeracao:
+    """Gera a arte integrada (images.edit se houver logo/ref; senão generate)."""
+    spec = ger.params_json or {}
+    quality = spec.get("quality", "medium")
+    try:
+        client = _image_client()
+        imagens: list[tuple[str, bytes, str]] = []
+        if logo_bytes:
+            imagens.append(("logo.png", logo_bytes, "image/png"))
+        if referencia_bytes:
+            imagens.append(("referencia.png", referencia_bytes, "image/png"))
+
+        if imagens:
+            raw = client.images.with_raw_response.edit(
+                model=settings.openai_image_model,
+                image=imagens,
+                prompt=ger.prompt_final,
+                size=ger.generation_size,
+                quality=quality,
+                n=1,
+            )
+        else:
+            raw = client.images.with_raw_response.generate(
+                model=settings.openai_image_model,
+                prompt=ger.prompt_final,
+                size=ger.generation_size,
+                quality=quality,
+                n=1,
+            )
+        request_id = getattr(raw, "request_id", None)
+        resp = raw.parse()
+        content = base64.b64decode(resp.data[0].b64_json)
+
+        # Fallback de fidelidade: overlay inteligente da logo real (opt-in)
+        if spec.get("force_real_logo") and logo_bytes:
+            try:
+                from app.services import criativo_render
+
+                content = criativo_render.aplicar_logo(
+                    content, logo_bytes, creative_format=ger.creative_format
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[image_gen] overlay de logo falhou geracao=%s: %s", ger.id, exc)
+
+        object_name = f"workspaces/{ger.workspace_id}/criativos/finais/{ger.id}.png"
+        put_bytes(settings.MINIO_BUCKET_CRIATIVOS, object_name, content, "image/png")
+        url = public_url(settings.MINIO_BUCKET_CRIATIVOS, object_name)
+
+        usage = resp.usage.model_dump() if getattr(resp, "usage", None) else {}
+        ger.imagem_base_url = url
+        ger.usage = usage
+        ger.request_id = request_id
+        ger.model_snapshot = getattr(resp, "model", None) or settings.openai_image_model
+        ger.status = "done"
+        db.commit()
+        db.refresh(ger)
+        log.info("[image_gen] integrado geracao=%s tokens=%s", ger.id, usage.get("total_tokens"))
+    except Exception as exc:  # noqa: BLE001
+        code, msg = _map_error(exc)
+        ger.status = "error"
+        ger.error_code = code
+        ger.error_message = msg
+        db.commit()
+        db.refresh(ger)
+        log.warning("[image_gen] falha integrado geracao=%s code=%s err=%s", ger.id, code, str(exc)[:200])
+    return ger

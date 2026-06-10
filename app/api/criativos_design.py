@@ -262,3 +262,98 @@ def exportar(
     db.refresh(proj)
 
     return {"projeto_id": str(proj.id), "export_url": url}
+
+
+def _decode_img(b64: str | None) -> bytes | None:
+    """Decodifica + valida/normaliza uma imagem base64 (data URL ou pura)."""
+    if not b64:
+        return None
+    try:
+        raw = base64.b64decode(b64.split(",")[-1])
+        norm, _, _, _ = validar_e_normalizar_imagem(raw, error_code="invalid_reference")
+        return norm
+    except Exception:
+        return None
+
+
+class GerarIn(BaseModel):
+    workspace_id: uuid.UUID
+    product: Optional[str] = None
+    objective: Optional[str] = None
+    audience: Optional[str] = None
+    city: Optional[str] = None
+    headline: Optional[str] = None
+    subheadline: Optional[str] = None
+    cta: Optional[str] = None
+    footer: Optional[str] = None
+    creative_format: Optional[str] = "feed_1x1"
+    estilo: Optional[str] = None
+    tone: Optional[str] = None
+    briefing: Optional[str] = Field(default=None, max_length=4000)
+    reference_usage: Optional[str] = "style_and_composition"
+    force_real_logo: bool = False
+    quality: str = "medium"
+    logo_base64: Optional[str] = None
+    referencia_base64: Optional[str] = None
+
+
+@router.post("/gerar")
+def gerar(
+    payload: GerarIn,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Geração INTEGRADA (one-shot): gpt-image-2 renderiza a arte completa com
+    texto + composição integrados, e a logo via multi-imagem (images.edit).
+
+    Eventos SSE: generation.created → generation.completed | generation.failed.
+    """
+    verificar_acesso_workspace(usuario, payload.workspace_id, db)
+    if payload.quality not in _QUALITIES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "quality inválida")
+
+    logo_bytes = _decode_img(payload.logo_base64)
+    ref_bytes = _decode_img(payload.referencia_base64)
+
+    spec = payload.model_dump(exclude={"workspace_id", "logo_base64", "referencia_base64"})
+    ws_id = payload.workspace_id
+    user_id = usuario.id
+    tem_logo = bool(logo_bytes)
+    tem_ref = bool(ref_bytes)
+
+    def stream():
+        with SessionLocal() as gdb:
+            ger = image_gen.criar_geracao_integrada(
+                gdb,
+                workspace_id=ws_id,
+                user_id=user_id,
+                spec=spec,
+                tem_logo=tem_logo,
+                tem_referencia=tem_ref,
+            )
+            yield _sse("generation.created", {"generation_id": str(ger.id), "status": "pending"})
+
+            image_gen.executar_geracao_integrada(
+                gdb, ger, logo_bytes=logo_bytes, referencia_bytes=ref_bytes
+            )
+
+            if ger.status == "done":
+                yield _sse(
+                    "generation.completed",
+                    {
+                        "generation_id": str(ger.id),
+                        "base_image_url": ger.imagem_base_url,
+                        "usage": ger.usage,
+                    },
+                )
+            else:
+                yield _sse(
+                    "generation.failed",
+                    {
+                        "generation_id": str(ger.id),
+                        "error_code": ger.error_code,
+                        "error_message": ger.error_message,
+                    },
+                )
+
+    return StreamingResponse(stream(), media_type="text/event-stream")

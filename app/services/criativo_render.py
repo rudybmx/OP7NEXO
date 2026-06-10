@@ -181,3 +181,48 @@ def montar_criativo(
     out = BytesIO()
     canvas.convert("RGB").save(out, format="PNG")
     return out.getvalue()
+
+
+def aplicar_logo(
+    base_png: bytes,
+    logo_bytes: bytes,
+    *,
+    creative_format: str | None = None,
+    posicao: str = "top_left",
+) -> bytes:
+    """Overlay INTELIGENTE da logo real sobre uma arte já gerada (fallback de fidelidade).
+
+    Não é carimbo bruto: aplica a logo num badge translúcido arredondado com leve
+    sombra, na área planejada (topo). Usado quando force_real_logo está ligado.
+    """
+    img = Image.open(BytesIO(base_png)).convert("RGBA")
+    w, h = img.size
+    logo = Image.open(BytesIO(logo_bytes)).convert("RGBA")
+
+    lh = int(w * 0.12)
+    lw = int(logo.width * lh / logo.height)
+    max_lw = int(w * 0.38)
+    if lw > max_lw:
+        lw, lh = max_lw, int(logo.height * max_lw / logo.width)
+    logo = logo.resize((max(1, lw), max(1, lh)), Image.LANCZOS)
+
+    pad = int(lh * 0.30)
+    badge = Image.new("RGBA", (lw + 2 * pad, lh + 2 * pad), (255, 255, 255, 0))
+    bd = ImageDraw.Draw(badge)
+    bd.rounded_rectangle(
+        [0, 0, badge.width - 1, badge.height - 1],
+        radius=int(badge.height * 0.28),
+        fill=(255, 255, 255, 210),
+    )
+    badge.alpha_composite(logo, (pad, pad))
+
+    margin = int(w * 0.045)
+    if posicao == "top_center":
+        x = (w - badge.width) // 2
+    else:
+        x = margin
+    img.alpha_composite(badge, (x, margin))
+
+    out = BytesIO()
+    img.convert("RGB").save(out, format="PNG")
+    return out.getvalue()
