@@ -28,6 +28,7 @@ const REF_USOS = [
   { id: 'style', label: 'Só estilo' },
   { id: 'composition', label: 'Composição' },
   { id: 'style_and_composition', label: 'Estilo + composição' },
+  { id: 'replica', label: 'Réplica idêntica' },
 ]
 
 interface HistItem { id: string; url: string; titulo: string; at: number }
