@@ -122,10 +122,16 @@ const PLATFORM_BADGE: Record<string, { bg: string; color: string; label: string 
 
 const STATUS_BADGE: Record<string, { color: string; bg: string; label: string }> = {
   success: { color: '#0fa856', bg: 'rgba(15,168,86,0.10)', label: 'Sucesso' },
+  done: { color: '#0fa856', bg: 'rgba(15,168,86,0.10)', label: 'Sucesso' },
   error: { color: 'var(--ws-coral)', bg: 'rgba(255,92,141,0.10)', label: 'Erro' },
   rate_limited: { color: '#c9a84c', bg: 'rgba(201,168,76,0.10)', label: 'Rate limit' },
   running: { color: 'var(--ws-blue)', bg: 'rgba(62,91,255,0.10)', label: 'Executando' },
+  pending: { color: 'var(--ws-text-3)', bg: 'rgba(15,23,42,0.06)', label: 'Na fila' },
   skipped: { color: 'var(--ws-text-3)', bg: 'rgba(15,23,42,0.06)', label: 'Pulado' },
+}
+
+const MODO_LABEL: Record<string, string> = {
+  manual: 'Manual', backfill: 'Backfill', recorrente: 'Auto', auto: 'Auto',
 }
 
 function formatDataHora(iso: string | null | undefined): string {
@@ -154,18 +160,19 @@ function formatData(iso: string | null | undefined): string {
   }
 }
 
-function ResumoDadosPanel({ contaId }: { contaId: string }) {
+function ResumoDadosPanel({ contaId, plataforma }: { contaId: string; plataforma?: string }) {
   const [resumo, setResumo] = useState<SyncResumo | null>(null)
   const [loading, setLoading] = useState(false)
+  const base = plataforma === 'google' ? '/google-ads/sync/resumo' : '/meta/sync/resumo'
 
   useEffect(() => {
     if (!contaId) return
     setLoading(true)
-    api.get<SyncResumo>(`/meta/sync/resumo/${contaId}`)
+    api.get<SyncResumo>(`${base}/${contaId}`)
       .then(setResumo)
       .catch(() => setResumo(null))
       .finally(() => setLoading(false))
-  }, [contaId])
+  }, [contaId, base])
 
   const items: { label: string; valor: string }[] = [
     { label: 'Cobertura', valor: resumo && resumo.primeira_data ? `${formatData(resumo.primeira_data)} → ${formatData(resumo.ultima_data)}` : '—' },
@@ -276,6 +283,106 @@ function SyncHistoricoPanel({ contaId }: { contaId: string }) {
                 <span style={{ color: 'var(--ws-text-3)', fontSize: 11, textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {formatDuracao(entry.duracao_segundos)}
                 </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface GoogleSyncJob {
+  id: string
+  modo_sync: string
+  status: string
+  etapa_atual: string | null
+  progresso: number
+  totais: Record<string, number> | null
+  erro: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+function GoogleSyncHistoricoPanel({ contaId }: { contaId: string }) {
+  const [historico, setHistorico] = useState<GoogleSyncJob[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!contaId) return
+    setLoading(true)
+    api.get<GoogleSyncJob[]>(`/google-ads/sync/historico/${contaId}?limit=10`)
+      .then(setHistorico)
+      .catch(() => setHistorico([]))
+      .finally(() => setLoading(false))
+  }, [contaId])
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ ...labelStyle, marginBottom: 10 }}>Histórico de Sync</div>
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0', color: 'var(--ws-text-3)', fontSize: 12 }}>
+          <Loader2 size={14} className="animate-spin" /> Carregando histórico...
+        </div>
+      ) : historico.length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--ws-text-3)', padding: '12px 0' }}>
+          Nenhum sync registrado ainda.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {historico.map(job => {
+            const badge = STATUS_BADGE[job.status] || STATUS_BADGE.skipped
+            const t = job.totais || {}
+            return (
+              <div
+                key={job.id}
+                style={{
+                  padding: '8px 12px', borderRadius: 8,
+                  background: wsSheetCreamTokens.surface,
+                  border: `1px solid ${wsSheetCreamTokens.border}`,
+                  display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>
+                    {formatDataHora(job.created_at)}
+                  </span>
+                  <span style={{ color: 'var(--ws-text-3)', fontSize: 11 }}>
+                    {MODO_LABEL[job.modo_sync] || job.modo_sync}
+                  </span>
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '2px 8px', borderRadius: 999,
+                    background: badge.bg, color: badge.color,
+                    fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                  }}>
+                    {job.status === 'running' && <Loader2 size={10} className="animate-spin" />}
+                    {badge.label}
+                  </span>
+                  {job.status === 'done' && (
+                    <span style={{ color: 'var(--ws-text-3)', fontSize: 11 }}>
+                      {(t.campanhas ?? 0)} camp · {(t.dados_diarios ?? 0)} dias
+                    </span>
+                  )}
+                  {(job.status === 'running' || job.status === 'pending') && (
+                    <span style={{ color: 'var(--ws-text-3)', fontSize: 11 }}>
+                      {job.etapa_atual ?? '—'} · {job.progresso}%
+                    </span>
+                  )}
+                </div>
+                {job.status === 'error' && job.erro && (
+                  <div
+                    title={job.erro}
+                    style={{
+                      fontSize: 11, color: 'var(--ws-coral)', lineHeight: 1.4,
+                      background: 'rgba(255,92,141,0.07)',
+                      border: '1px solid rgba(255,92,141,0.20)',
+                      borderRadius: 6, padding: '6px 8px',
+                    }}
+                  >
+                    {job.erro}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -690,8 +797,10 @@ export function EditarContaDialog({ conta, workspaces, onClose, onSaved }: Edita
             <div style={{ borderTop: `1px solid ${wsSheetCreamTokens.border}`, margin: '4px 0' }} />
 
             {/* Resumo de dados + Histórico de Sync */}
-            {conta && <ResumoDadosPanel contaId={conta.id} />}
-            {conta && <SyncHistoricoPanel contaId={conta.id} />}
+            {conta && <ResumoDadosPanel contaId={conta.id} plataforma={conta.plataforma} />}
+            {conta && (conta.plataforma === 'google'
+              ? <GoogleSyncHistoricoPanel contaId={conta.id} />
+              : <SyncHistoricoPanel contaId={conta.id} />)}
           </div>
         </div>
 
