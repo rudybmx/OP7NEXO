@@ -13,6 +13,7 @@ export default function LoginPage() {
   async function handleSignIn({
     email,
     password,
+    rememberMe,
   }: {
     email: string
     password: string
@@ -21,7 +22,7 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      await signIn(email.trim(), password)
+      await signIn(email.trim(), password, rememberMe)
       router.push('/marketing/campanhas/meta-ads')
     } catch {
       setError('E-mail ou senha incorretos')

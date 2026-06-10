@@ -3,19 +3,34 @@ const TOKEN_KEY = 'op7nexo_token'
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null
-  return localStorage.getItem(TOKEN_KEY)
+  // Persistente (localStorage) tem prioridade; sessão (sessionStorage) some ao fechar o navegador.
+  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
 }
 
-export function setToken(token: string): void {
+/**
+ * Grava o token de sessão.
+ * @param remember  true → persistente (localStorage + cookie com max-age); false → sessão (sessionStorage + cookie de sessão).
+ * @param maxAgeSeconds  duração do cookie persistente (default 30d); ignorado quando remember=false.
+ */
+export function setToken(token: string, remember = true, maxAgeSeconds = 2592000): void {
   if (typeof window === 'undefined') return
-  localStorage.setItem(TOKEN_KEY, token)
-  document.cookie = `ws-session=${token}; path=/; max-age=86400; SameSite=Lax`
+  // Evita resíduo entre os dois storages.
+  localStorage.removeItem(TOKEN_KEY)
+  sessionStorage.removeItem(TOKEN_KEY)
+  if (remember) localStorage.setItem(TOKEN_KEY, token)
+  else sessionStorage.setItem(TOKEN_KEY, token)
+
+  const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : ''
+  // remember → cookie persistente; senão → cookie de sessão (sem max-age).
+  const idade = remember ? `; max-age=${maxAgeSeconds}` : ''
+  document.cookie = `ws-session=${token}; path=/; SameSite=Lax${secure}${idade}`
 }
 
 export function clearToken(): void {
   if (typeof window === 'undefined') return
   localStorage.removeItem(TOKEN_KEY)
-  document.cookie = 'ws-session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+  sessionStorage.removeItem(TOKEN_KEY)
+  document.cookie = 'ws-session=; path=/; max-age=0; SameSite=Lax'
 }
 
 function redirectToLogin(): void {

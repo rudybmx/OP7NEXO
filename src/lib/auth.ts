@@ -5,6 +5,7 @@ export { getToken, clearToken, setToken }
 interface LoginResponse {
   access_token: string
   token_type: string
+  expires_in?: number
 }
 
 interface MeResponse {
@@ -15,10 +16,9 @@ interface MeResponse {
   ativo: boolean
 }
 
-export async function signIn(email: string, password: string): Promise<string> {
-  console.log('[signIn] payload:', { email, senha: password })
-  const data = await api.post<LoginResponse>('/auth/login', { email, senha: password })
-  setToken(data.access_token)
+export async function signIn(email: string, password: string, remember = false): Promise<string> {
+  const data = await api.post<LoginResponse>('/auth/login', { email, senha: password, remember })
+  setToken(data.access_token, remember, data.expires_in ?? 2592000)
   return data.access_token
 }
 
