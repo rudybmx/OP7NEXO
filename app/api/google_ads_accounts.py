@@ -183,6 +183,30 @@ def listar_contas_google(
     ]
 
 
+def _mensagem_erro_google(exc: Exception) -> str:
+    """Traduz erros conhecidos da API do Google Ads para mensagem PT clara.
+
+    Mantém o texto bruto como fallback para erros não mapeados.
+    """
+    bruto = str(exc)
+    if "REQUESTED_METRICS_FOR_MANAGER" in bruto:
+        return (
+            "Conta administradora (MCC): o Google Ads não fornece métricas para "
+            "contas gerenciadoras. Vincule as contas-cliente abaixo dela em "
+            "'Descobrir contas' — o MCC em si não tem dados de campanha."
+        )
+    if "PERMISSION_DENIED" in bruto or "USER_PERMISSION_DENIED" in bruto:
+        return (
+            "Permissão negada pelo Google Ads. Verifique se a credencial/MCC tem "
+            "acesso a esta conta e se o developer token está aprovado."
+        )
+    if "CUSTOMER_NOT_ENABLED" in bruto:
+        return "Conta do Google Ads não está ativa (cancelada ou suspensa)."
+    if "AuthenticationError" in bruto or "invalid_grant" in bruto or "OAUTH" in bruto.upper():
+        return "Falha de autenticação OAuth — o refresh token pode ter expirado ou sido revogado."
+    return bruto
+
+
 def _run_sync_background(ads_account_id: str, job_id: str) -> None:
     """Executa o sync Google Ads em thread separada — padrão do meta.py."""
     from app.services.google_ads_sync import sincronizar_conta_google
@@ -226,7 +250,7 @@ def _run_sync_background(ads_account_id: str, job_id: str) -> None:
                 db.rollback()
             except Exception:
                 pass
-            _finalizar("error", erro=str(exc))
+            _finalizar("error", erro=_mensagem_erro_google(exc))
 
 
 @router.post("/sync/{ads_account_id}", status_code=202)
@@ -283,4 +307,65 @@ def get_sync_job(
         "erro": job.erro,
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat(),
+    }
+
+
+@router.get("/sync/historico/{ads_account_id}")
+def historico_sync_google(
+    ads_account_id: str,
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Histórico de jobs de sync de uma conta Google Ads (mais recentes primeiro)."""
+    jobs = db.execute(
+        select(SyncJob)
+        .where(SyncJob.ads_account_id == ads_account_id)
+        .order_by(SyncJob.created_at.desc())
+        .limit(limit)
+    ).scalars().all()
+    return [
+        {
+            "id": str(j.id),
+            "modo_sync": j.modo_sync,
+            "status": j.status,
+            "etapa_atual": j.etapa_atual,
+            "progresso": j.progresso,
+            "totais": j.totais,
+            "erro": j.erro,
+            "created_at": j.created_at.isoformat() if j.created_at else None,
+            "updated_at": j.updated_at.isoformat() if j.updated_at else None,
+        }
+        for j in jobs
+    ]
+
+
+@router.get("/sync/resumo/{ads_account_id}")
+def resumo_dados_google(
+    ads_account_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Resumo dos dados diários sincronizados (mesmo shape do resumo Meta)."""
+    row = db.execute(text("""
+        SELECT MIN(data) AS primeira_data,
+               MAX(data) AS ultima_data,
+               COUNT(*) AS total_dias,
+               COUNT(*) FILTER (WHERE custo > 0) AS dias_com_investimento,
+               MIN(sincronizado_em) AS comecou_em,
+               MAX(sincronizado_em) AS ultima_gravacao
+        FROM google_dados_diarios
+        WHERE ads_account_id = :aid AND ativo = true
+    """), {"aid": ads_account_id}).mappings().first()
+
+    def _iso(v):
+        return v.isoformat() if v is not None and hasattr(v, "isoformat") else (str(v) if v is not None else None)
+
+    return {
+        "primeira_data": _iso(row["primeira_data"]) if row else None,
+        "ultima_data": _iso(row["ultima_data"]) if row else None,
+        "total_dias": int(row["total_dias"]) if row and row["total_dias"] else 0,
+        "dias_com_investimento": int(row["dias_com_investimento"]) if row and row["dias_com_investimento"] else 0,
+        "comecou_em": _iso(row["comecou_em"]) if row else None,
+        "ultima_gravacao": _iso(row["ultima_gravacao"]) if row else None,
     }
