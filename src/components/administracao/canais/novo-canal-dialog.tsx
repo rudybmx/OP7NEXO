@@ -13,6 +13,7 @@ import {
   type NovoCanalForm,
   type Workspace,
 } from './canal-shared'
+import { MetaEmbeddedSignupButton } from './meta-embedded-signup'
 
 type WebhookCfg = {
   provider?: string
@@ -29,7 +30,7 @@ const WEBHOOK_PROVIDERS: { id: string; label: string; disponivel: boolean }[] = 
 ]
 
 // Macro-tipos criáveis nesta rodada. Os demais aparecem como "em breve".
-const TIPOS_CRIAVEIS = new Set<string>(['whatsapp_evolution', 'whatsapp_waha', 'webhook'])
+const TIPOS_CRIAVEIS = new Set<string>(['whatsapp_evolution', 'whatsapp_waha', 'whatsapp_oficial', 'webhook'])
 
 interface NovoCanalDialogProps {
   open: boolean
@@ -151,6 +152,13 @@ export function NovoCanalDialog({
 
           {/* Webhook criado — exibe URL */}
           {canalCriado ? (
+            (() => {
+              const isMeta = canalCriado.tipo === 'whatsapp_oficial'
+              const webhookUrl = `${WEBHOOK_BASE}/${isMeta ? 'meta/' : ''}${canalCriado.webhook_token}`
+              const verifyToken = isMeta
+                ? ((canalCriado.config as Record<string, unknown>)?.verify_token as string | undefined)
+                : undefined
+              return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div style={{
                 background: 'rgba(37,211,102,0.08)',
@@ -164,20 +172,20 @@ export function NovoCanalDialog({
                     Canal &ldquo;{canalCriado.nome}&rdquo; criado
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--ws-text-2)', marginTop: 2 }}>
-                    Tipo: Webhook/API
+                    Tipo: {isMeta ? 'WhatsApp Oficial (Meta Cloud)' : 'Webhook/API'}
                   </div>
                 </div>
               </div>
 
               <div>
-                <label style={labelStyle}>URL do Webhook</label>
+                <label style={labelStyle}>{isMeta ? 'Callback URL (Meta)' : 'URL do Webhook'}</label>
                 <div style={{
                   background: wsSheetCreamTokens.surface,
                   border: `1px solid ${wsSheetCreamTokens.border}`,
                   borderRadius: 10, padding: '12px 14px',
                 }}>
                   <code style={{ fontSize: 11, color: 'var(--ws-text-1)', wordBreak: 'break-all', lineHeight: 1.6, display: 'block' }}>
-                    {WEBHOOK_BASE}/{canalCriado.webhook_token}
+                    {webhookUrl}
                   </code>
                 </div>
                 <button
@@ -199,10 +207,29 @@ export function NovoCanalDialog({
                 </button>
               </div>
 
+              {isMeta && verifyToken && (
+                <div>
+                  <label style={labelStyle}>Verify Token</label>
+                  <div style={{
+                    background: wsSheetCreamTokens.surface,
+                    border: `1px solid ${wsSheetCreamTokens.border}`,
+                    borderRadius: 10, padding: '12px 14px',
+                  }}>
+                    <code style={{ fontSize: 11, color: 'var(--ws-text-1)', wordBreak: 'break-all', lineHeight: 1.6, display: 'block' }}>
+                      {verifyToken}
+                    </code>
+                  </div>
+                </div>
+              )}
+
               <p style={{ fontSize: 12, color: 'var(--ws-text-3)', margin: 0 }}>
-                Configure esta URL como destino de webhook no sistema externo. O token é único e não poderá ser recuperado.
+                {isMeta
+                  ? 'No painel da Meta (WhatsApp → Configuração → Webhooks), cole a Callback URL e o Verify Token, assine o campo "messages" e depois volte aqui e clique em Conectar para validar e registrar.'
+                  : 'Configure esta URL como destino de webhook no sistema externo. O token é único e não poderá ser recuperado.'}
               </p>
             </div>
+              )
+            })()
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
@@ -302,26 +329,55 @@ export function NovoCanalDialog({
 
               {form.tipo === 'whatsapp_oficial' && (
                 <>
+                  <div style={{
+                    background: 'rgba(7,94,84,0.08)',
+                    border: '1px solid rgba(7,94,84,0.25)',
+                    borderRadius: 10, padding: '14px 16px',
+                  }}>
+                    <p style={{ margin: 0, fontSize: 12, color: '#075E54', lineHeight: 1.5 }}>
+                      💬 WhatsApp Cloud API (Meta). Informe as credenciais do System User. Ao salvar,
+                      o sistema gera a URL de webhook e o verify token para você colar no painel da Meta;
+                      depois use <strong>Conectar</strong> para validar e registrar o webhook.
+                    </p>
+                  </div>
                   <div>
-                    <label style={labelStyle}>Número</label>
+                    <label style={labelStyle}>Phone Number ID *</label>
                     <input
                       type="text"
-                      placeholder="ex: 5511999999999"
-                      value={readStr('numero')}
-                      onChange={e => setConfig('numero', e.target.value)}
+                      placeholder="ex: 123456789012345"
+                      value={readStr('phone_number_id')}
+                      onChange={e => setConfig('phone_number_id', e.target.value)}
                       style={inputStyle}
                     />
                   </div>
                   <div>
-                    <label style={labelStyle}>Token Meta</label>
+                    <label style={labelStyle}>WhatsApp Business Account ID (WABA)</label>
                     <input
                       type="text"
-                      placeholder="Token de acesso Meta"
-                      value={readStr('token_meta')}
-                      onChange={e => setConfig('token_meta', e.target.value)}
+                      placeholder="ex: 987654321098765"
+                      value={readStr('waba_id')}
+                      onChange={e => setConfig('waba_id', e.target.value)}
+                      style={inputStyle}
+                    />
+                    <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--ws-text-3)', lineHeight: 1.4 }}>
+                      Necessário para registrar o webhook automaticamente (subscribed_apps).
+                    </p>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Access Token (System User) *</label>
+                    <input
+                      type="text"
+                      placeholder="Token permanente do System User"
+                      value={readStr('access_token')}
+                      onChange={e => setConfig('access_token', e.target.value)}
                       style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }}
                     />
+                    <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--ws-text-3)', lineHeight: 1.4 }}>
+                      Permissões: whatsapp_business_messaging, whatsapp_business_management. O token é
+                      armazenado de forma segura e nunca é exibido novamente.
+                    </p>
                   </div>
+                  <MetaEmbeddedSignupButton />
                 </>
               )}
 

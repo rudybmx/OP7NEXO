@@ -152,7 +152,7 @@ export default function CanaisOmnichannelPage() {
         fecharDrawer()
         abrirEdicao(criado)
         setTimeout(() => conectarEvolution(), 50)
-      } else if (form.tipo === 'webhook' && criado.webhook_token) {
+      } else if ((form.tipo === 'webhook' || form.tipo === 'whatsapp_oficial') && criado.webhook_token) {
         setCanalCriado(criado)
       } else {
         fecharDrawer()
@@ -178,7 +178,8 @@ export default function CanaisOmnichannelPage() {
 
   function copiarWebhook() {
     if (!canalCriado?.webhook_token) return
-    navigator.clipboard.writeText(`${WEBHOOK_BASE}/${canalCriado.webhook_token}`)
+    const path = canalCriado.tipo === 'whatsapp_oficial' ? 'meta/' : ''
+    navigator.clipboard.writeText(`${WEBHOOK_BASE}/${path}${canalCriado.webhook_token}`)
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
   }
@@ -264,7 +265,7 @@ export default function CanaisOmnichannelPage() {
   }
 
   async function conectarEvolution() {
-    if (!canalEditando || !['whatsapp_evolution', 'whatsapp_waha'].includes(canalEditando.tipo)) return
+    if (!canalEditando || !['whatsapp_evolution', 'whatsapp_waha', 'whatsapp_oficial'].includes(canalEditando.tipo)) return
     if (pollingId) {
       clearInterval(pollingId)
       setPollingId(null)
@@ -332,7 +333,7 @@ export default function CanaisOmnichannelPage() {
   }
 
   async function desconectarEvolution() {
-    if (!canalEditando || !['whatsapp_evolution', 'whatsapp_waha'].includes(canalEditando.tipo)) return
+    if (!canalEditando || !['whatsapp_evolution', 'whatsapp_waha', 'whatsapp_oficial'].includes(canalEditando.tipo)) return
     try {
       if (pollingId) {
         clearInterval(pollingId)
