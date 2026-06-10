@@ -235,13 +235,15 @@ def gerar_base(
 # integra a logo do upload; se o usuário marcar force_real_logo, o sistema
 # aplica um overlay inteligente da logo real (fallback de fidelidade).
 
-_INTEGRADO_GUARDRAIL = (
-    "Ortografia em português do Brasil impecável. Texto integrado à arte de forma "
-    "elegante (não use texto solto/sobreposto sem composição). Hierarquia clara: "
-    "headline forte, subtítulo legível, CTA em botão evidente. Bastante espaço "
-    "negativo, alto contraste, área segura nas bordas para Meta Ads. Logo fiel, sem "
-    "distorcer. Evite: antes/depois, promessa de resultado, instrumentos clínicos "
-    "invasivos, sangue, visual brega, poluição visual, texto pequeno demais."
+_BASE_TXT = (
+    "Texto integrado à arte de forma elegante (não use texto solto/sobreposto sem "
+    "composição). Hierarquia clara: headline forte, subtítulo legível, CTA em botão "
+    "evidente. Alto contraste e área segura nas bordas para Meta Ads. Logo fiel, sem "
+    "distorcer. Ortografia em português do Brasil impecável. Visual de agência, premium."
+)
+_FORBIDDEN_TXT = (
+    "Evite: antes/depois, promessa de resultado, instrumentos clínicos invasivos, "
+    "sangue, visual brega, poluição visual, texto pequeno demais, logo deformada."
 )
 
 
@@ -279,6 +281,8 @@ def montar_prompt_integrado(
             "Use a LOGO enviada de forma fiel (sem redesenhar nem distorcer), "
             "posicionada de forma discreta e profissional (topo ou rodapé)."
         )
+    rico = (g("densidade") or "simples") == "rico"
+
     copy_parts: list[str] = []
     if g("headline"):
         copy_parts.append(f'Headline (texto mais forte): "{g("headline")}"')
@@ -289,17 +293,43 @@ def montar_prompt_integrado(
     rodape = g("footer") or (g("city") if g("show_city", True) else None)
     if rodape:
         copy_parts.append(f'Rodapé pequeno: "{rodape}"')
-    if copy_parts:
+
+    if rico:
         L.append(
-            "Escreva na arte EXATAMENTE estes textos (não invente outros): "
-            + "; ".join(copy_parts)
-            + "."
+            "Monte um anúncio COMPLETO e persuasivo, com copy de apoio e boa densidade "
+            "visual (como um anúncio de agência), mantendo hierarquia clara e sem poluição."
         )
+        if copy_parts:
+            L.append("Textos principais: " + "; ".join(copy_parts) + ".")
+        bullets = [b for b in (g("bullets") or []) if b]
+        if bullets:
+            L.append(
+                "Inclua estes bullets de benefício, com ícones elegantes: "
+                + "; ".join(f'"{b}"' for b in bullets)
+                + "."
+            )
+        else:
+            L.append("Inclua 2 a 3 bullets curtos de benefício relevantes, com ícones elegantes.")
+        if g("selo"):
+            L.append(f'Inclua um selo de credibilidade discreto: "{g("selo")}".')
+        if g("copy_extra"):
+            L.append(f"Copy adicional para integrar à arte: {g('copy_extra')}.")
+    else:
+        if copy_parts:
+            L.append(
+                "Escreva na arte EXATAMENTE estes textos (não invente outros): "
+                + "; ".join(copy_parts)
+                + "."
+            )
+        L.append(
+            f"No máximo ~{spec.get('max_words', 14)} palavras na arte. Visual limpo, "
+            "premium, com bastante espaço negativo."
+        )
+
     L.append(f"Formato: {g('creative_format') or 'feed_1x1'}.")
-    L.append(f"No máximo ~{spec.get('max_words', 14)} palavras na arte.")
     if g("briefing"):
         L.append(f"Observações extras: {g('briefing')}.")
-    L.append(_INTEGRADO_GUARDRAIL)
+    L.append(_BASE_TXT + " " + _FORBIDDEN_TXT)
     return "\n".join(L)
 
 

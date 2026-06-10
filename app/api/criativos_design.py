@@ -293,6 +293,10 @@ class GerarIn(BaseModel):
     reference_usage: Optional[str] = "style_and_composition"
     force_real_logo: bool = False
     quality: str = "medium"
+    densidade: str = "simples"  # "simples" | "rico"
+    bullets: Optional[list[str]] = None
+    selo: Optional[str] = None
+    copy_extra: Optional[str] = Field(default=None, max_length=2000)
     logo_base64: Optional[str] = None
     referencia_base64: Optional[str] = None
 
