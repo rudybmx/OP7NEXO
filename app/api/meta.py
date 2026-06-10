@@ -210,8 +210,12 @@ def proxy_storage(bucket: str, object_path: str):
     }
     if bucket not in allowed_buckets:
         raise HTTPException(status_code=404, detail="Bucket não permitido")
-    # Restrição de path só para bucket de criativos
-    if bucket == settings.MINIO_BUCKET_CRIATIVOS and not object_path.startswith("ads-accounts/"):
+    # Restrição de path só para bucket de criativos:
+    # - ads-accounts/  -> criativos do Meta Ads
+    # - workspaces/     -> Estúdio de Criativos (bases gpt-image-2, exports)
+    if bucket == settings.MINIO_BUCKET_CRIATIVOS and not object_path.startswith(
+        ("ads-accounts/", "workspaces/")
+    ):
         raise HTTPException(status_code=404, detail="Objeto não permitido")
     try:
         obj = get_object(bucket, object_path)
