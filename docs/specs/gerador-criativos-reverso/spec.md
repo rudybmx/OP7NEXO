@@ -44,7 +44,7 @@ O seletor "Estilo" (palavra fraca) é substituído por uma **galeria de modelos 
 ## Requirements
 
 - **FR-001**: `POST /design/analisar-modelo` recebe `referencia_base64` (+ workspace) e retorna um `creative_spec` JSON. Usa `gpt-4.1` (`settings.openai_vision_model`) via chat.completions com `response_format=json_object` e a imagem em `image_url` base64.
-- **FR-002**: O `creative_spec` MUST conter no mínimo: `format`, `mood`, `style`, `palette[]`, `background`, `subjects[]`, `regions{logo,headline,subheadline,bullets[],cta,footer}`, `density`. Backend **valida/normaliza** o JSON (campos faltantes → default seguro).
+- **FR-002**: O `creative_spec` (schema CIRÚRGICO) MUST conter: `formato`, `descricao` (prosa rica = espinha da geração), `objetivo_do_criativo`, `estilo`, `tom`, `estilo_visual`, `paleta_de_cores[]`, `personagem`, `composicao_visual`, `conteudo_textual{headline,subheadline,bullets[],cta,footer}`, `logo{present,posicao,tamanho,observacao}`. Backend **valida/normaliza** (campos faltantes → default; aceita schema legado `regions`/`palette`). Densidade de ajuste: **`fiel`|`livre`** (2). Painel front expõe todos editáveis + paleta clicável + posição da logo. Modo é premium (avisar ~3 créditos).
 - **FR-003**: A geração em modo Modelo Reverso MUST montar o prompt a partir do `creative_spec` editado (composição/posições/paleta + textos novos), com a referência ainda passada como imagem ao `images.edit`.
 - **FR-004**: Quando há logo e `regions.logo.present`, o sistema MUST **compor a logo real na região do JSON** (posição/tamanho/área segura) via `criativo_render` — em vez do overlay cru antigo.
 - **FR-005**: Seletor **densidade de ajuste** (`fiel`|`equilibrado`|`livre`) MUST modular quanta liberdade o prompt dá sobre o spec.
