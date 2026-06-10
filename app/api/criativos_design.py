@@ -293,6 +293,8 @@ class GerarIn(BaseModel):
     secondary_color: Optional[str] = None
     briefing: Optional[str] = Field(default=None, max_length=4000)
     reference_usage: Optional[str] = "style_and_composition"
+    creative_spec: Optional[dict] = None  # Modelo Reverso: spec extraído (e editado)
+    densidade_ajuste: str = "fiel"  # "fiel" | "equilibrado" | "livre"
     force_real_logo: bool = False
     quality: str = "medium"
     densidade: str = "simples"  # "simples" | "rico"

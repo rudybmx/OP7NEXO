@@ -247,10 +247,81 @@ _FORBIDDEN_TXT = (
 )
 
 
+def _prompt_reverso(cs: dict, densidade_ajuste: str) -> str:
+    """Monta o prompt a partir de um creative_spec extraído (e editado) — Modelo Reverso."""
+    regions = cs.get("regions") or {}
+    L: list[str] = [
+        "Recrie este criativo publicitário para Meta Ads seguindo FIELMENTE a composição, "
+        "posições, hierarquia e estilo do modelo de referência descritos abaixo. "
+        "Use a imagem de referência enviada como guia visual."
+    ]
+    if cs.get("format"):
+        L.append(f"Formato: {cs['format']}.")
+    if cs.get("style"):
+        L.append(f"Estilo: {cs['style']}.")
+    if cs.get("mood"):
+        L.append(f"Mood: {cs['mood']}.")
+    if cs.get("background"):
+        L.append(f"Fundo: {cs['background']}.")
+    if cs.get("palette"):
+        L.append("Paleta (use exatamente estas cores): " + ", ".join(cs["palette"]) + ".")
+    subs = cs.get("subjects") or []
+    if subs:
+        L.append(
+            "Sujeitos: "
+            + "; ".join(
+                f"{s.get('description', '')} (posição {s.get('position', '')})" for s in subs
+            )
+            + "."
+        )
+    h = regions.get("headline") or {}
+    if h.get("text"):
+        L.append(
+            f'Headline "{h["text"]}" — posição {h.get("position", "")}, estilo {h.get("style", "")}.'
+        )
+    sh = regions.get("subheadline") or {}
+    if sh.get("text"):
+        L.append(f'Subtítulo "{sh["text"]}" — posição {sh.get("position", "")}.')
+    bl = [b for b in (regions.get("bullets") or []) if b.get("text")]
+    if bl:
+        L.append(
+            "Bullets de benefício com ícones elegantes: "
+            + "; ".join(f'"{b["text"]}"' for b in bl)
+            + "."
+        )
+    cta = regions.get("cta") or {}
+    if cta.get("text"):
+        L.append(
+            f'CTA "{cta["text"]}" — {cta.get("shape", "botão")} na cor {cta.get("color", "")}, '
+            f'posição {cta.get("position", "")}.'
+        )
+    ft = regions.get("footer") or {}
+    if ft.get("text"):
+        L.append(f'Rodapé "{ft["text"]}" — posição {ft.get("position", "")}.')
+    logo = regions.get("logo") or {}
+    if logo.get("present"):
+        L.append(
+            f"Deixe uma área LIMPA para a logo em {logo.get('position', 'topo')} "
+            f"(tamanho {logo.get('size', 'média')}) — a logo real será aplicada ali."
+        )
+    aj = (densidade_ajuste or "fiel").lower()
+    if aj == "livre":
+        L.append("Você tem liberdade criativa para aprimorar a composição, mantendo a essência do modelo.")
+    elif aj == "equilibrado":
+        L.append("Equilibre fidelidade ao layout do modelo com bom acabamento.")
+    else:
+        L.append("Mantenha-se MUITO fiel ao layout/posições/proporções do modelo; mude só o conteúdo indicado.")
+    L.append(_BASE_TXT + " " + _FORBIDDEN_TXT)
+    return "\n".join(L)
+
+
 def montar_prompt_integrado(
     spec: dict, *, tem_logo: bool = False, tem_referencia: bool = False
 ) -> str:
     g = spec.get
+    cs = g("creative_spec") or {}
+    if g("reference_usage") == "modelo_reverso" and cs:
+        return _prompt_reverso(cs, g("densidade_ajuste") or "fiel")
     L: list[str] = [
         "Você é diretor de arte de performance. Crie um criativo publicitário "
         "PROFISSIONAL e premium, pronto para Meta Ads, com todo o texto e a marca "
@@ -420,14 +491,30 @@ def executar_geracao_integrada(
         resp = raw.parse()
         content = base64.b64decode(resp.data[0].b64_json)
 
-        # Fallback de fidelidade: overlay inteligente da logo real (opt-in)
-        if spec.get("force_real_logo") and logo_bytes:
+        # Logo real composta: por REGIÃO (Modelo Reverso) ou overlay legado (force_real_logo)
+        cs = spec.get("creative_spec") or {}
+        logo_region = (cs.get("regions") or {}).get("logo") or {}
+        por_regiao = (
+            spec.get("reference_usage") == "modelo_reverso"
+            and logo_bytes
+            and logo_region.get("present")
+        )
+        if logo_bytes and (por_regiao or spec.get("force_real_logo")):
             try:
                 from app.services import criativo_render
 
-                content = criativo_render.aplicar_logo(
-                    content, logo_bytes, creative_format=ger.creative_format
-                )
+                if por_regiao:
+                    content = criativo_render.aplicar_logo(
+                        content,
+                        logo_bytes,
+                        creative_format=ger.creative_format,
+                        position=logo_region.get("position", "topo-esquerda"),
+                        size=logo_region.get("size", "media"),
+                    )
+                else:
+                    content = criativo_render.aplicar_logo(
+                        content, logo_bytes, creative_format=ger.creative_format, badge=True
+                    )
             except Exception as exc:  # noqa: BLE001
                 log.warning("[image_gen] overlay de logo falhou geracao=%s: %s", ger.id, exc)
 

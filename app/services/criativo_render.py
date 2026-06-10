@@ -10,9 +10,26 @@ Reproduz o preview do front com fidelidade aproximada. Upgrade para Playwright
 """
 from __future__ import annotations
 
+import unicodedata
 from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageFont
+
+# Posição/tamanho da logo a partir do creative_spec (termos PT do modelo de visão)
+_LOGO_SIZE_FRAC = {"pequena": 0.10, "media": 0.135, "grande": 0.19}
+_LOGO_ANCHORS = {
+    "topo-esquerda": ("left", "top"),
+    "topo-centro": ("center", "top"),
+    "topo-direita": ("right", "top"),
+    "rodape-esquerda": ("left", "bottom"),
+    "rodape-centro": ("center", "bottom"),
+    "rodape-direita": ("right", "bottom"),
+}
+
+
+def _norm_termo(s: str | None) -> str:
+    s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().lower().strip()
+    return s.replace(" ", "-").replace("_", "-")
 
 _FONT_DIR = "/usr/share/fonts/truetype/dejavu"
 _GOLD = (242, 101, 34)  # --ws-gold (#F26522)
@@ -188,40 +205,55 @@ def aplicar_logo(
     logo_bytes: bytes,
     *,
     creative_format: str | None = None,
-    posicao: str = "top_left",
+    position: str = "topo-esquerda",
+    size: str = "media",
+    badge: bool = False,
 ) -> bytes:
-    """Overlay INTELIGENTE da logo real sobre uma arte já gerada (fallback de fidelidade).
+    """Compõe a logo real sobre a arte na posição/tamanho indicados.
 
-    Não é carimbo bruto: aplica a logo num badge translúcido arredondado com leve
-    sombra, na área planejada (topo). Usado quando force_real_logo está ligado.
+    No Modelo Reverso, `position`/`size` vêm de `regions.logo` do creative_spec e a
+    logo é aplicada LIMPA na área que o modelo reservou (badge=False). O modo
+    `badge=True` (legado force_real_logo) envolve num retângulo translúcido.
     """
     img = Image.open(BytesIO(base_png)).convert("RGBA")
     w, h = img.size
     logo = Image.open(BytesIO(logo_bytes)).convert("RGBA")
 
-    lh = int(w * 0.12)
+    frac = _LOGO_SIZE_FRAC.get(_norm_termo(size), 0.135)
+    lh = int(w * frac)
     lw = int(logo.width * lh / logo.height)
-    max_lw = int(w * 0.38)
+    max_lw = int(w * 0.42)
     if lw > max_lw:
         lw, lh = max_lw, int(logo.height * max_lw / logo.width)
     logo = logo.resize((max(1, lw), max(1, lh)), Image.LANCZOS)
 
-    pad = int(lh * 0.30)
-    badge = Image.new("RGBA", (lw + 2 * pad, lh + 2 * pad), (255, 255, 255, 0))
-    bd = ImageDraw.Draw(badge)
-    bd.rounded_rectangle(
-        [0, 0, badge.width - 1, badge.height - 1],
-        radius=int(badge.height * 0.28),
-        fill=(255, 255, 255, 210),
-    )
-    badge.alpha_composite(logo, (pad, pad))
+    if badge:
+        pad = int(lh * 0.30)
+        carimbo = Image.new("RGBA", (lw + 2 * pad, lh + 2 * pad), (255, 255, 255, 0))
+        bd = ImageDraw.Draw(carimbo)
+        bd.rounded_rectangle(
+            [0, 0, carimbo.width - 1, carimbo.height - 1],
+            radius=int(carimbo.height * 0.28),
+            fill=(255, 255, 255, 210),
+        )
+        carimbo.alpha_composite(logo, (pad, pad))
+        logo = carimbo
 
-    margin = int(w * 0.045)
-    if posicao == "top_center":
-        x = (w - badge.width) // 2
-    else:
-        x = margin
-    img.alpha_composite(badge, (x, margin))
+    cw, ch = logo.size
+    pnorm = _norm_termo(position)
+    hx, vy = _LOGO_ANCHORS.get(pnorm, ("", ""))
+    if not hx:  # termo aproximado (ex.: "topo", "rodape-...", "meio-esquerda")
+        vy = "bottom" if any(t in pnorm for t in ("rodape", "inferior", "bottom")) else "top"
+        hx = (
+            "right" if any(t in pnorm for t in ("direita", "right"))
+            else "center" if any(t in pnorm for t in ("centro", "center"))
+            else "left"
+        )
+
+    margin = int(w * 0.05)
+    x = margin if hx == "left" else (w - cw - margin if hx == "right" else (w - cw) // 2)
+    y = margin if vy == "top" else (h - ch - margin)
+    img.alpha_composite(logo, (x, y))
 
     out = BytesIO()
     img.convert("RGB").save(out, format="PNG")
