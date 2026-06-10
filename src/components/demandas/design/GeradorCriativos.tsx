@@ -29,6 +29,12 @@ const REF_USOS = [
   { id: 'composition', label: 'Composição' },
   { id: 'style_and_composition', label: 'Estilo + composição' },
   { id: 'replica', label: 'Réplica idêntica' },
+  { id: 'modelo_reverso', label: 'Modelo Reverso' },
+]
+const AJUSTES = [
+  { id: 'fiel', label: 'Fiel' },
+  { id: 'equilibrado', label: 'Equilibrado' },
+  { id: 'livre', label: 'Livre' },
 ]
 
 interface HistItem { id: string; url: string; titulo: string; at: number }
@@ -141,6 +147,43 @@ export function GeradorCriativos() {
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<HistItem[]>([])
 
+  // Modelo Reverso
+  const [creativeSpec, setCreativeSpec] = useState<any | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [densidadeAjuste, setDensidadeAjuste] = useState('fiel')
+  const reverso = referenceUsage === 'modelo_reverso'
+
+  const analisarModelo = async () => {
+    if (!referenceUrl || !wsId) { toast.error('Suba um modelo de exemplo primeiro.'); return }
+    setAnalyzing(true); setCreativeSpec(null)
+    try {
+      const res = await fetch('/api/proxy/design/analisar-modelo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken() ?? ''}` },
+        body: JSON.stringify({ workspace_id: wsId, referencia_base64: referenceUrl }),
+      })
+      if (!res.ok) throw new Error(`Falha ao analisar (HTTP ${res.status})`)
+      const data = await res.json()
+      setCreativeSpec(data.creative_spec)
+      toast.success('Modelo analisado — edite os pontos abaixo.')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao analisar o modelo.')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  // Helpers imutáveis para editar o creative_spec
+  const setRegiao = (chave: string, patch: Record<string, unknown>) =>
+    setCreativeSpec((s: any) => s && ({ ...s, regions: { ...s.regions, [chave]: { ...(s.regions?.[chave] || {}), ...patch } } }))
+  const setBulletSpec = (i: number, text: string) =>
+    setCreativeSpec((s: any) => {
+      if (!s) return s
+      const bl = [...(s.regions?.bullets || [])]
+      bl[i] = { ...(bl[i] || {}), text }
+      return { ...s, regions: { ...s.regions, bullets: bl } }
+    })
+
   const onUpload = (setter: (s: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (!f) return
@@ -198,6 +241,10 @@ export function GeradorCriativos() {
       body.selo = selo.trim() || undefined
       body.copy_extra = copyExtra.trim() || undefined
     }
+    if (reverso && creativeSpec) {
+      body.creative_spec = creativeSpec
+      body.densidade_ajuste = densidadeAjuste
+    }
 
     const res = await fetch('/api/proxy/design/gerar', {
       method: 'POST',
@@ -239,7 +286,8 @@ export function GeradorCriativos() {
 
   const handleGenerate = async () => {
     if (!wsId) { toast.error('Selecione um workspace.'); return }
-    if (!briefing.trim() && !headline.trim()) { toast.error('Diga o que anunciar (ou ao menos a headline).'); return }
+    if (reverso && !creativeSpec) { toast.error('Analise o modelo de exemplo primeiro.'); return }
+    if (!reverso && !briefing.trim() && !headline.trim()) { toast.error('Diga o que anunciar (ou ao menos a headline).'); return }
     setIsGenerating(true); setResultImage(null); setError(null)
     try {
       const formatos = formatsSel.length ? formatsSel : ['45']
@@ -272,7 +320,7 @@ export function GeradorCriativos() {
           {referenceUrl && (
             <div className="flex flex-wrap gap-2">
               {REF_USOS.map(u => (
-                <button key={u.id} onClick={() => setReferenceUsage(u.id)}
+                <button key={u.id} onClick={() => { setReferenceUsage(u.id); if (u.id === 'modelo_reverso' && !creativeSpec) analisarModelo() }}
                   className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-all ${referenceUsage === u.id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>
                   {u.label}
                 </button>
@@ -281,8 +329,53 @@ export function GeradorCriativos() {
           )}
         </div>
 
-        {/* Cores da marca (desativadas na Réplica idêntica — a referência manda na paleta) */}
-        {referenceUsage !== 'replica' ? (
+        {/* Painel Modelo Reverso — pontos editáveis extraídos do JSON */}
+        {reverso && (
+          <div className="space-y-3 p-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-blue)]/40 bg-[rgba(62,91,255,0.04)]">
+            <div className="flex items-center justify-between">
+              <label className={labelCls}><Wand2 size={14} className="text-[var(--ws-blue)]" /> Pontos do modelo</label>
+              <button onClick={analisarModelo} disabled={analyzing || !referenceUrl}
+                className="text-[10px] font-bold uppercase text-[var(--ws-blue)] disabled:opacity-40">{analyzing ? 'Analisando...' : 'Re-analisar'}</button>
+            </div>
+            {analyzing && <div className="text-[11px] text-[var(--ws-text-3)]">Lendo o modelo de exemplo (visão)...</div>}
+            {!analyzing && !creativeSpec && (
+              <button onClick={analisarModelo} disabled={!referenceUrl}
+                className="w-full h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold uppercase bg-[var(--ws-blue)] text-white disabled:opacity-40">Analisar modelo de exemplo</button>
+            )}
+            {creativeSpec && (
+              <div className="space-y-2">
+                <input value={creativeSpec.regions?.headline?.text || ''} onChange={e => setRegiao('headline', { text: e.target.value })} placeholder="Headline" className={inputCls} />
+                <input value={creativeSpec.regions?.subheadline?.text || ''} onChange={e => setRegiao('subheadline', { text: e.target.value })} placeholder="Subtítulo" className={inputCls} />
+                {(creativeSpec.regions?.bullets || []).map((b: any, i: number) => (
+                  <input key={i} value={b?.text || ''} onChange={e => setBulletSpec(i, e.target.value)} placeholder={`Bullet ${i + 1}`} className={inputCls} />
+                ))}
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={creativeSpec.regions?.cta?.text || ''} onChange={e => setRegiao('cta', { text: e.target.value })} placeholder="CTA" className={inputCls} />
+                  <input value={creativeSpec.regions?.footer?.text || ''} onChange={e => setRegiao('footer', { text: e.target.value })} placeholder="Rodapé" className={inputCls} />
+                </div>
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Paleta:</span>
+                  {(creativeSpec.palette || []).map((c: string, i: number) => (
+                    <span key={i} className="w-5 h-5 rounded border border-white/50 shadow-sm" style={{ background: c }} title={c} />
+                  ))}
+                  <span className="text-[9px] text-[var(--ws-text-3)]">· logo: {creativeSpec.regions?.logo?.present ? `${creativeSpec.regions.logo.position}` : 'ausente'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Densidade de ajuste</span>
+                  <div className="grid grid-cols-3 gap-2 mt-1">
+                    {AJUSTES.map(a => (
+                      <button key={a.id} onClick={() => setDensidadeAjuste(a.id)}
+                        className={`h-7 rounded-md text-[10px] font-medium border transition-all ${densidadeAjuste === a.id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>{a.label}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Cores da marca (desativadas em Réplica/Modelo Reverso — a referência manda na paleta) */}
+        {!reverso && referenceUsage !== 'replica' && (
           <div className="space-y-3">
             <label className={labelCls}><Palette size={14} className="text-[var(--ws-blue)]" /> Cores da marca</label>
             <div className="flex items-stretch gap-2">
@@ -294,12 +387,9 @@ export function GeradorCriativos() {
               <Wand2 size={13} /> Sugerir cores da logo
             </button>
           </div>
-        ) : (
-          <div className="text-[11px] text-[var(--ws-text-3)] px-1 py-2 rounded-[var(--ws-radius-lg)] border border-dashed border-[var(--ws-glass-border)]">
-            Cores da marca desativadas no modo <b className="text-[var(--ws-text-2)]">Réplica idêntica</b> — a paleta segue o modelo de exemplo.
-          </div>
         )}
 
+        {!reverso && (<>
         {/* O que anunciar */}
         <div className="space-y-3">
           <label className={labelCls}><Sparkles size={14} className="text-[var(--ws-blue)]" /> O que você quer anunciar?</label>
@@ -351,6 +441,7 @@ export function GeradorCriativos() {
             </div>
           )}
         </div>
+        </>)}
 
         {/* Formato (até 2) */}
         <div className="space-y-3">
