@@ -323,8 +323,7 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - `src/components/demandas/design/GeradorCriativos.tsx` (tela `/marketing/demandas/design`): mock `setTimeout` substituído por geração real via `gpt-image-2`.
 - Consome `POST /design/gerar-base` (SSE) pelo proxy `/api/proxy`, lendo `generation.completed`/`failed` por stream reader; `workspace_id` do `useWorkspace()`; token via `getToken()` (`@/lib/api-client`).
 - Briefing montado de estilo+tom; formato da UI mapeado para `creative_format`; "Avançado" agora tem seletor de **Qualidade** (low/medium/high) no lugar dos controles fake (Flux/DALL-E/steps). Histórico da sessão clicável + erros amigáveis.
-- Importante: a IA gera só a **base visual** (sem texto/logo). Spec: `op7nexo-api/docs/specs/gerador-criativos/`.
-- **Montagem (preview DOM, sem IA):** seção "Textos & Marca" (headline/subtítulo/CTA + upload de logo local + layout embaixo/centro); camadas sobrepostas à base no painel Resultado, escala via container-query (`cqw`), edição ao vivo sem nova geração. Export em arquivo (server/Playwright) e brand-kit/templates persistidos = fatias seguintes.
+- **VIRADA (2026-06-10) → geração INTEGRADA é o padrão.** A IA (`gpt-image-2`) renderiza o criativo COMPLETO (texto + composição + logo integrados) — validado empiricamente, nível agência. O overlay DOM/Pillow virou modo de precisão secundário. `GeradorCriativos.tsx` reescrito: upload de **Modelo de exemplo** (referência) + **Logo**, campos de campanha/copy, toggle **Simples/Rico** (rico = bullets+selo+copy extra), formato, avançado (qualidade medium/high, estilo, `force_real_logo`). Liga ao `POST /design/gerar` (SSE) mandando logo+referência em base64; resultado já vem montado (sem overlay). Spec: `op7nexo-api/docs/specs/gerador-criativos/`.
 
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
