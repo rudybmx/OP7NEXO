@@ -33,9 +33,9 @@ const REF_USOS = [
 ]
 const AJUSTES = [
   { id: 'fiel', label: 'Fiel' },
-  { id: 'equilibrado', label: 'Equilibrado' },
   { id: 'livre', label: 'Livre' },
 ]
+const LOGO_POSICOES = ['topo-esquerda', 'topo-central', 'topo-direita', 'rodape-esquerda', 'rodape-central', 'rodape-direita']
 
 interface HistItem { id: string; url: string; titulo: string; at: number }
 
@@ -174,15 +174,27 @@ export function GeradorCriativos() {
   }
 
   // Helpers imutáveis para editar o creative_spec
-  const setRegiao = (chave: string, patch: Record<string, unknown>) =>
-    setCreativeSpec((s: any) => s && ({ ...s, regions: { ...s.regions, [chave]: { ...(s.regions?.[chave] || {}), ...patch } } }))
-  const setBulletSpec = (i: number, text: string) =>
+  // Editores imutáveis do creative_spec (schema rico)
+  const setCampo = (chave: string, value: unknown) =>
+    setCreativeSpec((s: any) => s && ({ ...s, [chave]: value }))
+  const setConteudo = (chave: string, value: string) =>
+    setCreativeSpec((s: any) => s && ({ ...s, conteudo_textual: { ...(s.conteudo_textual || {}), [chave]: value } }))
+  const setBulletRev = (i: number, value: string) =>
     setCreativeSpec((s: any) => {
       if (!s) return s
-      const bl = [...(s.regions?.bullets || [])]
-      bl[i] = { ...(bl[i] || {}), text }
-      return { ...s, regions: { ...s.regions, bullets: bl } }
+      const bl = [...((s.conteudo_textual?.bullets) || [])]
+      bl[i] = value
+      return { ...s, conteudo_textual: { ...(s.conteudo_textual || {}), bullets: bl } }
     })
+  const setPaletaCor = (i: number, hex: string) =>
+    setCreativeSpec((s: any) => {
+      if (!s) return s
+      const p = [...((s.paleta_de_cores) || [])]
+      p[i] = hex
+      return { ...s, paleta_de_cores: p }
+    })
+  const setLogoCampo = (chave: string, value: string) =>
+    setCreativeSpec((s: any) => s && ({ ...s, logo: { ...(s.logo || {}), [chave]: value } }))
 
   const onUpload = (setter: (s: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -329,44 +341,73 @@ export function GeradorCriativos() {
           )}
         </div>
 
-        {/* Painel Modelo Reverso — pontos editáveis extraídos do JSON */}
+        {/* Painel Modelo Reverso — análise cirúrgica + controle total */}
         {reverso && (
           <div className="space-y-3 p-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-blue)]/40 bg-[rgba(62,91,255,0.04)]">
             <div className="flex items-center justify-between">
-              <label className={labelCls}><Wand2 size={14} className="text-[var(--ws-blue)]" /> Pontos do modelo</label>
+              <label className={labelCls}><Wand2 size={14} className="text-[var(--ws-blue)]" /> Modelo Reverso</label>
               <button onClick={analisarModelo} disabled={analyzing || !referenceUrl}
                 className="text-[10px] font-bold uppercase text-[var(--ws-blue)] disabled:opacity-40">{analyzing ? 'Analisando...' : 'Re-analisar'}</button>
             </div>
-            {analyzing && <div className="text-[11px] text-[var(--ws-text-3)]">Lendo o modelo de exemplo (visão)...</div>}
+            <div className="text-[10px] font-medium text-[var(--ws-gold)]">⚡ Edição detalhada — consome ~3 créditos</div>
+            {analyzing && <div className="text-[11px] text-[var(--ws-text-3)]">Lendo o modelo de forma cirúrgica (visão)...</div>}
             {!analyzing && !creativeSpec && (
               <button onClick={analisarModelo} disabled={!referenceUrl}
                 className="w-full h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold uppercase bg-[var(--ws-blue)] text-white disabled:opacity-40">Analisar modelo de exemplo</button>
             )}
             {creativeSpec && (
-              <div className="space-y-2">
-                <input value={creativeSpec.regions?.headline?.text || ''} onChange={e => setRegiao('headline', { text: e.target.value })} placeholder="Headline" className={inputCls} />
-                <input value={creativeSpec.regions?.subheadline?.text || ''} onChange={e => setRegiao('subheadline', { text: e.target.value })} placeholder="Subtítulo" className={inputCls} />
-                {(creativeSpec.regions?.bullets || []).map((b: any, i: number) => (
-                  <input key={i} value={b?.text || ''} onChange={e => setBulletSpec(i, e.target.value)} placeholder={`Bullet ${i + 1}`} className={inputCls} />
-                ))}
-                <div className="grid grid-cols-2 gap-2">
-                  <input value={creativeSpec.regions?.cta?.text || ''} onChange={e => setRegiao('cta', { text: e.target.value })} placeholder="CTA" className={inputCls} />
-                  <input value={creativeSpec.regions?.footer?.text || ''} onChange={e => setRegiao('footer', { text: e.target.value })} placeholder="Rodapé" className={inputCls} />
+              <div className="space-y-3">
+                <div>
+                  <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Descrição (espinha da geração)</span>
+                  <textarea value={creativeSpec.descricao || ''} onChange={e => setCampo('descricao', e.target.value)}
+                    className="w-full h-24 p-2 mt-1 bg-[var(--ws-glass-bg)] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)] text-[12px] text-[var(--ws-text-1)] focus:outline-none focus:border-[var(--ws-blue)] resize-none" />
                 </div>
-                <div className="flex items-center gap-2 flex-wrap pt-1">
-                  <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Paleta:</span>
-                  {(creativeSpec.palette || []).map((c: string, i: number) => (
-                    <span key={i} className="w-5 h-5 rounded border border-white/50 shadow-sm" style={{ background: c }} title={c} />
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={creativeSpec.objetivo_do_criativo || ''} onChange={e => setCampo('objetivo_do_criativo', e.target.value)} placeholder="Objetivo" className={inputCls} />
+                  <input value={creativeSpec.estilo_visual || ''} onChange={e => setCampo('estilo_visual', e.target.value)} placeholder="Estilo visual" className={inputCls} />
+                  <input value={creativeSpec.estilo || ''} onChange={e => setCampo('estilo', e.target.value)} placeholder="Estilo" className={inputCls} />
+                  <input value={creativeSpec.tom || ''} onChange={e => setCampo('tom', e.target.value)} placeholder="Tom" className={inputCls} />
+                </div>
+                <input value={creativeSpec.personagem || ''} onChange={e => setCampo('personagem', e.target.value)} placeholder="Personagem" className={inputCls} />
+                <input value={creativeSpec.composicao_visual || ''} onChange={e => setCampo('composicao_visual', e.target.value)} placeholder="Composição visual" className={inputCls} />
+                <div className="space-y-2 pt-2 border-t border-[var(--ws-glass-border)]">
+                  <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Conteúdo textual</span>
+                  <input value={creativeSpec.conteudo_textual?.headline || ''} onChange={e => setConteudo('headline', e.target.value)} placeholder="Headline" className={inputCls} />
+                  <input value={creativeSpec.conteudo_textual?.subheadline || ''} onChange={e => setConteudo('subheadline', e.target.value)} placeholder="Subtítulo" className={inputCls} />
+                  {(creativeSpec.conteudo_textual?.bullets || []).map((b: any, i: number) => (
+                    <input key={i} value={typeof b === 'string' ? b : (b?.text || '')} onChange={e => setBulletRev(i, e.target.value)} placeholder={`Bullet ${i + 1}`} className={inputCls} />
                   ))}
-                  <span className="text-[9px] text-[var(--ws-text-3)]">· logo: {creativeSpec.regions?.logo?.present ? `${creativeSpec.regions.logo.position}` : 'ausente'}</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={creativeSpec.conteudo_textual?.cta || ''} onChange={e => setConteudo('cta', e.target.value)} placeholder="CTA" className={inputCls} />
+                    <input value={creativeSpec.conteudo_textual?.footer || ''} onChange={e => setConteudo('footer', e.target.value)} placeholder="Rodapé" className={inputCls} />
+                  </div>
                 </div>
                 <div>
-                  <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Densidade de ajuste</span>
-                  <div className="grid grid-cols-3 gap-2 mt-1">
-                    {AJUSTES.map(a => (
-                      <button key={a.id} onClick={() => setDensidadeAjuste(a.id)}
-                        className={`h-7 rounded-md text-[10px] font-medium border transition-all ${densidadeAjuste === a.id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>{a.label}</button>
+                  <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Paleta (clique para alterar)</span>
+                  <div className="flex items-center gap-2 flex-wrap mt-1">
+                    {(creativeSpec.paleta_de_cores || []).map((c: string, i: number) => (
+                      <label key={i} className="relative w-7 h-7 rounded-md overflow-hidden border border-white/50 shadow-sm cursor-pointer" style={{ background: c }} title={c}>
+                        <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(c) ? c : '#000000'} onChange={e => setPaletaCor(i, e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                      </label>
                     ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Posição da logo</span>
+                    <select value={creativeSpec.logo?.posicao || 'topo-esquerda'} onChange={e => setLogoCampo('posicao', e.target.value)}
+                      className="w-full h-8 mt-1 px-2 bg-white border border-[var(--ws-glass-border)] rounded-md text-[11px] focus:outline-none">
+                      {LOGO_POSICOES.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Densidade de ajuste</span>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {AJUSTES.map(a => (
+                        <button key={a.id} onClick={() => setDensidadeAjuste(a.id)}
+                          className={`h-8 rounded-md text-[10px] font-medium border transition-all ${densidadeAjuste === a.id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>{a.label}</button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
