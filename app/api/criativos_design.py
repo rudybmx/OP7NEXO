@@ -363,3 +363,31 @@ def gerar(
                 )
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+class AnalisarModeloIn(BaseModel):
+    workspace_id: uuid.UUID
+    referencia_base64: str
+
+
+@router.post("/analisar-modelo")
+def analisar_modelo(
+    payload: AnalisarModeloIn,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Prompt-reverso: extrai um creative_spec JSON da referência (modelo de visão)."""
+    verificar_acesso_workspace(usuario, payload.workspace_id, db)
+    img = _decode_img(payload.referencia_base64)
+    if not img:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Imagem de referência inválida")
+    from app.services import creative_vision
+
+    try:
+        spec, usage = creative_vision.extrair_creative_spec(img)
+    except Exception as exc:  # noqa: BLE001
+        code, msg = image_gen._map_error(exc)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, detail={"error_code": code, "error_message": msg}
+        )
+    return {"creative_spec": spec, "usage": usage}
