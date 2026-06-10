@@ -248,70 +248,75 @@ _FORBIDDEN_TXT = (
 
 
 def _prompt_reverso(cs: dict, densidade_ajuste: str) -> str:
-    """Monta o prompt a partir de um creative_spec extraído (e editado) — Modelo Reverso."""
-    regions = cs.get("regions") or {}
-    L: list[str] = [
-        "Recrie este criativo publicitário para Meta Ads seguindo FIELMENTE a composição, "
-        "posições, hierarquia e estilo do modelo de referência descritos abaixo. "
-        "Use a imagem de referência enviada como guia visual."
-    ]
-    if cs.get("format"):
-        L.append(f"Formato: {cs['format']}.")
-    if cs.get("style"):
-        L.append(f"Estilo: {cs['style']}.")
-    if cs.get("mood"):
-        L.append(f"Mood: {cs['mood']}.")
-    if cs.get("background"):
-        L.append(f"Fundo: {cs['background']}.")
-    if cs.get("palette"):
-        L.append("Paleta (use exatamente estas cores): " + ", ".join(cs["palette"]) + ".")
-    subs = cs.get("subjects") or []
-    if subs:
-        L.append(
-            "Sujeitos: "
-            + "; ".join(
-                f"{s.get('description', '')} (posição {s.get('position', '')})" for s in subs
-            )
-            + "."
-        )
-    h = regions.get("headline") or {}
-    if h.get("text"):
-        L.append(
-            f'Headline "{h["text"]}" — posição {h.get("position", "")}, estilo {h.get("style", "")}.'
-        )
-    sh = regions.get("subheadline") or {}
-    if sh.get("text"):
-        L.append(f'Subtítulo "{sh["text"]}" — posição {sh.get("position", "")}.')
-    bl = [b for b in (regions.get("bullets") or []) if b.get("text")]
-    if bl:
-        L.append(
-            "Bullets de benefício com ícones elegantes: "
-            + "; ".join(f'"{b["text"]}"' for b in bl)
-            + "."
-        )
-    cta = regions.get("cta") or {}
-    if cta.get("text"):
-        L.append(
-            f'CTA "{cta["text"]}" — {cta.get("shape", "botão")} na cor {cta.get("color", "")}, '
-            f'posição {cta.get("position", "")}.'
-        )
-    ft = regions.get("footer") or {}
-    if ft.get("text"):
-        L.append(f'Rodapé "{ft["text"]}" — posição {ft.get("position", "")}.')
-    logo = regions.get("logo") or {}
-    if logo.get("present"):
-        L.append(
-            f"Deixe uma área LIMPA em {logo.get('position', 'topo')} "
-            f"(tamanho {logo.get('size', 'média')}) para a logo — NÃO desenhe nenhuma "
-            "logo, marca ou nome de marca você mesmo; a logo real será aplicada ali depois."
-        )
-    aj = (densidade_ajuste or "fiel").lower()
-    if aj == "livre":
-        L.append("Você tem liberdade criativa para aprimorar a composição, mantendo a essência do modelo.")
-    elif aj == "equilibrado":
-        L.append("Equilibre fidelidade ao layout do modelo com bom acabamento.")
+    """Monta o prompt a partir do creative_spec rico (extraído e editado) — Modelo Reverso.
+
+    Usa a `descricao` como espinha + `conteudo_textual` (textos exatos) + paleta +
+    categorias. Aceita o schema legado (`regions`) como fallback.
+    """
+    ct = cs.get("conteudo_textual") or {}
+    if not ct and cs.get("regions"):  # fallback schema legado
+        reg = cs["regions"]
+        ct = {
+            "headline": (reg.get("headline") or {}).get("text", ""),
+            "subheadline": (reg.get("subheadline") or {}).get("text", ""),
+            "bullets": [b.get("text", "") for b in (reg.get("bullets") or [])],
+            "cta": (reg.get("cta") or {}).get("text", ""),
+            "footer": (reg.get("footer") or {}).get("text", ""),
+        }
+    logo = cs.get("logo") or (cs.get("regions") or {}).get("logo") or {}
+
+    L: list[str] = []
+    desc = cs.get("descricao")
+    if desc:
+        L.append("Recrie um criativo publicitário para Meta Ads com base nesta descrição detalhada do modelo: " + desc)
     else:
-        L.append("Mantenha-se MUITO fiel ao layout/posições/proporções do modelo; mude só o conteúdo indicado.")
+        L.append("Recrie o criativo seguindo FIELMENTE a referência enviada.")
+    if cs.get("objetivo_do_criativo"):
+        L.append(f"Objetivo: {cs['objetivo_do_criativo']}.")
+    if cs.get("estilo_visual"):
+        L.append(f"Estilo visual: {cs['estilo_visual']}.")
+    if cs.get("estilo"):
+        L.append(f"Estilo: {cs['estilo']}.")
+    if cs.get("tom"):
+        L.append(f"Tom: {cs['tom']}.")
+    if cs.get("personagem"):
+        L.append(f"Personagem: {cs['personagem']}.")
+    if cs.get("composicao_visual"):
+        L.append(f"Composição visual: {cs['composicao_visual']}.")
+    pal = cs.get("paleta_de_cores") or cs.get("palette") or []
+    if pal:
+        L.append("Paleta (use exatamente estas cores): " + ", ".join(pal) + ".")
+
+    def _b(x):
+        return x.get("text", "") if isinstance(x, dict) else x
+
+    textos: list[str] = []
+    if ct.get("headline"):
+        textos.append(f'Headline "{ct["headline"]}"')
+    if ct.get("subheadline"):
+        textos.append(f'Subtítulo "{ct["subheadline"]}"')
+    bl = [_b(b) for b in (ct.get("bullets") or []) if _b(b)]
+    if bl:
+        textos.append("Bullets com ícones: " + "; ".join(f'"{b}"' for b in bl))
+    if ct.get("cta"):
+        textos.append(f'CTA "{ct["cta"]}"')
+    if ct.get("footer"):
+        textos.append(f'Rodapé "{ct["footer"]}"')
+    if textos:
+        L.append("Escreva EXATAMENTE estes textos, integrados à arte com hierarquia: " + "; ".join(textos) + ".")
+
+    if logo.get("present"):
+        obs = logo.get("observacao") or ""
+        L.append(
+            f"Deixe uma área LIMPA em {logo.get('posicao') or logo.get('position') or 'topo'} "
+            f"para a logo {('(' + obs + ')') if obs else ''} — NÃO desenhe nenhuma logo, marca "
+            "ou nome de marca você mesmo; a logo real será aplicada ali depois."
+        )
+
+    if (densidade_ajuste or "fiel").lower() == "livre":
+        L.append("Modo LIVRE: use a descrição como base e aprimore a composição livremente, mantendo a essência e aplicando a paleta indicada.")
+    else:
+        L.append("Modo FIEL: replique EXATAMENTE o layout, posições, proporções e a paleta do modelo; mude apenas o conteúdo textual indicado.")
     L.append(_BASE_TXT + " " + _FORBIDDEN_TXT)
     return "\n".join(L)
 
@@ -494,7 +499,7 @@ def executar_geracao_integrada(
 
         # Logo real composta: por REGIÃO (Modelo Reverso) ou overlay legado (force_real_logo)
         cs = spec.get("creative_spec") or {}
-        logo_region = (cs.get("regions") or {}).get("logo") or {}
+        logo_region = cs.get("logo") or (cs.get("regions") or {}).get("logo") or {}
         por_regiao = (
             spec.get("reference_usage") == "modelo_reverso"
             and logo_bytes
@@ -509,8 +514,8 @@ def executar_geracao_integrada(
                         content,
                         logo_bytes,
                         creative_format=ger.creative_format,
-                        position=logo_region.get("position", "topo-esquerda"),
-                        size=logo_region.get("size", "media"),
+                        position=logo_region.get("posicao") or logo_region.get("position") or "topo-esquerda",
+                        size=logo_region.get("tamanho") or logo_region.get("size") or "media",
                     )
                 else:
                     content = criativo_render.aplicar_logo(

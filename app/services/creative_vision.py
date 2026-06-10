@@ -15,45 +15,41 @@ from app.services.image_gen import _image_client
 
 log = logging.getLogger(__name__)
 
-_SCHEMA_PROMPT = """Analise este criativo publicitário e devolva SOMENTE um JSON (creative_spec) com:
+_SCHEMA_PROMPT = """Você é diretor de arte. Analise este criativo publicitário de forma CIRÚRGICA e detalhada e devolva SOMENTE um JSON (creative_spec) com:
 {
- "format": "ex 4:5",
- "mood": "", "style": "",
- "palette": ["#hex", "..."],
- "background": "descrição curta",
- "subjects": [{"type":"","description":"","position":"ex direita"}],
- "regions": {
-   "logo": {"present": true, "position": "ex topo-esquerda", "size": "pequena|media|grande"},
-   "headline": {"text":"","position":"","style":"ex bold serif branca"},
-   "subheadline": {"text":"","position":""},
-   "bullets": [{"text":"","icon":""}],
-   "cta": {"text":"","position":"","shape":"pill","color":"#hex"},
-   "footer": {"text":"","position":""}
- },
- "density": "simples|rico"
+ "formato": "ex 4:5",
+ "descricao": "UM parágrafo rico e detalhado descrevendo a imagem inteira como um prompt de geração completo (fundo, cores, personagem, pose, iluminação, posição da logo, textos e suas cores, ícones, botões, rodapé, estilo)",
+ "objetivo_do_criativo": "ex: gerar agendamento / institucional",
+ "estilo": "", "tom": "", "estilo_visual": "ex: clean premium, glass, editorial",
+ "paleta_de_cores": ["#hex", "..."],
+ "personagem": "descrição do personagem/sujeito principal, ou 'sem pessoa'",
+ "composicao_visual": "layout, posições e hierarquia (onde fica cada elemento)",
+ "conteudo_textual": {"headline":"","subheadline":"","bullets":["..."],"cta":"","footer":""},
+ "logo": {"present": true, "posicao":"ex topo-central", "tamanho":"pequena|media|grande", "observacao":"onde a logo está apoiada (faixa/área limpa) para não cobrir texto"}
 }
-Use posições em português (topo-esquerda, rodapé-centro, etc.). Responda só o JSON, sem comentários."""
+Use posições em português (topo-esquerda, topo-central, rodapé-centro, etc.). Seja fiel ao que está na imagem. Responda só o JSON, sem comentários."""
 
 
 def _normalizar(spec: dict) -> dict:
-    """Garante as chaves mínimas (campos faltantes → default seguro)."""
+    """Garante as chaves mínimas (campos faltantes → default seguro); aceita schema legado."""
     if not isinstance(spec, dict):
         spec = {}
-    spec.setdefault("format", None)
-    spec.setdefault("mood", None)
-    spec.setdefault("style", None)
-    spec.setdefault("palette", [])
-    spec.setdefault("background", None)
-    spec.setdefault("subjects", [])
-    reg = spec.setdefault("regions", {})
-    if not isinstance(reg, dict):
-        reg = spec["regions"] = {}
-    logo = reg.setdefault("logo", {})
-    logo.setdefault("present", False)
+    spec.setdefault("formato", spec.get("format"))
+    for k in ("descricao", "objetivo_do_criativo", "estilo", "tom", "estilo_visual", "personagem", "composicao_visual"):
+        spec.setdefault(k, None)
+    spec.setdefault("paleta_de_cores", spec.get("palette") or [])
+    ct = spec.setdefault("conteudo_textual", {})
+    if not isinstance(ct, dict):
+        ct = spec["conteudo_textual"] = {}
     for k in ("headline", "subheadline", "cta", "footer"):
-        reg.setdefault(k, {})
-    reg.setdefault("bullets", [])
-    spec.setdefault("density", "simples")
+        ct.setdefault(k, "")
+    ct.setdefault("bullets", [])
+    logo = spec.setdefault("logo", {})
+    if not isinstance(logo, dict):
+        logo = spec["logo"] = {}
+    logo.setdefault("present", False)
+    logo.setdefault("posicao", logo.get("position") or "topo-esquerda")
+    logo.setdefault("tamanho", logo.get("size") or "media")
     return spec
 
 
