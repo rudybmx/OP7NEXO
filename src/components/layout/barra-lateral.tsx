@@ -79,6 +79,7 @@ const mapaIcones: Record<string, any> = {
   BarChart2,
   Calendar,
   Sparkles,
+  CreditCard,
   Code2,
   Users,
   MessageSquare,
