@@ -291,6 +291,10 @@ class GerarIn(BaseModel):
     tone: Optional[str] = None
     primary_color: Optional[str] = None
     secondary_color: Optional[str] = None
+    cor_60: Optional[str] = None  # dominante (~60%)
+    cor_30: Optional[str] = None  # secundária (~30%)
+    cor_10: Optional[str] = None  # detalhe/acento (~10%)
+    logo_mode: str = "compor"  # "compor" (logo real composta) | "integrar" (modelo desenha)
     briefing: Optional[str] = Field(default=None, max_length=4000)
     reference_usage: Optional[str] = "style_and_composition"
     creative_spec: Optional[dict] = None  # Modelo Reverso: spec extraído (e editado)

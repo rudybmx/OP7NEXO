@@ -247,7 +247,7 @@ _FORBIDDEN_TXT = (
 )
 
 
-def _prompt_reverso(cs: dict, densidade_ajuste: str) -> str:
+def _prompt_reverso(cs: dict, densidade_ajuste: str, logo_mode: str = "compor") -> str:
     """Monta o prompt a partir do creative_spec rico (extraído e editado) — Modelo Reverso.
 
     Usa a `descricao` como espinha + `conteudo_textual` (textos exatos) + paleta +
@@ -306,12 +306,16 @@ def _prompt_reverso(cs: dict, densidade_ajuste: str) -> str:
         L.append("Escreva EXATAMENTE estes textos, integrados à arte com hierarquia: " + "; ".join(textos) + ".")
 
     if logo.get("present"):
-        obs = logo.get("observacao") or ""
-        L.append(
-            f"Deixe uma área LIMPA em {logo.get('posicao') or logo.get('position') or 'topo'} "
-            f"para a logo {('(' + obs + ')') if obs else ''} — NÃO desenhe nenhuma logo, marca "
-            "ou nome de marca você mesmo; a logo real será aplicada ali depois."
-        )
+        pos = logo.get("posicao") or logo.get("position") or "topo"
+        if logo_mode == "integrar":
+            L.append(f"Integre a logo enviada de forma fiel e elegante em {pos}, sem distorcer.")
+        else:
+            obs = logo.get("observacao") or ""
+            L.append(
+                f"Deixe a área de {pos} como FUNDO NATURAL LIMPO para a logo {('(' + obs + ')') if obs else ''} — "
+                "NÃO desenhe logo, marca, nome de marca, caixa, moldura, contorno ou placeholder; "
+                "ignore qualquer menção a logo/marca na descrição; a logo real será aplicada ali depois."
+            )
 
     if (densidade_ajuste or "fiel").lower() == "livre":
         L.append("Modo LIVRE: use a descrição como base e aprimore a composição livremente, mantendo a essência e aplicando a paleta indicada.")
@@ -327,7 +331,7 @@ def montar_prompt_integrado(
     g = spec.get
     cs = g("creative_spec") or {}
     if g("reference_usage") == "modelo_reverso" and cs:
-        return _prompt_reverso(cs, g("densidade_ajuste") or "fiel")
+        return _prompt_reverso(cs, g("densidade_ajuste") or "fiel", g("logo_mode") or "compor")
     L: list[str] = [
         "Você é diretor de arte de performance. Crie um criativo publicitário "
         "PROFISSIONAL e premium, pronto para Meta Ads, com todo o texto e a marca "
@@ -346,12 +350,18 @@ def montar_prompt_integrado(
     replica = tem_referencia and (g("reference_usage") == "replica")
 
     # No modo réplica, a referência manda na paleta — as cores da marca NÃO repintam.
-    cores = [c for c in (g("primary_color"), g("secondary_color")) if c]
-    if cores and not replica:
-        L.append(
-            "Paleta da MARCA (use como cores predominantes da arte — fundos, "
-            "destaques, formas e botão): " + ", ".join(cores) + "."
-        )
+    c60 = g("cor_60") or g("primary_color")
+    c30 = g("cor_30") or g("secondary_color")
+    c10 = g("cor_10")
+    if (c60 or c30 or c10) and not replica:
+        partes_cor = []
+        if c60:
+            partes_cor.append(f"{c60} como cor DOMINANTE (~60%: fundos e áreas amplas)")
+        if c30:
+            partes_cor.append(f"{c30} como SECUNDÁRIA (~30%)")
+        if c10:
+            partes_cor.append(f"{c10} como DETALHE/ACENTO (~10%: bordas, ícones, botão)")
+        L.append("Paleta da MARCA na regra 60/30/10: " + "; ".join(partes_cor) + ".")
     if tem_referencia:
         if replica:
             L.append(
@@ -371,10 +381,17 @@ def montar_prompt_integrado(
                 f"Use a imagem de REFERÊNCIA enviada {traduz}, sem copiar literalmente."
             )
     if tem_logo:
-        L.append(
-            "Use a LOGO enviada de forma fiel (sem redesenhar nem distorcer), "
-            "posicionada de forma discreta e profissional (topo ou rodapé)."
-        )
+        if (g("logo_mode") or "compor") == "integrar":
+            L.append(
+                "Use a LOGO enviada de forma fiel (sem redesenhar nem distorcer), "
+                "posicionada de forma discreta e profissional (topo ou rodapé)."
+            )
+        else:
+            L.append(
+                "Deixe uma área de canto (topo ou rodapé) como fundo natural limpo para a logo "
+                "— NÃO desenhe logo, marca, caixa, moldura, contorno ou placeholder; a logo real "
+                "será aplicada ali depois."
+            )
     rico = (g("densidade") or "simples") == "rico"
 
     copy_parts: list[str] = []
@@ -468,10 +485,13 @@ def executar_geracao_integrada(
     """Gera a arte integrada (images.edit se houver logo/ref; senão generate)."""
     spec = ger.params_json or {}
     quality = spec.get("quality", "medium")
+    logo_mode = spec.get("logo_mode", "compor")
     try:
         client = _image_client()
         imagens: list[tuple[str, bytes, str]] = []
-        if logo_bytes:
+        # No modo "compor" a logo NÃO vai ao modelo (pra ele não desenhar nada);
+        # é composta depois. No "integrar" a logo vai e o modelo a desenha.
+        if logo_bytes and logo_mode == "integrar":
             imagens.append(("logo.png", logo_bytes, "image/png"))
         if referencia_bytes:
             imagens.append(("referencia.png", referencia_bytes, "image/png"))
@@ -497,32 +517,22 @@ def executar_geracao_integrada(
         resp = raw.parse()
         content = base64.b64decode(resp.data[0].b64_json)
 
-        # Logo real composta: por REGIÃO (Modelo Reverso) ou overlay legado (force_real_logo)
-        cs = spec.get("creative_spec") or {}
-        logo_region = cs.get("logo") or (cs.get("regions") or {}).get("logo") or {}
-        por_regiao = (
-            spec.get("reference_usage") == "modelo_reverso"
-            and logo_bytes
-            and logo_region.get("present")
-        )
-        if logo_bytes and (por_regiao or spec.get("force_real_logo")):
+        # Modo "compor": compõe a logo real na posição (do JSON no reverso; default nos demais)
+        if logo_bytes and logo_mode == "compor":
+            cs = spec.get("creative_spec") or {}
+            logo_region = cs.get("logo") or (cs.get("regions") or {}).get("logo") or {}
             try:
                 from app.services import criativo_render
 
-                if por_regiao:
-                    content = criativo_render.aplicar_logo(
-                        content,
-                        logo_bytes,
-                        creative_format=ger.creative_format,
-                        position=logo_region.get("posicao") or logo_region.get("position") or "topo-esquerda",
-                        size=logo_region.get("tamanho") or logo_region.get("size") or "media",
-                    )
-                else:
-                    content = criativo_render.aplicar_logo(
-                        content, logo_bytes, creative_format=ger.creative_format, badge=True
-                    )
+                content = criativo_render.aplicar_logo(
+                    content,
+                    logo_bytes,
+                    creative_format=ger.creative_format,
+                    position=logo_region.get("posicao") or logo_region.get("position") or "topo-esquerda",
+                    size=logo_region.get("tamanho") or logo_region.get("size") or "media",
+                )
             except Exception as exc:  # noqa: BLE001
-                log.warning("[image_gen] overlay de logo falhou geracao=%s: %s", ger.id, exc)
+                log.warning("[image_gen] composicao de logo falhou geracao=%s: %s", ger.id, exc)
 
         object_name = f"workspaces/{ger.workspace_id}/criativos/finais/{ger.id}.png"
         put_bytes(settings.MINIO_BUCKET_CRIATIVOS, object_name, content, "image/png")
