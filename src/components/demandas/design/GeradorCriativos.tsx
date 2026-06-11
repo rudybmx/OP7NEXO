@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Sparkles, Image as ImageIcon, Type, Layout, History, Send, AlertCircle,
   Download, Upload, Wand2, Trash2, Palette,
@@ -173,7 +173,12 @@ function BotaoIA({ loading, onClick, label }: { loading: boolean; onClick: () =>
   )
 }
 
-export function GeradorCriativos() {
+// Seed vindo da aba "Modelos": estrutura (pré-preenche copy) ou referência (imagem).
+export type SeedModelo =
+  | { tipo: 'estrutura'; estrutura: Record<string, any> | null; nonce: number }
+  | { tipo: 'referencia'; dataUrl: string; nome?: string; nonce: number }
+
+export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModelo | null } = {}) {
   const { workspaceAtual: wsId } = useWorkspace()
 
   const [referenceUrl, setReferenceUrl] = useState<string | null>(null)
@@ -340,6 +345,28 @@ export function GeradorCriativos() {
       setGerandoPacote(false)
     }
   }
+
+  // Aplica um modelo escolhido na aba "Modelos" (re-dispara a cada escolha via nonce).
+  useEffect(() => {
+    if (!seedModelo) return
+    if (seedModelo.tipo === 'estrutura' && seedModelo.estrutura) {
+      const e = seedModelo.estrutura
+      if (e.objetivo) setObjetivo(e.objetivo)
+      if (e.densidade === 'simples' || e.densidade === 'rico') setDensidade(e.densidade)
+      if (e.headline) setHeadline(e.headline)
+      if (e.subheadline) setSubheadline(e.subheadline)
+      if (e.cta) setCta(e.cta)
+      if (Array.isArray(e.bullets)) setBullets([e.bullets[0] || '', e.bullets[1] || '', e.bullets[2] || ''])
+      if (e.selo) setSelo(e.selo)
+      if (referenceUsage === 'modelo_reverso') setReferenceUsage('style_and_composition')
+      toast.success('Estrutura aplicada — ajuste o briefing e gere os textos com IA')
+    } else if (seedModelo.tipo === 'referencia' && seedModelo.dataUrl) {
+      setReferenceUrl(seedModelo.dataUrl)
+      setReferenceUsage('style_and_composition')
+      toast.success('Modelo carregado como referência')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedModelo?.nonce])
 
   const onUpload = (setter: (s: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
