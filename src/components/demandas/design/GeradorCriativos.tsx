@@ -17,10 +17,10 @@ const FORMATS = [
 const FORMAT_TO_CREATIVE: Record<string, string> = { '45': 'feed_4x5', '11': 'feed_1x1', '916': 'story' }
 
 const OBJETIVOS = [
-  { id: 'agendamento no WhatsApp', label: 'Agendar WhatsApp' },
-  { id: 'geração de leads', label: 'Gerar lead' },
-  { id: 'divulgar oferta', label: 'Divulgar oferta' },
-  { id: 'institucional / marca', label: 'Institucional' },
+  { id: 'agendamento no WhatsApp', label: 'Agendar WhatsApp', hint: 'CTA conversacional e direto, leve urgência e baixa fricção (foco em chamar no WhatsApp).' },
+  { id: 'geração de leads', label: 'Gerar lead', hint: 'Desperta curiosidade e valor; CTA de captura ("Quero saber mais", "Receba").' },
+  { id: 'divulgar oferta', label: 'Divulgar oferta', hint: 'Escassez/urgência e destaque do benefício/oferta (senso de oportunidade).' },
+  { id: 'institucional / marca', label: 'Institucional', hint: 'Tom de autoridade e confiança, memorável, menos promocional.' },
 ]
 const ESTILOS = ['Premium', 'Lifestyle', 'Minimalista', 'Impacto visual']
 const QUALITIES = [{ id: 'medium', title: 'Equilibrada' }, { id: 'high', title: 'Alta' }]
@@ -111,6 +111,18 @@ function ColorSwatch({ label, value, onChange }: { label: string; value: string;
   )
 }
 
+function BotaoIA({ loading, onClick, label }: { loading: boolean; onClick: () => void; label?: string }) {
+  return (
+    <button type="button" onClick={onClick} disabled={loading} title="Gerar/Melhorar com IA"
+      className="shrink-0 flex items-center gap-1 px-2 h-9 rounded-[var(--ws-radius-lg)] text-[10px] font-bold uppercase text-[var(--ws-blue)] border border-[var(--ws-blue)]/40 bg-[rgba(62,91,255,0.06)] hover:bg-[rgba(62,91,255,0.12)] disabled:opacity-50 transition-all">
+      {loading
+        ? <span className="w-3 h-3 border-2 border-[var(--ws-blue)]/30 border-t-[var(--ws-blue)] rounded-full animate-spin" />
+        : <Sparkles size={12} />}
+      {label}
+    </button>
+  )
+}
+
 export function GeradorCriativos() {
   const { workspaceAtual: wsId } = useWorkspace()
 
@@ -195,6 +207,32 @@ export function GeradorCriativos() {
     })
   const setLogoCampo = (chave: string, value: string) =>
     setCreativeSpec((s: any) => s && ({ ...s, logo: { ...(s.logo || {}), [chave]: value } }))
+
+  // Assistente de copy com IA (gera/melhora um campo com gatilhos mentais por objetivo)
+  const [melhorando, setMelhorando] = useState<string | null>(null)
+  const melhorarCopy = async (campo: string, textoAtual: string, setter: (s: string) => void, loadingKey?: string) => {
+    if (!wsId) { toast.error('Selecione um workspace.'); return }
+    setMelhorando(loadingKey ?? campo)
+    try {
+      const res = await fetch('/api/proxy/design/melhorar-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken() ?? ''}` },
+        body: JSON.stringify({
+          workspace_id: wsId, campo,
+          texto_atual: textoAtual || undefined,
+          product: briefing.trim() || undefined,
+          objective: objetivo, densidade,
+        }),
+      })
+      if (!res.ok) throw new Error(`Falha ao melhorar (HTTP ${res.status})`)
+      const data = await res.json()
+      if (data?.texto) { setter(data.texto); toast.success('Texto gerado com IA') }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao melhorar o texto.')
+    } finally {
+      setMelhorando(null)
+    }
+  }
 
   const onUpload = (setter: (s: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -470,16 +508,22 @@ export function GeradorCriativos() {
         {!reverso && (<>
         {/* O que anunciar */}
         <div className="space-y-3">
-          <label className={labelCls}><Sparkles size={14} className="text-[var(--ws-blue)]" /> O que você quer anunciar?</label>
+          <div className="flex items-center justify-between gap-2">
+            <label className={labelCls}><Sparkles size={14} className="text-[var(--ws-blue)]" /> O que você quer anunciar?</label>
+            <BotaoIA loading={melhorando === 'product'} onClick={() => melhorarCopy('product', briefing, setBriefing)} label="Melhorar" />
+          </div>
           <textarea value={briefing} onChange={e => setBriefing(e.target.value)}
-            placeholder="Ex.: Implante dentário premium, para adultos perfil aspiracional..."
+            placeholder="Dê uma direção exata: produto/serviço + público + diferencial. Ex.: Implante dentário premium, sem corte, para adultos que valorizam estética. (Use ✨ Melhorar para a IA refinar.)"
             className="w-full h-20 p-3 bg-[var(--ws-glass-bg)] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)] text-sm text-[var(--ws-text-1)] placeholder:text-[var(--ws-text-3)] focus:outline-none focus:border-[var(--ws-blue)] resize-none" />
           <div className="flex flex-wrap gap-2">
             {OBJETIVOS.map(o => (
-              <button key={o.id} onClick={() => setObjetivo(o.id)}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-all ${objetivo === o.id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>
-                {o.label}
-              </button>
+              <div key={o.id} className="relative group">
+                <button onClick={() => setObjetivo(o.id)}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-all ${objetivo === o.id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>
+                  {o.label}
+                </button>
+                <div className="pointer-events-none absolute z-20 left-0 top-full mt-1 w-48 p-2 rounded-md bg-[var(--ws-navy)] text-white text-[10px] leading-snug shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">{o.hint}</div>
+              </div>
             ))}
           </div>
         </div>
@@ -487,12 +531,19 @@ export function GeradorCriativos() {
         {/* Textos da arte */}
         <div className="space-y-3">
           <label className={labelCls}><Type size={14} className="text-[var(--ws-blue)]" /> Textos da arte</label>
-          <input value={headline} onChange={e => setHeadline(e.target.value)} placeholder="Headline (ex.: A vida é ouro)" className={inputCls} />
-          <input value={subheadline} onChange={e => setSubheadline(e.target.value)} placeholder="Subtítulo (opcional)" className={inputCls} />
-          <div className="grid grid-cols-2 gap-3">
-            <input value={cta} onChange={e => setCta(e.target.value)} placeholder="CTA (Agende agora)" className={inputCls} />
-            <input value={cidade} onChange={e => setCidade(e.target.value)} placeholder="Cidade (Londrina/PR)" className={inputCls} />
+          <div className="flex gap-2">
+            <input value={headline} onChange={e => setHeadline(e.target.value)} placeholder="Headline (ex.: A vida é ouro)" className={inputCls} />
+            <BotaoIA loading={melhorando === 'headline'} onClick={() => melhorarCopy('headline', headline, setHeadline)} />
           </div>
+          <div className="flex gap-2">
+            <input value={subheadline} onChange={e => setSubheadline(e.target.value)} placeholder="Subtítulo (opcional)" className={inputCls} />
+            <BotaoIA loading={melhorando === 'subheadline'} onClick={() => melhorarCopy('subheadline', subheadline, setSubheadline)} />
+          </div>
+          <div className="flex gap-2">
+            <input value={cta} onChange={e => setCta(e.target.value)} placeholder="CTA (Agende agora)" className={inputCls} />
+            <BotaoIA loading={melhorando === 'cta'} onClick={() => melhorarCopy('cta', cta, setCta)} />
+          </div>
+          <input value={cidade} onChange={e => setCidade(e.target.value)} placeholder="Cidade (Londrina/PR)" className={inputCls} />
         </div>
 
         {/* Densidade */}
@@ -511,11 +562,20 @@ export function GeradorCriativos() {
             <div className="space-y-2 p-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[rgba(14,20,42,0.02)] animate-in slide-in-from-top-2 duration-300">
               <span className="text-[10px] font-bold uppercase text-[var(--ws-text-3)]">Bullets de benefício</span>
               {bullets.map((b, i) => (
-                <input key={i} value={b} onChange={e => setBullets(prev => prev.map((x, j) => j === i ? e.target.value : x))}
-                  placeholder={`Benefício ${i + 1}`} className={inputCls} />
+                <div key={i} className="flex gap-2">
+                  <input value={b} onChange={e => setBullets(prev => prev.map((x, j) => j === i ? e.target.value : x))}
+                    placeholder={`Benefício ${i + 1}`} className={inputCls} />
+                  <BotaoIA loading={melhorando === `bullet${i}`} onClick={() => melhorarCopy('bullet', b, (v) => setBullets(prev => prev.map((x, j) => j === i ? v : x)), `bullet${i}`)} />
+                </div>
               ))}
-              <input value={selo} onChange={e => setSelo(e.target.value)} placeholder="Selo de credibilidade (ex.: Mais de 10 anos)" className={inputCls} />
-              <input value={copyExtra} onChange={e => setCopyExtra(e.target.value)} placeholder="Copy extra (opcional)" className={inputCls} />
+              <div className="flex gap-2">
+                <input value={selo} onChange={e => setSelo(e.target.value)} placeholder="Selo de credibilidade (ex.: Mais de 10 anos)" className={inputCls} />
+                <BotaoIA loading={melhorando === 'selo'} onClick={() => melhorarCopy('selo', selo, setSelo)} />
+              </div>
+              <div className="flex gap-2">
+                <input value={copyExtra} onChange={e => setCopyExtra(e.target.value)} placeholder="Copy extra (opcional)" className={inputCls} />
+                <BotaoIA loading={melhorando === 'copy_extra'} onClick={() => melhorarCopy('copy_extra', copyExtra, setCopyExtra)} />
+              </div>
             </div>
           )}
         </div>
