@@ -17,7 +17,12 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.core.deps import get_usuario_atual, verificar_acesso_workspace
-from app.models.criativo import CriativoEstilo, CriativoGeracao, CriativoProjeto
+from app.models.criativo import (
+    CriativoEstilo,
+    CriativoGeracao,
+    CriativoModelo,
+    CriativoProjeto,
+)
 from app.models.user import User
 from app.services import criativo_render, image_gen
 from app.services.object_storage import get_object, public_url, put_bytes
@@ -477,3 +482,117 @@ def gerar_copy_endpoint(
             status.HTTP_502_BAD_GATEWAY, detail={"error_code": code, "error_message": msg}
         )
     return {"pacote": pacote, "usage": usage}
+
+
+# ───────────────────────── Modelos curados + Meus modelos ───────────────────
+def _modelo_card(m: CriativoModelo) -> dict:
+    return {
+        "id": str(m.id),
+        "escopo": "meu" if m.workspace_id else "curado",
+        "nome": m.nome,
+        "nicho": m.nicho,
+        "objetivo": m.objetivo,
+        "nivel_consciencia": m.nivel_consciencia,
+        "gancho": m.gancho,
+        "creative_format": m.creative_format,
+        "badge": m.badge,
+        "thumb_url": m.thumb_url,
+        "ai_porque": m.ai_porque,
+        "estrutura": m.estrutura_json,
+    }
+
+
+@router.get("/modelos")
+def listar_modelos(
+    workspace_id: uuid.UUID = Query(...),
+    nicho: Optional[str] = Query(None),
+    objetivo: Optional[str] = Query(None),
+    creative_format: Optional[str] = Query(None),
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Modelos curados (workspace_id NULL) + os do próprio workspace ('Meus modelos')."""
+    verificar_acesso_workspace(usuario, workspace_id, db)
+    q = db.query(CriativoModelo).filter(
+        CriativoModelo.ativo.is_(True),
+        (CriativoModelo.workspace_id.is_(None))
+        | (CriativoModelo.workspace_id == workspace_id),
+    )
+    if nicho:
+        q = q.filter(CriativoModelo.nicho == nicho)
+    if objetivo:
+        q = q.filter(CriativoModelo.objetivo == objetivo)
+    if creative_format:
+        q = q.filter(CriativoModelo.creative_format == creative_format)
+    # curados primeiro (workspace_id NULL → False ordena antes), depois recentes
+    rows = q.order_by(
+        CriativoModelo.workspace_id.isnot(None), CriativoModelo.criado_em.desc()
+    ).all()
+    return [_modelo_card(m) for m in rows]
+
+
+class CriarModeloIn(BaseModel):
+    workspace_id: uuid.UUID
+    nome: str = Field(min_length=1, max_length=120)
+    image_base64: str
+    nicho: Optional[str] = None
+    objetivo: Optional[str] = None
+    creative_format: Optional[str] = None
+
+
+@router.post("/modelos", status_code=status.HTTP_201_CREATED)
+def criar_modelo(
+    payload: CriarModeloIn,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Salva um 'Meu modelo' (referência do usuário) no workspace para reuso."""
+    verificar_acesso_workspace(usuario, payload.workspace_id, db)
+    img = _decode_img(payload.image_base64)
+    if not img:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Imagem inválida")
+
+    modelo = CriativoModelo(
+        workspace_id=payload.workspace_id,
+        nome=payload.nome.strip(),
+        nicho=payload.nicho,
+        objetivo=payload.objetivo,
+        creative_format=payload.creative_format,
+        fonte="manual",
+    )
+    db.add(modelo)
+    db.commit()
+    db.refresh(modelo)
+
+    bucket = settings.MINIO_BUCKET_CRIATIVOS
+    object_name = f"workspaces/{payload.workspace_id}/criativos/modelos/{modelo.id}.png"
+    put_bytes(bucket, object_name, img, "image/png")
+    modelo.thumb_url = public_url(bucket, object_name)
+    db.commit()
+    db.refresh(modelo)
+    return _modelo_card(modelo)
+
+
+@router.delete("/modelos/{modelo_id}")
+def deletar_modelo(
+    modelo_id: uuid.UUID,
+    workspace_id: uuid.UUID = Query(...),
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Soft-delete de um 'Meu modelo' (curados globais são read-only)."""
+    verificar_acesso_workspace(usuario, workspace_id, db)
+    m = (
+        db.query(CriativoModelo)
+        .filter(CriativoModelo.id == modelo_id, CriativoModelo.ativo.is_(True))
+        .first()
+    )
+    if not m:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Modelo não encontrado")
+    if m.workspace_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Modelo curado é read-only")
+    if m.workspace_id != workspace_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Modelo de outro workspace")
+    m.ativo = False
+    db.commit()
+    return {"ok": True}
