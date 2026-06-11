@@ -36,8 +36,17 @@ POST /estudio/creditar     { workspace_id, tokens, motivo? } (platform_admin) �
 - Lógica de saldo centralizada em `app/services/estudio_wallet.py` (saldo/tem_saldo/registrar/confirmar/creditar/debitar) — usada pelo router `/estudio` e pelo `/design/gerar`.
 - Front: tela Gerar mostra saldo + custo do criativo; botão bloqueia + link "Carregar tokens" sem saldo; modal do Reverso reflete "análise grátis, geração 3 tokens".
 
+## Admin — controle global (fase 3a, 2026-06-11, FEITO)
+
+A página **Administração › Empresas › Gestão de Tokens** (`/admin/tokens`) virou 2 abas: **Conexões** (Meta/Google, o que já existia) e **Token Estúdio** (`TokenEstudioAdmin.tsx`): resumo (tokens em circulação, clientes com saldo, recargas pendentes), confirmar recargas pendentes e **liberar/creditar tokens** para qualquer cliente. Endpoints (todos `platform_admin`):
+```
+GET  /estudio/admin/saldos              → [ { workspace_id, nome, saldo_tokens } ]  (todos os workspaces ativos)
+GET  /estudio/admin/recargas-pendentes  → [ { id, workspace_id, nome, tokens, valor_reais, criado_em } ]
+# reusa POST /estudio/creditar (liberar) e POST /estudio/recarga/{id}/confirmar
+```
+
 ## Roadmap (fases seguintes)
-- **Gateway de pagamento automático** (PIX/cartão via Mercado Pago/Asaas/Stripe + webhook que confirma a recarga). Chaves só em `.env`; o agente não insere credenciais nem executa transações (UI/integração; o cliente paga).
+- **Gateway Stripe (3b, hospedado):** `POST /estudio/checkout` (Checkout Session, cartão+PIX) + `POST /estudio/stripe/webhook` (verifica assinatura → `estudio_wallet.creditar`, idempotente por session_id). Chaves `stripe_*` só em `.env`; o agente não insere credenciais nem processa cartão (o cliente paga na página da Stripe).
 - Tela de **Vídeos**.
 
 ## Fora de escopo (fase 1)
