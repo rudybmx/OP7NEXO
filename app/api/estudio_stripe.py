@@ -141,6 +141,13 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         event = stripe.Webhook.construct_event(raw, sig, settings.stripe_webhook_secret)
     except Exception:  # noqa: BLE001  (assinatura inválida ou payload malformado)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Assinatura inválida")
-    if event.get("type") == "checkout.session.completed":
+    etype = event.get("type")
+    # Crédito em checkout.session.completed (cartão: já pago) OU
+    # async_payment_succeeded (PIX/boleto: pagamento assíncrono confirma depois).
+    # _creditar_sessao só credita se payment_status=='paid' (no PIX, o completed
+    # chega 'unpaid' → no-op) e é idempotente por session_id.
+    if etype in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
         _creditar_sessao(db, event["data"]["object"])
+    elif etype == "checkout.session.async_payment_failed":
+        log.info("[stripe] PIX/async falhou: sessão %s", (event["data"]["object"] or {}).get("id"))
     return {"received": True}

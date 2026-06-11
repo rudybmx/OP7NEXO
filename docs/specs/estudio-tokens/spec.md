@@ -51,11 +51,13 @@ Pagamento automático via **Stripe Checkout hospedado** (R$1/token). Crédito **
 ```
 POST /estudio/checkout            { workspace_id, tokens }   → { url }  (Checkout Session; metadata={workspace_id,tokens})
 POST /estudio/checkout/confirmar  { workspace_id, session_id } → { pago, saldo_tokens }  (no retorno; retrieve+credita se paid)
-POST /estudio/stripe/webhook      (Stripe assina) → credita em checkout.session.completed (verifica assinatura com stripe_webhook_secret)
+POST /estudio/stripe/webhook      (Stripe assina) → credita em checkout.session.completed OU async_payment_succeeded (verifica assinatura com stripe_webhook_secret)
 ```
+- **Cartão vs PIX (assíncrono):** cartão paga na hora (`completed` já vem `paid`). **PIX** é assíncrono — o `completed` chega `payment_status='unpaid'` (no-op) e o crédito vem no **`checkout.session.async_payment_succeeded`** (`paid`). O handler trata os dois (`async_payment_failed` só loga); `_creditar_sessao` credita só se `payment_status=='paid'` (idempotente). PIX aparece sozinho no Checkout quando ativado no Dashboard (automatic payment methods + BRL); o webhook `we_...` está inscrito nos 3 eventos.
 - **Segredos** só no `.env` (gitignored): `stripe_secret_key`, `stripe_publishable_key`, `stripe_webhook_secret` (+ `frontend_url`). `stripe` no requirements.
 - **Front (Carregar Tokens):** botão primário **"Pagar com cartão/PIX"** → `/checkout` → redireciona; no retorno (`?session_id=`) chama `/checkout/confirmar` e credita. Recarga manual continua como secundária.
-- **⚠️ Pendências:** (1) criar o **webhook endpoint** no Dashboard Stripe apontando p/ `/estudio/stripe/webhook` e pôr o `whsec_` no `.env` (até lá, o confirm-on-return cobre o caminho feliz); (2) **PIX** aparece no Checkout se ativado no Dashboard; (3) **rotacionar** as chaves test (ficaram expostas no chat) e migrar p/ live quando for produção.
+- **Estado (2026-06-11):** conta nova `51ThCSc` (outro CNPJ); webhook `we_1ThD2B` criado via API, inscrito em `completed`+`async_payment_succeeded`+`async_payment_failed`, `whsec_` no `.env`. Cartão validado E2E (confirm-on-return + webhook creditam, sem duplicar). Código de PIX pronto.
+- **⚠️ Pendências:** (1) **ativar PIX** no Dashboard (Settings→Payment methods→Pix) p/ ele aparecer no Checkout — sessão-espelho hoje mostra só `['card']`; (2) testar PIX de ponta a ponta (sandbox simula sucesso → `async_payment_succeeded` credita); (3) **rotacionar** as chaves test (expostas no chat) + revogar a conta antiga `51ThAyn`; migrar p/ live em produção.
 
 ## Roadmap (fases seguintes)
 - Tela de **Vídeos**; relatórios de faturamento.
