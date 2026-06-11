@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     META_SYNC_WORKER_POLL_INTERVAL: int = 2
     META_SYNC_WORKER_POLL_BATCH: int = 10
 
+    # Pagamento (Stripe) — fase 3b. Chaves SÓ no .env (gitignored). O webhook
+    # verifica a assinatura com stripe_webhook_secret. Test mode no início.
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_webhook_secret: str = ""
+    frontend_url: str = "https://nexo.op7franquia.com.br"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

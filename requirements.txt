@@ -17,3 +17,4 @@ minio==7.2.8
 Pillow==11.1.0
 paramiko==3.5.0
 google-ads>=25.0.0
+stripe>=10,<13
