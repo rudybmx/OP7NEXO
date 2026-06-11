@@ -1,19 +1,21 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Sparkles, LayoutGrid } from 'lucide-react'
+import { Sparkles, LayoutGrid, History } from 'lucide-react'
 import { GeradorCriativos, type SeedModelo } from './GeradorCriativos'
 import { GaleriaModelos, type ModeloCard } from './GaleriaModelos'
+import { HistoricoCriativos } from './HistoricoCriativos'
 
-// Estúdio = 2 abas: "Gerar" (gerador) e "Modelos" (galeria curada + Meus modelos).
-// Ambas ficam montadas (toggle por display) para não perder o estado do gerador
-// ao alternar. Escolher um modelo aplica um `seed` no gerador e volta pra aba Gerar.
+// Estúdio = 3 abas: "Gerar" (gerador), "Modelos" (galeria curada + Meus modelos)
+// e "Histórico" (criativos gerados). Todas ficam montadas (toggle por display)
+// para não perder o estado do gerador. Escolher um modelo/histórico aplica um
+// `seed` no gerador e volta pra aba Gerar.
 export function EstudioCriativos() {
-  const [aba, setAba] = useState<'gerar' | 'modelos'>('gerar')
+  const [aba, setAba] = useState<'gerar' | 'modelos' | 'historico'>('gerar')
   const [seed, setSeed] = useState<SeedModelo | null>(null)
 
-  const usarEstrutura = (m: ModeloCard) => {
-    setSeed({ tipo: 'estrutura', estrutura: m.estrutura || null, nonce: Date.now() })
+  const usarEstrutura = (estrutura: Record<string, any> | null) => {
+    setSeed({ tipo: 'estrutura', estrutura, nonce: Date.now() })
     setAba('gerar')
   }
   const usarReferencia = (dataUrl: string, nome?: string) => {
@@ -24,6 +26,7 @@ export function EstudioCriativos() {
   const tabs = [
     { id: 'gerar' as const, label: 'Gerar', icon: Sparkles },
     { id: 'modelos' as const, label: 'Modelos', icon: LayoutGrid },
+    { id: 'historico' as const, label: 'Histórico', icon: History },
   ]
 
   return (
@@ -41,7 +44,10 @@ export function EstudioCriativos() {
           <GeradorCriativos seedModelo={seed} />
         </div>
         <div className={aba === 'modelos' ? 'h-full' : 'hidden'}>
-          <GaleriaModelos onUsarEstrutura={usarEstrutura} onUsarReferencia={usarReferencia} />
+          <GaleriaModelos onUsarEstrutura={(m: ModeloCard) => usarEstrutura(m.estrutura || null)} onUsarReferencia={usarReferencia} />
+        </div>
+        <div className={aba === 'historico' ? 'h-full' : 'hidden'}>
+          <HistoricoCriativos onUsarEstrutura={usarEstrutura} onUsarImagem={(d) => usarReferencia(d)} />
         </div>
       </div>
     </div>

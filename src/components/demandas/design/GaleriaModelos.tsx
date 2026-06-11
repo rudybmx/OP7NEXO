@@ -36,10 +36,14 @@ const proxied = (url: string) => url.replace(/^https?:\/\/[^/]+/, '/api/proxy')
 
 function Thumb({ m }: { m: ModeloCard }) {
   if (m.thumb_url) {
-    return <img src={m.thumb_url} alt={m.nome} className="w-full h-32 object-cover" />
+    return (
+      <div className="w-full aspect-[9/16] bg-[var(--ws-navy)] flex items-center justify-center overflow-hidden">
+        <img src={m.thumb_url} alt={m.nome} className="max-w-full max-h-full object-contain" />
+      </div>
+    )
   }
   return (
-    <div className="w-full h-32 flex flex-col items-center justify-center gap-1 bg-[linear-gradient(135deg,rgba(62,91,255,0.12),rgba(122,90,248,0.12))]">
+    <div className="w-full aspect-[9/16] flex flex-col items-center justify-center gap-1 bg-[linear-gradient(135deg,rgba(62,91,255,0.12),rgba(122,90,248,0.12))]">
       <LayoutGrid size={22} className="text-[var(--ws-blue)] opacity-50" />
       <span className="text-[9px] uppercase tracking-wider text-[var(--ws-text-3)]">{m.nicho || 'Modelo'}</span>
     </div>

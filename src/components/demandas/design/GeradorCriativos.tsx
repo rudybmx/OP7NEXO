@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import {
   Sparkles, Image as ImageIcon, Type, Layout, History, Send, AlertCircle,
-  Download, Upload, Wand2, Trash2, Palette,
+  Download, Upload, Wand2, Trash2, Palette, Save, FolderOpen, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getToken } from '@/lib/api-client'
@@ -121,16 +121,16 @@ function UploadCard({ url, onChange, onClear, label, hint }: {
   url: string | null; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; onClear: () => void; label: string; hint: string
 }) {
   return url ? (
-    <div className="flex items-center gap-3 p-2 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)]">
-      <img src={url} alt={label} className="w-12 h-12 rounded object-contain bg-white/40 shrink-0" />
-      <div className="flex-1 min-w-0 text-[11px] text-[var(--ws-text-2)] truncate">{label} enviado</div>
-      <button onClick={onClear} className="text-[var(--ws-text-3)] hover:text-[#a32d2d] p-1"><Trash2 size={15} /></button>
+    <div className="relative h-[280px] rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] overflow-hidden">
+      <img src={url} alt={label} className="w-full h-full object-contain" />
+      <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/45 text-white text-[10px] font-medium">{label}</span>
+      <button onClick={onClear} className="absolute top-2 right-2 p-1.5 rounded-md bg-black/45 text-white hover:bg-[#a32d2d] transition-all"><Trash2 size={15} /></button>
     </div>
   ) : (
-    <label className="cursor-pointer flex flex-col items-center justify-center gap-1 h-[68px] rounded-[var(--ws-radius-lg)] border border-dashed border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] hover:border-[var(--ws-blue)] transition-all text-center px-3">
-      <Upload size={16} className="text-[var(--ws-text-3)]" />
-      <span className="text-[11px] font-medium text-[var(--ws-text-2)]">{label}</span>
-      <span className="text-[9px] text-[var(--ws-text-3)]">{hint}</span>
+    <label className="cursor-pointer flex flex-col items-center justify-center gap-2 h-[280px] rounded-[var(--ws-radius-lg)] border border-dashed border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] hover:border-[var(--ws-blue)] transition-all text-center px-3">
+      <Upload size={22} className="text-[var(--ws-text-3)]" />
+      <span className="text-[12px] font-medium text-[var(--ws-text-2)]">{label}</span>
+      <span className="text-[10px] text-[var(--ws-text-3)]">{hint}</span>
       <input type="file" accept="image/*" onChange={onChange} className="hidden" />
     </label>
   )
@@ -189,6 +189,9 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
   const [cor60, setCor60] = useState('')
   const [cor30, setCor30] = useState('')
   const [cor10, setCor10] = useState('')
+  // Esquemas de cores salvos por workspace (máx. 10)
+  const [paletas, setPaletas] = useState<Array<{ id: string; cor_60?: string; cor_30?: string; cor_10?: string }>>([])
+  const [showPaletas, setShowPaletas] = useState(false)
   const logoMode: 'compor' | 'integrar' = 'integrar' // padrão fixo: o modelo integra a logo
   const [confirmReverso, setConfirmReverso] = useState(false)
 
@@ -417,6 +420,67 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
     setCorPrimaria(c[0]); aplicarHarmonia(c[0], tipoHarmonia)
   }
 
+  // ── Esquemas de cores salvos (paletas) ──────────────────────────────────
+  const carregarPaletas = async () => {
+    if (!wsId) return
+    try {
+      const res = await fetch(`/api/proxy/design/paletas?workspace_id=${wsId}`, { headers: { Authorization: `Bearer ${getToken() ?? ''}` } })
+      if (res.ok) setPaletas(await res.json())
+    } catch { /* silencioso */ }
+  }
+  useEffect(() => { carregarPaletas() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [wsId])
+
+  const salvarPaleta = async () => {
+    if (!wsId) return
+    if (!cor60 && !cor30 && !cor10) { toast.error('Defina as cores antes de salvar.'); return }
+    try {
+      const res = await fetch('/api/proxy/design/paletas', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken() ?? ''}` },
+        body: JSON.stringify({ workspace_id: wsId, cor_60: cor60 || undefined, cor_30: cor30 || undefined, cor_10: cor10 || undefined }),
+      })
+      if (res.status === 400) { toast.error('Limite de 10 esquemas. Exclua um para salvar.'); return }
+      if (!res.ok) throw new Error()
+      toast.success('Cores salvas')
+      carregarPaletas()
+    } catch { toast.error('Erro ao salvar as cores.') }
+  }
+  const aplicarPaleta = (p: { cor_60?: string; cor_30?: string; cor_10?: string }) => {
+    setCor60(p.cor_60 || ''); setCor30(p.cor_30 || ''); setCor10(p.cor_10 || '')
+    setShowPaletas(false); toast.success('Cores carregadas')
+  }
+  const excluirPaleta = async (id: string) => {
+    if (!wsId) return
+    try {
+      const res = await fetch(`/api/proxy/design/paletas/${id}?workspace_id=${wsId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getToken() ?? ''}` } })
+      if (!res.ok) throw new Error()
+      setPaletas(prev => prev.filter(p => p.id !== id))
+    } catch { toast.error('Erro ao excluir.') }
+  }
+
+  // ── Limpar tudo (reset total) ───────────────────────────────────────────
+  const limparTudo = () => {
+    setReferenceUrl(null); setLogoUrl(null); setReferenceUsage('style_and_composition')
+    setCor60(''); setCor30(''); setCor10(''); setCorPrimaria('#0E142A'); setShowHarmonia(false); setShowPaletas(false)
+    setBriefing(''); setObjetivo(OBJETIVOS[0].id); setAudience(''); setTone(''); setShowRefinar(false)
+    setHeadline(''); setSubheadline(''); setCta(''); setCidade('')
+    setDensidade('simples'); setBullets(['', '', '']); setSelo(''); setCopyExtra('')
+    setCreativeSpec(null); setResultImage(null); setError(null)
+    toast.success('Campos limpos')
+  }
+
+  // ── Box "Gerados hoje" (histórico do dia) ───────────────────────────────
+  const carregarHistoricoHoje = async () => {
+    if (!wsId) return
+    try {
+      const hoje = new Date(); hoje.setHours(0, 0, 0, 0)
+      const res = await fetch(`/api/proxy/design/historico?workspace_id=${wsId}&desde=${hoje.toISOString()}`, { headers: { Authorization: `Bearer ${getToken() ?? ''}` } })
+      if (!res.ok) return
+      const data = await res.json()
+      setHistory(data.map((g: any) => ({ id: g.id, url: g.imagem_url, titulo: g.estrutura?.headline || 'Criativo', at: g.criado_em ? Date.parse(g.criado_em) : Date.now() })))
+    } catch { /* silencioso */ }
+  }
+  useEffect(() => { carregarHistoricoHoje() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [wsId])
+
   const toggleFormat = (id: string) => {
     setFormatsSel(prev => {
       if (prev.includes(id)) return prev.length === 1 ? prev : prev.filter(x => x !== id)
@@ -535,6 +599,14 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
       {/* Configuração */}
       <div className="flex-1 flex flex-col gap-5 overflow-y-auto pr-4 scrollbar-hide">
 
+        {/* Limpar campos — começar um novo criativo (reset total) */}
+        <div className="flex items-center justify-end -mb-2">
+          <button onClick={limparTudo} title="Limpar tudo e começar um novo criativo"
+            className="flex items-center gap-1.5 px-3 h-8 rounded-[var(--ws-radius-lg)] text-[10px] font-bold uppercase tracking-wider text-[var(--ws-text-2)] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] hover:border-[#a32d2d] hover:text-[#a32d2d] transition-all">
+            <Trash2 size={13} /> Limpar campos
+          </button>
+        </div>
+
         {/* Modelo de exemplo + Logo */}
         <div className="space-y-3">
           <label className={labelCls}><ImageIcon size={14} className="text-[var(--ws-blue)]" /> Modelo de exemplo & Marca</label>
@@ -639,7 +711,39 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
         {/* Cores da marca — regra 60/30/10 (auto do modelo). Off em Réplica/Modelo Reverso. */}
         {!reverso && referenceUsage !== 'replica' && (
           <div className="space-y-3">
-            <label className={labelCls}><Palette size={14} className="text-[var(--ws-blue)]" /> Cores da marca <span className="text-[9px] font-medium normal-case text-[var(--ws-text-3)]">(regra 60/30/10)</span></label>
+            <div className="flex items-center justify-between gap-2">
+              <label className={labelCls}><Palette size={14} className="text-[var(--ws-blue)]" /> Cores da marca <span className="text-[9px] font-medium normal-case text-[var(--ws-text-3)]">(regra 60/30/10)</span></label>
+              <div className="flex items-center gap-1.5">
+                <button onClick={salvarPaleta} title="Salvar este esquema de cores"
+                  className="flex items-center justify-center w-8 h-8 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] hover:text-[var(--ws-blue)] transition-all">
+                  <Save size={14} />
+                </button>
+                <div className="relative">
+                  <button onClick={() => setShowPaletas(v => !v)} title="Carregar cores salvas"
+                    className={`flex items-center justify-center w-8 h-8 rounded-[var(--ws-radius-lg)] border bg-[var(--ws-glass-bg)] hover:border-[var(--ws-blue)] transition-all ${showPaletas ? 'border-[var(--ws-blue)] text-[var(--ws-blue)]' : 'border-[var(--ws-glass-border)] text-[var(--ws-text-2)]'}`}>
+                    <FolderOpen size={14} />
+                  </button>
+                  {showPaletas && (
+                    <div className="absolute right-0 top-full mt-1 z-30 w-56 p-1.5 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[var(--ws-navy)] shadow-2xl space-y-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                      {paletas.length === 0 ? (
+                        <div className="text-[10px] text-[var(--ws-text-3)] px-2 py-2 text-center">Nenhum esquema salvo ainda.</div>
+                      ) : paletas.map(p => (
+                        <div key={p.id} className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-white/5">
+                          <button onClick={() => aplicarPaleta(p)} className="flex-1 flex items-center gap-1.5">
+                            {[p.cor_60, p.cor_30, p.cor_10].map((c, i) => (
+                              <span key={i} className="w-5 h-5 rounded border border-white/30 shrink-0" style={{ background: c || 'transparent' }} />
+                            ))}
+                            <span className="text-[9px] text-white/50 ml-auto">{(p.cor_60 || '').toUpperCase()}</span>
+                          </button>
+                          <button onClick={() => excluirPaleta(p.id)} title="Excluir" className="text-white/40 hover:text-[#ff7676] p-0.5"><X size={12} /></button>
+                        </div>
+                      ))}
+                      {paletas.length > 0 && <div className="text-[8px] text-white/40 px-2 pt-1">{paletas.length}/10 esquemas</div>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="flex items-stretch gap-2">
               <ColorSwatch label="Dominante 60%" value={cor60} onChange={setCor60} />
               <ColorSwatch label="Secundária 30%" value={cor30} onChange={setCor30} />
@@ -944,7 +1048,8 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
         <div className="h-[200px] flex flex-col bg-[var(--ws-glass-bg)] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-xl)] backdrop-blur-md overflow-hidden shadow-lg shrink-0">
           <div className="p-4 border-b border-[var(--ws-glass-border)] flex items-center gap-2">
             <History size={14} className="text-[var(--ws-text-3)]" />
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--ws-text-1)]">Histórico</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--ws-text-1)]">Gerados hoje</span>
+            <span className="text-[9px] font-medium normal-case text-[var(--ws-text-3)] ml-auto">(aba Histórico guarda tudo)</span>
           </div>
           <div className="flex-1 flex flex-col gap-2 p-3 overflow-y-auto scrollbar-hide">
             {history.length > 0 ? history.map(item => (
@@ -957,7 +1062,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
                 </div>
               </button>
             )) : (
-              <div className="flex-1 flex items-center justify-center"><span className="text-[10px] text-[var(--ws-text-3)] italic opacity-60">Nenhuma geração ainda</span></div>
+              <div className="flex-1 flex items-center justify-center"><span className="text-[10px] text-[var(--ws-text-3)] italic opacity-60">Nada gerado hoje ainda</span></div>
             )}
           </div>
         </div>
