@@ -1,5 +1,7 @@
-import { EstudioCriativos } from '@/components/demandas/design/EstudioCriativos'
+import { redirect } from 'next/navigation'
 
+// Estúdio de Criativos migrou para Marketing › Estúdio AI › Criativos.
+// Mantém a URL antiga funcionando (bookmarks) redirecionando para o novo lar.
 export default function Page() {
-  return <EstudioCriativos />
+  redirect('/marketing/estudio-ai/criativos')
 }

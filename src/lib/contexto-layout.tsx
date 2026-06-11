@@ -66,7 +66,7 @@ export const secoesNavegacao: SecaoNavegacao[] = [
         chaveIcone: "Sparkles",
         abertoPadrao: false,
         itens: [
-          { nome: "Criativos" },
+          { nome: "Criativos", rota: "/marketing/estudio-ai/criativos", chaveIcone: "Image" },
           { nome: "Vídeos" },
           { nome: "Carregar Tokens", rota: "/marketing/estudio-ai/carregar-tokens", chaveIcone: "CreditCard" },
         ],
@@ -78,7 +78,6 @@ export const secoesNavegacao: SecaoNavegacao[] = [
         abertoPadrao: false,
         itens: [
           { nome: "PMP",                    rota: "/marketing/demandas/pmp" },
-          { nome: "Design" },
           { nome: "Estratégia" },
           { nome: "Matriz de Investimento", rota: "/marketing/demandas/matriz-investimento" },
           { nome: "Mapa Mental",            rota: "/marketing/demandas/mapa-mental" },
