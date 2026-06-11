@@ -643,7 +643,7 @@ export function GeradorCriativos() {
                   ] as const).map(b => (
                     <div key={b.id} className="relative group">
                       <button onClick={b.fn} disabled={b.dis}
-                        className="h-7 px-2 rounded-md text-[10px] font-medium border border-[var(--ws-glass-border)] bg-white text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] disabled:opacity-40 transition-all">{b.label}</button>
+                        className="h-7 px-2 rounded-md text-[10px] font-medium border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] disabled:opacity-40 transition-all">{b.label}</button>
                       <div className="pointer-events-none absolute z-20 left-0 top-full mt-1 w-44 p-2 rounded-md bg-[var(--ws-navy)] text-white text-[10px] leading-snug shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">{b.hint}</div>
                     </div>
                   ))}
@@ -653,7 +653,7 @@ export function GeradorCriativos() {
                 </div>
                 <div className="flex items-center gap-2">
                   <select value={tipoHarmonia} onChange={e => { const t = e.target.value as 'complementar' | 'analogas'; setTipoHarmonia(t); aplicarHarmonia(corPrimaria, t) }}
-                    className="flex-1 h-8 px-2 bg-white border border-[var(--ws-glass-border)] rounded-md text-[11px] focus:outline-none">
+                    className="flex-1 h-8 px-2 bg-[var(--ws-glass-bg)] text-[var(--ws-text-1)] border border-[var(--ws-glass-border)] rounded-md text-[11px] focus:outline-none [&>option]:bg-[var(--ws-navy)] [&>option]:text-[var(--ws-text-1)]">
                     <option value="complementar">Complementar</option>
                     <option value="analogas">Análogas</option>
                   </select>
@@ -854,7 +854,7 @@ export function GeradorCriativos() {
                 <div className="grid grid-cols-2 gap-2">
                   {QUALITIES.map(q => (
                     <button key={q.id} onClick={() => setQuality(q.id)}
-                      className={`h-8 rounded-md text-[11px] font-medium border transition-all ${quality === q.id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-white text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>
+                      className={`h-8 rounded-md text-[11px] font-medium border transition-all ${quality === q.id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>
                       {q.title}
                     </button>
                   ))}
