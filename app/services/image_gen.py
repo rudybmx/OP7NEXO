@@ -239,7 +239,8 @@ _BASE_TXT = (
     "Texto integrado à arte de forma elegante (não use texto solto/sobreposto sem "
     "composição). Hierarquia clara: headline forte, subtítulo legível, CTA em botão "
     "evidente. Alto contraste e área segura nas bordas para Meta Ads. Logo fiel, sem "
-    "distorcer. Ortografia em português do Brasil impecável. Visual de agência, premium."
+    "distorcer. Ortografia em português do Brasil impecável, SEM travessão (—). "
+    "Visual de agência, premium."
 )
 _FORBIDDEN_TXT = (
     "Evite: antes/depois, promessa de resultado, instrumentos clínicos invasivos, "

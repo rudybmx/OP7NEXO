@@ -16,8 +16,18 @@ log = logging.getLogger(__name__)
 _GATILHOS = (
     "Use gatilhos mentais quando couber (escassez, urgência, prova social, autoridade, "
     "curiosidade/lacuna, exclusividade). CTA sempre em verbo no imperativo. Português do "
-    "Brasil, conciso e direto, sem clichê, sem promessa de resultado e sem termos médicos sensíveis."
+    "Brasil, conciso e direto, sem clichê, sem promessa de resultado e sem termos médicos sensíveis. "
+    "NUNCA use travessão (—) nem hífen longo; prefira vírgula, ponto ou frases curtas."
 )
+
+
+def _sem_travessao(texto: str) -> str:
+    """Remove o travessão de IA (— / –) — substitui por vírgula e normaliza."""
+    t = texto.replace("—", ",").replace("–", ",")
+    t = t.replace(" ,", ",").replace(",,", ",")
+    while "  " in t:
+        t = t.replace("  ", " ")
+    return t.strip().strip(",").strip()
 
 # Direção por objetivo da campanha (valor de `objective`).
 _OBJ = {
@@ -87,7 +97,7 @@ def melhorar_copy(
         max_tokens=120,
         temperature=0.8,
     )
-    texto = (resp.choices[0].message.content or "").strip().strip('"').strip()
+    texto = _sem_travessao((resp.choices[0].message.content or "").strip().strip('"').strip())
     usage = resp.usage.model_dump() if getattr(resp, "usage", None) else {}
     log.info("[copy_assist] campo=%s tokens=%s", campo, usage.get("total_tokens"))
     return texto, usage
