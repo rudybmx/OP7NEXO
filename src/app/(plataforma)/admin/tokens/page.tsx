@@ -15,6 +15,7 @@ import {
 import { useAuth } from '@/hooks/use-auth'
 import { useMetaTokens, type MetaToken } from '@/hooks/use-meta-tokens'
 import { useGoogleAdsCredentials, type GoogleAdsCredential, type GoogleAdsCredentialIn } from '@/hooks/use-google-ads-credentials'
+import { TokenEstudioAdmin } from '@/components/admin/TokenEstudioAdmin'
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -67,6 +68,7 @@ export default function GestaoTokensPage() {
 
   const [drawerAberto, setDrawerAberto] = useState(false)
   const [editando, setEditando] = useState<MetaToken | null>(null)
+  const [aba, setAba] = useState<'conexoes' | 'token-estudio'>('conexoes')
   const [salvando, setSalvando] = useState(false)
   const [form, setForm] = useState(emptyForm())
 
@@ -242,21 +244,41 @@ export default function GestaoTokensPage() {
             Tokens globais de acesso às plataformas de anúncios
           </p>
         </div>
-        <button
-          onClick={abrirNovo}
-          style={{
-            background: 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
-            border: 'none', padding: '0 20px', height: 42, borderRadius: 10,
-            fontSize: 13, fontWeight: 600, color: 'white', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: 8,
-            boxShadow: '0 4px 12px rgba(62,91,255,0.30)',
-          }}
-        >
-          <Plus size={16} />
-          + Novo Token
-        </button>
+        {aba === 'conexoes' && (
+          <button
+            onClick={abrirNovo}
+            style={{
+              background: 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
+              border: 'none', padding: '0 20px', height: 42, borderRadius: 10,
+              fontSize: 13, fontWeight: 600, color: 'white', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 8,
+              boxShadow: '0 4px 12px rgba(62,91,255,0.30)',
+            }}
+          >
+            <Plus size={16} />
+            + Novo Token
+          </button>
+        )}
       </div>
 
+      {/* Abas: Conexões | Token Estúdio */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24, borderBottom: '1px solid var(--ws-glass-border)' }}>
+        {([['conexoes', 'Conexões'], ['token-estudio', 'Token Estúdio']] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setAba(id)}
+            style={{
+              padding: '8px 4px', marginBottom: -1, background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: aba === id ? 700 : 500,
+              color: aba === id ? 'var(--ws-blue)' : 'var(--ws-text-2)',
+              borderBottom: aba === id ? '2px solid var(--ws-blue)' : '2px solid transparent',
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {aba === 'token-estudio' && <TokenEstudioAdmin />}
+
+      {aba === 'conexoes' && (<>
       {/* Filtros */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button
@@ -788,6 +810,7 @@ export default function GestaoTokensPage() {
           </div>
         </div>
       )}
+      </>)}
     </div>
   )
 }
