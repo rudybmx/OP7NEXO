@@ -21,6 +21,7 @@ from app.models.criativo import (
     CriativoEstilo,
     CriativoGeracao,
     CriativoModelo,
+    CriativoPaleta,
     CriativoProjeto,
 )
 from app.models.user import User
@@ -596,3 +597,138 @@ def deletar_modelo(
     m.ativo = False
     db.commit()
     return {"ok": True}
+
+
+# ───────────────────────── Esquemas de cores (paletas) ──────────────────────
+_MAX_PALETAS = 10
+
+
+class CriarPaletaIn(BaseModel):
+    workspace_id: uuid.UUID
+    cor_60: Optional[str] = None
+    cor_30: Optional[str] = None
+    cor_10: Optional[str] = None
+
+
+@router.get("/paletas")
+def listar_paletas(
+    workspace_id: uuid.UUID = Query(...),
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Esquemas de cores salvos do workspace (até 10, recentes primeiro)."""
+    verificar_acesso_workspace(usuario, workspace_id, db)
+    rows = (
+        db.query(CriativoPaleta)
+        .filter(CriativoPaleta.ativo.is_(True), CriativoPaleta.workspace_id == workspace_id)
+        .order_by(CriativoPaleta.criado_em.desc())
+        .limit(_MAX_PALETAS)
+        .all()
+    )
+    return [
+        {"id": str(p.id), "cor_60": p.cor_60, "cor_30": p.cor_30, "cor_10": p.cor_10}
+        for p in rows
+    ]
+
+
+@router.post("/paletas", status_code=status.HTTP_201_CREATED)
+def criar_paleta(
+    payload: CriarPaletaIn,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Salva o esquema 60/30/10 atual. Bloqueia ao atingir 10 (exclua um para salvar)."""
+    verificar_acesso_workspace(usuario, payload.workspace_id, db)
+    n = (
+        db.query(CriativoPaleta)
+        .filter(CriativoPaleta.ativo.is_(True), CriativoPaleta.workspace_id == payload.workspace_id)
+        .count()
+    )
+    if n >= _MAX_PALETAS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Limite de {_MAX_PALETAS} esquemas de cores. Exclua um para salvar.",
+        )
+    p = CriativoPaleta(
+        workspace_id=payload.workspace_id,
+        cor_60=payload.cor_60,
+        cor_30=payload.cor_30,
+        cor_10=payload.cor_10,
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return {"id": str(p.id), "cor_60": p.cor_60, "cor_30": p.cor_30, "cor_10": p.cor_10}
+
+
+@router.delete("/paletas/{paleta_id}")
+def deletar_paleta(
+    paleta_id: uuid.UUID,
+    workspace_id: uuid.UUID = Query(...),
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Soft-delete de um esquema de cores do próprio workspace."""
+    verificar_acesso_workspace(usuario, workspace_id, db)
+    p = (
+        db.query(CriativoPaleta)
+        .filter(CriativoPaleta.id == paleta_id, CriativoPaleta.ativo.is_(True))
+        .first()
+    )
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Esquema não encontrado")
+    if p.workspace_id != workspace_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Esquema de outro workspace")
+    p.ativo = False
+    db.commit()
+    return {"ok": True}
+
+
+# ───────────────────────── Histórico de criativos gerados ───────────────────
+def _estrutura_de_params(p: dict | None) -> dict:
+    """Extrai do params_json da geração a estrutura reaproveitável no gerador."""
+    p = p or {}
+    return {
+        "objetivo": p.get("objective"),
+        "densidade": p.get("densidade"),
+        "headline": p.get("headline"),
+        "subheadline": p.get("subheadline"),
+        "cta": p.get("cta"),
+        "bullets": p.get("bullets") or [],
+        "selo": p.get("selo"),
+    }
+
+
+@router.get("/historico")
+def listar_historico(
+    workspace_id: uuid.UUID = Query(...),
+    desde: Optional[str] = Query(None, description="ISO date/datetime; filtra criado_em >= desde"),
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Criativos gerados (done) do workspace. `desde` → recorte do dia (box diário)."""
+    verificar_acesso_workspace(usuario, workspace_id, db)
+    q = db.query(CriativoGeracao).filter(
+        CriativoGeracao.workspace_id == workspace_id,
+        CriativoGeracao.ativo.is_(True),
+        CriativoGeracao.status == "done",
+        CriativoGeracao.imagem_base_url.isnot(None),
+    )
+    if desde:
+        from datetime import datetime
+
+        try:
+            q = q.filter(CriativoGeracao.criado_em >= datetime.fromisoformat(desde))
+        except ValueError:
+            pass
+    rows = q.order_by(CriativoGeracao.criado_em.desc()).limit(100).all()
+    return [
+        {
+            "id": str(g.id),
+            "imagem_url": g.imagem_base_url,
+            "creative_format": g.creative_format,
+            "criado_em": g.criado_em.isoformat() if g.criado_em else None,
+            "estrutura": _estrutura_de_params(g.params_json),
+        }
+        for g in rows
+    ]

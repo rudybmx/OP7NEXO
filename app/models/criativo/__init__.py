@@ -4,6 +4,7 @@ from app.models.criativo.export_job import CriativoExportJob
 from app.models.criativo.geracao import CriativoGeracao
 from app.models.criativo.logo import CriativoLogo
 from app.models.criativo.modelo import CriativoModelo
+from app.models.criativo.paleta import CriativoPaleta
 from app.models.criativo.projeto import CriativoProjeto
 from app.models.criativo.template import CriativoTemplate
 
@@ -14,6 +15,7 @@ __all__ = [
     "CriativoGeracao",
     "CriativoLogo",
     "CriativoModelo",
+    "CriativoPaleta",
     "CriativoProjeto",
     "CriativoTemplate",
 ]
