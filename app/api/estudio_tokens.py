@@ -1,9 +1,9 @@
 """Carteira de tokens do Estúdio AI — saldo, transações e recarga (manual/admin).
 
-Cobrança por token: 1 token = R$1; criativo medium=1, alta=2, Modelo Reverso=3.
-Saldo POR workspace. Fase 1: recarga é criada como PENDENTE pelo cliente e
-CONFIRMADA por um platform_admin (após o pagamento manual/PIX). Gateway
-automático e débito por geração ficam para fases seguintes.
+1 token = R$1; consumo por criativo: medium=1, alta=2, Modelo Reverso=3 (débito
+em /design/gerar). Fase 1: recarga é criada PENDENTE pelo cliente e CONFIRMADA
+por um platform_admin (após o pagamento). Lógica de saldo no serviço
+`app.services.estudio_wallet`.
 """
 import uuid
 from typing import Optional
@@ -18,38 +18,16 @@ from app.core.deps import (
     get_usuario_atual,
     verificar_acesso_workspace,
 )
-from app.models.estudio import EstudioTokenSaldo, EstudioTokenTransacao
+from app.models.estudio import EstudioTokenTransacao
 from app.models.user import User
+from app.services import estudio_wallet
 
 router = APIRouter(prefix="/estudio", tags=["estudio-tokens"])
 
-TOKEN_VALOR_REAIS = 1  # 1 token = R$1
 PIX_INSTRUCAO = (
     "Para concluir a recarga, faça o PIX no valor indicado e envie o comprovante "
     "ao seu gerente. O saldo é creditado após a confirmação do pagamento."
 )
-
-
-def _saldo(db: Session, workspace_id: uuid.UUID) -> int:
-    row = (
-        db.query(EstudioTokenSaldo)
-        .filter(EstudioTokenSaldo.workspace_id == workspace_id)
-        .first()
-    )
-    return row.saldo_tokens if row else 0
-
-
-def _ajustar_saldo(db: Session, workspace_id: uuid.UUID, delta: int) -> None:
-    row = (
-        db.query(EstudioTokenSaldo)
-        .filter(EstudioTokenSaldo.workspace_id == workspace_id)
-        .first()
-    )
-    if not row:
-        row = EstudioTokenSaldo(workspace_id=workspace_id, saldo_tokens=0)
-        db.add(row)
-        db.flush()
-    row.saldo_tokens = (row.saldo_tokens or 0) + delta
 
 
 def _tx_out(t: EstudioTokenTransacao) -> dict:
@@ -72,7 +50,7 @@ def obter_saldo(
     db: Session = Depends(get_db),
 ):
     verificar_acesso_workspace(usuario, workspace_id, db)
-    return {"workspace_id": str(workspace_id), "saldo_tokens": _saldo(db, workspace_id)}
+    return {"workspace_id": str(workspace_id), "saldo_tokens": estudio_wallet.saldo(db, workspace_id)}
 
 
 @router.get("/transacoes")
@@ -105,16 +83,10 @@ def criar_recarga(
 ):
     """Cliente solicita uma recarga (fica PENDENTE até o admin confirmar)."""
     verificar_acesso_workspace(usuario, payload.workspace_id, db)
-    t = EstudioTokenTransacao(
-        workspace_id=payload.workspace_id,
-        tipo="credito",
-        tokens=payload.tokens,
-        valor_reais=payload.tokens * TOKEN_VALOR_REAIS,
-        motivo="Recarga de saldo",
-        status="pendente",
-        criado_por=usuario.id,
+    t = estudio_wallet.registrar(
+        db, payload.workspace_id, "credito", payload.tokens, "Recarga de saldo",
+        status="pendente", valor=payload.tokens * estudio_wallet.TOKEN_VALOR_REAIS, por=usuario.id,
     )
-    db.add(t)
     db.commit()
     db.refresh(t)
     return {"transacao": _tx_out(t), "instrucao_pagamento": PIX_INSTRUCAO}
@@ -136,11 +108,8 @@ def confirmar_recarga(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Transação não encontrada")
     if t.tipo != "credito" or t.status != "pendente":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Transação não é uma recarga pendente")
-    t.status = "confirmado"
-    _ajustar_saldo(db, t.workspace_id, t.tokens)
-    db.commit()
-    db.refresh(t)
-    return {"transacao": _tx_out(t), "saldo_tokens": _saldo(db, t.workspace_id)}
+    estudio_wallet.confirmar(db, t)
+    return {"transacao": _tx_out(t), "saldo_tokens": estudio_wallet.saldo(db, t.workspace_id)}
 
 
 class CreditarIn(BaseModel):
@@ -156,17 +125,8 @@ def creditar_admin(
     db: Session = Depends(get_db),
 ):
     """Crédito manual direto (admin) — sem passar por recarga pendente."""
-    t = EstudioTokenTransacao(
-        workspace_id=payload.workspace_id,
-        tipo="credito",
-        tokens=payload.tokens,
-        valor_reais=payload.tokens * TOKEN_VALOR_REAIS,
-        motivo=payload.motivo or "Crédito manual (admin)",
-        status="confirmado",
-        criado_por=usuario.id,
+    t = estudio_wallet.creditar(
+        db, payload.workspace_id, payload.tokens,
+        payload.motivo or "Crédito manual (admin)", por=usuario.id,
     )
-    db.add(t)
-    _ajustar_saldo(db, payload.workspace_id, payload.tokens)
-    db.commit()
-    db.refresh(t)
-    return {"transacao": _tx_out(t), "saldo_tokens": _saldo(db, payload.workspace_id)}
+    return {"transacao": _tx_out(t), "saldo_tokens": estudio_wallet.saldo(db, payload.workspace_id)}

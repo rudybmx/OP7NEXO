@@ -25,13 +25,20 @@ from app.models.criativo import (
     CriativoProjeto,
 )
 from app.models.user import User
-from app.services import criativo_render, image_gen
+from app.services import criativo_render, estudio_wallet, image_gen
 from app.services.object_storage import get_object, public_url, put_bytes
 from app.services.upload_validation import validar_e_normalizar_imagem
 
 router = APIRouter(prefix="/design", tags=["design"])
 
 _QUALITIES = {"low", "medium", "high", "auto"}
+
+
+def custo_tokens(spec: dict) -> int:
+    """Custo em tokens de uma geração: Modelo Reverso=3, alta=2, demais=1."""
+    if spec.get("reference_usage") == "modelo_reverso" and spec.get("creative_spec"):
+        return 3
+    return 2 if (spec.get("quality") or "medium").lower() == "high" else 1
 
 
 def _sse(event: str, data: dict) -> str:
@@ -338,9 +345,24 @@ def gerar(
     user_id = usuario.id
     tem_logo = bool(logo_bytes)
     tem_ref = bool(ref_bytes)
+    custo = custo_tokens(spec)
 
     def stream():
         with SessionLocal() as gdb:
+            # Pré-checagem de saldo: bloqueia (sem chamar a OpenAI) se insuficiente.
+            if not estudio_wallet.tem_saldo(gdb, ws_id, custo):
+                yield _sse(
+                    "generation.failed",
+                    {
+                        "error_code": "saldo_insuficiente",
+                        "error_message": (
+                            f"Saldo insuficiente: este criativo custa {custo} token(s) e o "
+                            f"saldo é {estudio_wallet.saldo(gdb, ws_id)}. Carregue tokens para gerar."
+                        ),
+                    },
+                )
+                return
+
             ger = image_gen.criar_geracao_integrada(
                 gdb,
                 workspace_id=ws_id,
@@ -356,12 +378,18 @@ def gerar(
             )
 
             if ger.status == "done":
+                # Débito só no sucesso (geração que falha não cobra).
+                estudio_wallet.debitar(
+                    gdb, ws_id, custo, "Geração de criativo", referencia=str(ger.id)
+                )
                 yield _sse(
                     "generation.completed",
                     {
                         "generation_id": str(ger.id),
                         "base_image_url": ger.imagem_base_url,
                         "usage": ger.usage,
+                        "custo_tokens": custo,
+                        "saldo_tokens": estudio_wallet.saldo(gdb, ws_id),
                     },
                 )
             else:
