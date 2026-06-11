@@ -397,3 +397,38 @@ def analisar_modelo(
             status.HTTP_502_BAD_GATEWAY, detail={"error_code": code, "error_message": msg}
         )
     return {"creative_spec": spec, "usage": usage}
+
+
+class MelhorarCopyIn(BaseModel):
+    workspace_id: uuid.UUID
+    campo: str
+    texto_atual: Optional[str] = None
+    product: Optional[str] = None
+    objective: Optional[str] = None
+    densidade: Optional[str] = None
+
+
+@router.post("/melhorar-copy")
+def melhorar_copy_endpoint(
+    payload: MelhorarCopyIn,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Assistente de copy: gera/melhora um texto com gatilhos mentais (por objetivo)."""
+    verificar_acesso_workspace(usuario, payload.workspace_id, db)
+    from app.services import copy_assist
+
+    try:
+        texto, usage = copy_assist.melhorar_copy(
+            payload.campo,
+            texto_atual=payload.texto_atual,
+            product=payload.product,
+            objective=payload.objective,
+            densidade=payload.densidade,
+        )
+    except Exception as exc:  # noqa: BLE001
+        code, msg = image_gen._map_error(exc)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, detail={"error_code": code, "error_message": msg}
+        )
+    return {"texto": texto, "usage": usage}

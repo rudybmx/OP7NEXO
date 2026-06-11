@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     openai_image_model: str = "gpt-image-2"
     # Modelo de VISÃO (prompt-reverso: referência → creative_spec JSON). Mesma chave/base_url dedicada.
     openai_vision_model: str = "gpt-4.1"
+    # Modelo de TEXTO para o assistente de copy (gera/melhora textos com gatilhos mentais).
+    openai_copy_model: str = "gpt-4.1-mini"
     EVOLUTION_API_URL: str = "https://evo.op7franquia.com.br"
     EVOLUTION_API_KEY: str = ""
     SERVER_URL: str = "https://api.op7franquia.com.br"

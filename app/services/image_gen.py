@@ -246,6 +246,14 @@ _FORBIDDEN_TXT = (
     "sangue, visual brega, poluição visual, texto pequeno demais, logo deformada."
 )
 
+# Instrução concreta por objetivo da campanha (muda tom/CTA/composição de verdade).
+_OBJETIVO_INSTRUCAO = {
+    "agendamento no whatsapp": "Objetivo: agendamento via WhatsApp — CTA conversacional e direto (ex.: 'Fale no WhatsApp', 'Agende agora'), com leve urgência e baixa fricção.",
+    "geração de leads": "Objetivo: gerar leads — desperte curiosidade e valor; CTA de captura (ex.: 'Quero saber mais', 'Receba').",
+    "divulgar oferta": "Objetivo: divulgar oferta — use escassez/urgência e destaque o benefício/oferta (senso de oportunidade).",
+    "institucional / marca": "Objetivo: institucional — tom de autoridade e confiança, memorável, menos promocional.",
+}
+
 
 def _prompt_reverso(cs: dict, densidade_ajuste: str, logo_mode: str = "compor") -> str:
     """Monta o prompt a partir do creative_spec rico (extraído e editado) — Modelo Reverso.
@@ -340,7 +348,8 @@ def montar_prompt_integrado(
     if g("product"):
         L.append(f"Produto/serviço: {g('product')}.")
     if g("objective"):
-        L.append(f"Objetivo da campanha: {g('objective')}.")
+        obj_instr = _OBJETIVO_INSTRUCAO.get((g("objective") or "").strip().lower())
+        L.append(obj_instr or f"Objetivo da campanha: {g('objective')}.")
     if g("audience"):
         L.append(f"Público: {g('audience')}.")
     if g("estilo"):
