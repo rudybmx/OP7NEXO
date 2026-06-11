@@ -39,6 +39,7 @@ from app.models.criativo import (
     CriativoProjeto,
     CriativoTemplate,
 )
+from app.models.estudio import EstudioTokenSaldo, EstudioTokenTransacao
 
 __all__ = [
     "Base",
@@ -82,4 +83,6 @@ __all__ = [
     "CriativoLogo",
     "CriativoProjeto",
     "CriativoTemplate",
+    "EstudioTokenSaldo",
+    "EstudioTokenTransacao",
 ]
