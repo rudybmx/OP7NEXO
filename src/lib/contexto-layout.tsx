@@ -68,6 +68,7 @@ export const secoesNavegacao: SecaoNavegacao[] = [
         itens: [
           { nome: "Criativos", rota: "/marketing/estudio-ai/criativos", chaveIcone: "Image" },
           { nome: "Vídeos" },
+          { nome: "Brand Kit", rota: "/marketing/estudio-ai/brand-kit", chaveIcone: "Palette" },
           { nome: "Carregar Tokens", rota: "/marketing/estudio-ai/carregar-tokens", chaveIcone: "CreditCard" },
         ],
       },
