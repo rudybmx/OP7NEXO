@@ -25,11 +25,11 @@ const OBJETIVOS = [
 const ESTILOS = ['Premium', 'Lifestyle', 'Minimalista', 'Impacto visual']
 const QUALITIES = [{ id: 'medium', title: 'Equilibrada' }, { id: 'high', title: 'Alta' }]
 const REF_USOS = [
-  { id: 'style', label: 'Só estilo' },
-  { id: 'composition', label: 'Composição' },
-  { id: 'style_and_composition', label: 'Estilo + composição' },
-  { id: 'replica', label: 'Réplica idêntica' },
-  { id: 'modelo_reverso', label: 'Modelo Reverso' },
+  { id: 'style', label: 'Só estilo', hint: 'Usa a referência só como direção de estilo (cores, clima). O layout fica livre.' },
+  { id: 'composition', label: 'Composição', hint: 'Segue a composição/estrutura da referência, sem necessariamente copiar o estilo.' },
+  { id: 'style_and_composition', label: 'Estilo + composição', hint: 'Inspiração solta: segue estilo e composição da referência, sem copiar literalmente.' },
+  { id: 'replica', label: 'Réplica idêntica', hint: 'Copia o layout do modelo fielmente, trocando só os textos e a marca.' },
+  { id: 'modelo_reverso', label: 'Modelo Reverso', hint: 'Analisa a imagem em detalhe (IA de visão) e dá controle total dos pontos. Premium (~3 créditos).' },
 ]
 const AJUSTES = [
   { id: 'fiel', label: 'Fiel' },
@@ -48,12 +48,12 @@ function readFileAsDataUrl(file: File, onload: (s: string) => void) {
   r.readAsDataURL(file)
 }
 
-// Extrai as 2 cores dominantes (ignora branco/preto/transparente) da logo.
-function extrairCoresDaLogo(dataUrl: string): Promise<string[]> {
+// Extrai as 3 cores por ÁREA de pixels (regra 60/30/10) de um modelo/referência.
+function extrairCores6030(dataUrl: string): Promise<string[]> {
   return new Promise((resolve) => {
     const img = new window.Image()
     img.onload = () => {
-      const s = 48
+      const s = 64
       const canvas = document.createElement('canvas')
       canvas.width = s; canvas.height = s
       const ctx = canvas.getContext('2d')
@@ -63,18 +63,14 @@ function extrairCoresDaLogo(dataUrl: string): Promise<string[]> {
       const buckets: Record<string, { r: number; g: number; b: number; n: number }> = {}
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3]
-        if (a < 200) continue
-        const mx = Math.max(r, g, b), mn = Math.min(r, g, b)
-        if (mx > 240 && mn > 240) continue // branco
-        if (mx < 28) continue // preto
-        const key = `${Math.round(r / 24)}-${Math.round(g / 24)}-${Math.round(b / 24)}`
+        if (a < 128) continue
+        const key = `${Math.round(r / 32)}-${Math.round(g / 32)}-${Math.round(b / 32)}`
         const k = buckets[key] || (buckets[key] = { r: 0, g: 0, b: 0, n: 0 })
         k.r += r; k.g += g; k.b += b; k.n++
       }
       const toHex = (k: { r: number; g: number; b: number; n: number }) =>
         '#' + [k.r, k.g, k.b].map(v => Math.round(v / k.n).toString(16).padStart(2, '0')).join('')
-      const cores = Object.values(buckets).sort((a, b) => b.n - a.n).slice(0, 2).map(toHex)
-      resolve(cores)
+      resolve(Object.values(buckets).sort((a, b) => b.n - a.n).slice(0, 3).map(toHex))
     }
     img.onerror = () => resolve([])
     img.src = dataUrl
@@ -122,8 +118,12 @@ export function GeradorCriativos() {
   const [referenceUsage, setReferenceUsage] = useState('style_and_composition')
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
 
-  const [primaryColor, setPrimaryColor] = useState('')
-  const [secondaryColor, setSecondaryColor] = useState('')
+  // Cores da marca pela regra 60/30/10 (auto do modelo)
+  const [cor60, setCor60] = useState('')
+  const [cor30, setCor30] = useState('')
+  const [cor10, setCor10] = useState('')
+  const [logoMode, setLogoMode] = useState<'compor' | 'integrar'>('compor')
+  const [confirmReverso, setConfirmReverso] = useState(false)
 
   const [briefing, setBriefing] = useState('')
   const [objetivo, setObjetivo] = useState(OBJETIVOS[0].id)
@@ -202,22 +202,25 @@ export function GeradorCriativos() {
     if (!f.type.startsWith('image/')) { toast.error('Selecione um arquivo de imagem.'); return }
     readFileAsDataUrl(f, async (durl) => {
       setter(durl)
-      // Ao subir logo, sugere as cores se ainda não escolhidas
-      if (setter === setLogoUrl && !primaryColor && !secondaryColor) {
-        const cores = await extrairCoresDaLogo(durl)
-        if (cores[0]) setPrimaryColor(cores[0])
-        if (cores[1]) setSecondaryColor(cores[1])
+      // Ao subir o MODELO (referência), extrai a paleta 60/30/10 se ainda não definida
+      if (setter === setReferenceUrl && !cor60 && !cor30 && !cor10) {
+        const c = await extrairCores6030(durl)
+        if (c[0]) setCor60(c[0])
+        if (c[1]) setCor30(c[1])
+        if (c[2]) setCor10(c[2])
       }
     })
   }
 
   const sugerirCores = async () => {
-    if (!logoUrl) return
-    const cores = await extrairCoresDaLogo(logoUrl)
-    if (cores[0]) setPrimaryColor(cores[0])
-    if (cores[1]) setSecondaryColor(cores[1])
-    if (!cores.length) toast.error('Não consegui captar cores da logo.')
-    else toast.success('Cores sugeridas a partir da logo.')
+    const fonte = referenceUrl || logoUrl
+    if (!fonte) return
+    const c = await extrairCores6030(fonte)
+    if (c[0]) setCor60(c[0])
+    if (c[1]) setCor30(c[1])
+    if (c[2]) setCor10(c[2])
+    if (!c.length) toast.error('Não consegui captar as cores.')
+    else toast.success('Cores 60/30/10 sugeridas a partir do modelo.')
   }
 
   const toggleFormat = (id: string) => {
@@ -243,8 +246,10 @@ export function GeradorCriativos() {
       densidade,
       quality,
       reference_usage: referenceUsage,
-      primary_color: primaryColor.trim() || undefined,
-      secondary_color: secondaryColor.trim() || undefined,
+      cor_60: cor60.trim() || undefined,
+      cor_30: cor30.trim() || undefined,
+      cor_10: cor10.trim() || undefined,
+      logo_mode: logoMode,
       logo_base64: logoUrl ?? undefined,
       referencia_base64: referenceUrl ?? undefined,
     }
@@ -319,6 +324,19 @@ export function GeradorCriativos() {
 
   return (
     <div className="flex h-full gap-6 p-6 animate-in fade-in duration-500 overflow-hidden">
+      {/* Modal: confirmação de custo do Modelo Reverso */}
+      {confirmReverso && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setConfirmReverso(false)}>
+          <div onClick={e => e.stopPropagation()} className="w-[360px] p-5 rounded-[var(--ws-radius-xl)] bg-white border border-[var(--ws-glass-border)] shadow-2xl space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center gap-2"><Wand2 size={18} className="text-[var(--ws-gold)]" /><span className="font-bold text-sm text-[var(--ws-text-1)]">Modelo Reverso</span></div>
+            <p className="text-[12px] text-[var(--ws-text-2)] leading-relaxed">A análise detalhada do modelo (IA de visão) é uma <b>edição premium</b> e consome <b>~3 créditos</b>. Deseja continuar?</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmReverso(false)} className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold uppercase border border-[var(--ws-glass-border)] text-[var(--ws-text-2)] hover:bg-[var(--ws-glass-bg)]">Cancelar</button>
+              <button onClick={() => { setConfirmReverso(false); setReferenceUsage('modelo_reverso'); analisarModelo() }} className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold uppercase bg-[var(--ws-blue)] text-white">Aceitar (3 créditos)</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Configuração */}
       <div className="flex-1 flex flex-col gap-5 overflow-y-auto pr-4 scrollbar-hide">
 
@@ -329,13 +347,31 @@ export function GeradorCriativos() {
             <UploadCard url={referenceUrl} onChange={onUpload(setReferenceUrl)} onClear={() => setReferenceUrl(null)} label="Modelo de exemplo" hint="referência de estilo (opcional)" />
             <UploadCard url={logoUrl} onChange={onUpload(setLogoUrl)} onClear={() => setLogoUrl(null)} label="Logo" hint="marca do cliente" />
           </div>
+          {logoUrl && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase text-[var(--ws-text-3)]">Logo:</span>
+              {([['compor', 'Compor (real)'], ['integrar', 'Integrar (IA)']] as const).map(([id, lbl]) => (
+                <button key={id} onClick={() => setLogoMode(id)}
+                  title={id === 'compor' ? 'A logo real é aplicada por cima, fiel.' : 'O modelo desenha a logo na arte (mais orgânico, pode aproximar).'}
+                  className={`px-3 py-1 rounded-full text-[10px] font-medium border transition-all ${logoMode === id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>{lbl}</button>
+              ))}
+            </div>
+          )}
           {referenceUrl && (
             <div className="flex flex-wrap gap-2">
               {REF_USOS.map(u => (
-                <button key={u.id} onClick={() => { setReferenceUsage(u.id); if (u.id === 'modelo_reverso' && !creativeSpec) analisarModelo() }}
-                  className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-all ${referenceUsage === u.id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>
-                  {u.label}
-                </button>
+                <div key={u.id} className="relative group">
+                  <button onClick={() => {
+                    if (u.id === 'modelo_reverso') { if (creativeSpec) setReferenceUsage(u.id); else setConfirmReverso(true) }
+                    else setReferenceUsage(u.id)
+                  }}
+                    className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-all ${referenceUsage === u.id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>
+                    {u.label}
+                  </button>
+                  <div className="pointer-events-none absolute z-20 left-0 top-full mt-1 w-52 p-2 rounded-md bg-[var(--ws-navy)] text-white text-[10px] leading-snug shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                    {u.hint}
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -393,8 +429,8 @@ export function GeradorCriativos() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Posição da logo</span>
+                  <div className={logoMode === 'compor' ? '' : 'opacity-40 pointer-events-none'}>
+                    <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Posição da logo {logoMode !== 'compor' && '(só no Compor)'}</span>
                     <select value={creativeSpec.logo?.posicao || 'topo-esquerda'} onChange={e => setLogoCampo('posicao', e.target.value)}
                       className="w-full h-8 mt-1 px-2 bg-white border border-[var(--ws-glass-border)] rounded-md text-[11px] focus:outline-none">
                       {LOGO_POSICOES.map(p => <option key={p} value={p}>{p}</option>)}
@@ -415,17 +451,18 @@ export function GeradorCriativos() {
           </div>
         )}
 
-        {/* Cores da marca (desativadas em Réplica/Modelo Reverso — a referência manda na paleta) */}
+        {/* Cores da marca — regra 60/30/10 (auto do modelo). Off em Réplica/Modelo Reverso. */}
         {!reverso && referenceUsage !== 'replica' && (
           <div className="space-y-3">
-            <label className={labelCls}><Palette size={14} className="text-[var(--ws-blue)]" /> Cores da marca</label>
+            <label className={labelCls}><Palette size={14} className="text-[var(--ws-blue)]" /> Cores da marca <span className="text-[9px] font-medium normal-case text-[var(--ws-text-3)]">(regra 60/30/10)</span></label>
             <div className="flex items-stretch gap-2">
-              <ColorSwatch label="Primária" value={primaryColor} onChange={setPrimaryColor} />
-              <ColorSwatch label="Secundária" value={secondaryColor} onChange={setSecondaryColor} />
+              <ColorSwatch label="Dominante 60%" value={cor60} onChange={setCor60} />
+              <ColorSwatch label="Secundária 30%" value={cor30} onChange={setCor30} />
+              <ColorSwatch label="Detalhe 10%" value={cor10} onChange={setCor10} />
             </div>
-            <button onClick={sugerirCores} disabled={!logoUrl}
+            <button onClick={sugerirCores} disabled={!referenceUrl && !logoUrl}
               className="w-full h-8 rounded-[var(--ws-radius-lg)] text-[11px] font-medium border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] backdrop-blur-md text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] disabled:opacity-40 transition-all flex items-center justify-center gap-2">
-              <Wand2 size={13} /> Sugerir cores da logo
+              <Wand2 size={13} /> Sugerir cores do modelo
             </button>
           </div>
         )}
