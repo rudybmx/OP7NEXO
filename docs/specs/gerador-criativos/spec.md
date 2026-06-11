@@ -18,6 +18,18 @@
 
 > **Fora do escopo desta Fase 1:** cobrança/créditos/custo por token (spec separado — esta feature apenas **registra** o `usage` retornado pela OpenAI), editor de vídeo (fase posterior), remoção de fundo/transparência, integração de publicação automática no Meta/WhatsApp (apenas atalhos de saída no front, sem automação).
 
+## Assistente de copy — prompt cirúrgico (2026-06-11)
+
+O texto do criativo é gerado por um assistente de copy de performance (modelo `settings.openai_copy_model`, ex. `gpt-4.1-mini`, mesma chave dedicada de imagem). Princípio: o campo **"O que você quer anunciar?"** (`product`/briefing) é o **hero/âncora** e o **gatilho** — a "fatoração" que o guia da Meta pede (Produto / Público / Diferencial / Objetivo) é feita **dentro do prompt**, não como campos separados na tela (preserva o fluxo macaco-proof).
+
+Duas frentes (`app/services/copy_assist.py`):
+- **Botão master "✨ Gerar textos"** → `POST /design/gerar-copy` (`gerar_pacote_copy`): **uma** chamada `json_object` devolve o pacote `{headline, subheadline, cta, bullets[], selo, copy_extra}` coerente e **sem repetição entre campos**. Densidade `simples` → só headline/subheadline/cta (bullets `[]`, selo/copy vazios); `rico` → tudo, 2–3 bullets. **Sobrescreve** os campos de texto.
+- **Botões ✨ por campo** → `POST /design/melhorar-copy` (`melhorar_copy`): gera/melhora UM campo, complementando os demais (`existentes`) sem repetir.
+
+Direção por **objetivo** (emoção/gatilho embutidos — sem 3º seletor): agendamento WhatsApp → facilidade/urgência leve; leads → curiosidade/reciprocidade; oferta → escassez/urgência (FOMO); institucional → autoridade/prova social. Boas práticas por campo: headline = gancho ≤6–7 palavras; CTA = verbo imperativo específico; bullet = benefício (não característica); copy_extra = AIDA/PAS. **Público-alvo** (`audience`) e **Tom de voz** (`tone`) são opcionais (recolhidos no front) e alimentam tanto a copy quanto o prompt de imagem (`montar_prompt_integrado` já os consome).
+
+**Regra absoluta de estilo:** PT-BR impecável e **NUNCA travessão (—)** — `_sem_travessao` faz o scrub de **cada** campo (inclusive cada item do pacote JSON). Ambos os endpoints devolvem `usage` (tokens) para billing.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Gerar e exportar um criativo (Priority: P1) 🎯 MVP
