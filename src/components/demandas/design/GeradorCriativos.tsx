@@ -246,7 +246,18 @@ export function GeradorCriativos() {
   const [melhorando, setMelhorando] = useState<string | null>(null)
   const melhorarCopy = async (campo: string, textoAtual: string, setter: (s: string) => void, loadingKey?: string) => {
     if (!wsId) { toast.error('Selecione um workspace.'); return }
-    setMelhorando(loadingKey ?? campo)
+    const chave = loadingKey ?? campo
+    // outros textos já no criativo (pra IA complementar e NÃO repetir)
+    const todos: { chave: string; valor: string }[] = [
+      { chave: 'headline', valor: headline },
+      { chave: 'subheadline', valor: subheadline },
+      { chave: 'cta', valor: cta },
+      { chave: 'selo', valor: selo },
+      { chave: 'copy_extra', valor: copyExtra },
+      ...bullets.map((b, i) => ({ chave: `bullet${i}`, valor: b })),
+    ]
+    const existentes = todos.filter(t => t.chave !== chave && t.valor.trim()).map(t => t.valor.trim())
+    setMelhorando(chave)
     try {
       const res = await fetch('/api/proxy/design/melhorar-copy', {
         method: 'POST',
@@ -256,6 +267,7 @@ export function GeradorCriativos() {
           texto_atual: textoAtual || undefined,
           product: briefing.trim() || undefined,
           objective: objetivo, densidade,
+          existentes: existentes.length ? existentes : undefined,
         }),
       })
       if (!res.ok) throw new Error(`Falha ao melhorar (HTTP ${res.status})`)
