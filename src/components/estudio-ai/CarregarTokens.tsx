@@ -1,11 +1,10 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { Coins, CreditCard, Check, Clock, ArrowDownCircle, ArrowUpCircle, Wallet } from 'lucide-react'
+import { Coins, CreditCard, Clock, ArrowDownCircle, ArrowUpCircle, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import { getToken } from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
-import { useAuth } from '@/hooks/use-auth'
 
 interface Transacao {
   id: string
@@ -28,8 +27,6 @@ const STATUS_LABEL: Record<string, { txt: string; cor: string }> = {
 
 export function CarregarTokens() {
   const { workspaceAtual: wsId } = useWorkspace()
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'platform_admin'
 
   const [saldo, setSaldo] = useState<number>(0)
   const [transacoes, setTransacoes] = useState<Transacao[]>([])
@@ -125,18 +122,7 @@ export function CarregarTokens() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsId])
 
-  const confirmarRecarga = async (id: string) => {
-    try {
-      const res = await fetch(`/api/proxy/estudio/recarga/${id}/confirmar`, { method: 'POST', headers: auth() })
-      if (!res.ok) throw new Error()
-      toast.success('Recarga confirmada e saldo creditado')
-      carregarDados()
-    } catch {
-      toast.error('Erro ao confirmar a recarga.')
-    }
-  }
-
-  const pendentes = transacoes.filter(t => t.status === 'pendente' && t.tipo === 'credito')
+  // Aprovação de recargas pendentes fica SÓ na Gestão de Tokens (admin), não aqui (tela do cliente).
   const cardCls = 'rounded-[var(--ws-radius-xl)] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] backdrop-blur-md p-5'
 
   return (
@@ -199,24 +185,6 @@ export function CarregarTokens() {
             </div>
           )}
         </div>
-
-        {/* Admin: recargas pendentes */}
-        {isAdmin && pendentes.length > 0 && (
-          <div className={`${cardCls} border-[var(--ws-blue)]/40`}>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--ws-blue)] mb-3">Recargas pendentes (admin)</div>
-            <div className="space-y-2">
-              {pendentes.map(t => (
-                <div key={t.id} className="flex items-center justify-between gap-2 p-2 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)]">
-                  <div className="text-[12px] text-[var(--ws-text-1)]"><b>{t.tokens}</b> tokens · R$ {t.valor_reais ?? t.tokens}</div>
-                  <button onClick={() => confirmarRecarga(t.id)}
-                    className="h-8 px-3 rounded-[var(--ws-radius-lg)] bg-[var(--ws-blue)] text-white text-[10px] font-bold uppercase tracking-wider hover:opacity-90 flex items-center gap-1.5">
-                    <Check size={13} /> Confirmar
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Histórico */}
         <div className={cardCls}>
