@@ -45,9 +45,20 @@ GET  /estudio/admin/recargas-pendentes  → [ { id, workspace_id, nome, tokens, 
 # reusa POST /estudio/creditar (liberar) e POST /estudio/recarga/{id}/confirmar
 ```
 
+## Gateway Stripe (3b — 2026-06-11, FEITO; TEST mode)
+
+Pagamento automático via **Stripe Checkout hospedado** (R$1/token). Crédito **idempotente por `session_id`** (nunca credita 2x) por duas vias: confirm-on-return + webhook.
+```
+POST /estudio/checkout            { workspace_id, tokens }   → { url }  (Checkout Session; metadata={workspace_id,tokens})
+POST /estudio/checkout/confirmar  { workspace_id, session_id } → { pago, saldo_tokens }  (no retorno; retrieve+credita se paid)
+POST /estudio/stripe/webhook      (Stripe assina) → credita em checkout.session.completed (verifica assinatura com stripe_webhook_secret)
+```
+- **Segredos** só no `.env` (gitignored): `stripe_secret_key`, `stripe_publishable_key`, `stripe_webhook_secret` (+ `frontend_url`). `stripe` no requirements.
+- **Front (Carregar Tokens):** botão primário **"Pagar com cartão/PIX"** → `/checkout` → redireciona; no retorno (`?session_id=`) chama `/checkout/confirmar` e credita. Recarga manual continua como secundária.
+- **⚠️ Pendências:** (1) criar o **webhook endpoint** no Dashboard Stripe apontando p/ `/estudio/stripe/webhook` e pôr o `whsec_` no `.env` (até lá, o confirm-on-return cobre o caminho feliz); (2) **PIX** aparece no Checkout se ativado no Dashboard; (3) **rotacionar** as chaves test (ficaram expostas no chat) e migrar p/ live quando for produção.
+
 ## Roadmap (fases seguintes)
-- **Gateway Stripe (3b, hospedado):** `POST /estudio/checkout` (Checkout Session, cartão+PIX) + `POST /estudio/stripe/webhook` (verifica assinatura → `estudio_wallet.creditar`, idempotente por session_id). Chaves `stripe_*` só em `.env`; o agente não insere credenciais nem processa cartão (o cliente paga na página da Stripe).
-- Tela de **Vídeos**.
+- Tela de **Vídeos**; relatórios de faturamento.
 
 ## Fora de escopo (fase 1)
 Gateway automático; débito por geração; relatórios de faturamento.
