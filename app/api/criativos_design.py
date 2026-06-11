@@ -406,6 +406,7 @@ class MelhorarCopyIn(BaseModel):
     product: Optional[str] = None
     objective: Optional[str] = None
     densidade: Optional[str] = None
+    existentes: Optional[list[str]] = None  # outros textos do criativo (não repetir)
 
 
 @router.post("/melhorar-copy")
@@ -425,6 +426,7 @@ def melhorar_copy_endpoint(
             product=payload.product,
             objective=payload.objective,
             densidade=payload.densidade,
+            existentes=payload.existentes,
         )
     except Exception as exc:  # noqa: BLE001
         code, msg = image_gen._map_error(exc)

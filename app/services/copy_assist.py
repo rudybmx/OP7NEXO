@@ -46,8 +46,13 @@ def melhorar_copy(
     product: str | None = None,
     objective: str | None = None,
     densidade: str | None = None,
+    existentes: list[str] | None = None,
 ) -> tuple[str, dict]:
-    """Gera ou melhora o texto de um campo. Retorna (texto, usage)."""
+    """Gera ou melhora o texto de um campo. Retorna (texto, usage).
+
+    `existentes` = outros textos já presentes no criativo — o novo texto NÃO deve
+    repeti-los; deve complementar com um ângulo diferente.
+    """
     regra = _CAMPO.get(campo, "Melhore o texto a seguir mantendo a intenção.")
     obj = _OBJ.get((objective or "").strip().lower(), "")
 
@@ -61,10 +66,16 @@ def melhorar_copy(
         partes.append("Objetivo da campanha: " + obj)
     if product:
         partes.append(f"Contexto (o que anunciar): {product}.")
+    existentes = [e.strip() for e in (existentes or []) if e and e.strip()]
+    if existentes:
+        partes.append(
+            "Textos JÁ presentes no criativo — NÃO repita as ideias/palavras deles; "
+            "traga um ângulo/benefício DIFERENTE e complementar: " + " | ".join(existentes)
+        )
     if texto_atual and texto_atual.strip():
-        partes.append(f'Melhore mantendo a intenção: "{texto_atual.strip()}".')
+        partes.append(f'Melhore mantendo a intenção (sem repetir os textos acima): "{texto_atual.strip()}".')
     else:
-        partes.append("O campo está vazio: gere uma sugestão a partir do contexto.")
+        partes.append("O campo está vazio: gere uma sugestão complementar (sem repetir os textos acima).")
 
     client = _image_client()
     resp = client.chat.completions.create(
