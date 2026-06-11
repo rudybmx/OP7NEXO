@@ -74,6 +74,21 @@ Body: `{ generation_id|base_image_url, instrucao, referencias?[], mask? (multipa
 
 ---
 
+## Assistente de copy (IA — modelo de texto)
+
+O campo **"O que você quer anunciar?"** (`product`) é o âncora/gatilho; a fatoração Produto/Público/Diferencial/Objetivo é feita dentro do prompt. **NUNCA travessão (—)** — scrub por campo. Ambas as rotas devolvem `usage` (billing).
+
+### `POST /design/gerar-copy`  *(botão master "✨ Gerar textos")*
+Body: `{ workspace_id, product, objective, densidade: "simples"|"rico", tone?, audience? }`.
+→ `200 { pacote: { headline, subheadline, cta, bullets: string[], selo, copy_extra }, usage }`.
+Uma só chamada (coerente, sem repetição entre campos). `simples` → `bullets:[]`, `selo:""`, `copy_extra:""`; `rico` → 2–3 bullets + selo + copy_extra. **Sobrescreve** os campos no front. Erro → `502 {error_code, error_message}`.
+
+### `POST /design/melhorar-copy`  *(✨ por campo)*
+Body: `{ workspace_id, campo: "product"|"headline"|"subheadline"|"cta"|"footer"|"bullet"|"selo"|"copy_extra", texto_atual?, product?, objective?, densidade?, existentes?: string[], tone?, audience? }`.
+→ `200 { texto, usage }`. Gera (campo vazio) ou melhora (preenchido) UM campo, complementando `existentes` sem repetir. Direção/gatilho por `objective`.
+
+---
+
 ## Montagem & exportação (sem IA)
 
 ### `POST /design/renderizar-criativo`
