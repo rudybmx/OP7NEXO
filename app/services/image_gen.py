@@ -277,21 +277,12 @@ def _prompt_reverso(cs: dict, densidade_ajuste: str, logo_mode: str = "compor") 
     L: list[str] = []
     desc = cs.get("descricao")
     if desc:
-        L.append("Recrie um criativo publicitário para Meta Ads com base nesta descrição detalhada do modelo: " + desc)
+        L.append(
+            "Recrie um criativo publicitário para Meta Ads com base nesta descrição "
+            "VISUAL do modelo (cena, personagem, composição, cores, estilo): " + desc
+        )
     else:
         L.append("Recrie o criativo seguindo FIELMENTE a referência enviada.")
-    if cs.get("objetivo_do_criativo"):
-        L.append(f"Objetivo: {cs['objetivo_do_criativo']}.")
-    if cs.get("estilo_visual"):
-        L.append(f"Estilo visual: {cs['estilo_visual']}.")
-    if cs.get("estilo"):
-        L.append(f"Estilo: {cs['estilo']}.")
-    if cs.get("tom"):
-        L.append(f"Tom: {cs['tom']}.")
-    if cs.get("personagem"):
-        L.append(f"Personagem: {cs['personagem']}.")
-    if cs.get("composicao_visual"):
-        L.append(f"Composição visual: {cs['composicao_visual']}.")
     pal = cs.get("paleta_de_cores") or cs.get("palette") or []
     if pal:
         L.append("Paleta (use exatamente estas cores): " + ", ".join(pal) + ".")
@@ -312,7 +303,13 @@ def _prompt_reverso(cs: dict, densidade_ajuste: str, logo_mode: str = "compor") 
     if ct.get("footer"):
         textos.append(f'Rodapé "{ct["footer"]}"')
     if textos:
-        L.append("Escreva EXATAMENTE estes textos, integrados à arte com hierarquia: " + "; ".join(textos) + ".")
+        L.append(
+            "Os ÚNICOS textos da arte são os listados a seguir; ignore quaisquer "
+            "palavras/legendas que apareçam na descrição visual. Escreva EXATAMENTE "
+            "estes textos, integrados à arte com hierarquia: " + "; ".join(textos) + "."
+        )
+    else:
+        L.append("NÃO escreva nenhum texto na arte (a descrição é só visual).")
 
     if logo.get("present"):
         pos = logo.get("posicao") or logo.get("position") or "topo"

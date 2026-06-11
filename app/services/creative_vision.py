@@ -15,19 +15,15 @@ from app.services.image_gen import _image_client
 
 log = logging.getLogger(__name__)
 
-_SCHEMA_PROMPT = """Você é diretor de arte. Analise este criativo publicitário de forma CIRÚRGICA e detalhada e devolva SOMENTE um JSON (creative_spec) com:
+_SCHEMA_PROMPT = """Você é diretor de arte. Analise este criativo publicitário de forma CIRÚRGICA e devolva SOMENTE um JSON (creative_spec) com:
 {
  "formato": "ex 4:5",
- "descricao": "UM parágrafo rico e detalhado descrevendo a imagem inteira como um prompt de geração completo (fundo, cores, personagem, pose, iluminação, posição da logo, textos e suas cores, ícones, botões, rodapé, estilo)",
- "objetivo_do_criativo": "ex: gerar agendamento / institucional",
- "estilo": "", "tom": "", "estilo_visual": "ex: clean premium, glass, editorial",
+ "descricao": "UM parágrafo rico descrevendo SOMENTE a CENA VISUAL como um prompt de geração completo: fundo, cores, personagem (aparência, pose, roupa), iluminação, composição e layout (ONDE ficam os blocos), posição da logo, estilo/clima, ícones e elementos gráficos. NÃO inclua os TEXTOS/palavras/headline/legendas literais — descreva apenas ONDE os blocos de texto aparecem (ex.: 'bloco de título grande no topo', 'três cards com legenda embaixo'), nunca as palavras em si. Os textos vão SÓ em conteudo_textual.",
  "paleta_de_cores": ["#hex", "..."],
- "personagem": "descrição do personagem/sujeito principal, ou 'sem pessoa'",
- "composicao_visual": "layout, posições e hierarquia (onde fica cada elemento)",
  "conteudo_textual": {"headline":"","subheadline":"","bullets":["..."],"cta":"","footer":""},
  "logo": {"present": true, "posicao":"ex topo-central", "tamanho":"pequena|media|grande", "observacao":"onde a logo está apoiada (faixa/área limpa) para não cobrir texto"}
 }
-Use posições em português (topo-esquerda, topo-central, rodapé-centro, etc.). Seja fiel ao que está na imagem. Responda só o JSON, sem comentários."""
+Use posições em português (topo-esquerda, topo-central, rodapé-centro, etc.). Capture TODOS os textos da imagem em conteudo_textual (nunca na descrição). Seja fiel ao que está na imagem. Responda só o JSON, sem comentários."""
 
 
 def _normalizar(spec: dict) -> dict:
