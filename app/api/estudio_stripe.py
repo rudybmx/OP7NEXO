@@ -14,6 +14,7 @@ import uuid
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -57,7 +58,13 @@ def _creditar_sessao(db: Session, session: dict, por: uuid.UUID | None = None) -
         return
     if _ja_creditado(db, sid):
         return
-    estudio_wallet.creditar(db, uuid.UUID(ws), tokens, "Recarga via Stripe", referencia=sid, por=por)
+    try:
+        estudio_wallet.creditar(db, uuid.UUID(ws), tokens, "Recarga via Stripe", referencia=sid, por=por)
+    except IntegrityError:
+        # Corrida (confirm-on-return + webhook na mesma sessão): o índice único
+        # barrou o 2º crédito. Já está creditado — ignora.
+        db.rollback()
+        log.info("[stripe] crédito idempotente: sessão %s já creditada", sid)
 
 
 class CheckoutIn(BaseModel):
