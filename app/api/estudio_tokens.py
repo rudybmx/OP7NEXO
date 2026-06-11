@@ -18,8 +18,9 @@ from app.core.deps import (
     get_usuario_atual,
     verificar_acesso_workspace,
 )
-from app.models.estudio import EstudioTokenTransacao
+from app.models.estudio import EstudioTokenSaldo, EstudioTokenTransacao
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.services import estudio_wallet
 
 router = APIRouter(prefix="/estudio", tags=["estudio-tokens"])
@@ -130,3 +131,53 @@ def creditar_admin(
         payload.motivo or "Crédito manual (admin)", por=usuario.id,
     )
     return {"transacao": _tx_out(t), "saldo_tokens": estudio_wallet.saldo(db, payload.workspace_id)}
+
+
+# ───────────────────────── Admin: controle global de tokens ─────────────────
+@router.get("/admin/saldos")
+def admin_saldos(
+    usuario: User = Depends(exigir_platform_admin),
+    db: Session = Depends(get_db),
+):
+    """Saldo de todos os workspaces ativos (0 quando nunca recarregou)."""
+    rows = (
+        db.query(Workspace.id, Workspace.nome, EstudioTokenSaldo.saldo_tokens)
+        .outerjoin(EstudioTokenSaldo, EstudioTokenSaldo.workspace_id == Workspace.id)
+        .filter(Workspace.ativo.is_(True))
+        .all()
+    )
+    out = [
+        {"workspace_id": str(wid), "nome": nome, "saldo_tokens": saldo or 0}
+        for wid, nome, saldo in rows
+    ]
+    out.sort(key=lambda x: x["saldo_tokens"], reverse=True)
+    return out
+
+
+@router.get("/admin/recargas-pendentes")
+def admin_recargas_pendentes(
+    usuario: User = Depends(exigir_platform_admin),
+    db: Session = Depends(get_db),
+):
+    """Recargas pendentes de todos os workspaces (para o admin confirmar)."""
+    rows = (
+        db.query(EstudioTokenTransacao, Workspace.nome)
+        .join(Workspace, Workspace.id == EstudioTokenTransacao.workspace_id)
+        .filter(
+            EstudioTokenTransacao.status == "pendente",
+            EstudioTokenTransacao.tipo == "credito",
+        )
+        .order_by(EstudioTokenTransacao.criado_em.desc())
+        .all()
+    )
+    return [
+        {
+            "id": str(t.id),
+            "workspace_id": str(t.workspace_id),
+            "nome": nome,
+            "tokens": t.tokens,
+            "valor_reais": float(t.valor_reais) if t.valor_reais is not None else None,
+            "criado_em": t.criado_em.isoformat() if t.criado_em else None,
+        }
+        for t, nome in rows
+    ]
