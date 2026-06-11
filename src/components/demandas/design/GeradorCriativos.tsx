@@ -168,7 +168,7 @@ export function GeradorCriativos() {
   const [cor60, setCor60] = useState('')
   const [cor30, setCor30] = useState('')
   const [cor10, setCor10] = useState('')
-  const [logoMode, setLogoMode] = useState<'compor' | 'integrar'>('compor')
+  const logoMode: 'compor' | 'integrar' = 'integrar' // padrão fixo: o modelo integra a logo
   const [confirmReverso, setConfirmReverso] = useState(false)
 
   const [briefing, setBriefing] = useState('')
@@ -435,16 +435,6 @@ export function GeradorCriativos() {
             <UploadCard url={referenceUrl} onChange={onUpload(setReferenceUrl)} onClear={() => setReferenceUrl(null)} label="Modelo de exemplo" hint="referência de estilo (opcional)" />
             <UploadCard url={logoUrl} onChange={onUpload(setLogoUrl)} onClear={() => setLogoUrl(null)} label="Logo" hint="marca do cliente" />
           </div>
-          {logoUrl && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase text-[var(--ws-text-3)]">Logo:</span>
-              {([['compor', 'Compor (real)'], ['integrar', 'Integrar (IA)']] as const).map(([id, lbl]) => (
-                <button key={id} onClick={() => setLogoMode(id)}
-                  title={id === 'compor' ? 'A logo real é aplicada por cima, fiel.' : 'O modelo desenha a logo na arte (mais orgânico, pode aproximar).'}
-                  className={`px-3 py-1 rounded-full text-[10px] font-medium border transition-all ${logoMode === id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>{lbl}</button>
-              ))}
-            </div>
-          )}
           {referenceUrl && (
             <div className="flex flex-wrap gap-2">
               {REF_USOS.map(u => (
@@ -517,8 +507,8 @@ export function GeradorCriativos() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className={logoMode === 'compor' ? '' : 'opacity-40 pointer-events-none'}>
-                    <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Posição da logo {logoMode !== 'compor' && '(só no Compor)'}</span>
+                  <div>
+                    <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Posição da logo</span>
                     <select value={creativeSpec.logo?.posicao || 'topo-esquerda'} onChange={e => setLogoCampo('posicao', e.target.value)}
                       className="w-full h-8 mt-1 px-2 bg-white border border-[var(--ws-glass-border)] rounded-md text-[11px] focus:outline-none">
                       {LOGO_POSICOES.map(p => <option key={p} value={p}>{p}</option>)}
