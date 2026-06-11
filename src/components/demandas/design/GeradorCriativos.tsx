@@ -77,6 +77,40 @@ function extrairCores6030(dataUrl: string): Promise<string[]> {
   })
 }
 
+// ── Teoria das cores (HSL) — harmonia determinística, sem IA ──────────────
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  let m = (hex || '').replace('#', '')
+  if (m.length === 3) m = m.split('').map(c => c + c).join('')
+  if (m.length !== 6) return { h: 0, s: 0, l: 0 }
+  const r = parseInt(m.slice(0, 2), 16) / 255, g = parseInt(m.slice(2, 4), 16) / 255, b = parseInt(m.slice(4, 6), 16) / 255
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b)
+  let h = 0, s = 0; const l = (mx + mn) / 2
+  if (mx !== mn) {
+    const d = mx - mn
+    s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn)
+    if (mx === r) h = (g - b) / d + (g < b ? 6 : 0)
+    else if (mx === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+  }
+  return { h, s, l }
+}
+function hslToHex(h: number, s: number, l: number): string {
+  h = ((h % 360) + 360) % 360
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), mm = l - c / 2
+  let r = 0, g = 0, b = 0
+  if (h < 60) { r = c; g = x } else if (h < 120) { r = x; g = c } else if (h < 180) { g = c; b = x }
+  else if (h < 240) { g = x; b = c } else if (h < 300) { r = x; b = c } else { r = c; b = x }
+  const toH = (v: number) => Math.round((v + mm) * 255).toString(16).padStart(2, '0')
+  return '#' + toH(r) + toH(g) + toH(b)
+}
+function harmonia(primary: string, tipo: 'complementar' | 'analogas'): string[] {
+  const { h, s, l } = hexToHsl(primary)
+  if (tipo === 'analogas') return [primary, hslToHex(h - 30, s, l), hslToHex(h + 30, s, l)]
+  // complementar: 60 = primária, 30 = complementar, 10 = tom claro de detalhe
+  return [primary, hslToHex(h + 180, s, l), hslToHex(h, Math.max(0.15, s * 0.5), Math.min(0.92, l + 0.35))]
+}
+
 function UploadCard({ url, onChange, onClear, label, hint }: {
   url: string | null; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; onClear: () => void; label: string; hint: string
 }) {
@@ -250,15 +284,31 @@ export function GeradorCriativos() {
     })
   }
 
-  const sugerirCores = async () => {
-    const fonte = referenceUrl || logoUrl
-    if (!fonte) return
-    const c = await extrairCores6030(fonte)
-    if (c[0]) setCor60(c[0])
-    if (c[1]) setCor30(c[1])
-    if (c[2]) setCor10(c[2])
-    if (!c.length) toast.error('Não consegui captar as cores.')
-    else toast.success('Cores 60/30/10 sugeridas a partir do modelo.')
+  // Cores 60/30/10 — 3 fontes
+  const [showHarmonia, setShowHarmonia] = useState(false)
+  const [corPrimaria, setCorPrimaria] = useState('#0E142A')
+  const [tipoHarmonia, setTipoHarmonia] = useState<'complementar' | 'analogas'>('complementar')
+
+  const coletarDoModelo = async () => {
+    if (!referenceUrl) return
+    const c = await extrairCores6030(referenceUrl)
+    if (!c.length) { toast.error('Não consegui captar cores do modelo.'); return }
+    setCor60(c[0]); setCor30(c[1] || ''); setCor10(c[2] || '')
+    toast.success('Cores do modelo aplicadas.')
+  }
+  const coletarDaLogo = async () => {
+    if (!logoUrl) return
+    const c = await extrairCores6030(logoUrl)
+    if (!c.length) { toast.error('Não consegui captar cores da logo.'); return }
+    const { h, s, l } = hexToHsl(c[0])
+    setCor60(c[0])
+    setCor30(c[1] || hslToHex(h + 180, s, l))
+    setCor10(c[2] || hslToHex(h, Math.max(0.15, s * 0.5), Math.min(0.92, l + 0.35)))
+    toast.success(c.length >= 3 ? 'Cores da logo aplicadas.' : 'Cores completadas por harmonia complementar.')
+  }
+  const aplicarHarmonia = (primary: string, tipo: 'complementar' | 'analogas') => {
+    const [a, b, cc] = harmonia(primary, tipo)
+    setCor60(a); setCor30(b); setCor10(cc)
   }
 
   const toggleFormat = (id: string) => {
@@ -498,10 +548,36 @@ export function GeradorCriativos() {
               <ColorSwatch label="Secundária 30%" value={cor30} onChange={setCor30} />
               <ColorSwatch label="Detalhe 10%" value={cor10} onChange={setCor10} />
             </div>
-            <button onClick={sugerirCores} disabled={!referenceUrl && !logoUrl}
-              className="w-full h-8 rounded-[var(--ws-radius-lg)] text-[11px] font-medium border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] backdrop-blur-md text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] disabled:opacity-40 transition-all flex items-center justify-center gap-2">
-              <Wand2 size={13} /> Sugerir cores do modelo
-            </button>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { id: 'modelo', label: 'Do modelo', dis: !referenceUrl, hint: 'Extrai as cores dominantes da imagem de referência (regra 60/30/10).', fn: coletarDoModelo },
+                { id: 'logo', label: 'Da logo', dis: !logoUrl, hint: 'Pega as cores da logo; se tiver poucas, completa por harmonia complementar.', fn: coletarDaLogo },
+                { id: 'harmonia', label: 'Harmonia', dis: false, hint: 'Você escolhe a cor primária e a regra (complementar ou análogas); o sistema monta a paleta 60/30/10.', fn: () => setShowHarmonia(v => !v) },
+              ] as const).map(b => (
+                <div key={b.id} className="relative group">
+                  <button onClick={b.fn} disabled={b.dis}
+                    className={`w-full h-8 rounded-[var(--ws-radius-lg)] text-[10px] font-medium border bg-[var(--ws-glass-bg)] text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] disabled:opacity-40 transition-all ${b.id === 'harmonia' && showHarmonia ? 'border-[var(--ws-blue)] text-[var(--ws-blue)]' : 'border-[var(--ws-glass-border)]'}`}>
+                    {b.label}
+                  </button>
+                  <div className="pointer-events-none absolute z-20 left-0 top-full mt-1 w-48 p-2 rounded-md bg-[var(--ws-navy)] text-white text-[10px] leading-snug shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">{b.hint}</div>
+                </div>
+              ))}
+            </div>
+            {showHarmonia && (
+              <div className="flex items-center gap-2 p-2 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[rgba(62,91,255,0.04)] animate-in slide-in-from-top-2 duration-200">
+                <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Primária</span>
+                <label className="relative w-7 h-7 rounded-md overflow-hidden shrink-0 border border-white/50 cursor-pointer" style={{ background: corPrimaria }}>
+                  <input type="color" value={corPrimaria} onChange={e => { setCorPrimaria(e.target.value); aplicarHarmonia(e.target.value, tipoHarmonia) }} className="absolute inset-0 opacity-0 cursor-pointer" />
+                </label>
+                <select value={tipoHarmonia} onChange={e => { const t = e.target.value as 'complementar' | 'analogas'; setTipoHarmonia(t); aplicarHarmonia(corPrimaria, t) }}
+                  className="flex-1 h-8 px-2 bg-white border border-[var(--ws-glass-border)] rounded-md text-[11px] focus:outline-none">
+                  <option value="complementar">Complementar</option>
+                  <option value="analogas">Análogas</option>
+                </select>
+                <button onClick={() => aplicarHarmonia(corPrimaria, tipoHarmonia)}
+                  className="h-8 px-3 rounded-md text-[10px] font-bold uppercase bg-[var(--ws-blue)] text-white">Aplicar</button>
+              </div>
+            )}
           </div>
         )}
 
