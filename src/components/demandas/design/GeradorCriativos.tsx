@@ -224,6 +224,10 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
   const [creativeSpec, setCreativeSpec] = useState<any | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [densidadeAjuste, setDensidadeAjuste] = useState('fiel')
+  // Paleta do reverso: harmonia + voltar ao padrão
+  const [paletaOriginalReverso, setPaletaOriginalReverso] = useState<string[]>([])
+  const [corPrimariaReverso, setCorPrimariaReverso] = useState('#3E5BFF')
+  const [tipoHarmoniaReverso, setTipoHarmoniaReverso] = useState<'complementar' | 'analogas'>('complementar')
   const reverso = referenceUsage === 'modelo_reverso'
 
   const analisarModelo = async () => {
@@ -238,6 +242,9 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
       if (!res.ok) throw new Error(`Falha ao analisar (HTTP ${res.status})`)
       const data = await res.json()
       setCreativeSpec(data.creative_spec)
+      const pal: string[] = data.creative_spec?.paleta_de_cores || []
+      setPaletaOriginalReverso(pal)
+      setCorPrimariaReverso(pal[0] || '#3E5BFF')
       toast.success('Modelo analisado — edite os pontos abaixo.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erro ao analisar o modelo.')
@@ -651,18 +658,11 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
             {creativeSpec && (
               <div className="space-y-3">
                 <div>
-                  <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Descrição (espinha da geração)</span>
+                  <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Descrição da imagem (só o visual)</span>
+                  <p className="text-[9px] text-[var(--ws-text-3)] mt-0.5 mb-1">Descreve só a cena (sem os textos). Os textos ficam no Conteúdo textual abaixo.</p>
                   <textarea value={creativeSpec.descricao || ''} onChange={e => setCampo('descricao', e.target.value)}
-                    className="w-full h-24 p-2 mt-1 bg-[var(--ws-glass-bg)] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)] text-[12px] text-[var(--ws-text-1)] focus:outline-none focus:border-[var(--ws-blue)] resize-none" />
+                    className="w-full h-32 p-2 bg-[var(--ws-glass-bg)] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)] text-[12px] text-[var(--ws-text-1)] focus:outline-none focus:border-[var(--ws-blue)] resize-none" />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input value={creativeSpec.objetivo_do_criativo || ''} onChange={e => setCampo('objetivo_do_criativo', e.target.value)} placeholder="Objetivo" className={inputCls} />
-                  <input value={creativeSpec.estilo_visual || ''} onChange={e => setCampo('estilo_visual', e.target.value)} placeholder="Estilo visual" className={inputCls} />
-                  <input value={creativeSpec.estilo || ''} onChange={e => setCampo('estilo', e.target.value)} placeholder="Estilo" className={inputCls} />
-                  <input value={creativeSpec.tom || ''} onChange={e => setCampo('tom', e.target.value)} placeholder="Tom" className={inputCls} />
-                </div>
-                <input value={creativeSpec.personagem || ''} onChange={e => setCampo('personagem', e.target.value)} placeholder="Personagem" className={inputCls} />
-                <input value={creativeSpec.composicao_visual || ''} onChange={e => setCampo('composicao_visual', e.target.value)} placeholder="Composição visual" className={inputCls} />
                 <div className="space-y-2 pt-2 border-t border-[var(--ws-glass-border)]">
                   <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Conteúdo textual</span>
                   <input value={creativeSpec.conteudo_textual?.headline || ''} onChange={e => setConteudo('headline', e.target.value)} placeholder="Headline" className={inputCls} />
@@ -683,6 +683,22 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
                         <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(c) ? c : '#000000'} onChange={e => setPaletaCor(i, e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" />
                       </label>
                     ))}
+                  </div>
+                  {/* Harmonia de cores (escolhe primária → gera as demais) + voltar ao padrão */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)] shrink-0">Harmonia</span>
+                    <label className="relative w-7 h-7 rounded-md overflow-hidden shrink-0 border border-white/50 cursor-pointer" style={{ background: corPrimariaReverso }} title="Cor primária">
+                      <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(corPrimariaReverso) ? corPrimariaReverso : '#3E5BFF'} onChange={e => setCorPrimariaReverso(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                    </label>
+                    <select value={tipoHarmoniaReverso} onChange={e => setTipoHarmoniaReverso(e.target.value as 'complementar' | 'analogas')}
+                      className="flex-1 h-7 px-2 bg-[var(--ws-glass-bg)] text-[var(--ws-text-1)] border border-[var(--ws-glass-border)] rounded-md text-[10px] focus:outline-none [&>option]:bg-[var(--ws-navy)] [&>option]:text-[var(--ws-text-1)]">
+                      <option value="complementar">Complementar</option>
+                      <option value="analogas">Análogas</option>
+                    </select>
+                    <button onClick={() => setCampo('paleta_de_cores', harmonia(corPrimariaReverso, tipoHarmoniaReverso))}
+                      className="h-7 px-2 rounded-md text-[9px] font-bold uppercase bg-[var(--ws-blue)] text-white shrink-0">Aplicar</button>
+                    <button onClick={() => setCampo('paleta_de_cores', paletaOriginalReverso)} title="Voltar à paleta extraída do modelo"
+                      className="h-7 px-2 rounded-md text-[9px] font-bold uppercase border border-[var(--ws-glass-border)] text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] shrink-0">Padrão</button>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
