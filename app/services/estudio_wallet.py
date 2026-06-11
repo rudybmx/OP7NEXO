@@ -78,11 +78,12 @@ def confirmar(db: Session, t: EstudioTokenTransacao) -> EstudioTokenTransacao:
 
 def creditar(
     db: Session, workspace_id: uuid.UUID, tokens: int, motivo: str,
-    *, valor=None, por: uuid.UUID | None = None,
+    *, valor=None, referencia: str | None = None, por: uuid.UUID | None = None,
 ) -> EstudioTokenTransacao:
     t = registrar(
         db, workspace_id, "credito", tokens, motivo,
-        valor=valor if valor is not None else tokens * TOKEN_VALOR_REAIS, por=por,
+        valor=valor if valor is not None else tokens * TOKEN_VALOR_REAIS,
+        referencia=referencia, por=por,
     )
     db.commit()
     db.refresh(t)

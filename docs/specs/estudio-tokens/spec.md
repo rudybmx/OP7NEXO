@@ -47,7 +47,7 @@ GET  /estudio/admin/recargas-pendentes  → [ { id, workspace_id, nome, tokens, 
 
 ## Gateway Stripe (3b — 2026-06-11, FEITO; TEST mode)
 
-Pagamento automático via **Stripe Checkout hospedado** (R$1/token). Crédito **idempotente por `session_id`** (nunca credita 2x) por duas vias: confirm-on-return + webhook.
+Pagamento automático via **Stripe Checkout hospedado** (R$1/token). Crédito **idempotente por `session_id`** (nunca credita 2x) por duas vias: confirm-on-return + webhook. A idempotência depende de `estudio_wallet.creditar(..., referencia=session_id)` **gravar** o `referencia` na transação — é o que o pré-check `_ja_creditado` (`WHERE referencia==session_id`) e o índice único parcial `uq_estudio_tx_referencia_credito` (migration 068) consultam.
 ```
 POST /estudio/checkout            { workspace_id, tokens }   → { url }  (Checkout Session; metadata={workspace_id,tokens})
 POST /estudio/checkout/confirmar  { workspace_id, session_id } → { pago, saldo_tokens }  (no retorno; retrieve+credita se paid)
