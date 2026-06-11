@@ -488,6 +488,20 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
   }
   useEffect(() => { carregarHistoricoHoje() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [wsId])
 
+  // ── Saldo de tokens + custo da geração (débito) ─────────────────────────
+  const [saldoTokens, setSaldoTokens] = useState<number | null>(null)
+  const carregarSaldo = async () => {
+    if (!wsId) return
+    try {
+      const res = await fetch(`/api/proxy/estudio/saldo?workspace_id=${wsId}`, { headers: { Authorization: `Bearer ${getToken() ?? ''}` } })
+      if (res.ok) { const d = await res.json(); setSaldoTokens(d?.saldo_tokens ?? 0) }
+    } catch { /* silencioso */ }
+  }
+  useEffect(() => { carregarSaldo() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [wsId])
+  const custoUm = reverso ? 3 : (quality === 'high' ? 2 : 1)   // reverso 3 · alta 2 · medium 1
+  const custoTotal = custoUm * (formatsSel.length || 1)
+  const semSaldo = saldoTokens != null && saldoTokens < custoTotal
+
   const toggleFormat = (id: string) => {
     setFormatsSel(prev => {
       if (prev.includes(id)) return prev.length === 1 ? prev : prev.filter(x => x !== id)
@@ -554,13 +568,20 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
         const data = dl ? JSON.parse(dl) : null
         if (ev === 'generation.completed' && data?.base_image_url) {
           ok = true
+          if (typeof data.saldo_tokens === 'number') setSaldoTokens(data.saldo_tokens)
           if (setAsResult) setResultImage(data.base_image_url)
           setHistory(prev => [
             { id: data.generation_id, url: data.base_image_url, titulo: headline.trim() || briefing.trim() || 'Criativo', at: Date.now() },
             ...prev,
           ].slice(0, 12))
         } else if (ev === 'generation.failed') {
-          setError(data?.error_message || 'Falha na geração.')
+          if (data?.error_code === 'saldo_insuficiente') {
+            setError(data?.error_message || 'Saldo insuficiente.')
+            toast.error('Saldo insuficiente — carregue tokens para gerar.')
+            carregarSaldo()
+          } else {
+            setError(data?.error_message || 'Falha na geração.')
+          }
         }
       }
     }
@@ -571,6 +592,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
     if (!wsId) { toast.error('Selecione um workspace.'); return }
     if (reverso && !creativeSpec) { toast.error('Analise o modelo de exemplo primeiro.'); return }
     if (!reverso && !briefing.trim() && !headline.trim()) { toast.error('Diga o que anunciar (ou ao menos a headline).'); return }
+    if (semSaldo) { toast.error(`Saldo insuficiente (${saldoTokens}). Este criativo custa ${custoTotal} token(s).`); return }
     setIsGenerating(true); setResultImage(null); setError(null)
     try {
       const formatos = formatsSel.length ? formatsSel : ['45']
@@ -595,10 +617,10 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setConfirmReverso(false)}>
           <div onClick={e => e.stopPropagation()} className="w-[360px] p-5 rounded-[var(--ws-radius-xl)] bg-white border border-[var(--ws-glass-border)] shadow-2xl space-y-4 animate-in zoom-in-95">
             <div className="flex items-center gap-2"><Wand2 size={18} className="text-[var(--ws-gold)]" /><span className="font-bold text-sm text-[var(--ws-text-1)]">Modelo Reverso</span></div>
-            <p className="text-[12px] text-[var(--ws-text-2)] leading-relaxed">A análise detalhada do modelo (IA de visão) é uma <b>edição premium</b> e consome <b>~3 créditos</b>. Deseja continuar?</p>
+            <p className="text-[12px] text-[var(--ws-text-2)] leading-relaxed">A <b>análise</b> do modelo (IA de visão) é <b>gratuita</b>. Depois, <b>gerar</b> com Modelo Reverso consome <b>3 tokens</b> por criativo. Deseja analisar?</p>
             <div className="flex gap-2">
               <button onClick={() => setConfirmReverso(false)} className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold whitespace-nowrap border border-[var(--ws-glass-border)] text-[var(--ws-text-2)] hover:bg-[var(--ws-glass-bg)]">Cancelar</button>
-              <button onClick={() => { setConfirmReverso(false); setReferenceUsage('modelo_reverso'); analisarModelo() }} className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold whitespace-nowrap bg-[var(--ws-blue)] text-white">Aceitar (3 créditos)</button>
+              <button onClick={() => { setConfirmReverso(false); setReferenceUsage('modelo_reverso'); analisarModelo() }} className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold whitespace-nowrap bg-[var(--ws-blue)] text-white">Analisar (grátis)</button>
             </div>
           </div>
         </div>
@@ -649,7 +671,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
               <button onClick={analisarModelo} disabled={analyzing || !referenceUrl}
                 className="text-[10px] font-bold uppercase text-[var(--ws-blue)] disabled:opacity-40">{analyzing ? 'Analisando...' : 'Re-analisar'}</button>
             </div>
-            <div className="text-[10px] font-medium text-[var(--ws-gold)]">⚡ Edição detalhada — consome ~3 créditos</div>
+            <div className="text-[10px] font-medium text-[var(--ws-gold)]">⚡ Análise gratuita · gerar com Modelo Reverso consome 3 tokens</div>
             {analyzing && <div className="text-[11px] text-[var(--ws-text-3)]">Lendo o modelo de forma cirúrgica (visão)...</div>}
             {!analyzing && !creativeSpec && (
               <button onClick={analisarModelo} disabled={!referenceUrl}
@@ -1016,13 +1038,25 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
           )}
         </div>
 
+        {/* Saldo + custo */}
+        <div className="mt-1 flex items-center justify-between text-[11px]">
+          <span className="text-[var(--ws-text-3)]">
+            Saldo: <b className="text-[var(--ws-text-1)]">{saldoTokens ?? '—'}</b> tokens · custo: <b className="text-[var(--ws-text-1)]">{custoTotal}</b> {formatsSel.length > 1 ? `(${custoUm}×${formatsSel.length})` : ''}
+          </span>
+          {semSaldo && (
+            <a href="/marketing/estudio-ai/carregar-tokens" className="font-bold text-[var(--ws-blue)] hover:underline">Carregar tokens →</a>
+          )}
+        </div>
+
         {/* Gerar */}
-        <button onClick={handleGenerate} disabled={isGenerating}
-          className="mt-1 w-full py-4 bg-[var(--ws-gold)] hover:opacity-90 disabled:opacity-50 text-white font-bold rounded-[var(--ws-radius-lg)] shadow-lg transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs">
+        <button onClick={handleGenerate} disabled={isGenerating || semSaldo}
+          className="w-full py-4 bg-[var(--ws-gold)] hover:opacity-90 disabled:opacity-50 text-white font-bold rounded-[var(--ws-radius-lg)] shadow-lg transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs">
           {isGenerating ? (
             <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Gerando...</>
+          ) : semSaldo ? (
+            <>Saldo insuficiente</>
           ) : (
-            <><Send size={16} /> Gerar {formatsSel.length > 1 ? `${formatsSel.length} Criativos` : 'Criativo'}</>
+            <><Send size={16} /> Gerar {formatsSel.length > 1 ? `${formatsSel.length} Criativos` : 'Criativo'} · {custoTotal} {custoTotal > 1 ? 'tokens' : 'token'}</>
           )}
         </button>
       </div>
