@@ -322,6 +322,12 @@ export function GeradorCriativos() {
     const [a, b, cc] = harmonia(primary, tipo)
     setCor60(a); setCor30(b); setCor10(cc)
   }
+  const primariaDe = async (url: string | null) => {
+    if (!url) return
+    const c = await extrairCores6030(url)
+    if (!c[0]) { toast.error('Não consegui captar a cor.'); return }
+    setCorPrimaria(c[0]); aplicarHarmonia(c[0], tipoHarmonia)
+  }
 
   const toggleFormat = (id: string) => {
     setFormatsSel(prev => {
@@ -566,18 +572,32 @@ export function GeradorCriativos() {
               ))}
             </div>
             {showHarmonia && (
-              <div className="flex items-center gap-2 p-2 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[rgba(62,91,255,0.04)] animate-in slide-in-from-top-2 duration-200">
-                <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)]">Primária</span>
-                <label className="relative w-7 h-7 rounded-md overflow-hidden shrink-0 border border-white/50 cursor-pointer" style={{ background: corPrimaria }}>
-                  <input type="color" value={corPrimaria} onChange={e => { setCorPrimaria(e.target.value); aplicarHarmonia(e.target.value, tipoHarmonia) }} className="absolute inset-0 opacity-0 cursor-pointer" />
-                </label>
-                <select value={tipoHarmonia} onChange={e => { const t = e.target.value as 'complementar' | 'analogas'; setTipoHarmonia(t); aplicarHarmonia(corPrimaria, t) }}
-                  className="flex-1 h-8 px-2 bg-white border border-[var(--ws-glass-border)] rounded-md text-[11px] focus:outline-none">
-                  <option value="complementar">Complementar</option>
-                  <option value="analogas">Análogas</option>
-                </select>
-                <button onClick={() => aplicarHarmonia(corPrimaria, tipoHarmonia)}
-                  className="h-8 px-3 rounded-md text-[10px] font-bold uppercase bg-[var(--ws-blue)] text-white">Aplicar</button>
+              <div className="space-y-2 p-2 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[rgba(62,91,255,0.04)] animate-in slide-in-from-top-2 duration-200">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-bold uppercase text-[var(--ws-text-3)] shrink-0">Primária</span>
+                  {([
+                    { id: 'modelo', label: 'Do modelo', dis: !referenceUrl, hint: 'Usa a cor dominante do modelo como primária.', fn: () => primariaDe(referenceUrl) },
+                    { id: 'logo', label: 'Da logo', dis: !logoUrl, hint: 'Usa a cor dominante da logo como primária.', fn: () => primariaDe(logoUrl) },
+                  ] as const).map(b => (
+                    <div key={b.id} className="relative group">
+                      <button onClick={b.fn} disabled={b.dis}
+                        className="h-7 px-2 rounded-md text-[10px] font-medium border border-[var(--ws-glass-border)] bg-white text-[var(--ws-text-2)] hover:border-[var(--ws-blue)] disabled:opacity-40 transition-all">{b.label}</button>
+                      <div className="pointer-events-none absolute z-20 left-0 top-full mt-1 w-44 p-2 rounded-md bg-[var(--ws-navy)] text-white text-[10px] leading-snug shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">{b.hint}</div>
+                    </div>
+                  ))}
+                  <label className="relative w-7 h-7 rounded-md overflow-hidden shrink-0 border border-white/50 cursor-pointer ml-auto" style={{ background: corPrimaria }} title="Escolher manualmente">
+                    <input type="color" value={corPrimaria} onChange={e => { setCorPrimaria(e.target.value); aplicarHarmonia(e.target.value, tipoHarmonia) }} className="absolute inset-0 opacity-0 cursor-pointer" />
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select value={tipoHarmonia} onChange={e => { const t = e.target.value as 'complementar' | 'analogas'; setTipoHarmonia(t); aplicarHarmonia(corPrimaria, t) }}
+                    className="flex-1 h-8 px-2 bg-white border border-[var(--ws-glass-border)] rounded-md text-[11px] focus:outline-none">
+                    <option value="complementar">Complementar</option>
+                    <option value="analogas">Análogas</option>
+                  </select>
+                  <button onClick={() => aplicarHarmonia(corPrimaria, tipoHarmonia)}
+                    className="h-8 px-3 rounded-md text-[10px] font-bold uppercase bg-[var(--ws-blue)] text-white">Aplicar</button>
+                </div>
               </div>
             )}
           </div>
