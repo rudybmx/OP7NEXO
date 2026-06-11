@@ -354,6 +354,10 @@ def montar_prompt_integrado(
         L.append(f"Estilo visual: {g('estilo')}.")
     if g("tone"):
         L.append(f"Tom: {g('tone')}.")
+    if g("visual_rules"):
+        L.append(f"Regras visuais da MARCA (sempre siga): {g('visual_rules')}.")
+    if g("forbidden_rules"):
+        L.append(f"NUNCA faça (proibido pela MARCA): {g('forbidden_rules')}.")
     replica = tem_referencia and (g("reference_usage") == "replica")
 
     # No modo réplica, a referência manda na paleta — as cores da marca NÃO repintam.

@@ -25,7 +25,7 @@ from app.models.criativo import (
     CriativoProjeto,
 )
 from app.models.user import User
-from app.services import criativo_render, estudio_wallet, image_gen
+from app.services import brand_kit, criativo_render, estudio_wallet, image_gen
 from app.services.object_storage import get_object, public_url, put_bytes
 from app.services.upload_validation import validar_e_normalizar_imagem
 
@@ -343,6 +343,14 @@ def gerar(
     spec = payload.model_dump(exclude={"workspace_id", "logo_base64", "referencia_base64"})
     ws_id = payload.workspace_id
     user_id = usuario.id
+
+    # Brand Kit do workspace: aplica cores/tom/regras onde o usuário não setou e,
+    # se não veio logo no upload, usa a logo salva da marca.
+    bk = brand_kit.carregar(db, ws_id)
+    brand_kit.aplicar_no_spec(spec, bk)
+    if logo_bytes is None and bk:
+        logo_bytes = brand_kit.logo_bytes(db, ws_id)
+
     tem_logo = bool(logo_bytes)
     tem_ref = bool(ref_bytes)
     custo = custo_tokens(spec)

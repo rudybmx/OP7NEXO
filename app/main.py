@@ -17,6 +17,7 @@ from app.api.followups import router as followups_router
 from app.api.mensagens import router as mensagens_router
 from app.api.pmp import router as pmp_router
 from app.api.criativos_design import router as criativos_design_router
+from app.api.brand_kit import router as brand_kit_router
 from app.api.estudio_tokens import router as estudio_tokens_router
 from app.api.estudio_stripe import router as estudio_stripe_router
 from app.api.matriz_investimento import router as matriz_investimento_router
@@ -135,6 +136,7 @@ app.include_router(pmp_router)
 app.include_router(matriz_investimento_router)
 app.include_router(sftp_router)
 app.include_router(criativos_design_router)
+app.include_router(brand_kit_router)
 app.include_router(estudio_tokens_router)
 app.include_router(estudio_stripe_router)
 
