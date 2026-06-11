@@ -28,9 +28,16 @@ POST /estudio/recarga/{id}/confirmar  (platform_admin)  → { transacao(confirma
 POST /estudio/creditar     { workspace_id, tokens, motivo? } (platform_admin) → { transacao, saldo_tokens }
 ```
 
+## Débito por geração (fase 2 — 2026-06-11, FEITO)
+
+- **Custo (`custo_tokens` em `criativos_design.py`):** `/design/gerar` debita **3** se `reference_usage=='modelo_reverso'` (geração reverso, flat); senão **2** se `quality=='high'`; senão **1**. Cada formato selecionado = uma geração = um débito.
+- **Grátis:** `/design/analisar-modelo` (análise do reverso), `/design/gerar-copy`, `/design/melhorar-copy`.
+- **Regra:** pré-checa `estudio_wallet.tem_saldo` ANTES de chamar a OpenAI → se insuficiente, `generation.failed` com `error_code='saldo_insuficiente'` (não gera). **Débito só no sucesso** (`status=='done'`) via `estudio_wallet.debitar(..., referencia=generation_id)`; falha não cobra. `generation.completed` traz `custo_tokens` + `saldo_tokens`.
+- Lógica de saldo centralizada em `app/services/estudio_wallet.py` (saldo/tem_saldo/registrar/confirmar/creditar/debitar) — usada pelo router `/estudio` e pelo `/design/gerar`.
+- Front: tela Gerar mostra saldo + custo do criativo; botão bloqueia + link "Carregar tokens" sem saldo; modal do Reverso reflete "análise grátis, geração 3 tokens".
+
 ## Roadmap (fases seguintes)
 - **Gateway de pagamento automático** (PIX/cartão via Mercado Pago/Asaas/Stripe + webhook que confirma a recarga). Chaves só em `.env`; o agente não insere credenciais nem executa transações (UI/integração; o cliente paga).
-- **Débito por geração**: `/design/gerar` e `/design/analisar-modelo` debitam 1/2/3 tokens e bloqueiam sem saldo (transação `debito`, `referencia` = generation_id).
 - Tela de **Vídeos**.
 
 ## Fora de escopo (fase 1)
