@@ -29,7 +29,6 @@ const TONS = [
   { id: 'Urgente', hint: 'Senso de oportunidade e ação imediata (bom para ofertas).' },
   { id: 'Inspirador', hint: 'Tom aspiracional e positivo, foco em transformação.' },
 ]
-const ESTILOS = ['Premium', 'Lifestyle', 'Minimalista', 'Impacto visual']
 const QUALITIES = [{ id: 'medium', title: 'Equilibrada' }, { id: 'high', title: 'Alta' }]
 const REF_USOS = [
   { id: 'style', label: 'Só estilo', hint: 'Usa a referência só como direção de estilo (cores, clima). O layout fica livre.' },
@@ -206,7 +205,6 @@ export function GeradorCriativos() {
 
   const [formatsSel, setFormatsSel] = useState<string[]>(['45'])
   const [quality, setQuality] = useState('medium')
-  const [estilo, setEstilo] = useState('Premium')
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const [isGenerating, setIsGenerating] = useState(false)
@@ -413,7 +411,6 @@ export function GeradorCriativos() {
       cta: cta.trim() || undefined,
       footer: cidade.trim() || undefined,
       creative_format,
-      estilo,
       densidade,
       quality,
       reference_usage: referenceUsage,
@@ -502,8 +499,8 @@ export function GeradorCriativos() {
             <div className="flex items-center gap-2"><Wand2 size={18} className="text-[var(--ws-gold)]" /><span className="font-bold text-sm text-[var(--ws-text-1)]">Modelo Reverso</span></div>
             <p className="text-[12px] text-[var(--ws-text-2)] leading-relaxed">A análise detalhada do modelo (IA de visão) é uma <b>edição premium</b> e consome <b>~3 créditos</b>. Deseja continuar?</p>
             <div className="flex gap-2">
-              <button onClick={() => setConfirmReverso(false)} className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold uppercase border border-[var(--ws-glass-border)] text-[var(--ws-text-2)] hover:bg-[var(--ws-glass-bg)]">Cancelar</button>
-              <button onClick={() => { setConfirmReverso(false); setReferenceUsage('modelo_reverso'); analisarModelo() }} className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold uppercase bg-[var(--ws-blue)] text-white">Aceitar (3 créditos)</button>
+              <button onClick={() => setConfirmReverso(false)} className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold whitespace-nowrap border border-[var(--ws-glass-border)] text-[var(--ws-text-2)] hover:bg-[var(--ws-glass-bg)]">Cancelar</button>
+              <button onClick={() => { setConfirmReverso(false); setReferenceUsage('modelo_reverso'); analisarModelo() }} className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold whitespace-nowrap bg-[var(--ws-blue)] text-white">Aceitar (3 créditos)</button>
             </div>
           </div>
         </div>
@@ -862,18 +859,11 @@ export function GeradorCriativos() {
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-[var(--ws-text-3)]">Alta consome mais tokens (~4x). Modelo: gpt-image-2.</p>
-              </div>
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-bold uppercase text-[var(--ws-text-3)]">Estilo</span>
-                <div className="flex flex-wrap gap-2">
-                  {ESTILOS.map(s => (
-                    <button key={s} onClick={() => setEstilo(s)}
-                      className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-all ${estilo === s ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-white text-[var(--ws-text-2)] border-[var(--ws-glass-border)]'}`}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
+                {quality === 'high' ? (
+                  <p className="text-[10px] font-medium text-[var(--ws-gold)]">⚡ Alta qualidade · consome ~2 créditos (mais detalhe).</p>
+                ) : (
+                  <p className="text-[10px] text-[var(--ws-text-3)]">Equilibrada: custo padrão. Modelo gpt-image-2.</p>
+                )}
               </div>
             </div>
           )}
