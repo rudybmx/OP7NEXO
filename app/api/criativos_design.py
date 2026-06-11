@@ -407,6 +407,8 @@ class MelhorarCopyIn(BaseModel):
     objective: Optional[str] = None
     densidade: Optional[str] = None
     existentes: Optional[list[str]] = None  # outros textos do criativo (não repetir)
+    tone: Optional[str] = None  # tom de voz desejado
+    audience: Optional[str] = None  # público-alvo
 
 
 @router.post("/melhorar-copy")
@@ -427,6 +429,8 @@ def melhorar_copy_endpoint(
             objective=payload.objective,
             densidade=payload.densidade,
             existentes=payload.existentes,
+            tone=payload.tone,
+            audience=payload.audience,
         )
     except Exception as exc:  # noqa: BLE001
         code, msg = image_gen._map_error(exc)
@@ -434,3 +438,42 @@ def melhorar_copy_endpoint(
             status.HTTP_502_BAD_GATEWAY, detail={"error_code": code, "error_message": msg}
         )
     return {"texto": texto, "usage": usage}
+
+
+class GerarCopyIn(BaseModel):
+    workspace_id: uuid.UUID
+    product: Optional[str] = None
+    objective: Optional[str] = None
+    densidade: Optional[str] = None  # "simples" | "rico"
+    tone: Optional[str] = None
+    audience: Optional[str] = None
+
+
+@router.post("/gerar-copy")
+def gerar_copy_endpoint(
+    payload: GerarCopyIn,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Gera TODOS os textos do criativo de uma vez (botão master "Gerar textos").
+
+    A IA fatora produto/público/diferencial/objetivo do briefing e devolve um pacote
+    coerente: headline/subheadline/cta e, no rico, bullets/selo/copy_extra. Devolve `usage`.
+    """
+    verificar_acesso_workspace(usuario, payload.workspace_id, db)
+    from app.services import copy_assist
+
+    try:
+        pacote, usage = copy_assist.gerar_pacote_copy(
+            product=payload.product,
+            objective=payload.objective,
+            densidade=payload.densidade,
+            tone=payload.tone,
+            audience=payload.audience,
+        )
+    except Exception as exc:  # noqa: BLE001
+        code, msg = image_gen._map_error(exc)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, detail={"error_code": code, "error_message": msg}
+        )
+    return {"pacote": pacote, "usage": usage}
