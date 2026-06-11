@@ -63,3 +63,10 @@ O seletor "Estilo" (palavra fraca) é substituído por uma **galeria de modelos 
 - `gpt-4.1` (visão) disponível na mesma chave dedicada (`openai_image_api_key`/`base_url`). Validado.
 - Custo da análise (visão) é baixo (1 imagem + ~1.5k tokens) — registrar `usage` para a doc de billing.
 - Composição de logo reusa `app/services/criativo_render.py` (Pillow) com coordenadas da região.
+
+## Refinamento (2026-06-11) — descrição só-visual + paleta com harmonia
+
+- **Descrição = SÓ a cena visual.** `creative_vision._SCHEMA_PROMPT`: `descricao` descreve apenas o visual (cena, personagem, composição/layout, luz, cores, estilo) e descreve ONDE os blocos de texto ficam — **nunca as palavras**. Os textos vão SÓ em `conteudo_textual`. Removidos do JSON os campos `objetivo_do_criativo/estilo/tom/estilo_visual/personagem/composicao_visual` (cobertos pela descrição). Resolve a duplicação (o usuário editava o texto em 2 lugares).
+- `image_gen._prompt_reverso`: sem as linhas de categoria; guarda "os ÚNICOS textos são os da lista; ignore palavras que apareçam na descrição". Se não há textos → "não escreva nenhum texto".
+- **Front (painel reverso):** removidos os inputs de categoria; "Descrição da imagem (só o visual)"; **Paleta com harmonia** — escolher a cor primária + Complementar/Análogas → gera a paleta (reusa `harmonia()` do 60/30/10) + botão **Padrão** que restaura a paleta extraída.
+- Validado: na análise, a headline não aparece literal na `descricao`; no front, Aplicar recolore a paleta e Padrão restaura.
