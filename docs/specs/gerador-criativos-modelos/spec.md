@@ -43,6 +43,16 @@ DELETE /design/modelos/{id}?workspace_id=
 → 200 { ok: true }    (curado → 403; outro workspace → 403; inexistente → 404)
 ```
 
+## Refinamentos do Estúdio (2026-06-11)
+
+- **Esquemas de cores salvos** (`criativo_paletas`, migration 066, workspace NOT NULL, máx. 10): salvar/carregar a regra 60/30/10. Ícones Salvar/Carregar no cabeçalho "Cores da marca"; dropdown com as 3 cores por linha + excluir.
+  - `GET /design/paletas?workspace_id=` → até 10 `{id,cor_60,cor_30,cor_10}`.
+  - `POST /design/paletas` {workspace_id,cor_60/30/10} → 201; **409/400 ao atingir 10** ("Exclua um para salvar").
+  - `DELETE /design/paletas/{id}?workspace_id=` → 200 (outro workspace → 403).
+- **Histórico** (`GET /design/historico?workspace_id=&desde?=`): gerações `done` do workspace `{id,imagem_url,creative_format,criado_em,estrutura}` (estrutura extraída de `params_json`). 3ª aba "Histórico" (cards 9:16 `object-contain` + "Usar estrutura"/"Usar imagem"); box lateral "Gerados hoje" usa `?desde=<hoje>`.
+- **UI:** upload "Modelo de exemplo & Marca" 280px (vê o modelo inteiro); botão "Limpar campos" (reset total); cards de modelo/histórico em box **9:16 object-contain** (imagem inteira, sem corte).
+- **Multi-tenant (garantia):** `paletas`/`historico`/`modelos` exigem `workspace_id` + `verificar_acesso_workspace` + filtram queries por `workspace_id`. Validado com 2 workspaces: dado de A não aparece em B; DELETE cross-workspace → 403.
+
 ## Roadmap (desenhado, adiado)
 
 - **F5.2 — Ingestão Ad Library:** raspar a biblioteca **pública** (Apify Facebook Ads Scraper ~$3,40/1k, ou Firecrawl/ScrapegraphAI) por nicho/`page_ids` → filtrar por **longevidade (30+ dias)** + escala → IA gera o "Modelo Mestre" → entra como `fonte='ad_library'`, pendente de aprovação. Campos já previstos: `ad_snapshot_url`, `longevidade_dias`, `fonte`.
