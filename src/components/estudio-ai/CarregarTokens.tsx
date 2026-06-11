@@ -37,6 +37,7 @@ export function CarregarTokens() {
   const [escolhido, setEscolhido] = useState<number>(100)
   const [custom, setCustom] = useState('')
   const [carregando, setCarregando] = useState(false)
+  const [pagandoStripe, setPagandoStripe] = useState(false)
   const [pedidoMsg, setPedidoMsg] = useState<string | null>(null)
 
   const tokensEscolhidos = custom.trim() ? Math.max(0, parseInt(custom, 10) || 0) : escolhido
@@ -82,6 +83,47 @@ export function CarregarTokens() {
       setCarregando(false)
     }
   }
+
+  // Pagamento automático via Stripe Checkout (cartão/PIX)
+  const pagarStripe = async () => {
+    if (!wsId) return
+    if (tokensEscolhidos <= 0) { toast.error('Escolha quantos tokens carregar.'); return }
+    setPagandoStripe(true)
+    try {
+      const res = await fetch('/api/proxy/estudio/checkout', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...auth() },
+        body: JSON.stringify({ workspace_id: wsId, tokens: tokensEscolhidos }),
+      })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      if (data?.url) { window.location.href = data.url } else { throw new Error() }
+    } catch {
+      toast.error('Erro ao iniciar o pagamento.')
+      setPagandoStripe(false)
+    }
+  }
+
+  // Retorno do Stripe Checkout: confirma o pagamento e credita o saldo
+  useEffect(() => {
+    if (!wsId || typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('cancelado')) {
+      toast.info('Pagamento cancelado.')
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+    const sessionId = params.get('session_id')
+    if (sessionId) {
+      fetch('/api/proxy/estudio/checkout/confirmar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...auth() },
+        body: JSON.stringify({ workspace_id: wsId, session_id: sessionId }),
+      }).then(r => (r.ok ? r.json() : Promise.reject()))
+        .then(d => { toast[d?.pago ? 'success' : 'info'](d?.pago ? 'Pagamento confirmado! Saldo creditado.' : 'Pagamento ainda em processamento.'); carregarDados() })
+        .catch(() => toast.error('Erro ao confirmar o pagamento.'))
+        .finally(() => window.history.replaceState({}, '', window.location.pathname))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsId])
 
   const confirmarRecarga = async (id: string) => {
     try {
@@ -137,11 +179,19 @@ export function CarregarTokens() {
               className="w-32 h-9 px-3 bg-[var(--ws-glass-bg)] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)] text-sm text-[var(--ws-text-1)] focus:outline-none focus:border-[var(--ws-blue)]" />
             <span className="text-[11px] text-[var(--ws-text-3)]">tokens</span>
           </div>
-          <button onClick={solicitarRecarga} disabled={carregando || tokensEscolhidos <= 0}
+          {/* Pagamento automático (Stripe) — primário */}
+          <button onClick={pagarStripe} disabled={pagandoStripe || carregando || tokensEscolhidos <= 0}
             className="mt-4 w-full h-11 rounded-[var(--ws-radius-lg)] bg-[var(--ws-gold)] text-white font-bold uppercase tracking-wider text-xs hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+            {pagandoStripe
+              ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Abrindo pagamento...</>
+              : <><CreditCard size={16} /> Pagar com cartão/PIX {tokensEscolhidos > 0 ? `· R$ ${tokensEscolhidos}` : ''}</>}
+          </button>
+          {/* Recarga manual (PIX/comprovante, admin confirma) — secundário */}
+          <button onClick={solicitarRecarga} disabled={carregando || tokensEscolhidos <= 0}
+            className="mt-2 w-full h-9 rounded-[var(--ws-radius-lg)] text-[10px] font-bold uppercase tracking-wider text-[var(--ws-text-2)] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] hover:border-[var(--ws-blue)] disabled:opacity-50 transition-all flex items-center justify-center gap-2">
             {carregando
-              ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Solicitando...</>
-              : <><CreditCard size={16} /> Carregar {tokensEscolhidos > 0 ? `${tokensEscolhidos} tokens · R$ ${tokensEscolhidos}` : ''}</>}
+              ? <><span className="w-3.5 h-3.5 border-2 border-[var(--ws-text-3)]/30 border-t-[var(--ws-text-2)] rounded-full animate-spin" /> Solicitando...</>
+              : <>Solicitar recarga manual (PIX/comprovante)</>}
           </button>
           {pedidoMsg && (
             <div className="mt-3 p-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-gold)]/40 bg-[rgba(201,168,76,0.08)] text-[11px] text-[var(--ws-text-2)] flex items-start gap-2">
