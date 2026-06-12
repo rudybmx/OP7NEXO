@@ -95,7 +95,7 @@ Regras:
 - Migrations numeradas sequencialmente: `0XX_descricao.sql`
 - Sempre filtrar por `workspace_id` em queries multi-tenant
 - Soft delete padrão: campo `ativo BOOLEAN DEFAULT true`
-- Após qualquer migration: `bash /root/deploy.sh api`
+- Após qualquer migration: `lock-deploy bash /root/deploy.sh api`
 
 ## FLUXO DE ENTREGA
 
@@ -141,10 +141,10 @@ TOKEN=$(curl -s -X POST https://api.op7franquia.com.br/auth/login \
   -d '{"email":"admin@op7nexo.com","senha":"admin123"}' \
   | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
 
-# Deploy (USAR SEMPRE ESTE — nunca docker compose up direto)
-bash /root/deploy.sh api        # só API
-bash /root/deploy.sh front      # só front
-bash /root/deploy.sh both       # ambos em sequência
+# Deploy (USAR SEMPRE SOB lock-deploy — nunca docker compose up direto)
+lock-deploy bash /root/deploy.sh api        # só API
+lock-deploy bash /root/deploy.sh front      # só front
+lock-deploy bash /root/deploy.sh both       # ambos em sequência
 
 # Logs
 cd /root/op7nexo-api && docker compose logs -f --tail=50
@@ -155,23 +155,25 @@ graphify src/ docs/ --update   # incremental (só arquivos modificados)
 graphify src/ docs/            # rebuild completo (primeiro run ou >24h)
 ```
 
-## DEPLOY — REGRA OBRIGATÓRIA
+## DEPLOY — REGRA OBRIGATÓRIA (lock-deploy)
 
-**NUNCA** rodar `docker compose up` diretamente.
-**SEMPRE** usar:
+**NUNCA** rodar `docker compose` / `docker build` / restart de container / `bash /root/deploy.sh` direto. Qualquer comando que faça **deploy, build, restart ou alteração em produção** (em QUALQUER VPS) tem que passar pelo `lock-deploy` — é a trava única de coordenação entre agentes (eu + Samuel + agentes não deployam ao mesmo tempo).
+
+**SEMPRE** envolver o deploy com `lock-deploy`:
 ```bash
-bash /root/deploy.sh api    # deploy da API
-bash /root/deploy.sh front  # deploy do front
-bash /root/deploy.sh both   # os dois em sequência (não paralelo)
-```
-O script tem lock — impede dois agentes deployando ao mesmo tempo.
+lock-deploy bash /root/deploy.sh api    # deploy da API
+lock-deploy bash /root/deploy.sh front  # deploy do front
+lock-deploy bash /root/deploy.sh both   # os dois em sequência (não paralelo)
 
-### Comportamento em caso de lock (fila)
-Se o script retornar erro de lock (outro agente deployando):
-1. Aguarde 30 segundos
-2. Tente novamente — máximo 5 tentativas
-3. Se após 5 tentativas o lock persistir, **pare e reporte ao usuário**
-Nunca ignore o lock. Nunca force o deploy.
+# Qualquer outro comando de deploy também vai sob o lock, ex.:
+lock-deploy docker compose -f /root/op7nexo-front/docker-compose.yml up -d --build
+```
+
+### Comportamento do lock (`/usr/local/bin/lock-deploy`)
+- Lock real via `flock` em `/var/lock/deploy.lock` (única trava válida).
+- Se outro deploy estiver rodando, **AGUARDA até 10 min** (checa a cada 10s) e executa automaticamente quando liberar.
+- Se passar de 10 min sem conseguir, **FALHA** (exit 75) — tente de novo depois.
+- **NÃO** altere esse comportamento. **NÃO** tente burlar o lock. É regra de coordenação entre agentes.
 
 ## CONTEXT7 — DOCUMENTAÇÃO ATUALIZADA
 
@@ -205,6 +207,19 @@ Rules:
 - IF graphify-out/wiki/index.md EXISTS, navigate it instead of reading raw files
 - For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+---
+
+## Padrão UX — Heurísticas de Nielsen
+Toda spec/plano que toque UI deve declarar quais heurísticas atende ou viola.
+Checklist mínimo em qualquer tela nova ou refatorada:
+- #1 Visibilidade: toda ação assíncrona tem estado visível (loading/sucesso/erro).
+- #3 Controle: ação destrutiva tem confirmação; restauração automática tem opção de descartar.
+- #5 Prevenção: dado não salvo não se perde silenciosamente (autosave ou aviso, nunca nenhum).
+- #6 Reconhecimento: estado de navegação/visualização sobrevive a F5 (usePersistedState).
+- #9 Recuperação: erro de API vira mensagem acionável (getErrorMessage), nunca tela morta.
+Hooks canônicos: `usePersistedState` (`src/hooks/use-estado-persistido.ts`, estado de UI), `useRascunho` (`src/hooks/use-rascunho.ts`, formulários).
+Referência completa das 10 heurísticas: https://www.nngroup.com/articles/ten-usability-heuristics/
 
 ---
 

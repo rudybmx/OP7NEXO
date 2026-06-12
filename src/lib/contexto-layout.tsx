@@ -10,6 +10,7 @@ import {
   useState,
 } from "react"
 import { useBreakpoint } from "@/hooks/use-mobile"
+import { usePersistedState } from "@/hooks/use-estado-persistido"
 
 type ItemNavegacao = {
   nome: string
@@ -244,7 +245,7 @@ const ContextoLayout = createContext<ContextoLayoutValor | null>(null)
 export function ProvedorLayout({ children }: { children: React.ReactNode }) {
   // Fonte única de breakpoint (mesmo hook usado em toda a casca e nas páginas).
   const { isMobile: mobile } = useBreakpoint()
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = usePersistedState("oc-sidebar-collapsed", false)
   const [chatAberto, setChatAberto] = useState(false)
   const [itemAtivo, setItemAtivo] = useState("Meta Ads")
 
@@ -255,20 +256,9 @@ export function ProvedorLayout({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    // Restaurar estado do localStorage inicialmente
-    const saved = localStorage.getItem("oc-sidebar-collapsed")
-    if (saved === "true") setIsCollapsed(true)
-  }, [])
-
-  useEffect(() => {
-    // Salvar estado em localStorage
-    localStorage.setItem("oc-sidebar-collapsed", String(isCollapsed))
-  }, [isCollapsed])
-
-  useEffect(() => {
     // No mobile, a sidebar entra colapsada (vira bottom-nav).
     if (mobile) setIsCollapsed(true)
-  }, [mobile])
+  }, [mobile, setIsCollapsed])
 
   const valor = useMemo(
     () => ({

@@ -49,6 +49,7 @@ import {
 import { secoesNavegacao, useLayout } from "@/lib/contexto-layout"
 import { useTheme } from "@/components/provedores/provedor-tema"
 import { useAuth } from "@/hooks/use-auth"
+import { usePersistedState } from "@/hooks/use-estado-persistido"
 import { useWorkspace } from "@/lib/workspace-context"
 import { ModalMeuPerfil } from "@/components/layout/modal-meu-perfil"
 import { ModalConfigEmpresa } from "@/components/layout/modal-config-empresa"
@@ -387,7 +388,12 @@ export function BarraLateral() {
     .map((secao) => ({ ...secao, grupos: gruposPermitidos(secao) }))
     .filter((secao) => secao.grupos.length > 0)
 
-  const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>({})
+  // Persistimos APENAS os toggles explícitos do usuário (não o estado calculado).
+  // A abertura efetiva é derivada da rota + abertoPadrao no render (ver linha do `aberto`).
+  const [gruposAbertos, setGruposAbertos] = usePersistedState<Record<string, boolean>>(
+    "oc-grupos-abertos",
+    {},
+  )
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null)
   const hoverTimerRef = React.useRef<NodeJS.Timeout | null>(null)
   // isMobile vem do contexto de layout (fonte única de breakpoint).
@@ -820,9 +826,11 @@ export function BarraLateral() {
               {/* Grupos */}
               {secao.grupos.map((grupo) => {
                 const chaveGrupo = `${secao.nome}-${grupo.nome}`
-                const aberto = gruposAbertos[chaveGrupo]
                 const Icone = mapaIcones[grupo.chaveIcone] || Activity
                 const grupoAtivo = grupo.itens.some((item) => item.rota && pathname.startsWith(item.rota))
+                // Rota atual SEMPRE vence (abre o grupo onde o usuário está).
+                // Senão: toggle explícito do usuário; senão: abertoPadrao.
+                const aberto = grupoAtivo ? true : (gruposAbertos[chaveGrupo] ?? grupo.abertoPadrao)
 
                 return (
                   <div key={chaveGrupo}>
