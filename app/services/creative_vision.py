@@ -10,8 +10,8 @@ import base64
 import json
 import logging
 
-from app.core.config import settings
-from app.services.image_gen import _image_client
+from app.core.ai_config import get_ai_config
+from app.services.image_gen import _client_for
 
 log = logging.getLogger(__name__)
 
@@ -55,9 +55,9 @@ def extrair_creative_spec(image_bytes: bytes) -> tuple[dict, dict]:
     Levanta exceção em erro (mapeada para error_code pelo endpoint).
     """
     b64 = base64.b64encode(image_bytes).decode()
-    client = _image_client()
+    client = _client_for("vision")
     resp = client.chat.completions.create(
-        model=settings.openai_vision_model,
+        model=get_ai_config("vision").model,
         response_format={"type": "json_object"},
         messages=[
             {

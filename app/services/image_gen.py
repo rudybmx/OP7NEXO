@@ -90,13 +90,28 @@ def montar_prompt(
     return "\n".join(partes)
 
 
-def _image_client():
+def _client_for(feature: str):
+    """Cliente OpenAI com a chave/base_url EFETIVOS da feature (resolver DB-first → .env)."""
     from openai import OpenAI
 
+    from app.core.ai_config import get_ai_config
+
+    cfg = get_ai_config(feature)
     return OpenAI(
-        api_key=settings.openai_image_api_key,
-        base_url=settings.openai_image_base_url or "https://api.openai.com/v1",
+        api_key=cfg.api_key,
+        base_url=cfg.base_url or "https://api.openai.com/v1",
     )
+
+
+def _image_client():
+    return _client_for("image")
+
+
+def _image_model() -> str:
+    """Modelo de imagem EFETIVO (override DB ou `.env`)."""
+    from app.core.ai_config import get_ai_config
+
+    return get_ai_config("image").model
 
 
 def _map_error(exc: Exception) -> tuple[str, str]:
@@ -149,7 +164,7 @@ def criar_geracao(
         briefing=briefing,
         creative_format=creative_format,
         generation_size=size,
-        model=settings.openai_image_model,
+        model=_image_model(),
         prompt_final=prompt,
         params_json={"size": size, "quality": quality},
         status="pending",
@@ -169,7 +184,7 @@ def executar_geracao(db: Session, ger: CriativoGeracao) -> CriativoGeracao:
     try:
         client = _image_client()
         raw = client.images.with_raw_response.generate(
-            model=settings.openai_image_model,
+            model=_image_model(),
             prompt=ger.prompt_final,
             size=ger.generation_size,
             quality=quality,
@@ -187,7 +202,7 @@ def executar_geracao(db: Session, ger: CriativoGeracao) -> CriativoGeracao:
         ger.imagem_base_url = url
         ger.usage = usage
         ger.request_id = request_id
-        ger.model_snapshot = getattr(resp, "model", None) or settings.openai_image_model
+        ger.model_snapshot = getattr(resp, "model", None) or _image_model()
         ger.status = "done"
         db.commit()
         db.refresh(ger)
@@ -475,7 +490,7 @@ def criar_geracao_integrada(
         briefing=spec.get("briefing"),
         creative_format=spec.get("creative_format"),
         generation_size=size,
-        model=settings.openai_image_model,
+        model=_image_model(),
         prompt_final=prompt,
         params_json={**spec, "modo": "integrado", "tem_logo": tem_logo, "tem_referencia": tem_referencia},
         status="pending",
@@ -509,7 +524,7 @@ def executar_geracao_integrada(
 
         if imagens:
             raw = client.images.with_raw_response.edit(
-                model=settings.openai_image_model,
+                model=_image_model(),
                 image=imagens,
                 prompt=ger.prompt_final,
                 size=ger.generation_size,
@@ -518,7 +533,7 @@ def executar_geracao_integrada(
             )
         else:
             raw = client.images.with_raw_response.generate(
-                model=settings.openai_image_model,
+                model=_image_model(),
                 prompt=ger.prompt_final,
                 size=ger.generation_size,
                 quality=quality,
@@ -553,7 +568,7 @@ def executar_geracao_integrada(
         ger.imagem_base_url = url
         ger.usage = usage
         ger.request_id = request_id
-        ger.model_snapshot = getattr(resp, "model", None) or settings.openai_image_model
+        ger.model_snapshot = getattr(resp, "model", None) or _image_model()
         ger.status = "done"
         db.commit()
         db.refresh(ger)

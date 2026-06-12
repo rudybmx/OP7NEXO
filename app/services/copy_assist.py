@@ -14,8 +14,8 @@ from __future__ import annotations
 import json
 import logging
 
-from app.core.config import settings
-from app.services.image_gen import _image_client
+from app.core.ai_config import get_ai_config
+from app.services.image_gen import _client_for
 
 log = logging.getLogger(__name__)
 
@@ -119,9 +119,9 @@ def melhorar_copy(
     else:
         partes.append("O campo está vazio: gere uma sugestão complementar (sem repetir os textos acima).")
 
-    client = _image_client()
+    client = _client_for("copy")
     resp = client.chat.completions.create(
-        model=settings.openai_copy_model,
+        model=get_ai_config("copy").model,
         messages=[
             {"role": "system", "content": sistema},
             {"role": "user", "content": "\n".join(partes)},
@@ -216,9 +216,9 @@ def gerar_pacote_copy(
             '"bullets":[],"selo":"","copy_extra":""} (bullets vazio, selo e copy_extra vazios).'
         )
 
-    client = _image_client()
+    client = _client_for("copy")
     resp = client.chat.completions.create(
-        model=settings.openai_copy_model,
+        model=get_ai_config("copy").model,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": sistema},

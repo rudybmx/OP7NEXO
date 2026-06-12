@@ -27,6 +27,7 @@ from app.api.meta_catalog import router as meta_catalog_router
 from app.api.meta_financeiro import router as meta_financeiro_router
 from app.api.meta_insights import router as meta_insights_router
 from app.api.meta_tokens import router as meta_tokens_router
+from app.api.ai_settings import router as ai_settings_router
 from app.api.google_ads_credentials import router as google_ads_credentials_router
 from app.api.google_ads_accounts import router as google_ads_accounts_router
 from app.api.google_ads_data import router as google_ads_data_router
@@ -123,6 +124,7 @@ app.include_router(meta_catalog_router)
 app.include_router(meta_financeiro_router)
 app.include_router(meta_insights_router)
 app.include_router(meta_tokens_router)
+app.include_router(ai_settings_router)
 app.include_router(google_ads_credentials_router)
 app.include_router(google_ads_accounts_router)
 app.include_router(google_ads_data_router)

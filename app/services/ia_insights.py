@@ -210,15 +210,16 @@ def _row_to_dict(r) -> dict:
 
 
 def _chamar_openai(prompt: str) -> list[dict]:
-    from app.core.config import settings
+    from app.core.ai_config import get_ai_config
 
-    api_key = settings.openai_api_key
+    cfg = get_ai_config("insights")
+    api_key = cfg.api_key
     if not api_key:
-        log.warning("[ia_insights] OPENAI_API_KEY não configurada")
+        log.warning("[ia_insights] chave de IA (insights) não configurada")
         return []
 
-    base_url = settings.openai_base_url or "https://api.openai.com/v1"
-    model = settings.openai_model or "gpt-4o-mini"
+    base_url = cfg.base_url
+    model = cfg.model
 
     try:
         from openai import OpenAI
@@ -299,6 +300,9 @@ def gerar_e_salvar_insights(
     if not insights_raw:
         return buscar_insights_vigentes(workspace_id, ads_account_id, db)
 
+    from app.core.ai_config import get_ai_config
+    modelo_usado = get_ai_config("insights").model
+
     expira_em = datetime.now(tz=timezone.utc) + timedelta(hours=CACHE_TTL_HOURS)
     dados_contexto = json.dumps({"hash": dados_hash, "kpis": {
         "spend": round(kpis.get("spend", 0), 2),
@@ -316,10 +320,10 @@ def gerar_e_salvar_insights(
             text("""
                 INSERT INTO ai_insights
                     (workspace_id, ads_account_id, modulo, tipo, titulo,
-                     mensagem, acao, dados_contexto, dados_hash, expira_em)
+                     mensagem, acao, dados_contexto, dados_hash, expira_em, model_usado)
                 VALUES
                     (CAST(:ws AS uuid), CAST(:acc AS uuid), 'meta_ads', :tipo, :titulo,
-                     :mensagem, :acao, CAST(:ctx AS jsonb), :hash, :expira)
+                     :mensagem, :acao, CAST(:ctx AS jsonb), :hash, :expira, :model_usado)
             """),
             {
                 "ws": workspace_id,
@@ -331,6 +335,7 @@ def gerar_e_salvar_insights(
                 "ctx": dados_contexto,
                 "hash": dados_hash,
                 "expira": expira_em,
+                "model_usado": modelo_usado,
             },
         )
 
