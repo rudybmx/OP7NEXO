@@ -195,6 +195,11 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-12) — Painel Central de IA
+- Migration 070: tabela `ai_settings` (config de IA por feature: insights/image/vision/copy/agent, global/platform_admin) + coluna `ai_insights.model_usado`. Spec: `docs/specs/painel-ia/`.
+- Resolver `app/core/ai_config.py` (`get_ai_config(feature)`): DB-first → fallback `.env`, cache por-processo TTL 60s. Substitui leitura direta de `settings.openai_*` em ia_insights/image_gen/creative_vision/copy_assist → modelo/chave mutáveis sem redeploy.
+- API `app/api/ai_settings.py`: GET/PUT `/ai/settings` (chave SEMPRE mascarada) + GET `/ai/insights` (agregado, platform_admin, filtro opcional por workspace_id). Front: `/admin/ia`.
+
 ### ✅ Implementado
 - Meta Ads: 5 abas com dados reais (Visão Geral, Campanhas, Conjuntos, Públicos, Criativos)
 - Filtro de campanha em Públicos
