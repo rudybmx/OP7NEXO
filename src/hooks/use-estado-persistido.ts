@@ -24,9 +24,10 @@ export function usePersistedState<T>(
   useEffect(() => {
     try {
       const bruto = window.localStorage.getItem(chave)
+      console.info("[usePersistedState] read", chave, "->", bruto)
       if (bruto !== null) setValor(JSON.parse(bruto) as T)
-    } catch {
-      // localStorage indisponível ou JSON inválido — mantém o valor atual
+    } catch (e) {
+      console.info("[usePersistedState] read ERROR", chave, e)
     }
   }, [chave])
 
