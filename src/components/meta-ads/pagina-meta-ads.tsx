@@ -52,7 +52,6 @@ export function PaginaMetaAds() {
   const { workspaceAtual: wsId } = useWorkspace()
 
   const [abaAtiva, setAbaAtiva] = usePersistedState<Aba>('op7-nexo-meta-aba', 'Visão geral')
-  console.info('[meta render] abaAtiva=', abaAtiva, 'wsId=', wsId)
   const [campanhaSelecionadaId, setCampanhaSelecionadaId] = useState<string | null>(null)
   const [filtrosCampanhas, setFiltrosCampanhas] = useState<FiltrosCampanhas>({
     busca: '',
