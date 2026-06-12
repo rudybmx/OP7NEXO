@@ -438,6 +438,10 @@ def analisar_modelo(
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, detail={"error_code": code, "error_message": msg}
         )
+    from app.core.ai_config import get_ai_config
+    from app.services.ai_usage import registrar_uso
+    registrar_uso(feature="vision", workspace_id=payload.workspace_id,
+                  model=get_ai_config("vision").model, kind="text", usage=usage)
     return {"creative_spec": spec, "usage": usage}
 
 
@@ -479,6 +483,10 @@ def melhorar_copy_endpoint(
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, detail={"error_code": code, "error_message": msg}
         )
+    from app.core.ai_config import get_ai_config
+    from app.services.ai_usage import registrar_uso
+    registrar_uso(feature="copy", workspace_id=payload.workspace_id,
+                  model=get_ai_config("copy").model, kind="text", usage=usage)
     return {"texto": texto, "usage": usage}
 
 
@@ -518,6 +526,10 @@ def gerar_copy_endpoint(
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, detail={"error_code": code, "error_message": msg}
         )
+    from app.core.ai_config import get_ai_config
+    from app.services.ai_usage import registrar_uso
+    registrar_uso(feature="copy", workspace_id=payload.workspace_id,
+                  model=get_ai_config("copy").model, kind="text", usage=usage)
     return {"pacote": pacote, "usage": usage}
 
 

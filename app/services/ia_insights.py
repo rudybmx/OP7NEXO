@@ -209,14 +209,15 @@ def _row_to_dict(r) -> dict:
     }
 
 
-def _chamar_openai(prompt: str) -> list[dict]:
+def _chamar_openai(prompt: str) -> tuple[list[dict], dict]:
+    """Devolve (insights, usage). usage vazio em falha/sem chave."""
     from app.core.ai_config import get_ai_config
 
     cfg = get_ai_config("insights")
     api_key = cfg.api_key
     if not api_key:
         log.warning("[ia_insights] chave de IA (insights) não configurada")
-        return []
+        return [], {}
 
     base_url = cfg.base_url
     model = cfg.model
@@ -226,7 +227,7 @@ def _chamar_openai(prompt: str) -> list[dict]:
         client = OpenAI(api_key=api_key, base_url=base_url)
     except ImportError:
         log.error("[ia_insights] openai package não instalado")
-        return []
+        return [], {}
 
     try:
         resp = client.chat.completions.create(
@@ -235,6 +236,7 @@ def _chamar_openai(prompt: str) -> list[dict]:
             temperature=0.7,
             max_tokens=6000,
         )
+        usage = resp.usage.model_dump() if getattr(resp, "usage", None) else {}
         content = resp.choices[0].message.content or "[]"
         if "```" in content:
             parts = content.split("```")
@@ -242,12 +244,10 @@ def _chamar_openai(prompt: str) -> list[dict]:
             if content.startswith("json"):
                 content = content[4:]
         parsed = json.loads(content.strip())
-        if isinstance(parsed, list):
-            return parsed
-        return []
+        return (parsed if isinstance(parsed, list) else []), usage
     except Exception as exc:
         log.error("[ia_insights] erro OpenAI: %s", exc)
-        return []
+        return [], {}
 
 
 def gerar_e_salvar_insights(
@@ -296,12 +296,22 @@ def gerar_e_salvar_insights(
         lista_contas=lista_contas or "Sem dados de contas",
     )
 
-    insights_raw = _chamar_openai(prompt)
+    insights_raw, usage = _chamar_openai(prompt)
     if not insights_raw:
         return buscar_insights_vigentes(workspace_id, ads_account_id, db)
 
     from app.core.ai_config import get_ai_config
     modelo_usado = get_ai_config("insights").model
+
+    # Telemetria de consumo (Fase 2) — best-effort, sessão própria.
+    from app.services.ai_usage import registrar_uso
+    registrar_uso(
+        feature="insights",
+        workspace_id=workspace_id,
+        model=modelo_usado,
+        kind="text",
+        usage=usage,
+    )
 
     expira_em = datetime.now(tz=timezone.utc) + timedelta(hours=CACHE_TTL_HOURS)
     dados_contexto = json.dumps({"hash": dados_hash, "kpis": {

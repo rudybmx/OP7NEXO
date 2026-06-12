@@ -114,6 +114,23 @@ def _image_model() -> str:
     return get_ai_config("image").model
 
 
+def _registrar_uso_imagem(ger, usage: dict) -> None:
+    """Telemetria de consumo (Fase 2). Best-effort — nunca quebra a geração."""
+    from app.services.ai_usage import registrar_uso
+
+    registrar_uso(
+        feature="image",
+        workspace_id=ger.workspace_id,
+        model=ger.model_snapshot or _image_model(),
+        kind="image",
+        usage=usage,
+        image_count=1,
+        quality=(ger.params_json or {}).get("quality", "low"),
+        size=ger.generation_size,
+        request_id=ger.request_id,
+    )
+
+
 def _map_error(exc: Exception) -> tuple[str, str]:
     """Mapeia exceção da OpenAI para (error_code, mensagem amigável)."""
     try:
@@ -207,6 +224,7 @@ def executar_geracao(db: Session, ger: CriativoGeracao) -> CriativoGeracao:
         db.commit()
         db.refresh(ger)
         log.info("[image_gen] base gerada geracao=%s tokens=%s", ger.id, usage.get("total_tokens"))
+        _registrar_uso_imagem(ger, usage)
     except Exception as exc:  # noqa: BLE001
         code, msg = _map_error(exc)
         ger.status = "error"
@@ -573,6 +591,7 @@ def executar_geracao_integrada(
         db.commit()
         db.refresh(ger)
         log.info("[image_gen] integrado geracao=%s tokens=%s", ger.id, usage.get("total_tokens"))
+        _registrar_uso_imagem(ger, usage)
     except Exception as exc:  # noqa: BLE001
         code, msg = _map_error(exc)
         ger.status = "error"

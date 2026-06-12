@@ -195,6 +195,12 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-12) — Consumo & Custo de IA (Fase 2)
+- Migration 071: `ai_usage_log` (1 linha/chamada de IA, custo USD snapshot), `ai_model_pricing` (preços por modelo, editável; seed gpt-4o-mini/4.1-mini/4.1/image-2), `fx_rates` (cotação USD-BRL diária). Spec: `docs/specs/consumo-ia/`.
+- `app/services/ai_usage.py::registrar_uso` — abre sessão PRÓPRIA (não recebe `db`), best-effort (nunca quebra a chamada de produto), custo congelado no registro. `app/services/fx.py` busca cotação do dia (AwesomeAPI, sem chave, timeout 3s, fallback última).
+- Instrumentado: image_gen (base+integrada), ia_insights (passa a capturar `usage`), e endpoints de copy/vision em `criativos_design.py` (funções de copy/vision são puras → log no endpoint, onde há `workspace_id`).
+- API `app/api/ai_usage.py` (platform_admin): `/ai/usage/summary` (totais + quebra por feature/model/workspace, USD+BRL), `/ai/usage/pricing` (GET/PUT), `/ai/usage/fx`. Front: aba "Consumo & Custo" em `/admin/ia`.
+
 ### ✅ Implementado (2026-06-12) — Painel Central de IA
 - Migration 070: tabela `ai_settings` (config de IA por feature: insights/image/vision/copy/agent, global/platform_admin) + coluna `ai_insights.model_usado`. Spec: `docs/specs/painel-ia/`.
 - Resolver `app/core/ai_config.py` (`get_ai_config(feature)`): DB-first → fallback `.env`, cache por-processo TTL 60s. Substitui leitura direta de `settings.openai_*` em ia_insights/image_gen/creative_vision/copy_assist → modelo/chave mutáveis sem redeploy.
