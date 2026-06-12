@@ -22,13 +22,16 @@ Ao recarregar (F5), trocar de aba ou voltar, o usuário perde o estado de UI:
 - Colapso da sidebar migrado ao mesmo hook (elimina flash de hidratação).
 - Critério de aceite: após F5 numa subpágina, o grupo correto continua aberto e destacado; toggles do usuário em grupos não-ativos persistem.
 
-### Fase 2 — Rascunho de formulários (pendente)
-- Hook `useRascunho` sobre `usePersistedState`.
+### Fase 2 — Rascunho de formulários (PARCIAL)
+- Hook `useRascunho` (`src/hooks/use-rascunho.ts`) sobre `usePersistedState`.
 - **Chave com escopo de usuário obrigatório**: `rascunho:${userId}:<form>` (evita vazar rascunho entre usuários na mesma máquina).
 - Autosave com debounce ~500ms; **flush síncrono** em `pagehide`/`beforeunload` (NÃO usar diálogo bloqueante — protege só a janela antes do debounce).
-- Restaurar no mount com aviso discreto + opção de descartar; `clear()` no submit.
-- Aplicar em: `EstudioCriativos.tsx`, `modal-meu-perfil.tsx`, `modal-config-empresa.tsx`.
-- ⚠️ **Pendência registrada**: `modal-meu-perfil.tsx` e `modal-config-empresa.tsx` estão no inventário da migração futura modais→páginas (fase Layout). O autosave aplicado agora será migrado junto.
+- Restaurar no mount com banner "Recuperamos o que você estava preenchendo" + Restaurar/Descartar; `limpar()` no submit/geração ok.
+- **FEITO:** `GeradorCriativos.tsx` (briefing + copy: headline/subheadline/cta/bullets/cidade/selo/tom/público/cores). NÃO persiste uploads (dataUrls — quebraria cota do localStorage).
+- **NÃO aplicado (decisão de engenharia):**
+  - `modal-config-empresa.tsx` — **somente leitura** (zero inputs). Nada a persistir.
+  - `modal-meu-perfil.tsx` — só nome/email **pré-preenchidos do servidor** + **campo de senha** (segurança: senha nunca vai para localStorage). Modal fecha no F5 e reabre com dados do servidor → rascunho de baixo/nenhum valor.
+- **Pendente de decisão do usuário:** cadastros reais são **dialogs** (`novo-usuario-dialog`, `nova-conta-dialog`, `novo-canal-dialog`) que fecham no F5; rascunho neles é o padrão "reabrir para recuperar". Confirmar se vale aplicar (e cuidado com senha no novo-usuário).
 
 ### Fase 3 — Estado de visualização das telas de dados (pendente)
 - Persistir aba ativa + filtros via `localStorage` (decisão do usuário: **NÃO** por URL/compartilhável).

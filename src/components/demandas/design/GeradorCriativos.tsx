@@ -8,6 +8,7 @@ import {
 import { toast } from 'sonner'
 import { getToken } from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
+import { useRascunho } from '@/hooks/use-rascunho'
 
 const FORMATS = [
   { id: '45', title: '4:5', sub: 'Feed' },
@@ -44,6 +45,14 @@ const AJUSTES = [
 const LOGO_POSICOES = ['topo-esquerda', 'topo-central', 'topo-direita', 'rodape-esquerda', 'rodape-central', 'rodape-direita']
 
 interface HistItem { id: string; url: string; titulo: string; at: number }
+
+// Campos de texto/copy persistidos como rascunho (não inclui uploads/dataUrls).
+interface RascunhoGerador {
+  briefing: string; objetivo: string; audience: string; tone: string
+  headline: string; subheadline: string; cta: string; cidade: string
+  densidade: 'simples' | 'rico'; bullets: string[]; selo: string; copyExtra: string
+  cor60: string; cor30: string; cor10: string
+}
 
 const labelCls = 'text-[11px] font-bold uppercase tracking-wider text-[var(--ws-text-3)] flex items-center gap-2'
 const inputCls = 'w-full h-9 px-3 bg-[var(--ws-glass-bg)] border border-[var(--ws-glass-border)] rounded-[var(--ws-radius-lg)] text-sm text-[var(--ws-text-1)] placeholder:text-[var(--ws-text-3)] focus:outline-none focus:border-[var(--ws-blue)]'
@@ -472,8 +481,45 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
     setHeadline(''); setSubheadline(''); setCta(''); setCidade('')
     setDensidade('simples'); setBullets(['', '', '']); setSelo(''); setCopyExtra('')
     setCreativeSpec(null); setResultImage(null); setError(null)
+    limparRascunho()
     toast.success('Campos limpos')
   }
+
+  // ── Rascunho: autosave dos campos de texto/copy (Nielsen #5 prevenção) ───
+  const {
+    rascunho, temRascunho, estado: estadoRascunho,
+    salvar: salvarRascunho, limpar: limparRascunho,
+  } = useRascunho<RascunhoGerador>('estudio-criativos-gerador')
+  const [rascunhoDecidido, setRascunhoDecidido] = useState(false)
+
+  const temConteudoRascunho = !!(
+    briefing.trim() || headline.trim() || subheadline.trim() || cta.trim() ||
+    audience.trim() || copyExtra.trim() || selo.trim() || bullets.some(b => b.trim())
+  )
+
+  useEffect(() => {
+    if (!temConteudoRascunho) return
+    salvarRascunho({
+      briefing, objetivo, audience, tone, headline, subheadline, cta, cidade,
+      densidade, bullets, selo, copyExtra, cor60, cor30, cor10,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [briefing, objetivo, audience, tone, headline, subheadline, cta, cidade, densidade, bullets, selo, copyExtra, cor60, cor30, cor10])
+
+  const restaurarRascunho = () => {
+    const r = rascunho
+    if (r) {
+      setBriefing(r.briefing ?? ''); setObjetivo(r.objetivo ?? OBJETIVOS[0].id)
+      setAudience(r.audience ?? ''); setTone(r.tone ?? '')
+      setHeadline(r.headline ?? ''); setSubheadline(r.subheadline ?? '')
+      setCta(r.cta ?? ''); setCidade(r.cidade ?? '')
+      setDensidade(r.densidade ?? 'simples'); setBullets(r.bullets ?? ['', '', ''])
+      setSelo(r.selo ?? ''); setCopyExtra(r.copyExtra ?? '')
+      setCor60(r.cor60 ?? ''); setCor30(r.cor30 ?? ''); setCor10(r.cor10 ?? '')
+    }
+    setRascunhoDecidido(true)
+  }
+  const descartarRascunho = () => { limparRascunho(); setRascunhoDecidido(true) }
 
   // ── Box "Gerados hoje" (histórico do dia) ───────────────────────────────
   const carregarHistoricoHoje = async () => {
@@ -603,7 +649,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
         if (ok) sucesso++
         primeiro = false
       }
-      if (sucesso) toast.success(sucesso > 1 ? `${sucesso} criativos gerados!` : 'Criativo gerado!')
+      if (sucesso) { limparRascunho(); toast.success(sucesso > 1 ? `${sucesso} criativos gerados!` : 'Criativo gerado!') }
       else toast.error('Não foi possível gerar.')
     } finally {
       setIsGenerating(false)
@@ -628,8 +674,23 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
       {/* Configuração */}
       <div className="flex-1 flex flex-col gap-5 overflow-y-auto pr-4 scrollbar-hide">
 
+        {/* Recuperação de rascunho (Nielsen #3 controle do usuário) */}
+        {temRascunho && !rascunhoDecidido && (
+          <div className="flex items-center gap-3 p-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-blue)]/40 bg-[rgba(62,91,255,0.06)] animate-in fade-in slide-in-from-top-2 duration-200">
+            <Wand2 size={16} className="text-[var(--ws-blue)] shrink-0" />
+            <span className="flex-1 text-[12px] text-[var(--ws-text-1)] leading-snug">
+              Recuperamos o que você estava preenchendo. Deseja continuar de onde parou?
+            </span>
+            <button onClick={restaurarRascunho} className="px-3 h-8 rounded-[var(--ws-radius-lg)] text-[11px] font-bold whitespace-nowrap bg-[var(--ws-blue)] text-white">Restaurar</button>
+            <button onClick={descartarRascunho} className="px-3 h-8 rounded-[var(--ws-radius-lg)] text-[11px] font-bold whitespace-nowrap border border-[var(--ws-glass-border)] text-[var(--ws-text-2)] hover:bg-[var(--ws-glass-bg)]">Descartar</button>
+          </div>
+        )}
+
         {/* Limpar campos — começar um novo criativo (reset total) */}
-        <div className="flex items-center justify-end -mb-2">
+        <div className="flex items-center justify-between -mb-2">
+          <span className={`flex items-center gap-1.5 text-[10px] font-medium text-[var(--ws-text-3)] transition-opacity duration-300 ${estadoRascunho === 'salvo' ? 'opacity-100' : 'opacity-0'}`}>
+            <Save size={12} /> Rascunho salvo
+          </span>
           <button onClick={limparTudo} title="Limpar tudo e começar um novo criativo"
             className="flex items-center gap-1.5 px-3 h-8 rounded-[var(--ws-radius-lg)] text-[10px] font-bold uppercase tracking-wider text-[var(--ws-text-2)] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] hover:border-[#a32d2d] hover:text-[#a32d2d] transition-all">
             <Trash2 size={13} /> Limpar campos
