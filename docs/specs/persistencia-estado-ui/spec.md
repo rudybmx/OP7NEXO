@@ -33,10 +33,13 @@ Ao recarregar (F5), trocar de aba ou voltar, o usuário perde o estado de UI:
   - `modal-meu-perfil.tsx` — só nome/email **pré-preenchidos do servidor** + **campo de senha** (segurança: senha nunca vai para localStorage). Modal fecha no F5 e reabre com dados do servidor → rascunho de baixo/nenhum valor.
 - **Pendente de decisão do usuário:** cadastros reais são **dialogs** (`novo-usuario-dialog`, `nova-conta-dialog`, `novo-canal-dialog`) que fecham no F5; rascunho neles é o padrão "reabrir para recuperar". Confirmar se vale aplicar (e cuidado com senha no novo-usuário).
 
-### Fase 3 — Estado de visualização das telas de dados (pendente)
-- Persistir aba ativa + filtros via `localStorage` (decisão do usuário: **NÃO** por URL/compartilhável).
-- Aplicar em `pagina-meta-ads.tsx`, `pagina-google-ads.tsx`, `PmpTabs.tsx`.
-- Padronizar filtros que já usam localStorage à mão (`filtros-criativos.tsx`, `grid-criativos.tsx`) pelo mesmo hook.
+### Fase 3 — Estado de visualização das telas de dados (FEITO)
+- Persistir **aba ativa** via `usePersistedState` (decisão do usuário: **NÃO** por URL/compartilhável):
+  - `pagina-meta-ads.tsx` → `op7-nexo-meta-aba`
+  - `pagina-google-ads.tsx` → `op7-nexo-google-aba`
+  - `app/.../demandas/pmp/page.tsx` (dono do estado, não o `PmpTabs` presentacional) → `op7-nexo-pmp-aba`
+  - `EstudioCriativos.tsx` → `op7-estudio-aba`
+- **Filtros NÃO migrados (decisão):** `filtros-criativos.tsx`/`grid-criativos.tsx` guardam só um número (`colunas`/`cols`) — refatorar não traz ganho. Filtros do Meta Ads (`op7-nexo-meta-filtros`) têm lógica de recência de data que o hook JSON genérico regrediria. Mantidos como estão.
 
 ## Verificação
 - Gate de tipos: `npx tsc --noEmit` não pode introduzir erro novo vs baseline (build mascara com `ignoreBuildErrors`).

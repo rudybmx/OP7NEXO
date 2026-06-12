@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { FiltrosMeta } from '@/components/meta-ads/visao-geral/filtros-meta'
 import { VisaoGeral } from '@/components/meta-ads/visao-geral'
 import { AbaCampanhas } from '@/components/meta-ads/campanhas'
@@ -50,7 +51,7 @@ function periodoSalvoEhRecente(dataFim?: string | null) {
 export function PaginaMetaAds() {
   const { workspaceAtual: wsId } = useWorkspace()
 
-  const [abaAtiva, setAbaAtiva] = useState<Aba>('Visão geral')
+  const [abaAtiva, setAbaAtiva] = usePersistedState<Aba>('op7-nexo-meta-aba', 'Visão geral')
   const [campanhaSelecionadaId, setCampanhaSelecionadaId] = useState<string | null>(null)
   const [filtrosCampanhas, setFiltrosCampanhas] = useState<FiltrosCampanhas>({
     busca: '',

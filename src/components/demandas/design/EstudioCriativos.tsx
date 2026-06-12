@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import { Sparkles, LayoutGrid, History } from 'lucide-react'
+import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { GeradorCriativos, type SeedModelo } from './GeradorCriativos'
 import { GaleriaModelos, type ModeloCard } from './GaleriaModelos'
 import { HistoricoCriativos } from './HistoricoCriativos'
@@ -11,7 +12,7 @@ import { HistoricoCriativos } from './HistoricoCriativos'
 // para não perder o estado do gerador. Escolher um modelo/histórico aplica um
 // `seed` no gerador e volta pra aba Gerar.
 export function EstudioCriativos() {
-  const [aba, setAba] = useState<'gerar' | 'modelos' | 'historico'>('gerar')
+  const [aba, setAba] = usePersistedState<'gerar' | 'modelos' | 'historico'>('op7-estudio-aba', 'gerar')
   const [seed, setSeed] = useState<SeedModelo | null>(null)
 
   const usarEstrutura = (estrutura: Record<string, any> | null) => {

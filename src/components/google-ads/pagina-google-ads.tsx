@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { subDays, startOfDay, endOfDay } from 'date-fns'
 import {
   ChevronDown,
@@ -103,7 +104,7 @@ function GlassSelect({ label, value, onChange, options, minWidth = 160 }: {
 }
 
 export function PaginaGoogleAds() {
-  const [abaAtiva, setAbaAtiva] = useState<Aba>('Visão geral')
+  const [abaAtiva, setAbaAtiva] = usePersistedState<Aba>('op7-nexo-google-aba', 'Visão geral')
   const [filtros, setFiltros] = useState<FiltrosGoogle>({
     dateRange: { start: startOfDay(subDays(new Date(), 30)), end: endOfDay(new Date()) },
     tipoCampanha: 'todas',

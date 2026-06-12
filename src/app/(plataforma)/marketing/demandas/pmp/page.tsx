@@ -16,6 +16,7 @@ import PmpVersionHistory from '@/components/demandas/pmp/PmpVersionHistory'
 import { usePmpPlans, type PmpPlanApi } from '@/hooks/use-pmp-plans'
 import { usePmpTasks, type PmpTaskApi } from '@/hooks/use-pmp-tasks'
 import { usePmpUnidades } from '@/hooks/use-pmp-unidades'
+import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { useWorkspace } from '@/lib/workspace-context'
 import { calcularStatusDerived, FASES_LABELS } from '@/types/pmp'
 import type { PmpPlan, PmpPhase, PmpTask, TaskStatus, TaskStatusDerived } from '@/types/pmp'
@@ -106,7 +107,7 @@ export default function Page() {
   const { unidades } = usePmpUnidades(workspaceAtivo)
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<ActiveTab>('gantt')
+  const [activeTab, setActiveTab] = usePersistedState<ActiveTab>('op7-nexo-pmp-aba', 'gantt')
   const [selectedTask, setSelectedTask] = useState<PmpTask | null>(null)
   const [ganttZoom, setGanttZoom] = useState<'mes' | 'semana'>('mes')
   const [statusFilter, setStatusFilter] = useState<TaskStatusDerived | 'todos'>('todos')
