@@ -93,7 +93,8 @@ def _out(feature: str, row: AiSetting | None) -> AiSettingOut:
         source=cfg.source,
         ativo=(row.ativo if row else True),
         has_override=has_override,
-        api_key_mask=_mask(row.api_key) if row else "",
+        # Máscara da chave EFETIVA (override no DB ou a do .env) — nunca a chave inteira.
+        api_key_mask=_mask(cfg.api_key),
     )
 
 
