@@ -14,6 +14,15 @@ Ao recarregar (F5), trocar de aba ou voltar, o usuário perde o estado de UI:
 
 ## Comportamento esperado por fase
 
+### Hook base `usePersistedState` (`src/hooks/use-estado-persistido.ts`)
+Implementado com **`useSyncExternalStore`** (não `useEffect`):
+- Snapshot consistente entre renders concorrentes e múltiplas instâncias — o restore
+  por `useEffect` PERDIA a corrida em dashboards pesados (Meta/Google re-renderizam
+  durante o load), deixando a aba no padrão apesar do valor salvo.
+- SSR-safe: `getServerSnapshot = padrao` (sem hydration mismatch; verificado em prod, console limpo).
+- Cache por chave mantém a referência do snapshot estável (exigência do useSyncExternalStore).
+- Bônus: sincroniza entre abas (evento `storage`).
+
 ### Fase 1 — Sidebar ✅
 - Hook `usePersistedState` (SSR-safe) em `src/hooks/use-estado-persistido.ts`.
 - Regra de abertura de grupo: `secaoAtiva(pathname) ? true : (toggleUsuario[chave] ?? grupo.abertoPadrao)`.
@@ -33,7 +42,8 @@ Ao recarregar (F5), trocar de aba ou voltar, o usuário perde o estado de UI:
   - `modal-meu-perfil.tsx` — só nome/email **pré-preenchidos do servidor** + **campo de senha** (segurança: senha nunca vai para localStorage). Modal fecha no F5 e reabre com dados do servidor → rascunho de baixo/nenhum valor.
 - **Pendente de decisão do usuário:** cadastros reais são **dialogs** (`novo-usuario-dialog`, `nova-conta-dialog`, `novo-canal-dialog`) que fecham no F5; rascunho neles é o padrão "reabrir para recuperar". Confirmar se vale aplicar (e cuidado com senha no novo-usuário).
 
-### Fase 3 — Estado de visualização das telas de dados (FEITO)
+### Fase 3 — Estado de visualização das telas de dados (FEITO, verificado em prod)
+Todas as abas restauram após F5 (Meta=Financeiro, Google=Campanhas, PMP=Resumo, Estúdio=Histórico).
 - Persistir **aba ativa** via `usePersistedState` (decisão do usuário: **NÃO** por URL/compartilhável):
   - `pagina-meta-ads.tsx` → `op7-nexo-meta-aba`
   - `pagina-google-ads.tsx` → `op7-nexo-google-aba`
