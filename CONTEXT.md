@@ -201,6 +201,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-12) — Painel Central de IA
+- Página `/admin/ia` (platform_admin): aba **Modelos & Chaves** (edita modelo/provider/base_url/chave por feature de IA, troca sem redeploy, chave mascarada, slot `agent` reservado) + aba **Insights de IA** (lista `ai_insights` agregados com tipo e modelo que gerou). Hook `src/hooks/use-ai-settings.ts` (SWR). Item de menu em Administração. API: `/ai/settings`, `/ai/insights`.
+- Página dedicada `/admin/analises-ia` (read-only): só leitura das análises de IA, reusa o componente `src/components/admin/InsightsIaTabela.tsx` (compartilhado com a aba). Item próprio no menu Administração.
+
 ### ✅ Implementado
 - Meta Ads: 5 abas com dados reais (Visão Geral, Campanhas, Conjuntos, Públicos, Criativos)
 - Filtro de campanha em Públicos
