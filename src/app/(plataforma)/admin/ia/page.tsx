@@ -10,6 +10,7 @@ import { wsSheetCreamInputStyle, wsSheetCreamStyle } from '@/components/ui/ws-sh
 import { useAuth } from '@/hooks/use-auth'
 import { useAiSettings, type AiSetting, type AiSettingUpdate } from '@/hooks/use-ai-settings'
 import { InsightsIaTabela } from '@/components/admin/InsightsIaTabela'
+import { ConsumoIaPainel } from '@/components/admin/ConsumoIaPainel'
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 14px', borderRadius: 10,
@@ -44,7 +45,7 @@ export default function PainelIaPage() {
   const { user, isLoading: authLoading } = useAuth()
   const router = useRouter()
 
-  const [aba, setAba] = useState<'modelos' | 'insights'>('modelos')
+  const [aba, setAba] = useState<'modelos' | 'insights' | 'consumo'>('modelos')
   const { settings, isLoading, atualizar } = useAiSettings()
 
   const [drawer, setDrawer] = useState(false)
@@ -107,7 +108,7 @@ export default function PainelIaPage() {
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 24, borderBottom: '1px solid var(--ws-glass-border)' }}>
-        {([['modelos', 'Modelos & Chaves'], ['insights', 'Insights de IA']] as const).map(([id, label]) => (
+        {([['modelos', 'Modelos & Chaves'], ['insights', 'Insights de IA'], ['consumo', 'Consumo & Custo']] as const).map(([id, label]) => (
           <button key={id} onClick={() => setAba(id)}
             style={{
               padding: '8px 4px', marginBottom: -1, background: 'none', border: 'none', cursor: 'pointer',
@@ -165,6 +166,8 @@ export default function PainelIaPage() {
       )}
 
       {aba === 'insights' && <InsightsIaTabela limit={50} />}
+
+      {aba === 'consumo' && <ConsumoIaPainel />}
 
       <Sheet open={drawer} onOpenChange={setDrawer}>
         <SheetContent side="right" style={{ ...wsSheetCreamStyle, width: 440, maxWidth: '95vw', padding: 24, overflowY: 'auto' }}>

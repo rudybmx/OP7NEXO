@@ -201,6 +201,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-12) — Consumo & Custo de IA (Fase 2)
+- Aba "Consumo & Custo" em `/admin/ia`: KPIs (chamadas, tokens, custo USD/BRL com câmbio do dia), quebra por feature/modelo/workspace, filtro de período (7/30/90d) e editor da tabela de preços por modelo. Componente `src/components/admin/ConsumoIaPainel.tsx`, hook `src/hooks/use-ai-usage.ts`. API: `/ai/usage/summary|pricing|fx`.
+
 ### ✅ Implementado (2026-06-12) — Painel Central de IA
 - Página `/admin/ia` (platform_admin): aba **Modelos & Chaves** (edita modelo/provider/base_url/chave por feature de IA, troca sem redeploy, chave mascarada, slot `agent` reservado) + aba **Insights de IA** (lista `ai_insights` agregados com tipo e modelo que gerou). Hook `src/hooks/use-ai-settings.ts` (SWR). Item de menu em Administração. API: `/ai/settings`, `/ai/insights`.
 - Página dedicada `/admin/analises-ia` (read-only): só leitura das análises de IA, reusa o componente `src/components/admin/InsightsIaTabela.tsx` (compartilhado com a aba). Item próprio no menu Administração.
