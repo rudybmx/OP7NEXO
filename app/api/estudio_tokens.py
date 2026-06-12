@@ -63,7 +63,10 @@ def listar_transacoes(
     verificar_acesso_workspace(usuario, workspace_id, db)
     rows = (
         db.query(EstudioTokenTransacao)
-        .filter(EstudioTokenTransacao.workspace_id == workspace_id)
+        .filter(
+            EstudioTokenTransacao.workspace_id == workspace_id,
+            EstudioTokenTransacao.status != "cancelado",  # canceladas somem para o cliente
+        )
         .order_by(EstudioTokenTransacao.criado_em.desc())
         .limit(100)
         .all()
@@ -86,7 +89,8 @@ def criar_recarga(
     verificar_acesso_workspace(usuario, payload.workspace_id, db)
     t = estudio_wallet.registrar(
         db, payload.workspace_id, "credito", payload.tokens, "Recarga de saldo",
-        status="pendente", valor=payload.tokens * estudio_wallet.TOKEN_VALOR_REAIS, por=usuario.id,
+        status="pendente", valor=payload.tokens * estudio_wallet.TOKEN_VALOR_REAIS,
+        origem="comprado", por=usuario.id,
     )
     db.commit()
     db.refresh(t)
@@ -128,9 +132,98 @@ def creditar_admin(
     """Crédito manual direto (admin) — sem passar por recarga pendente."""
     t = estudio_wallet.creditar(
         db, payload.workspace_id, payload.tokens,
-        payload.motivo or "Crédito manual (admin)", por=usuario.id,
+        payload.motivo or "Crédito manual (admin)", origem="concedido", por=usuario.id,
     )
     return {"transacao": _tx_out(t), "saldo_tokens": estudio_wallet.saldo(db, payload.workspace_id)}
+
+
+@router.post("/recarga/{transacao_id}/cancelar")
+def cancelar_recarga(
+    transacao_id: uuid.UUID,
+    usuario: User = Depends(exigir_platform_admin),
+    db: Session = Depends(get_db),
+):
+    """platform_admin cancela uma recarga pendente (some para o cliente)."""
+    t = (
+        db.query(EstudioTokenTransacao)
+        .filter(EstudioTokenTransacao.id == transacao_id)
+        .first()
+    )
+    if not t:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Transação não encontrada")
+    if t.tipo != "credito" or t.status != "pendente":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Transação não é uma recarga pendente")
+    t.status = "cancelado"
+    db.commit()
+    return {"ok": True}
+
+
+class RemoverIn(BaseModel):
+    workspace_id: uuid.UUID
+    tokens: int = Field(gt=0, le=1000000)
+
+
+@router.post("/remover")
+def remover_tokens(
+    payload: RemoverIn,
+    usuario: User = Depends(exigir_platform_admin),
+    db: Session = Depends(get_db),
+):
+    """Remove tokens CONCEDIDOS (não comprados). Cap = removivel (grátis no saldo)."""
+    b = estudio_wallet.buckets(db, payload.workspace_id)
+    if payload.tokens > b["removivel"]:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Só é possível remover até {b['removivel']} token(s) concedido(s). "
+            f"O restante ({b['transferivel']}) foi comprado — use Transferir.",
+        )
+    estudio_wallet.debitar(
+        db, payload.workspace_id, payload.tokens, "Remoção de tokens (admin)",
+        origem="remocao", por=usuario.id,
+    )
+    return {"saldo_tokens": estudio_wallet.saldo(db, payload.workspace_id)}
+
+
+class TransferirIn(BaseModel):
+    origem_workspace_id: uuid.UUID
+    destino_workspace_id: uuid.UUID
+    tokens: int = Field(gt=0, le=1000000)
+
+
+@router.post("/transferir")
+def transferir_tokens(
+    payload: TransferirIn,
+    usuario: User = Depends(exigir_platform_admin),
+    db: Session = Depends(get_db),
+):
+    """Transfere tokens COMPRADOS de um workspace para outro. Cap = transferivel."""
+    if payload.origem_workspace_id == payload.destino_workspace_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Origem e destino devem ser diferentes")
+    destino = db.query(Workspace).filter(Workspace.id == payload.destino_workspace_id).first()
+    if not destino:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workspace de destino não encontrado")
+    origem_ws = db.query(Workspace).filter(Workspace.id == payload.origem_workspace_id).first()
+    b = estudio_wallet.buckets(db, payload.origem_workspace_id)
+    if payload.tokens > b["transferivel"]:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Só é possível transferir até {b['transferivel']} token(s) comprado(s).",
+        )
+    # Débito na origem + crédito no destino (comprado) — um único commit.
+    estudio_wallet.registrar(
+        db, payload.origem_workspace_id, "debito", payload.tokens,
+        f"Transferência enviada p/ {destino.nome}", origem="transferencia", por=usuario.id,
+    )
+    estudio_wallet.registrar(
+        db, payload.destino_workspace_id, "credito", payload.tokens,
+        f"Transferência recebida de {origem_ws.nome if origem_ws else 'workspace'}",
+        valor=payload.tokens * estudio_wallet.TOKEN_VALOR_REAIS, origem="comprado", por=usuario.id,
+    )
+    db.commit()
+    return {
+        "saldo_origem": estudio_wallet.saldo(db, payload.origem_workspace_id),
+        "saldo_destino": estudio_wallet.saldo(db, payload.destino_workspace_id),
+    }
 
 
 # ───────────────────────── Admin: controle global de tokens ─────────────────
@@ -146,10 +239,19 @@ def admin_saldos(
         .filter(Workspace.ativo.is_(True))
         .all()
     )
-    out = [
-        {"workspace_id": str(wid), "nome": nome, "saldo_tokens": saldo or 0}
-        for wid, nome, saldo in rows
-    ]
+    out = []
+    for wid, nome, saldo in rows:
+        s = saldo or 0
+        # buckets só p/ quem tem saldo (os demais são 0/0) — evita queries à toa.
+        if s > 0:
+            b = estudio_wallet.buckets(db, wid)
+            removivel, transferivel, comprado = b["removivel"], b["transferivel"], b["comprado_restante"]
+        else:
+            removivel = transferivel = comprado = 0
+        out.append({
+            "workspace_id": str(wid), "nome": nome, "saldo_tokens": s,
+            "removivel": removivel, "transferivel": transferivel, "comprado": comprado,
+        })
     out.sort(key=lambda x: x["saldo_tokens"], reverse=True)
     return out
 

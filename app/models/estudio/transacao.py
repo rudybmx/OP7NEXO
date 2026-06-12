@@ -29,4 +29,6 @@ class EstudioTokenTransacao(Base, TimestampMixin):
         String(12), nullable=False, default="confirmado"
     )  # confirmado | pendente | cancelado
     referencia: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # origem do lançamento: concedido | comprado | consumo | remocao | transferencia
+    origem: Mapped[str | None] = mapped_column(String(16), nullable=True)
     criado_por: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

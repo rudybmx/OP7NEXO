@@ -5,6 +5,7 @@ e pelo débito por geração em `/design/gerar`. 1 token = R$1.
 """
 import uuid
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.estudio import EstudioTokenSaldo, EstudioTokenTransacao
@@ -23,6 +24,33 @@ def saldo(db: Session, workspace_id: uuid.UUID) -> int:
 
 def tem_saldo(db: Session, workspace_id: uuid.UUID, n: int) -> bool:
     return saldo(db, workspace_id) >= n
+
+
+def buckets(db: Session, workspace_id: uuid.UUID) -> dict:
+    """Decompõe o saldo em concedido (grátis) vs comprado (consumo grátis-primeiro).
+
+    `comprado_restante` é o piso protegido: créditos comprados menos transferências
+    enviadas. O que estiver no saldo acima desse piso é concedido → removível.
+    """
+    s = saldo(db, workspace_id)
+
+    def _soma(tipo: str, origem: str, somente_confirmado: bool) -> int:
+        q = db.query(func.coalesce(func.sum(EstudioTokenTransacao.tokens), 0)).filter(
+            EstudioTokenTransacao.workspace_id == workspace_id,
+            EstudioTokenTransacao.tipo == tipo,
+            EstudioTokenTransacao.origem == origem,
+        )
+        if somente_confirmado:
+            q = q.filter(EstudioTokenTransacao.status == "confirmado")
+        return int(q.scalar() or 0)
+
+    comprado_restante = max(0, _soma("credito", "comprado", True) - _soma("debito", "transferencia", False))
+    return {
+        "saldo": s,
+        "comprado_restante": min(comprado_restante, s),
+        "removivel": max(0, s - comprado_restante),
+        "transferivel": min(comprado_restante, s),
+    }
 
 
 def _ajustar(db: Session, workspace_id: uuid.UUID, delta: int) -> None:
@@ -48,6 +76,7 @@ def registrar(
     status: str = "confirmado",
     valor=None,
     referencia: str | None = None,
+    origem: str | None = None,
     por: uuid.UUID | None = None,
 ) -> EstudioTokenTransacao:
     """Cria a transação; se `status='confirmado'`, ajusta o saldo (não dá commit)."""
@@ -59,6 +88,7 @@ def registrar(
         motivo=motivo,
         status=status,
         referencia=referencia,
+        origem=origem,
         criado_por=por,
     )
     db.add(t)
@@ -78,12 +108,13 @@ def confirmar(db: Session, t: EstudioTokenTransacao) -> EstudioTokenTransacao:
 
 def creditar(
     db: Session, workspace_id: uuid.UUID, tokens: int, motivo: str,
-    *, valor=None, referencia: str | None = None, por: uuid.UUID | None = None,
+    *, valor=None, referencia: str | None = None, origem: str | None = None,
+    por: uuid.UUID | None = None,
 ) -> EstudioTokenTransacao:
     t = registrar(
         db, workspace_id, "credito", tokens, motivo,
         valor=valor if valor is not None else tokens * TOKEN_VALOR_REAIS,
-        referencia=referencia, por=por,
+        referencia=referencia, origem=origem, por=por,
     )
     db.commit()
     db.refresh(t)
@@ -92,9 +123,10 @@ def creditar(
 
 def debitar(
     db: Session, workspace_id: uuid.UUID, tokens: int, motivo: str,
-    *, referencia: str | None = None,
+    *, referencia: str | None = None, origem: str | None = None,
+    por: uuid.UUID | None = None,
 ) -> EstudioTokenTransacao:
-    t = registrar(db, workspace_id, "debito", tokens, motivo, referencia=referencia)
+    t = registrar(db, workspace_id, "debito", tokens, motivo, referencia=referencia, origem=origem, por=por)
     db.commit()
     db.refresh(t)
     return t

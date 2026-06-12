@@ -59,7 +59,7 @@ def _creditar_sessao(db: Session, session: dict, por: uuid.UUID | None = None) -
     if _ja_creditado(db, sid):
         return
     try:
-        estudio_wallet.creditar(db, uuid.UUID(ws), tokens, "Recarga via Stripe", referencia=sid, por=por)
+        estudio_wallet.creditar(db, uuid.UUID(ws), tokens, "Recarga via Stripe", referencia=sid, origem="comprado", por=por)
     except IntegrityError:
         # Corrida (confirm-on-return + webhook na mesma sessão): o índice único
         # barrou o 2º crédito. Já está creditado — ignora.

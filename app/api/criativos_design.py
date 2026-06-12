@@ -388,7 +388,7 @@ def gerar(
             if ger.status == "done":
                 # Débito só no sucesso (geração que falha não cobra).
                 estudio_wallet.debitar(
-                    gdb, ws_id, custo, "Geração de criativo", referencia=str(ger.id)
+                    gdb, ws_id, custo, "Geração de criativo", referencia=str(ger.id), origem="consumo"
                 )
                 yield _sse(
                     "generation.completed",

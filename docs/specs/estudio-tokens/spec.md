@@ -40,10 +40,24 @@ POST /estudio/creditar     { workspace_id, tokens, motivo? } (platform_admin) �
 
 A página **Administração › Empresas › Gestão de Tokens** (`/admin/tokens`) virou 2 abas: **Conexões** (Meta/Google, o que já existia) e **Token Estúdio** (`TokenEstudioAdmin.tsx`): resumo (tokens em circulação, clientes com saldo, recargas pendentes), confirmar recargas pendentes e **liberar/creditar tokens** para qualquer cliente. Endpoints (todos `platform_admin`):
 ```
-GET  /estudio/admin/saldos              → [ { workspace_id, nome, saldo_tokens } ]  (todos os workspaces ativos)
+GET  /estudio/admin/saldos              → [ { workspace_id, nome, saldo_tokens, removivel, transferivel, comprado } ]
 GET  /estudio/admin/recargas-pendentes  → [ { id, workspace_id, nome, tokens, valor_reais, criado_em } ]
 # reusa POST /estudio/creditar (liberar) e POST /estudio/recarga/{id}/confirmar
 ```
+
+## Admin — cancelar / remover / transferir (2026-06-12, FEITO)
+
+Cada lançamento tem **`origem`** (migration 069): `concedido` (admin liberou, grátis) | `comprado` (Stripe + recarga manual confirmada) | `consumo` (geração) | `remocao` | `transferencia`. `estudio_wallet.buckets(ws)` decompõe o saldo com **consumo grátis-primeiro** (o comprado é piso protegido):
+- `comprado_restante` = Σ(crédito confirmado `comprado`) − Σ(débito `transferencia`)
+- `removivel` = max(0, saldo − comprado_restante)  · `transferivel` = min(comprado_restante, saldo)  (somam = saldo)
+
+Endpoints (`platform_admin`):
+```
+POST /estudio/recarga/{id}/cancelar  → pendente→cancelado (some do cliente; /transacoes esconde cancelado)
+POST /estudio/remover    { workspace_id, tokens }                          → debita até `removivel` (400 se exceder; só concedido)
+POST /estudio/transferir { origem_workspace_id, destino_workspace_id, tokens } → débito origem + crédito destino (comprado), até `transferivel`
+```
+Front (`TokenEstudioAdmin.tsx`): Cancelar na pendente; por cliente breakdown "X comprado / Y grátis" + Liberar/Remover(cap removivel)/Transferir(cap transferivel + select destino).
 
 ## Gateway Stripe (3b — 2026-06-11, FEITO; TEST mode)
 
