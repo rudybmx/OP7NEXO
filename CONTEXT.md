@@ -158,6 +158,10 @@ Account
 - Form: `src/components/administracao/clientes/cliente-form.tsx` (HeroUI Tabs Cadastro/Módulos/Integrações + Input + Button); lógica em `src/hooks/use-cliente-form.ts` (autofill Receita Federal via `/api/cnpj/[cnpj]`, save POST/PUT + PATCH status).
 - Padrão de referência ao converter outros cadastros de modal→página.
 
+## CONTAS DE ANÚNCIOS (modal→página, parcial)
+- **Editar** conta é PÁGINA: `/administracao/contas-ads/[id]/editar` (`src/components/administracao/contas-ads/editar-conta-page.tsx`; carrega por id via `GET /ads-accounts` + `.find`).
+- **Nova** conta segue MODAL (`nova-conta-dialog.tsx`) — é wizard de importação Meta/Google, não cadastro simples. Decisão intencional.
+
 ## PADRÕES FRONT-END
 
 ### Stack
