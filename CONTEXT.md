@@ -195,6 +195,11 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-13) — Auto-refresh de Insights de IA (Meta + Google)
+- Insights de IA passam a ser gerados automaticamente no `op7nexo-worker` ao FIM do `_job_sync_todas_contas` (06/12/18h), p/ todos os workspaces com dados nos últimos 7 dias — antes só eram gerados sob demanda ao abrir a tela do Meta. `scheduler._gerar_insights_ia()` (best-effort, sessão por workspace).
+- `ia_insights.py`: KPIs+geração extraídos do endpoint para `gerar_insights_meta()` (reusado pelo endpoint `/meta/insights/ia` E pelo scheduler) e novo `gerar_insights_google()` (KPIs de `google_dados_diarios`: custo→spend, conversoes→leads; prompt `PROMPT_GESTOR_GOOGLE` sem reach/frequência). `gerar_e_salvar_insights`/`deve_regenerar`/`buscar_*` agora filtram por `modulo` (meta_ads|google_ads) p/ não colidirem no cache.
+- Google Ads passa a ter insights de IA (`modulo='google_ads'` em `ai_insights`). Front: badge Plataforma (Meta/Google) na tabela de insights.
+
 ### ✅ Implementado (2026-06-12) — Consumo & Custo de IA (Fase 2)
 - Migration 071: `ai_usage_log` (1 linha/chamada de IA, custo USD snapshot), `ai_model_pricing` (preços por modelo, editável; seed gpt-4o-mini/4.1-mini/4.1/image-2), `fx_rates` (cotação USD-BRL diária). Spec: `docs/specs/consumo-ia/`.
 - `app/services/ai_usage.py::registrar_uso` — abre sessão PRÓPRIA (não recebe `db`), best-effort (nunca quebra a chamada de produto), custo congelado no registro. `app/services/fx.py` busca cotação do dia (AwesomeAPI, sem chave, timeout 3s, fallback última).

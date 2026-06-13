@@ -73,6 +73,12 @@ Sucesso = admin troca o modelo/chave de qualquer feature de IA pela UI e a próx
 - Manual: `GET /ai/settings` retorna `api_key_mask`, nunca a chave inteira.
 - Manual: front build + `/admin/ia` como `platform_admin`.
 
+## Atualização (2026-06-13) — Auto-refresh + Google
+
+- Insights de IA passaram a ser gerados **automaticamente** no `op7nexo-worker` ao fim de cada sync (06/12/18h), para todos os workspaces com dados nos últimos 7 dias — antes só geravam sob demanda ao abrir a tela do Meta, então o painel central (read-only) mostrava dados antigos.
+- KPIs+geração extraídos para `ia_insights.gerar_insights_meta()` (reusado pelo endpoint e pelo scheduler) + novo `gerar_insights_google()` (`google_dados_diarios`). Cache/`buscar_*` agora filtram por `modulo` (`meta_ads`|`google_ads`).
+- Google Ads passa a ter insights de IA (`modulo='google_ads'`). Front: badge Plataforma na tabela.
+
 ## Open Questions
 
 - None

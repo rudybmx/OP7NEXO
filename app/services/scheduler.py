@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 
 from app.core.database import SessionLocal
 from app.models.ads_account import AdsAccount
@@ -95,6 +95,65 @@ def _job_sync_todas_contas() -> None:
                     log.exception("Erro inesperado em thread de sync: %s", exc)
 
     log.info("Scheduler: sync concluído")
+
+    # Gera os insights de IA logo após o sync (dados frescos), p/ Meta e Google.
+    # Best-effort: nunca derruba o job de sync.
+    try:
+        _gerar_insights_ia()
+    except Exception as exc:
+        log.exception("Erro ao gerar insights de IA pós-sync: %s", exc)
+
+
+def _gerar_insights_ia() -> None:
+    """Gera/atualiza insights de IA (Meta + Google) para todos os workspaces com
+    dados nos últimos 7 dias. Reaproveita o cache (6h/hash) — barato se nada mudou."""
+    from datetime import date, timedelta
+    from app.services.ia_insights import gerar_insights_meta, gerar_insights_google
+
+    fim = date.today()
+    ini = fim - timedelta(days=7)
+
+    # Coleta (workspace, [contas]) com dados no período, por plataforma.
+    with SessionLocal() as db:
+        # meta_insights_diarios não tem workspace_id → join em ads_accounts (dono).
+        meta_pairs = db.execute(
+            text(
+                "SELECT a.workspace_id::text, array_agg(DISTINCT d.ads_account_id::text) "
+                "FROM meta_insights_diarios d "
+                "JOIN ads_accounts a ON a.id = d.ads_account_id "
+                "WHERE d.data BETWEEN :ini AND :fim AND a.workspace_id IS NOT NULL "
+                "GROUP BY a.workspace_id"
+            ),
+            {"ini": ini, "fim": fim},
+        ).fetchall()
+        google_pairs = db.execute(
+            text(
+                "SELECT workspace_id::text, array_agg(DISTINCT ads_account_id::text) "
+                "FROM google_dados_diarios WHERE data BETWEEN :ini AND :fim "
+                "GROUP BY workspace_id"
+            ),
+            {"ini": ini, "fim": fim},
+        ).fetchall()
+
+    meta = [(r[0], list(r[1])) for r in meta_pairs]
+    google = [(r[0], list(r[1])) for r in google_pairs]
+    ini_s, fim_s = str(ini), str(fim)
+
+    for ws, accs in meta:
+        try:
+            with SessionLocal() as wdb:
+                gerar_insights_meta(ws, accs, ini_s, fim_s, wdb)
+        except Exception as exc:
+            log.exception("Insights Meta falhou ws=%s: %s", ws, exc)
+
+    for ws, accs in google:
+        try:
+            with SessionLocal() as wdb:
+                gerar_insights_google(ws, accs, ini_s, fim_s, wdb)
+        except Exception as exc:
+            log.exception("Insights Google falhou ws=%s: %s", ws, exc)
+
+    log.info("Scheduler: insights IA gerados — meta=%d ws, google=%d ws", len(meta), len(google))
 
 
 def _job_process_whatsapp_events() -> None:

@@ -2762,109 +2762,17 @@ def insights_ia(
     db: Session = Depends(get_db),
     usuario: User = Depends(get_usuario_atual),
 ):
-    from app.services.ia_insights import (
-        gerar_e_salvar_insights,
-        buscar_todos_insights_vigentes,
-    )
+    from app.services.ia_insights import gerar_insights_meta
 
     account_uuids = _conta_ids_da_query(workspace_id, [], db, usuario)
     if not account_uuids:
         return []
 
-    # Aggregate KPIs
-    kpi_row = db.execute(
-        text(
-            "SELECT "
-            "  COALESCE(SUM(spend),0), COALESCE(SUM(leads),0), "
-            "  COALESCE(SUM(impressions),0), COALESCE(SUM(reach),0), "
-            "  COALESCE(SUM(clicks),0) "
-            "FROM meta_insights_diarios "
-            "WHERE ads_account_id = ANY(:ids) "
-            "  AND data BETWEEN :ini AND :fim"
-        ),
-        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
-    ).fetchone()
-
-    sp = float(kpi_row[0]); ld = int(kpi_row[1])
-    imp = int(kpi_row[2]); rch = int(kpi_row[3]); cl = int(kpi_row[4])
-    kpis_global = {
-        "spend": sp, "leads": ld, "impressions": imp, "reach": rch, "clicks": cl,
-        "ctr": _safe_div(cl, imp) * 100,
-        "cpc": _safe_div(sp, cl),
-        "cpm": _safe_div(sp, imp) * 1000,
-        "cpl": _safe_div(sp, ld),
-        "frequencia": _safe_div(imp, rch),
-    }
-
-    # Per-account KPIs
-    conta_rows = db.execute(
-        text(
-            "SELECT a.id::text, a.account_id, a.account_name, "
-            "  COALESCE(SUM(d.spend),0), COALESCE(SUM(d.leads),0), "
-            "  COALESCE(SUM(d.impressions),0), COALESCE(SUM(d.reach),0), "
-            "  COALESCE(SUM(d.clicks),0) "
-            "FROM ads_accounts a "
-            "JOIN meta_insights_diarios d ON d.ads_account_id = a.id "
-            "WHERE a.id = ANY(:ids) "
-            "  AND d.data BETWEEN :ini AND :fim "
-            "GROUP BY a.id, a.account_id, a.account_name"
-        ),
-        {"ids": account_uuids, "ini": data_inicio, "fim": data_fim},
-    ).fetchall()
-
-    contas_resumo = []
-    for r in conta_rows:
-        acc_sp = float(r[3]); acc_ld = int(r[4])
-        acc_imp = int(r[5]); acc_rch = int(r[6]); acc_cl = int(r[7])
-        contas_resumo.append({
-            "ads_account_id": r[0],
-            "account_id": r[1],
-            "account_name": r[2],
-            "spend": acc_sp,
-            "leads": acc_ld,
-            "impressions": acc_imp,
-            "reach": acc_rch,
-            "clicks": acc_cl,
-            "cpl": _safe_div(acc_sp, acc_ld),
-            "ctr": _safe_div(acc_cl, acc_imp) * 100,
-            "cpm": _safe_div(acc_sp, acc_imp) * 1000,
-            "frequencia": _safe_div(acc_imp, acc_rch),
-        })
-
-    data_ini_str = str(data_inicio)
-    data_fim_str = str(data_fim)
-
-    # Generate per-account insights
-    for conta in contas_resumo:
-        kpis_conta = {
-            "spend": conta["spend"], "leads": conta["leads"],
-            "impressions": conta["impressions"], "reach": conta["reach"],
-            "clicks": conta["clicks"], "cpl": conta["cpl"],
-            "ctr": conta["ctr"], "cpm": conta["cpm"],
-            "frequencia": conta["frequencia"],
-        }
-        gerar_e_salvar_insights(
-            workspace_id=workspace_id,
-            ads_account_id=conta["ads_account_id"],
-            kpis=kpis_conta,
-            contas=contas_resumo,
-            data_inicio=data_ini_str,
-            data_fim=data_fim_str,
-            db=db,
-        )
-
-    # Generate workspace-level insight
-    gerar_e_salvar_insights(
-        workspace_id=workspace_id,
-        ads_account_id=None,
-        kpis=kpis_global,
-        contas=contas_resumo,
-        data_inicio=data_ini_str,
-        data_fim=data_fim_str,
-        db=db,
+    # KPIs + geração extraídos para ia_insights.gerar_insights_meta (reusado pelo
+    # scheduler que gera os insights 3x/dia após o sync, sem precisar abrir a tela).
+    return gerar_insights_meta(
+        workspace_id, account_uuids, str(data_inicio), str(data_fim), db
     )
-
-    return buscar_todos_insights_vigentes(workspace_id, db)
 
 
 @router.get("/publicos")
