@@ -4,7 +4,6 @@ import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Building2, Loader2, Plus, Search, CreditCard, RefreshCw, CheckCircle2, XCircle, Clock3, AlertTriangle, Clock, Pencil, Power, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
-import { EditarContaDialog } from '@/components/administracao/contas-ads/editar-conta-dialog'
 import { NovaContaDialog } from '@/components/administracao/contas-ads/nova-conta-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, TableScrollContainer, TableContent, Chip, Button as HeroButton } from '@heroui/react'
@@ -283,7 +282,6 @@ export default function ContasAdsPage() {
   const [confirmToggle, setConfirmToggle] = useState<AdsAccount | null>(null)
   const [toggling, setToggling] = useState(false)
 
-  const [editandoConta, setEditandoConta] = useState<AdsAccount | null>(null)
 
   useEffect(() => {
     if (!authLoading && user && user.role !== 'platform_admin') router.push('/')
@@ -496,11 +494,7 @@ export default function ContasAdsPage() {
   }
 
   function abrirEdicaoConta(conta: AdsAccount) {
-    setEditandoConta(conta)
-  }
-
-  function fecharEdicaoConta() {
-    setEditandoConta(null)
+    router.push(`/administracao/contas-ads/${conta.id}/editar`)
   }
 
   const filtradas = contas.filter(c => {
@@ -937,16 +931,6 @@ export default function ContasAdsPage() {
           await loadActiveSyncJobs()
         }}
       />
-
-      <EditarContaDialog
-        conta={editandoConta}
-        workspaces={workspaces}
-        onClose={fecharEdicaoConta}
-        onSaved={(atualizada) => {
-          setContas(prev => prev.map(c => c.id === atualizada.id ? atualizada : c))
-        }}
-      />
-
 
       {/* Confirm Toggle Modal */}
       {confirmToggle && (
