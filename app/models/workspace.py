@@ -21,6 +21,8 @@ class Workspace(Base, TimestampMixin):
     nome: Mapped[str] = mapped_column(String(255), nullable=False)
     razao_social: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cnpj: Mapped[str | None] = mapped_column(String(18), nullable=True)
+    telefone_principal: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    telefone_responsavel: Mapped[str | None] = mapped_column(String(20), nullable=True)
     endereco: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

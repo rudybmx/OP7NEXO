@@ -28,6 +28,8 @@ def _workspace_out(w: Workspace, db: Session) -> WorkspaceOut:
         nome=w.nome,
         razao_social=w.razao_social,
         cnpj=w.cnpj,
+        telefone_principal=w.telefone_principal,
+        telefone_responsavel=w.telefone_responsavel,
         endereco=w.endereco or {},
         ativo=w.ativo,
         modulos=_get_modulos(w.id, db),
@@ -79,6 +81,8 @@ def criar_workspace(
         nome=payload.nome,
         razao_social=payload.razao_social,
         cnpj=payload.cnpj,
+        telefone_principal=payload.telefone_principal,
+        telefone_responsavel=payload.telefone_responsavel,
         endereco=payload.endereco,
     )
     db.add(w)
@@ -112,6 +116,8 @@ def atualizar_workspace(
     w.nome = payload.nome
     w.razao_social = payload.razao_social
     w.cnpj = payload.cnpj
+    w.telefone_principal = payload.telefone_principal
+    w.telefone_responsavel = payload.telefone_responsavel
     w.endereco = payload.endereco
     _salvar_modulos(w.id, payload.modulos, db)
     db.commit()

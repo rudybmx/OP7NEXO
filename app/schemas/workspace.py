@@ -5,6 +5,8 @@ class WorkspaceIn(BaseModel):
     nome: str
     razao_social: str | None = None
     cnpj: str | None = None
+    telefone_principal: str | None = None
+    telefone_responsavel: str | None = None
     endereco: dict = {}
     modulos: list[str] = []
 
@@ -14,6 +16,8 @@ class WorkspaceOut(BaseModel):
     nome: str
     razao_social: str | None
     cnpj: str | None
+    telefone_principal: str | None = None
+    telefone_responsavel: str | None = None
     endereco: dict
     ativo: bool
     modulos: list[str] = []
