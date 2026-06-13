@@ -152,6 +152,12 @@ Account
 
 ---
 
+## CADASTRO DE CLIENTES (workspaces)
+- Lista: `/administracao/empresas/contas` (HeroUI Table) — só navega, não tem mais Modal.
+- Cadastro/edição são PÁGINAS (não modal): `/administracao/empresas/contas/novo` e `/[id]/editar`.
+- Form: `src/components/administracao/clientes/cliente-form.tsx` (HeroUI Tabs Cadastro/Módulos/Integrações + Input + Button); lógica em `src/hooks/use-cliente-form.ts` (autofill Receita Federal via `/api/cnpj/[cnpj]`, save POST/PUT + PATCH status).
+- Padrão de referência ao converter outros cadastros de modal→página.
+
 ## PADRÕES FRONT-END
 
 ### Stack
