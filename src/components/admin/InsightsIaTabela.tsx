@@ -12,6 +12,21 @@ const TH: React.CSSProperties = {
 }
 const TD: React.CSSProperties = { padding: '9px 14px', fontSize: 13, color: 'var(--ws-text-1)' }
 
+function plataformaBadge(modulo: string) {
+  const google = modulo === 'google_ads'
+  const label = google ? 'Google' : 'Meta'
+  const color = google ? '#34a853' : '#3E5BFF'
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 6,
+      background: google ? 'rgba(52,168,83,0.10)' : 'rgba(62,91,255,0.10)',
+      color, fontSize: 11, fontWeight: 600,
+    }}>
+      {label}
+    </span>
+  )
+}
+
 function tipoBadge(tipo: string) {
   const t = (tipo || '').toUpperCase()
   const map: Record<string, { bg: string; color: string; Icon: typeof Info }> = {
@@ -50,12 +65,13 @@ export function InsightsIaTabela({ workspaceId, limit = 50 }: { workspaceId?: st
       ) : (
         <WSTable minWidth={820}>
           <thead>
-            <tr>{['Tipo', 'Insight', 'Workspace', 'Conta', 'Modelo', 'Gerado'].map(h => <th key={h} style={TH}>{h}</th>)}</tr>
+            <tr>{['Tipo', 'Plataforma', 'Insight', 'Workspace', 'Conta', 'Modelo', 'Gerado'].map(h => <th key={h} style={TH}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {insights.map(i => (
               <tr key={i.id} style={{ borderBottom: '1px solid var(--ws-divider)' }}>
                 <td style={{ ...TD, whiteSpace: 'nowrap' }}>{tipoBadge(i.tipo)}</td>
+                <td style={{ ...TD, whiteSpace: 'nowrap' }}>{plataformaBadge(i.modulo)}</td>
                 <td style={{ ...TD, maxWidth: 360 }}>
                   <div style={{ fontWeight: 600 }}>{i.titulo}</div>
                   <div style={{ fontSize: 12, color: 'var(--ws-text-2)', marginTop: 2 }}>{i.mensagem}</div>

@@ -201,6 +201,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-13) — Insights de IA: badge de plataforma
+- `InsightsIaTabela.tsx` ganhou coluna/badge **Plataforma (Meta/Google)** a partir do campo `modulo` que `/ai/insights` já retorna. Agora os insights de IA do Google também aparecem (gerados 3x/dia no worker, sem precisar abrir tela).
+
 ### ✅ Implementado (2026-06-12) — Consumo & Custo de IA (Fase 2)
 - Aba "Consumo & Custo" em `/admin/ia`: KPIs (chamadas, tokens, custo USD/BRL com câmbio do dia), quebra por feature/modelo/workspace, filtro de período (7/30/90d) e editor da tabela de preços por modelo. Componente `src/components/admin/ConsumoIaPainel.tsx`, hook `src/hooks/use-ai-usage.ts`. API: `/ai/usage/summary|pricing|fx`.
 
