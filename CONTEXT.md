@@ -46,6 +46,7 @@ VPS: api.op7franquia.com.br               │   │   └── publicos
 
 ```sql
 workspaces          -- tenant raiz
+                    -- campos: id, nome, razao_social, cnpj, telefone_principal, telefone_responsavel, endereco(JSONB), ativo (telefones na migration 072)
 ads_accounts        -- contas Meta Ads vinculadas ao workspace
                     -- campos: id, workspace_id, account_id, nome, token, valido_ate, ativo, plataforma
 meta_tokens         -- tokens de acesso globais do admin (migration 016+017)
@@ -59,7 +60,7 @@ meta_videos_catalog         -- catálogo de vídeos com source_url, thumbnail_ur
 ```
 
 ### Migrations
-- Numeradas: `001_` ... `063_` (último: `063_criativos_design` — Estúdio de Criativos, 7 tabelas `criativo_*`. Anterior: `062_google_ads_diarios` — tabelas `google_*_diarios`)
+- Numeradas: `001_` ... `072_` (último: `072_workspace_telefones` — add telefone_principal/telefone_responsavel em workspaces)
 - Localização: `/root/op7nexo-api/alembic/versions/` (NÃO existe `migrations/` — ver constituição 2.5)
 - Sempre rodar após criar: `bash /root/deploy.sh api` + testar endpoint
 
