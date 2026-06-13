@@ -59,7 +59,7 @@ interface AdsAccount {
 }
 
 interface SyncJobState {
-  jobId: string
+  jobId: string | null
   status: 'pending' | 'running' | 'done' | 'error'
   progresso: number
   etapa: string | null
