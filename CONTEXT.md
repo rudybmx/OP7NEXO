@@ -162,6 +162,12 @@ Account
 - **Editar** conta é PÁGINA: `/administracao/contas-ads/[id]/editar` (`src/components/administracao/contas-ads/editar-conta-page.tsx`; carrega por id via `GET /ads-accounts` + `.find`).
 - **Nova** conta segue MODAL (`nova-conta-dialog.tsx`) — é wizard de importação Meta/Google, não cadastro simples. Decisão intencional.
 
+## USUÁRIOS (modal→página)
+- **Novo** e **Editar** usuário são PÁGINAS: `/administracao/usuarios/novo` e `/[id]/editar`
+  (`src/components/administracao/usuarios/{novo,editar}-usuario-form.tsx`, HeroUI Input/Button/Switch).
+- Lógica de vínculos de workspace reaproveitada de `src/lib/admin-users-edit.ts`.
+- ⚠️ Listagem de usuários é `GET /usuarios`; mutações/vínculos são `/users/{id}...`. Não confundir.
+
 ## PADRÕES FRONT-END
 
 ### Stack
