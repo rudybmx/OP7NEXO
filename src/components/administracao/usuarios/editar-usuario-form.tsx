@@ -98,7 +98,7 @@ export function EditarUsuarioForm({ userId }: { userId: string }) {
     void (async () => {
       try {
         const [usuarios, workspaces, acessos] = await Promise.all([
-          api.get<UsuarioRow[]>('/users'),
+          api.get<UsuarioRow[]>('/usuarios'),
           api.get<WorkspaceOption[]>('/workspaces'),
           api.get<WorkspaceAccessApiRow[]>(`/users/${userId}/workspaces`),
         ])
