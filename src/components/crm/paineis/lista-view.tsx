@@ -6,9 +6,9 @@ import type { KanbanBoard, KanbanCard, KanbanColuna, Prioridade } from '@/types/
 
 interface ListaViewProps {
   board: KanbanBoard
-  reordenavel: boolean
   onCardClick: (card: KanbanCard) => void
-  onBoardChange: (board: KanbanBoard) => void
+  onMoverCard: (cardId: string, faseId: string, ordem?: number) => void
+  onCriarCard: (faseId: string, titulo: string) => void
 }
 
 const PRIORIDADE_CONFIG: Record<Prioridade, { label: string; cor: string; bg: string; border: string }> = {
@@ -33,7 +33,8 @@ function formatarData(iso: string) {
   return new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
 }
 
-export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: ListaViewProps) {
+export function ListaView({ board, onCardClick, onMoverCard, onCriarCard }: ListaViewProps) {
+  const reordenavel = true
   const [dragCardId, setDragCardId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [novoCardAtivo, setNovoCardAtivo] = useState(false)
@@ -61,21 +62,11 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
   }
 
   function handleDrop(targetId: string) {
-    if (!dragCardId || !reordenavel || dragCardId === targetId) {
+    if (!dragCardId || dragCardId === targetId) {
       setDragCardId(null); setDragOverId(null); return
     }
-    const cards = [...todosCards]
-    const fromIdx = cards.findIndex(c => c.id === dragCardId)
-    const toIdx = cards.findIndex(c => c.id === targetId)
-    if (fromIdx === -1 || toIdx === -1) return
-    const [moved] = cards.splice(fromIdx, 1)
-    cards.splice(toIdx, 0, moved)
-    // Reatribuir ordem global
-    const novosCards = board.cards.map(c => {
-      const idx = cards.findIndex(x => x.id === c.id)
-      return idx !== -1 ? { ...c, ordem: idx } : c
-    })
-    onBoardChange({ ...board, cards: novosCards })
+    const alvo = board.cards.find(c => c.id === targetId)
+    if (alvo) onMoverCard(dragCardId, alvo.status, alvo.ordem)
     setDragCardId(null); setDragOverId(null)
   }
 
@@ -83,14 +74,7 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
     if (!novoTitulo.trim()) { setNovoCardAtivo(false); return }
     const coluna = colunasOrdenadas[0]
     if (!coluna) return
-    const novo: KanbanCard = {
-      id: `card-${Date.now()}`, titulo: novoTitulo.trim(),
-      status: coluna.id, ordem: todosCards.length,
-      criadoEm: new Date().toISOString().slice(0, 10),
-      atualizadoEm: new Date().toISOString().slice(0, 10),
-      comentarios: [], camposCustom: [], tags: [],
-    }
-    onBoardChange({ ...board, cards: [...board.cards, novo] })
+    onCriarCard(coluna.id, novoTitulo.trim())
     setNovoTitulo(''); setNovoCardAtivo(false)
   }
 

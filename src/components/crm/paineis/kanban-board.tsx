@@ -2,116 +2,92 @@
 
 import { useState } from 'react'
 import { Plus, GripVertical } from 'lucide-react'
-import type { KanbanBoard, KanbanCard, KanbanColuna } from '@/types/kanban'
+import type { KanbanBoard, KanbanCard } from '@/types/kanban'
 import { KanbanCardComp } from './kanban-card'
 import { ColunaMenu } from './coluna-menu'
 
 interface KanbanBoardProps {
   board: KanbanBoard
-  reordenavel: boolean
+  estruturaEditavel: boolean
   onCardClick: (card: KanbanCard) => void
-  onBoardChange: (board: KanbanBoard) => void
+  onMoverCard: (cardId: string, faseId: string, ordem?: number) => void
+  onCriarCard: (faseId: string, titulo: string) => void
+  onCriarFase: (nome: string) => void
+  onRenomearFase: (faseId: string, nome: string) => void
+  onExcluirFase: (faseId: string) => void
+  onReordenarFases: (ids: string[]) => void
 }
 
-export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange }: KanbanBoardProps) {
+export function KanbanBoardComp({
+  board, estruturaEditavel, onCardClick,
+  onMoverCard, onCriarCard, onCriarFase, onRenomearFase, onExcluirFase, onReordenarFases,
+}: KanbanBoardProps) {
   const [novoCardColuna, setNovoCardColuna] = useState<string | null>(null)
   const [novoCardTitulo, setNovoCardTitulo] = useState('')
 
-  // Card drag
+  // Card drag (sempre habilitado)
   const [dragCard, setDragCard] = useState<string | null>(null)
   const [dragOverCard, setDragOverCard] = useState<string | null>(null)
   const [dragOverColuna, setDragOverColuna] = useState<string | null>(null)
 
-  // Coluna drag
+  // Coluna (fase) drag — só quando estrutura editável
   const [dragColuna, setDragColuna] = useState<string | null>(null)
   const [dragOverColunaTarget, setDragOverColunaTarget] = useState<string | null>(null)
 
   function adicionarCard(colunaId: string) {
     if (!novoCardTitulo.trim()) { setNovoCardColuna(null); return }
-    const cardsNaColuna = board.cards.filter(c => c.status === colunaId)
-    const novo: KanbanCard = {
-      id: `card-${Date.now()}`, titulo: novoCardTitulo.trim(),
-      status: colunaId, criadoEm: new Date().toISOString().slice(0, 10),
-      atualizadoEm: new Date().toISOString().slice(0, 10), ordem: cardsNaColuna.length,
-      comentarios: [], camposCustom: [], tags: [],
-    }
-    onBoardChange({ ...board, cards: [...board.cards, novo] })
+    onCriarCard(colunaId, novoCardTitulo.trim())
     setNovoCardTitulo(''); setNovoCardColuna(null)
   }
 
   function adicionarColuna() {
-    const nome = prompt('Nome da nova coluna:')
+    const nome = prompt('Nome da nova fase:')
     if (!nome?.trim()) return
-    const cores = ['#8892b0', '#3E5BFF', '#EF9F27', '#7A5AF8', '#0fa856', '#FF5C8D', '#00b8c8']
-    const nova: KanbanColuna = {
-      id: `col-${Date.now()}`, nome: nome.trim(),
-      cor: cores[board.colunas.length % cores.length], ordem: board.colunas.length,
-    }
-    onBoardChange({ ...board, colunas: [...board.colunas, nova] })
-  }
-
-  function renomearColuna(colunaId: string, novoNome: string) {
-    onBoardChange({ ...board, colunas: board.colunas.map(c => c.id === colunaId ? { ...c, nome: novoNome } : c) })
-  }
-
-  function excluirColuna(colunaId: string) {
-    onBoardChange({
-      ...board,
-      colunas: board.colunas.filter(c => c.id !== colunaId),
-      cards: board.cards.filter(c => c.status !== colunaId),
-    })
+    onCriarFase(nome.trim())
   }
 
   // Card drag handlers
-  function handleCardDragStart(cardId: string) { if (!reordenavel) return; setDragCard(cardId) }
+  function handleCardDragStart(cardId: string) { setDragCard(cardId) }
   function handleCardDragOver(e: React.DragEvent, cardId: string) {
     e.preventDefault(); e.stopPropagation()
-    if (!reordenavel || !dragCard || dragColuna) return
+    if (!dragCard || dragColuna) return
     setDragOverCard(cardId); setDragOverColuna(null)
   }
   function handleColunaDragOver(e: React.DragEvent, colunaId: string) {
     e.preventDefault()
-    if (!reordenavel || !dragCard || dragColuna) return
+    if (!dragCard || dragColuna) return
     setDragOverColuna(colunaId)
   }
   function handleCardDrop(targetColunaId: string, targetCardId?: string) {
-    if (!dragCard || !reordenavel || dragColuna) { setDragCard(null); setDragOverCard(null); setDragOverColuna(null); return }
-    const cards = board.cards.map(c => {
-      if (c.id !== dragCard) return c
-      return { ...c, status: targetColunaId, atualizadoEm: new Date().toISOString().slice(0, 10) }
-    })
+    if (!dragCard || dragColuna) { setDragCard(null); setDragOverCard(null); setDragOverColuna(null); return }
+    const cardId = dragCard
+    let ordem: number | undefined
     if (targetCardId) {
-      // Reordenar dentro da coluna
-      const colCards = cards.filter(c => c.status === targetColunaId).sort((a, b) => a.ordem - b.ordem)
-      const fromIdx = colCards.findIndex(c => c.id === dragCard)
-      const toIdx = colCards.findIndex(c => c.id === targetCardId)
-      if (fromIdx !== -1 && toIdx !== -1) {
-        const [moved] = colCards.splice(fromIdx, 1)
-        colCards.splice(toIdx, 0, moved)
-        colCards.forEach((c, i) => { const card = cards.find(x => x.id === c.id); if (card) card.ordem = i })
-      }
+      const alvo = board.cards.find(c => c.id === targetCardId)
+      ordem = alvo?.ordem
+    } else {
+      ordem = board.cards.filter(c => c.status === targetColunaId).length
     }
-    onBoardChange({ ...board, cards })
+    onMoverCard(cardId, targetColunaId, ordem)
     setDragCard(null); setDragOverCard(null); setDragOverColuna(null)
   }
 
   // Coluna drag handlers
-  function handleColunaDragStart(colunaId: string) { if (!reordenavel) return; setDragColuna(colunaId) }
+  function handleColunaDragStart(colunaId: string) { if (!estruturaEditavel) return; setDragColuna(colunaId) }
   function handleColunaDragOverTarget(e: React.DragEvent, colunaId: string) {
     e.preventDefault()
-    if (!reordenavel || !dragColuna || colunaId === dragColuna) return
+    if (!estruturaEditavel || !dragColuna || colunaId === dragColuna) return
     setDragOverColunaTarget(colunaId)
   }
   function handleColunaDrop(targetId: string) {
-    if (!dragColuna || !reordenavel || dragColuna === targetId) { setDragColuna(null); setDragOverColunaTarget(null); return }
+    if (!dragColuna || !estruturaEditavel || dragColuna === targetId) { setDragColuna(null); setDragOverColunaTarget(null); return }
     const cols = [...board.colunas].sort((a, b) => a.ordem - b.ordem)
     const fromIdx = cols.findIndex(c => c.id === dragColuna)
     const toIdx = cols.findIndex(c => c.id === targetId)
     if (fromIdx === -1 || toIdx === -1) return
     const [moved] = cols.splice(fromIdx, 1)
     cols.splice(toIdx, 0, moved)
-    const novasColunas = cols.map((c, i) => ({ ...c, ordem: i }))
-    onBoardChange({ ...board, colunas: novasColunas })
+    onReordenarFases(cols.map(c => c.id))
     setDragColuna(null); setDragOverColunaTarget(null)
   }
 
@@ -129,7 +105,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
         return (
           <div
             key={coluna.id}
-            draggable={reordenavel && !dragCard}
+            draggable={estruturaEditavel && !dragCard}
             onDragStart={() => handleColunaDragStart(coluna.id)}
             onDragOver={e => { handleColunaDragOverTarget(e, coluna.id); handleColunaDragOver(e, coluna.id) }}
             onDrop={() => { if (dragColuna) handleColunaDrop(coluna.id); else handleCardDrop(coluna.id) }}
@@ -141,13 +117,13 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
               borderRadius: 12, padding: '12px 10px',
               transition: 'all 150ms ease',
               opacity: isColunaDragging ? 0.4 : 1,
-              cursor: reordenavel && !dragCard ? 'grab' : 'default',
+              cursor: estruturaEditavel && !dragCard ? 'grab' : 'default',
             }}
           >
             {/* Header da coluna */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingLeft: 2 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                {reordenavel && (
+                {estruturaEditavel && (
                   <GripVertical size={13} style={{ color: '#8892b0', cursor: 'grab', flexShrink: 0 }} />
                 )}
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: coluna.cor, flexShrink: 0 }} />
@@ -164,9 +140,10 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <ColunaMenu
                   coluna={coluna}
-                  onRenomear={nome => renomearColuna(coluna.id, nome)}
+                  podeEditar={estruturaEditavel && !coluna.fixa}
+                  onRenomear={nome => onRenomearFase(coluna.id, nome)}
                   onNovoCard={() => setNovoCardColuna(coluna.id)}
-                  onExcluir={() => excluirColuna(coluna.id)}
+                  onExcluir={() => onExcluirFase(coluna.id)}
                 />
                 <button
                   onClick={() => setNovoCardColuna(coluna.id)}
@@ -190,7 +167,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
               {cards.map(card => (
                 <div
                   key={card.id}
-                  draggable={reordenavel}
+                  draggable
                   onDragStart={e => { e.stopPropagation(); handleCardDragStart(card.id) }}
                   onDragOver={e => handleCardDragOver(e, card.id)}
                   onDrop={e => { e.stopPropagation(); handleCardDrop(coluna.id, card.id) }}
@@ -203,7 +180,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
                 >
                   <KanbanCardComp
                     card={card}
-                    reordenavel={reordenavel}
+                    reordenavel
                     onClick={() => onCardClick(card)}
                   />
                 </div>
@@ -238,14 +215,16 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
         )
       })}
 
-      <button
-        onClick={adicionarColuna}
-        style={{ width: 200, flexShrink: 0, padding: '10px 16px', background: 'rgba(14,20,42,0.03)', border: '1px dashed rgba(14,20,42,0.12)', borderRadius: 12, fontSize: 12, color: '#8892b0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 150ms', whiteSpace: 'nowrap' as const }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(62,91,255,0.04)'; e.currentTarget.style.color = '#3E5BFF'; e.currentTarget.style.borderColor = 'rgba(62,91,255,0.25)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(14,20,42,0.03)'; e.currentTarget.style.color = '#8892b0'; e.currentTarget.style.borderColor = 'rgba(14,20,42,0.12)' }}
-      >
-        <Plus size={14} /> Adicionar coluna
-      </button>
+      {estruturaEditavel && (
+        <button
+          onClick={adicionarColuna}
+          style={{ width: 200, flexShrink: 0, padding: '10px 16px', background: 'rgba(14,20,42,0.03)', border: '1px dashed rgba(14,20,42,0.12)', borderRadius: 12, fontSize: 12, color: '#8892b0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 150ms', whiteSpace: 'nowrap' as const }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(62,91,255,0.04)'; e.currentTarget.style.color = '#3E5BFF'; e.currentTarget.style.borderColor = 'rgba(62,91,255,0.25)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(14,20,42,0.03)'; e.currentTarget.style.color = '#8892b0'; e.currentTarget.style.borderColor = 'rgba(14,20,42,0.12)' }}
+        >
+          <Plus size={14} /> Adicionar fase
+        </button>
+      )}
     </div>
   )
 }

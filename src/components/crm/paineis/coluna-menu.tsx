@@ -6,12 +6,13 @@ import type { KanbanColuna } from '@/types/kanban'
 
 interface ColunaMenuProps {
   coluna: KanbanColuna
+  podeEditar: boolean
   onRenomear: (novoNome: string) => void
   onNovoCard: () => void
   onExcluir: () => void
 }
 
-export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: ColunaMenuProps) {
+export function ColunaMenu({ coluna, podeEditar, onRenomear, onNovoCard, onExcluir }: ColunaMenuProps) {
   const [aberto, setAberto] = useState(false)
   const [renomeando, setRenomeando] = useState(false)
   const [novoNome, setNovoNome] = useState(coluna.nome)
@@ -90,7 +91,7 @@ export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: Coluna
         }}>
           {[
             { icon: Plus, label: 'Novo card', action: () => { onNovoCard(); setAberto(false) } },
-            { icon: Edit2, label: 'Renomear', action: () => { setRenomeando(true); setAberto(false) } },
+            ...(podeEditar ? [{ icon: Edit2, label: 'Renomear', action: () => { setRenomeando(true); setAberto(false) } }] : []),
             { icon: ArrowUpDown, label: 'Ordenar', action: () => setAberto(false) },
             { icon: Filter, label: 'Filtrar', action: () => setAberto(false) },
           ].map(item => (
@@ -110,20 +111,24 @@ export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: Coluna
               {item.label}
             </button>
           ))}
-          <div style={{ height: 1, background: 'var(--ws-divider)', margin: '4px 0' }} />
-          <button
-            onClick={() => { if (confirm(`Excluir coluna "${coluna.nome}"?`)) { onExcluir(); setAberto(false) } }}
-            style={{
-              width: '100%', textAlign: 'left', padding: '8px 14px',
-              fontSize: 12, background: 'none', border: 'none', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 8, color: '#FF5C8D',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,92,141,0.06)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'none'}
-          >
-            <Trash2 size={13} />
-            Excluir coluna
-          </button>
+          {podeEditar && (
+            <>
+              <div style={{ height: 1, background: 'var(--ws-divider)', margin: '4px 0' }} />
+              <button
+                onClick={() => { if (confirm(`Excluir fase "${coluna.nome}"?`)) { onExcluir(); setAberto(false) } }}
+                style={{
+                  width: '100%', textAlign: 'left', padding: '8px 14px',
+                  fontSize: 12, background: 'none', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 8, color: '#FF5C8D',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,92,141,0.06)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <Trash2 size={13} />
+                Excluir fase
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
