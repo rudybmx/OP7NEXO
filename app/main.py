@@ -13,6 +13,7 @@ from app.api.canais import router as canais_router
 from app.api.conversas import router as conversas_router
 from app.api.contatos import router as contatos_router
 from app.api.etiquetas import router as etiquetas_router
+from app.api.paineis import router as paineis_router
 from app.api.followups import router as followups_router
 from app.api.mensagens import router as mensagens_router
 from app.api.pmp import router as pmp_router
@@ -134,6 +135,7 @@ app.include_router(canais_router)
 app.include_router(conversas_router)
 app.include_router(contatos_router)
 app.include_router(etiquetas_router)
+app.include_router(paineis_router)
 app.include_router(followups_router)
 app.include_router(mensagens_router)
 app.include_router(pmp_router)

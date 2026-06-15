@@ -386,6 +386,20 @@ def process_evolution_message(
             raw_payload=data,
         )
 
+    # Hook Kanban: cria/atualiza card no painel de Recepcionamento Leads (e arquiva
+    # "Leads sem Resposta" quando o lead responde). Em SAVEPOINT — nunca derruba a
+    # persistência da mensagem se a automação falhar.
+    try:
+        from app.models.crm.conversa import Conversa as _Conversa
+        from app.services.paineis_automacao import sincronizar_paineis_apos_mensagem
+
+        _conv = db.get(_Conversa, uuid.UUID(str(conversa_id)))
+        if _conv is not None:
+            with db.begin_nested():
+                sincronizar_paineis_apos_mensagem(db, _conv, direcao)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[webhook-process] hook Kanban falhou conversa_id=%s: %s", conversa_id, exc)
+
     db.commit()
     logger.info("[webhook-process] COMMIT OK conversa_id=%s", conversa_id)
 

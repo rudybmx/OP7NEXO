@@ -10,6 +10,14 @@ from app.models.crm.mensagem import Mensagem
 from app.models.crm.message_job import MessageJob
 from app.models.crm.memoria_ia import MemoriaIA
 from app.models.crm.midia import Midia
+from app.models.crm.painel import (
+    Painel,
+    PainelCampo,
+    PainelCard,
+    PainelCardValor,
+    PainelComentario,
+    PainelFase,
+)
 
 __all__ = [
     "Contato",
@@ -27,4 +35,10 @@ __all__ = [
     "LeadOriginEvent",
     "MessageJob",
     "MemoriaIA",
+    "Painel",
+    "PainelFase",
+    "PainelCampo",
+    "PainelCard",
+    "PainelCardValor",
+    "PainelComentario",
 ]

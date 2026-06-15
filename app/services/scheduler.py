@@ -156,6 +156,44 @@ def _gerar_insights_ia() -> None:
     log.info("Scheduler: insights IA gerados — meta=%d ws, google=%d ws", len(meta), len(google))
 
 
+def _job_leads_sem_resposta() -> None:
+    """A cada 5min: conversas com saída sem resposta há >2h viram card em
+    'Leads sem Resposta'. Grupos são ignorados (decisão de produto)."""
+    from datetime import timedelta
+
+    from app.models.crm.conversa import Conversa
+    from app.services.paineis_automacao import criar_ou_reabrir_card_lead_sem_resposta
+
+    corte = datetime.now(timezone.utc) - timedelta(hours=2)
+    try:
+        with SessionLocal() as db:
+            conversas = (
+                db.query(Conversa)
+                .filter(
+                    Conversa.ultima_direcao == "saida",
+                    Conversa.last_outbound_at.isnot(None),
+                    Conversa.last_outbound_at < corte,
+                    Conversa.ativo.is_(True),
+                    Conversa.is_group.is_(False),
+                    Conversa.status != "resolvido",
+                )
+                .all()
+            )
+            criados = 0
+            for conv in conversas:
+                try:
+                    if criar_ou_reabrir_card_lead_sem_resposta(db, conv) is not None:
+                        criados += 1
+                except Exception as exc:
+                    db.rollback()
+                    log.warning("leads_sem_resposta: falha conversa=%s: %s", conv.id, exc)
+            db.commit()
+            if criados:
+                log.info("Scheduler: leads_sem_resposta — %d card(s) criados/reabertos", criados)
+    except Exception as exc:
+        log.exception("Erro no job leads_sem_resposta: %s", exc)
+
+
 def _job_process_whatsapp_events() -> None:
     try:
         result = process_next_whatsapp_jobs(limit=25)
@@ -184,6 +222,16 @@ def iniciar_scheduler() -> None:
         max_instances=1,
         coalesce=True,
         misfire_grace_time=30,
+    )
+    scheduler.add_job(
+        _job_leads_sem_resposta,
+        "interval",
+        minutes=5,
+        id="leads_sem_resposta",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
     )
     scheduler.start()
     job = scheduler.get_job("meta_sync")

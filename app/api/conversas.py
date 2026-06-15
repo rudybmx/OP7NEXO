@@ -625,6 +625,14 @@ def atualizar_conversa(
             payload={"source": "conversa.update"},
         )
 
+    # Espelha mudanças nos cards do Kanban vinculados (resumo/responsável/etapa).
+    try:
+        from app.services.paineis_automacao import sincronizar_cards_da_conversa
+
+        sincronizar_cards_da_conversa(db, c)
+    except Exception:
+        pass
+
     db.commit()
     db.refresh(c)
     return _conversa_out(c)
