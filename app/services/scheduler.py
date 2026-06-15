@@ -19,6 +19,12 @@ log = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler()
 
+# Piso de ativação do Kanban "Leads sem Resposta": o job ignora o backlog
+# histórico e só cria card para conversas cuja última saída ocorreu A PARTIR
+# deste instante (decisão de produto: começar limpo, sem despejar ~987 leads
+# antigos de uma vez). Para reprocessar o histórico, recue esta data.
+ATIVACAO_LEADS_SEM_RESPOSTA = datetime(2026, 6, 15, 4, 0, 0, tzinfo=timezone.utc)
+
 
 def _job_sync_todas_contas() -> None:
     log.info("Scheduler: iniciando sync Meta Ads — %s", datetime.now(tz=timezone.utc).isoformat())
@@ -173,6 +179,7 @@ def _job_leads_sem_resposta() -> None:
                     Conversa.ultima_direcao == "saida",
                     Conversa.last_outbound_at.isnot(None),
                     Conversa.last_outbound_at < corte,
+                    Conversa.last_outbound_at >= ATIVACAO_LEADS_SEM_RESPOSTA,
                     Conversa.ativo.is_(True),
                     Conversa.is_group.is_(False),
                     Conversa.status != "resolvido",
