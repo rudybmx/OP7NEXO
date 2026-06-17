@@ -543,7 +543,7 @@ export function DSSidebar() {
           overflowX: 'auto'
         }}>
 {`---
-COMPONENTE: Sidebar Op7 Nexo
+COMPONENTE: Sidebar BMK Marketing
 ARQUIVO PRODUÇÃO: src/components/layout/barra-lateral.tsx
 
 ESTADO RECOLHIDO (COLLAPSED):

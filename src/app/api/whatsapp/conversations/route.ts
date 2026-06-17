@@ -153,7 +153,7 @@ export async function GET(request: NextRequest) {
       naoLidas: row.nao_lidas || 0,
       ultimaMensagem: row.ultima_mensagem || '',
       ultimaMensagemAt: iso(row.ultima_msg_at),
-      agente: row.agente || 'Op7 Nexo',
+      agente: row.agente || 'BMK Marketing',
       campanha: row.campanha,
       canal: 'whatsapp',
       canalNome: channel?.nome || null,

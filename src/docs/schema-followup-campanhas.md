@@ -1,5 +1,5 @@
-# Op7 Nexo — Schema Follow-up & Recorrência
-Este documento contém o schema SQL completo para as tabelas de Follow-up, Recorrência e Campanhas na plataforma Op7 Nexo.
+# BMK Marketing — Schema Follow-up & Recorrência
+Este documento contém o schema SQL completo para as tabelas de Follow-up, Recorrência e Campanhas na plataforma BMK Marketing.
 
 ---
 
@@ -222,7 +222,7 @@ ALTER TABLE recorrencia_mensagens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recorrencia_leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE campanhas ENABLE ROW LEVEL SECURITY;
 
--- Política padrão Op7 Nexo (org_id via JWT claim)
+-- Política padrão BMK Marketing (org_id via JWT claim)
 -- Repetir para cada tabela acima:
 CREATE POLICY "org_isolation" ON followup_leads
   USING (org_id = (auth.jwt() ->> 'org_id')::uuid);

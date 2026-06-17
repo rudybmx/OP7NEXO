@@ -180,7 +180,7 @@ export function makeFallbackPoster(name: string, assetType: AdCreativeModalOverv
             </g>
           `
       }
-      <text x="72" y="1490" fill="rgba(255,255,255,0.70)" font-size="20" font-weight="600">Op7 Nexo · Sistema de design</text>
+      <text x="72" y="1490" fill="rgba(255,255,255,0.70)" font-size="20" font-weight="600">BMK Marketing · Sistema de design</text>
     </svg>
   `
 

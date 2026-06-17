@@ -1,7 +1,7 @@
 'use client'
 
 const SCALE = [
-  { label: 'Heading XL', size: '32px', weight: 700, sample: "Op7 Nexo Plataforma" },
+  { label: 'Heading XL', size: '32px', weight: 700, sample: "BMK Marketing Plataforma" },
   { label: 'Heading L',  size: '24px', weight: 700, sample: 'Dashboard de Marketing' },
   { label: 'Heading M',  size: '20px', weight: 600, sample: 'Visão Geral de Campanhas' },
   { label: 'Heading S',  size: '16px', weight: 600, sample: 'Meta Ads — Leads Gerados' },

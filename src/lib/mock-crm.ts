@@ -1,5 +1,5 @@
 /**
- * Mock Data Centralizado para CRM - Op7 Nexo
+ * Mock Data Centralizado para CRM - BMK Marketing
  * Contém conversas, contatos e mensagens para demonstração.
  */
 
@@ -17,7 +17,7 @@ export const USUARIO_ATUAL_MOCK: UsuarioAtual = {
   equipeIds: ['comercial', 'clinica'],
 }
 
-// --- Mensagens Realistas (Cenários Op7 Nexo) ---
+// --- Mensagens Realistas (Cenários BMK Marketing) ---
 export const MENSAGENS_MOCK: Record<string, Mensagem[]> = {
   'conv-1': [
     { id: 'm1-1', tipo: 'inbound', texto: 'Boa tarde! Vi o anúncio de vocês sobre implantes. Gostaria de saber como funciona a primeira avaliação.', hora: '14:20' },

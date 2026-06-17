@@ -1,4 +1,4 @@
-// ─── Mock data para CRM - Op7 Nexo ─────────────────────────────────────
+// ─── Mock data para CRM - BMK Marketing ─────────────────────────────────────
 // Cenários: Agendamento de avaliações, implantes, ortodontia e urgências.
 
 import type {
@@ -19,11 +19,11 @@ export const USUARIO_ATUAL: UsuarioAtual = {
   equipeIds: ['comercial', 'clinica'],
 }
 
-// ─── Mensagens Realistas (Op7 Nexo) ──────────────────────────────────────────────────
+// ─── Mensagens Realistas (BMK Marketing) ──────────────────────────────────────────────────
 export const MENSAGENS: Record<string, Mensagem[]> = {
   'conv-1': [
     { id: 'm1-1', tipo: 'inbound', texto: 'Boa tarde! Vi o anúncio de vocês sobre implantes. Gostaria de saber como funciona a primeira avaliação.', hora: '14:20' },
-    { id: 'm1-2', tipo: 'ia', texto: 'Olá, Ricardo! 😊 Que bom ter você por aqui na Op7 Nexo. Na nossa avaliação, fazemos um planejamento completo e o dentista explica todo o passo a passo. A primeira consulta é cortesia para novos pacientes! Quer agendar um horário?', hora: '14:21', remetente: 'OdontoIA' },
+    { id: 'm1-2', tipo: 'ia', texto: 'Olá, Ricardo! 😊 Que bom ter você por aqui na BMK Marketing. Na nossa avaliação, fazemos um planejamento completo e o dentista explica todo o passo a passo. A primeira consulta é cortesia para novos pacientes! Quer agendar um horário?', hora: '14:21', remetente: 'OdontoIA' },
     { id: 'm1-3', tipo: 'inbound', texto: 'Ah, legal! E vocês atendem aos sábados? Trabalho em outra cidade durante a semana.', hora: '14:23' },
     { id: 'm1-4', tipo: 'humano', texto: 'Oi Ricardo, tudo bem? Atendemos sim! Temos horários disponíveis neste sábado às 09:30 ou 11:00. Algum desses ficaria bom para você?', hora: '14:26', remetente: 'Dra. Ana Lima' },
   ],

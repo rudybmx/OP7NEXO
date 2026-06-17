@@ -1,7 +1,7 @@
 import { DSShell } from '@/components/design-system/ds-shell'
 
 export const metadata = {
-  title: "Design System — Op7 Nexo Plataforma",
+  title: "Design System — BMK Marketing Plataforma",
   description: 'Biblioteca de componentes Glassmorphism',
 }
 

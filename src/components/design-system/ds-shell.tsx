@@ -128,7 +128,7 @@ export function DSShell() {
             fontSize: 14, color: 'white', fontWeight: 700, flexShrink: 0,
           }}>W</div>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ws-text-1)', lineHeight: 1.2 }}>Op7 Nexo</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ws-text-1)', lineHeight: 1.2 }}>BMK</div>
             <div style={{ fontSize: 9, color: 'var(--ws-text-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Design System</div>
           </div>
         </div>

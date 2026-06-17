@@ -1,4 +1,4 @@
-# Op7 Nexo — Guia para Agentes de IA
+# BMK Marketing — Guia para Agentes de IA
 
 ## Stack
 Next.js 16 App Router · TypeScript · Tailwind CSS v4 · shadcn/ui · Recharts · lucide-react

@@ -31,7 +31,7 @@ export default function LoginPage() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'linear-gradient(160deg, rgba(14,20,42,1) 0%, rgba(10,15,35,1) 100%)',
+      background: 'linear-gradient(160deg, #c50953 0%, #880D07 40%, #000000 100%)',
     }}>
       <div style={{
         background: 'rgba(255,255,255,0.04)',
@@ -44,10 +44,12 @@ export default function LoginPage() {
         WebkitBackdropFilter: 'blur(20px)',
       }}>
         <div style={{ marginBottom: 32, textAlign: 'center' }}>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#ffffff', letterSpacing: '-0.02em' }}>
-            Op7 Nexo
-          </div>
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.50)', marginTop: 6 }}>
+          <img
+            src="https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/bihmks/logo%20branca%20bmk.png"
+            alt="BMK"
+            style={{ height: 60, width: 'auto', objectFit: 'contain', marginBottom: 12 }}
+          />
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.50)' }}>
             Acesse sua conta para continuar
           </div>
         </div>
@@ -72,7 +74,7 @@ export default function LoginPage() {
                 outline: 'none', boxSizing: 'border-box',
                 transition: 'border-color 0.15s',
               }}
-              onFocus={e => { e.target.style.borderColor = 'rgba(62,91,255,0.50)'; e.target.style.boxShadow = '0 0 0 3px rgba(62,91,255,0.12)' }}
+              onFocus={e => { e.target.style.borderColor = 'rgba(197,9,83,0.50)'; e.target.style.boxShadow = '0 0 0 3px rgba(197,9,83,0.12)' }}
               onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.12)'; e.target.style.boxShadow = 'none' }}
             />
           </div>
@@ -96,7 +98,7 @@ export default function LoginPage() {
                 outline: 'none', boxSizing: 'border-box',
                 transition: 'border-color 0.15s',
               }}
-              onFocus={e => { e.target.style.borderColor = 'rgba(62,91,255,0.50)'; e.target.style.boxShadow = '0 0 0 3px rgba(62,91,255,0.12)' }}
+              onFocus={e => { e.target.style.borderColor = 'rgba(197,9,83,0.50)'; e.target.style.boxShadow = '0 0 0 3px rgba(197,9,83,0.12)' }}
               onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.12)'; e.target.style.boxShadow = 'none' }}
             />
           </div>
@@ -117,11 +119,11 @@ export default function LoginPage() {
             disabled={loading}
             style={{
               width: '100%', height: 44, marginTop: 4,
-              background: loading ? 'rgba(62,91,255,0.50)' : 'linear-gradient(135deg, #3E5BFF, #7A5AF8)',
+              background: loading ? 'rgba(197,9,83,0.50)' : 'linear-gradient(135deg, #c50953, #880D07)',
               border: 'none', borderRadius: 10,
               fontSize: 14, fontWeight: 600, color: '#ffffff',
               cursor: loading ? 'not-allowed' : 'pointer',
-              boxShadow: '0 4px 16px rgba(62,91,255,0.30)',
+              boxShadow: '0 4px 16px rgba(197,9,83,0.30)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               transition: 'all 0.15s',
             }}
@@ -131,7 +133,7 @@ export default function LoginPage() {
         </form>
 
         <div style={{ marginTop: 24, textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
-          © 2026 Op7 Nexo · Acesso seguro e criptografado
+          © 2026 BMK Marketing · Acesso seguro e criptografado
         </div>
       </div>
     </div>

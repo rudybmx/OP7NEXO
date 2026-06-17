@@ -1,7 +1,7 @@
 import { Client as MinioClient } from 'minio'
 
 // ---------------------------------------------------------------------------
-// Configuração do cliente MinIO (Op7 Nexo)
+// Configuração do cliente MinIO (BMK Marketing)
 // ---------------------------------------------------------------------------
 // As credenciais são injetadas via ambiente em produção, mas mantemos
 // valores padrão para desenvolvimento local com Docker Compose.

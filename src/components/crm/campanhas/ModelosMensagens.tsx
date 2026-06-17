@@ -33,7 +33,7 @@ const MODELOS_MOCK: Modelo[] = [
   { 
     id: '1', 
     nome: 'Promoção Clareamento 2026', 
-    corpo: 'Olá, {{pnome}}! ✨ Que tal renovar seu sorriso na Op7 Nexo? Ganhe 20% de desconto em nosso clareamento a laser este mês. Vamos agendar uma avaliação?', 
+    corpo: 'Olá, {{pnome}}! ✨ Que tal renovar seu sorriso na BMK Marketing? Ganhe 20% de desconto em nosso clareamento a laser este mês. Vamos agendar uma avaliação?', 
     tipo: 'Marketing', 
     canal: 'WhatsApp',
     disponibilidade: 'Toda a empresa',

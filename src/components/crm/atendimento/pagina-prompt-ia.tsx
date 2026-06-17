@@ -208,7 +208,7 @@ export function PaginaPromptIA() {
               <Sparkles size={28} />
             </div>
             <div>
-              <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--ws-text-1)', margin: 0 }}>Agente Op7 Nexo</h3>
+              <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--ws-text-1)', margin: 0 }}>Agente BMK Marketing</h3>
               <p style={{ fontSize: '13px', color: 'var(--ws-text-2)', margin: '4px 0 0' }}>
                 Especialista em <span style={{ color: 'var(--ws-blue)' }}>{config.segmento}</span> · Tom: <span style={{ color: 'var(--ws-purple)' }}>{config.tomVoz}</span>
               </p>

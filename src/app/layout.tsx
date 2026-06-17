@@ -9,9 +9,16 @@ const plusJakartaSans = Plus_Jakarta_Sans({
   variable: '--font-plus-jakarta-sans',
 })
 
+const FAVICON_URL = 'https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/bihmks/logo%20branca%20bmk.png'
+
 export const metadata: Metadata = {
-  title: "Op7 Nexo",
-  description: "Dashboard de gestão Op7 Nexo",
+  title: "BMK Marketing",
+  description: "Dashboard de gestão BMK Marketing",
+  icons: {
+    icon: FAVICON_URL,
+    shortcut: FAVICON_URL,
+    apple: FAVICON_URL,
+  },
 }
 
 export default function RootLayout({

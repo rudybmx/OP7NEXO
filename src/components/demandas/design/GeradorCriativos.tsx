@@ -262,7 +262,7 @@ export function GeradorCriativos() {
                   <img src={resultImage} className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[10px] font-bold text-[var(--ws-text-1)] truncate">Implante Op7 Nexo</div>
+                  <div className="text-[10px] font-bold text-[var(--ws-text-1)] truncate">Implante BMK Marketing</div>
                   <div className="text-[9px] text-[var(--ws-text-3)]">Há 2 minutos</div>
                 </div>
               </div>
