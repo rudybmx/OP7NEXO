@@ -30,6 +30,8 @@ interface GanttChartProps {
   onStatusFilterChange: (status: TaskStatusDerived | 'todos') => void
   onTogglePhase: (phaseId: string) => void
   onTaskSelect: (task: PmpTask) => void
+  reorderMode?: boolean
+  onReorderPhase?: (phaseId: string, orderedTaskIds: string[]) => void
 }
 
 const TASK_COLUMN_WIDTH = 280
@@ -46,11 +48,15 @@ export default function GanttChart({
   onStatusFilterChange,
   onTogglePhase,
   onTaskSelect,
+  reorderMode,
+  onReorderPhase,
 }: GanttChartProps) {
   const [search, setSearch] = useState('')
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [containerWidth, setContainerWidth] = useState(0)
+  const [dragState, setDragState] = useState<{ taskId: string; phaseId: string } | null>(null)
+  const [overTaskId, setOverTaskId] = useState<string | null>(null)
 
   useEffect(() => {
     const el = containerRef.current
@@ -107,6 +113,27 @@ export default function GanttChart({
 
   const todayPercent = useMemo(() => getTodayOffsetPercent(viewStart, viewEnd), [viewStart, viewEnd])
   const todayLineLeft = TASK_COLUMN_WIDTH + (todayPercent / 100) * timelineWidth
+
+  // Drag-and-drop só é permitido sem filtro/busca ativos (para reordenar a lista completa)
+  const filtersActive = statusFilter !== 'todos' || search.trim().length > 0
+  const dragEnabled = !!reorderMode && !filtersActive
+
+  function handleTaskDrop(targetPhaseId: string, targetTaskId: string) {
+    const drag = dragState
+    setOverTaskId(null)
+    setDragState(null)
+    if (!drag || drag.phaseId !== targetPhaseId || drag.taskId === targetTaskId) return
+    // Usa a fase completa (não filtrada) para garantir a lista íntegra de ids
+    const sourcePhase = plan.phases.find((p) => p.id === targetPhaseId)
+    if (!sourcePhase) return
+    const ids = sourcePhase.tasks.map((t) => t.id)
+    const from = ids.indexOf(drag.taskId)
+    const to = ids.indexOf(targetTaskId)
+    if (from < 0 || to < 0) return
+    ids.splice(from, 1)
+    ids.splice(to, 0, drag.taskId)
+    onReorderPhase?.(targetPhaseId, ids)
+  }
 
   useEffect(() => {
     if (!focusTarget) return
@@ -212,6 +239,12 @@ export default function GanttChart({
         </div>
       </div>
 
+      {reorderMode && filtersActive && (
+        <div className="px-4 py-2 text-[12px] text-[#854f0b]" style={{ background: 'rgba(133,79,11,0.06)', borderBottom: '1px solid var(--ws-glass-border)' }}>
+          Limpe a busca e o filtro de status para arrastar e reordenar as tarefas.
+        </div>
+      )}
+
       <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden">
         <div className="relative min-w-max" style={{ width: totalGridWidth }}>
           <GanttMonthHeader
@@ -257,6 +290,17 @@ export default function GanttChart({
                       unitCount={unitCount}
                       columnWidth={columnWidth}
                       taskColumnWidth={TASK_COLUMN_WIDTH}
+                      reorderMode={dragEnabled}
+                      isDragging={dragState?.taskId === task.id}
+                      isDragOver={
+                        overTaskId === task.id &&
+                        dragState?.phaseId === phase.id &&
+                        dragState?.taskId !== task.id
+                      }
+                      onTaskDragStart={(taskId, phaseId) => setDragState({ taskId, phaseId })}
+                      onTaskDragOver={(taskId) => setOverTaskId(taskId)}
+                      onTaskDrop={handleTaskDrop}
+                      onTaskDragEnd={() => { setDragState(null); setOverTaskId(null) }}
                     />
                   ))}
               </div>

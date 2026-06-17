@@ -1,8 +1,9 @@
 'use client'
 
-import { Copy, FileText, GitBranch, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Copy, FileText, GitBranch, GripVertical, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +40,8 @@ interface PmpHeaderProps {
   onEditarPlano?: () => void
   onDuplicarPlano?: () => void
   onExcluirPlano?: () => void
+  reorderMode?: boolean
+  onReorderModeChange?: (value: boolean) => void
 }
 
 export default function PmpHeader({
@@ -59,6 +62,8 @@ export default function PmpHeader({
   onEditarPlano,
   onDuplicarPlano,
   onExcluirPlano,
+  reorderMode,
+  onReorderModeChange,
 }: PmpHeaderProps) {
   const statusColor = getStatusColor(planStatus)
   const hasPlanActions = !!(onEditarPlano || onDuplicarPlano || onExcluirPlano)
@@ -212,6 +217,20 @@ export default function PmpHeader({
             <Plus className="h-4 w-4" />
             Nova Tarefa
           </Button>
+        )}
+
+        {onReorderModeChange && (
+          <label
+            className="flex h-10 cursor-pointer select-none items-center gap-2 rounded-md px-3 text-[12px] text-foreground hover:bg-muted/30"
+            style={{ border: '1px solid var(--ws-glass-border-strong)' }}
+            title="Ativar para arrastar e reordenar tarefas dentro de cada fase"
+          >
+            <Switch checked={!!reorderMode} onCheckedChange={onReorderModeChange} />
+            <span className="flex items-center gap-1">
+              <GripVertical className="h-3.5 w-3.5" />
+              Reordenar
+            </span>
+          </label>
         )}
 
         <Button

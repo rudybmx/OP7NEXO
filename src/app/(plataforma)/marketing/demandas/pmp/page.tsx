@@ -118,8 +118,9 @@ export default function Page() {
   const [showPlanEditModal, setShowPlanEditModal] = useState(false)
   const [confirmDeletePlan, setConfirmDeletePlan] = useState(false)
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set())
+  const [reorderMode, setReorderMode] = useState(false)
 
-  const { tasks: apiTasks, criarTarefa, atualizarStatus, excluirTarefa, editarTarefa } = usePmpTasks(selectedPlanId)
+  const { tasks: apiTasks, criarTarefa, atualizarStatus, excluirTarefa, editarTarefa, reordenarTarefas } = usePmpTasks(selectedPlanId)
 
   // Auto-select first plan when list loads
   useEffect(() => {
@@ -227,6 +228,21 @@ export default function Page() {
   async function handleExcluirTarefa(taskId: string) {
     await excluirTarefa(taskId)
     setSelectedTask(null)
+  }
+
+  // Reordenar tarefas dentro de uma fase: reconstrói a ordem global completa
+  async function handleReorderPhase(phaseId: string, orderedTaskIds: string[]) {
+    if (!selectedPlan || !reordenarTarefas) return
+    const flat: string[] = []
+    for (const phase of selectedPlan.phases) {
+      flat.push(...(phase.id === phaseId ? orderedTaskIds : phase.tasks.map((t) => t.id)))
+    }
+    try {
+      await reordenarTarefas(flat)
+      toast.success('Ordem das tarefas atualizada')
+    } catch {
+      toast.error('Erro ao reordenar tarefas')
+    }
   }
 
   // Plano: editar
@@ -362,6 +378,8 @@ export default function Page() {
         onEditarPlano={() => setShowPlanEditModal(true)}
         onDuplicarPlano={handleDuplicarPlano}
         onExcluirPlano={() => setConfirmDeletePlan(true)}
+        reorderMode={reorderMode}
+        onReorderModeChange={setReorderMode}
       />
 
       <PmpKpiBar plan={selectedPlan} />
@@ -383,6 +401,8 @@ export default function Page() {
           onStatusFilterChange={setStatusFilter}
           onTogglePhase={handleTogglePhase}
           onTaskSelect={setSelectedTask}
+          reorderMode={reorderMode}
+          onReorderPhase={handleReorderPhase}
         />
       )}
       {activeTab === 'resumo' && <PmpSummaryView plan={selectedPlan} />}

@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { calcDeadlineTag, calcTaskPosition, formatDateBR, getDeadlineTagClasses, getStatusColor, getStatusLabel, hashColor } from '@/lib/gantt-utils'
@@ -19,6 +19,13 @@ interface GanttTaskRowProps {
   unitCount: number
   columnWidth: number
   taskColumnWidth: number
+  reorderMode?: boolean
+  isDragging?: boolean
+  isDragOver?: boolean
+  onTaskDragStart?: (taskId: string, phaseId: string) => void
+  onTaskDragOver?: (taskId: string) => void
+  onTaskDrop?: (phaseId: string, taskId: string) => void
+  onTaskDragEnd?: () => void
 }
 
 function getPhaseRange(phase: PmpPhase, planStart: string, planEnd: string) {
@@ -62,6 +69,13 @@ export default function GanttTaskRow({
   unitCount,
   columnWidth,
   taskColumnWidth,
+  reorderMode,
+  isDragging,
+  isDragOver,
+  onTaskDragStart,
+  onTaskDragOver,
+  onTaskDrop,
+  onTaskDragEnd,
 }: GanttTaskRowProps) {
   const gridTemplateColumns = `${taskColumnWidth}px repeat(${unitCount}, ${columnWidth}px)`
   const phasePosition = getPhaseRange(phase, planStart, planEnd)
@@ -129,9 +143,22 @@ export default function GanttTaskRow({
       onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '' }}
     >
       <div
-        className="sticky left-0 z-10 flex items-center gap-3 px-4 py-3 pl-6 shadow-[2px_0_8px_rgba(0,0,0,0.12)]"
+        draggable={reorderMode}
+        onDragStart={reorderMode ? (e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', task.id); onTaskDragStart?.(task.id, phase.id) } : undefined}
+        onDragOver={reorderMode ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onTaskDragOver?.(task.id) } : undefined}
+        onDrop={reorderMode ? (e) => { e.preventDefault(); onTaskDrop?.(phase.id, task.id) } : undefined}
+        onDragEnd={reorderMode ? () => onTaskDragEnd?.() : undefined}
+        className={cn(
+          'sticky left-0 z-10 flex items-center gap-3 px-4 py-3 shadow-[2px_0_8px_rgba(0,0,0,0.12)] transition-[opacity,box-shadow]',
+          reorderMode ? 'cursor-grab pl-3 active:cursor-grabbing' : 'pl-6',
+          isDragging && 'opacity-40',
+          isDragOver && 'shadow-[inset_0_2px_0_0_var(--ws-gold)]'
+        )}
         style={{ borderRight: '1px solid var(--ws-glass-border)', background: 'var(--ws-glass-bg)', backdropFilter: 'blur(16px)' }}
       >
+        {reorderMode && (
+          <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+        )}
         <div
           className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
           style={{ backgroundColor: hashColor(task.assignee) }}

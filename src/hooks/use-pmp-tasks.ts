@@ -109,5 +109,35 @@ export function usePmpTasks(planId: string | null) {
     return updated
   }
 
-  return { tasks, isLoading, error, refetch: fetch, criarTarefa, atualizarStatus, excluirTarefa, editarTarefa }
+  /**
+   * Reordena as tarefas do plano. Recebe a lista COMPLETA de ids na nova ordem,
+   * reatribui display_order = índice e persiste só os que mudaram (PATCH).
+   * Atualização otimista com rollback em caso de erro.
+   */
+  async function reordenarTarefas(orderedIds: string[]) {
+    if (!planId) return
+    const byId = new Map(tasks.map((t) => [t.id, t]))
+    const reordered = orderedIds
+      .map((id) => byId.get(id))
+      .filter((t): t is PmpTaskApi => Boolean(t))
+    // Segurança: aborta se a lista não cobrir todas as tarefas (ex.: filtro ativo)
+    if (reordered.length !== tasks.length) return
+    const finalList = reordered.map((t, i) => ({ ...t, display_order: i }))
+    const changed = finalList.filter((t) => byId.get(t.id)!.display_order !== t.display_order)
+    if (changed.length === 0) return
+    const previous = tasks
+    setTasks(finalList)
+    try {
+      await Promise.all(
+        changed.map((t) =>
+          api.patch(`/pmp/plans/${planId}/tasks/${t.id}`, { display_order: t.display_order }),
+        ),
+      )
+    } catch (err) {
+      setTasks(previous)
+      throw err
+    }
+  }
+
+  return { tasks, isLoading, error, refetch: fetch, criarTarefa, atualizarStatus, excluirTarefa, editarTarefa, reordenarTarefas }
 }
