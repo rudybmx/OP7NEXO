@@ -65,3 +65,26 @@ O sync Meta Ads roda em **dois caminhos de orquestração** que ambos **desistem
 - `estimated_time_to_regain_access` vem em minutos; `reset_time_duration` em segundos.
 - Migration livre = `074`. `meta_sync_log`/`meta_sync_state` já existem.
 - Multi-tenancy: `sync_jobs`/`meta_sync_log` controlados por `ads_account_id` (que tem `workspace_id`).
+
+## Resultado da remediação (FASE 4 — 2026-06-17)
+**As 6 contas "zeradas com gasto" são CONTAS PARADAS legítimas, não vítimas de rate limit.**
+O backfill rodou de verdade (ex.: `act_3474824999423572` 316 req, `act_190045211067546` 209 req,
+`act_1292888268711928` 302 req) e a Meta retornou **0 linhas de insights** no período
+`periodo_sync_inicio→hoje`. Validação direta na Graph API (`act_3474824999423572`, janela
+2026-01-01→2026-06-17, nível conta) retornou **0 linhas** — o `amount_spent` (lifetime, R$107k) foi
+gasto **antes** da janela de sync. Conclusão: não havia bug de corrupção de insights para essas contas;
+`amount_spent` lifetime deu o falso-positivo. A infra B1–B4 está correta e funcionando.
+
+**Gate do sweeper:** por isso o sweeper só re-enfileira backfill se `last_success_at` é nulo ou >12h —
+senão repetiria backfill em conta parada a cada ciclo, queimando quota.
+
+## Verificação executada (2026-06-17)
+- **B1**: tier `development_access` detectado/logado; `extract_buc_details` parseia por type. ✅
+- **B2**: claim atômico `FOR UPDATE SKIP LOCKED` + cap global = 4 (observado 4 running, nunca >4);
+  isolamento `plataforma='meta'` (não pega jobs Google). ✅
+- **B3**: sync LEVE = **12 requests / 17s** vs **1121** do full sync (~99% redução), catálogo/públicos
+  pulados. ✅
+- **B4**: 4 crons registrados (leve 6/12/18, pesado 3h, insights +40min, sweeper 15min); sweeper
+  enfileira backfill serializado respeitando o cap. ✅
+- **B5**: tier confirmado `development_access` → **ação manual do dono**: solicitar Advanced Access
+  no App Dashboard Meta (resolve a raiz da quota baixa).

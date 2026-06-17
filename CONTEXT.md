@@ -80,8 +80,11 @@ Account
 ### Sincronização
 - Sync manual: POST `/meta/sync/{account_id}` → retorna `{job_id, status: "pending"}` imediatamente (HTTP 202)
 - Polling: GET `/meta/sync/job/{job_id}` → campos: status (pending|running|done|error), etapa_atual, progresso (0-100), totais, erro
-- Sync automático: APScheduler 3x/dia (06h, 12h, 18h Brasília) via `app/services/scheduler.py`
-- Tabela `sync_jobs` persiste histórico de jobs — migration 018
+- Sync automático: APScheduler no `op7nexo-worker`. **Spec 002 (Sync Inteligente)**: os crons ENFILEIRAM `sync_jobs` (não chamam sync inline) — `meta_sync_leve` 06/12/18h (tipo=leve), `meta_sync_pesado` 03h (tipo=pesado), `meta_insights_ia` +40min, `meta_sweeper` 15min. O worker executa com "nunca desistir": rate limit RE-AGENDA o job (`status='pending'`, `next_run_at` futuro, `attempts++`) — só desconexão da BM vira `error`+`sync_paused`. Claim atômico `FOR UPDATE SKIP LOCKED` + cap global `META_SYNC_MAX_PARALLEL_ACCOUNTS`; worker só processa `plataforma='meta'`.
+- **Escopo (migration 074, `sync_jobs.tipo`)**: LEVE = só insights recentes 3d (~12 req/conta, pula catálogo/vídeos/públicos); PESADO = tudo (catálogo incremental + públicos); BACKFILL = tudo desde `periodo_sync_inicio`. `sincronizar_conta(..., escopo=)`.
+- **Cliente quota-aware (`meta_graph.py`)**: `extract_buc_details` lê tier (`ads_api_access_tier`) + `estimated_time_to_regain_access` (header BUC, min→seg); rate limit espera o tempo informado pela Meta. Tier atual da app = `development_access` (quota baixa — solicitar Advanced Access resolve a raiz).
+- **Sweeper**: enfileira backfill p/ conta com gasto+catálogo mas 0 insights/defasada, gate `last_success_at>12h` (não re-backfilla conta parada). Nota: conta com `amount_spent` lifetime mas 0 insights no período é conta PARADA legítima, não bug.
+- Tabela `sync_jobs` persiste histórico de jobs — migration 018 (+ `tipo`/`next_run_at`/`attempts` na 074)
 - **Sync incremental (migration 053)**: catálogo usa `updated_since` (unix ts) da Meta API baseado em watermarks salvos em `meta_sync_states.watermarks` — reduz ~80% das chamadas de catálogo em contas sem alterações
 - **Histórico de sync**: tabela `meta_sync_log` (migration 053) registra cada execução com status, contagens, duração e request_count; endpoint GET `/meta/sync/historico/{account_id}`
 - Após cadastro de conta: sync automático a implementar
@@ -197,7 +200,7 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
 ### ✅ Implementado (2026-06-13) — Auto-refresh de Insights de IA (Meta + Google)
-- Insights de IA passam a ser gerados automaticamente no `op7nexo-worker` ao FIM do `_job_sync_todas_contas` (06/12/18h), p/ todos os workspaces com dados nos últimos 7 dias — antes só eram gerados sob demanda ao abrir a tela do Meta. `scheduler._gerar_insights_ia()` (best-effort, sessão por workspace).
+- Insights de IA gerados automaticamente no `op7nexo-worker` para todos os workspaces com dados nos últimos 7 dias — antes só sob demanda. `scheduler._gerar_insights_ia()` (best-effort, sessão por workspace). **Spec 002**: agora em cron próprio (`meta_insights_ia` 06/12/18h+40min), pós-enfileiramento, não mais acoplado ao job de sync.
 - `ia_insights.py`: KPIs+geração extraídos do endpoint para `gerar_insights_meta()` (reusado pelo endpoint `/meta/insights/ia` E pelo scheduler) e novo `gerar_insights_google()` (KPIs de `google_dados_diarios`: custo→spend, conversoes→leads; prompt `PROMPT_GESTOR_GOOGLE` sem reach/frequência). `gerar_e_salvar_insights`/`deve_regenerar`/`buscar_*` agora filtram por `modulo` (meta_ads|google_ads) p/ não colidirem no cache.
 - Google Ads passa a ter insights de IA (`modulo='google_ads'` em `ai_insights`). Front: badge Plataforma (Meta/Google) na tabela de insights.
 
