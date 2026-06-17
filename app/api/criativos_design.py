@@ -780,3 +780,26 @@ def listar_historico(
         }
         for g in rows
     ]
+
+
+@router.delete("/historico/{geracao_id}")
+def deletar_geracao(
+    geracao_id: uuid.UUID,
+    workspace_id: uuid.UUID = Query(...),
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Soft-delete de um criativo do histórico (some da listagem; arquivo fica no MinIO)."""
+    verificar_acesso_workspace(usuario, workspace_id, db)
+    g = (
+        db.query(CriativoGeracao)
+        .filter(CriativoGeracao.id == geracao_id, CriativoGeracao.ativo.is_(True))
+        .first()
+    )
+    if not g:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Criativo não encontrado")
+    if g.workspace_id != workspace_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Criativo de outro workspace")
+    g.ativo = False
+    db.commit()
+    return {"ok": True}

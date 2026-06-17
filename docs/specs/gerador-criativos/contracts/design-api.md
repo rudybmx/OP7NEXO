@@ -115,6 +115,9 @@ Body: `{ projeto_id, export_size: "1080x1080", output_format: "png"|"jpeg"|"webp
 ### `GET /design/historico`
 → `200 [{ projeto_id, thumb_url, creative_format, status, updated_at }]`.
 
+### `DELETE /design/historico/{geracao_id}?workspace_id=`
+→ `200 {ok:true}`. Soft-delete (`CriativoGeracao.ativo=False`) — some da listagem, arquivo fica no MinIO. `403` outro workspace · `404` inexistente.
+
 ### `GET /design/projetos/{id}`
 → `200` projeto completo editável (base, template, logo, text_layers, snapshots, export_urls).
 
