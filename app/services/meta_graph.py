@@ -123,6 +123,60 @@ def extract_usage_percent(resp: httpx.Response) -> int | None:
     return max(values) if values else None
 
 
+def extract_buc_details(resp: httpx.Response) -> dict[str, Any]:
+    """Parseia os headers de quota da Meta para o sync inteligente (spec 002).
+
+    Lê ``x-business-use-case-usage`` por ``type`` (ads_insights/ads_management) e
+    ``x-ad-account-usage``. Retorna:
+      - ``tier``: ads_api_access_tier (ex.: development_access)
+      - ``estimated_regain_seconds``: maior estimated_time_to_regain_access (min→seg)
+      - ``by_type``: {type: {call_count,total_cputime,total_time,estimated_minutes}}
+      - ``acc_util_pct`` / ``acc_reset_seconds`` do x-ad-account-usage
+    """
+    out: dict[str, Any] = {
+        "tier": None,
+        "estimated_regain_seconds": None,
+        "by_type": {},
+        "acc_util_pct": None,
+        "acc_reset_seconds": None,
+    }
+    raw = resp.headers.get("x-business-use-case-usage")
+    if raw:
+        try:
+            payload = json.loads(raw)
+            for _bid, items in (payload.items() if isinstance(payload, dict) else []):
+                for it in items if isinstance(items, list) else []:
+                    if not isinstance(it, dict):
+                        continue
+                    typ = str(it.get("type") or "unknown")
+                    est_min = _safe_int(it.get("estimated_time_to_regain_access")) or 0
+                    out["by_type"][typ] = {
+                        "call_count": _safe_int(it.get("call_count")),
+                        "total_cputime": _safe_int(it.get("total_cputime")),
+                        "total_time": _safe_int(it.get("total_time")),
+                        "estimated_minutes": est_min,
+                    }
+                    tier = it.get("ads_api_access_tier")
+                    if tier:
+                        out["tier"] = str(tier)
+                    if est_min:
+                        secs = est_min * 60
+                        if out["estimated_regain_seconds"] is None or secs > out["estimated_regain_seconds"]:
+                            out["estimated_regain_seconds"] = secs
+        except Exception:
+            pass
+    raw_acc = resp.headers.get("x-ad-account-usage")
+    if raw_acc:
+        try:
+            d = json.loads(raw_acc)
+            if isinstance(d, dict):
+                out["acc_util_pct"] = _safe_int(d.get("acc_id_util_pct"))
+                out["acc_reset_seconds"] = _safe_int(d.get("reset_time_duration"))
+        except Exception:
+            pass
+    return out
+
+
 def _usage_values(raw: str) -> list[int]:
     try:
         payload = json.loads(raw)
@@ -171,6 +225,9 @@ class MetaGraphClient:
         self.last_cooldown_seconds = 0.0
         self.rate_limit_retries = 0
         self._request_count: int = 0
+        self.last_tier: str | None = None
+        self.last_estimated_regain_seconds: float = 0.0
+        self._tier_logged = False
 
     @property
     def request_count(self) -> int:
@@ -205,7 +262,12 @@ class MetaGraphClient:
             err, message = meta_error_payload(resp)
             error_code = _safe_int(err.get("code")) or resp.status_code
             if attempt >= max_retries:
-                cooldown = self._backoff_seconds(attempt)
+                # Spec 002 (regra 4): propagar exatamente o tempo que a Meta pediq —
+                # max(estimated_time_to_regain_access, backoff), com teto de retry.
+                cooldown = min(
+                    max(self.last_estimated_regain_seconds, self._backoff_seconds(attempt)),
+                    float(settings.META_RETRY_MAX_INTERVAL),
+                )
                 raise MetaRateLimitError(
                     message or "Meta Graph API rate limit",
                     endpoint=endpoint,
@@ -268,11 +330,37 @@ class MetaGraphClient:
         return resultados
 
     def _update_usage(self, resp: httpx.Response, endpoint: str) -> None:
+        # Spec 002: captura tier + estimated_time_to_regain_access dos headers BUC.
+        buc = extract_buc_details(resp)
+        if buc.get("tier"):
+            self.last_tier = buc["tier"]
+            if not self._tier_logged:
+                self._tier_logged = True
+                level = logging.WARNING if buc["tier"] == "development_access" else logging.INFO
+                log.log(
+                    level,
+                    "Meta API tier provider=meta ad_account_id=%s tier=%s",
+                    mask_ad_account_id(self.context.ad_account_id),
+                    buc["tier"],
+                )
+        self.last_estimated_regain_seconds = float(buc.get("estimated_regain_seconds") or 0.0)
+
         usage = extract_usage_percent(resp)
         if usage is None:
             self.last_cooldown_seconds = max(settings.META_SYNC_REQUEST_DELAY_SECONDS, 0.0)
             return
         self.last_usage_percent = usage
+        # Pausa preventiva exata: acima de META_USAGE_PAUSE_PCT, se a Meta informou
+        # estimated_time_to_regain_access, espera exatamente esse tempo (regra 4).
+        if (
+            usage >= settings.META_USAGE_PAUSE_PCT
+            and self.last_estimated_regain_seconds > 0
+        ):
+            self.last_cooldown_seconds = min(
+                self.last_estimated_regain_seconds,
+                float(settings.META_RETRY_MAX_INTERVAL),
+            )
+            return
         if usage >= settings.META_SYNC_USAGE_HARD_THRESHOLD_PERCENT:
             self.last_cooldown_seconds = settings.META_SYNC_RATE_LIMIT_MAX_DELAY_SECONDS
         elif usage >= settings.META_SYNC_USAGE_SOFT_THRESHOLD_PERCENT:

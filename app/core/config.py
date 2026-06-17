@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     META_SYNC_MAX_PARALLEL_ACCOUNTS: int = 4
     META_SYNC_WORKER_POLL_INTERVAL: int = 2
     META_SYNC_WORKER_POLL_BATCH: int = 10
+    # Sync inteligente (spec 002): pausa preventiva e re-agendamento "nunca desistir".
+    META_USAGE_PAUSE_PCT: int = 90  # acima disto pausa preventiva pelo estimated_regain
+    META_RETRY_BASE_INTERVAL: float = 60.0  # piso do backoff de re-enfileiramento (s)
+    META_RETRY_MAX_INTERVAL: float = 3600.0  # teto de qualquer espera/re-agendamento (s)
+    META_SYNC_PESADO_HOUR_BRT: int = 3  # hora BRT do cron pesado
+    META_SWEEPER_INTERVAL_MINUTES: int = 15  # intervalo do sweeper de cobertura
 
     # Pagamento (Stripe) — fase 3b. Chaves SÓ no .env (gitignored). O webhook
     # verifica a assinatura com stripe_webhook_secret. Test mode no início.
