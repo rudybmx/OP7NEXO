@@ -105,6 +105,11 @@ def _job_sweeper() -> None:
               AND EXISTS (SELECT 1 FROM meta_campaigns_catalog c WHERE c.ads_account_id = a.id)
               AND (COALESCE(d.n, 0) = 0 OR d.ultima < CURRENT_DATE - 1)
               AND (s.cooldown_until IS NULL OR s.cooldown_until <= NOW())
+              -- Não re-backfillar quem JÁ teve sync bem-sucedido recente: conta
+              -- com gasto lifetime mas 0 insights no período é "conta parada"
+              -- (legítima), não vítima de rate limit. Sem este gate o sweeper
+              -- repetiria backfill a cada ciclo e queimaria a quota.
+              AND (s.last_success_at IS NULL OR s.last_success_at < NOW() - INTERVAL '12 hours')
               AND NOT EXISTS (
                   SELECT 1 FROM sync_jobs j
                   WHERE j.ads_account_id = a.id::text
