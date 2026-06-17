@@ -1,18 +1,17 @@
-"""APScheduler — roda sincronização Meta Ads 3x/dia."""
+"""APScheduler — enfileira sync Meta Ads (leve/pesado) + sweeper de cobertura.
+
+Spec 002: os crons ENFILEIRAM sync_jobs; o worker dedicado executa com o
+comportamento "nunca desistir" (re-agenda no rate limit).
+"""
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import func, or_, text
+from sqlalchemy import text
 
 from app.core.database import SessionLocal
-from app.models.ads_account import AdsAccount
-from app.models.meta_sync_state import MetaSyncState
 from app.core.config import settings
-from app.services.meta_graph import MetaRateLimitError
-from app.services.meta_sync import MetaContaInacessivelError, sincronizar_conta
 from app.services.whatsapp_event_worker import process_next_whatsapp_jobs
 
 log = logging.getLogger(__name__)
@@ -26,88 +25,98 @@ scheduler = BackgroundScheduler()
 ATIVACAO_LEADS_SEM_RESPOSTA = datetime(2026, 6, 15, 4, 0, 0, tzinfo=timezone.utc)
 
 
-def _job_sync_todas_contas() -> None:
-    log.info("Scheduler: iniciando sync Meta Ads — %s", datetime.now(tz=timezone.utc).isoformat())
+def _enfileirar_contas(tipo: str) -> None:
+    """Spec 002 (B4): os crons ENFILEIRAM sync_jobs (não chamam o sync inline).
+
+    Assim toda execução herda o "nunca desistir" do worker (re-agenda no rate
+    limit). Dedup POR CONTA (qualquer job pending/running) — em tier
+    development_access um backlog não-deduplicado explodiria a quota; quando a
+    conta já tem job na fila, o novo ciclo é ignorado (o job existente cobre os
+    números). Respeita cooldown e os filtros de elegibilidade.
+    """
+    modo = "backfill" if tipo == "backfill" else "recorrente"
     with SessionLocal() as db:
-        agora = datetime.now(timezone.utc)
-        contas = db.query(AdsAccount).outerjoin(
-            MetaSyncState,
-            MetaSyncState.ads_account_id == AdsAccount.id,
-        ).filter(
-            AdsAccount.plataforma == "meta",
-            AdsAccount.status == "ativo",
-            AdsAccount.sync_paused.is_(False),
-            AdsAccount.bm_token.isnot(None),
-            or_(
-                AdsAccount.token_expira_em.is_(None),
-                AdsAccount.token_expira_em >= agora,
-            ),
-            or_(
-                MetaSyncState.cooldown_until.is_(None),
-                MetaSyncState.cooldown_until <= agora,
-            ),
-        ).order_by(
-            func.coalesce(
-                MetaSyncState.last_success_at,
-                AdsAccount.sincronizado_em,
-                AdsAccount.criado_em,
-            ).asc(),
-            AdsAccount.account_name.asc(),
-            AdsAccount.account_id.asc(),
-        ).all()
+        rows = db.execute(text("""
+            INSERT INTO sync_jobs
+                (id, ads_account_id, modo_sync, tipo, status, next_run_at,
+                 attempts, progresso, created_at, updated_at)
+            SELECT gen_random_uuid(), a.id::text, :modo, :tipo, 'pending', NOW(),
+                   0, 0, NOW(), NOW()
+            FROM ads_accounts a
+            LEFT JOIN meta_sync_states s ON s.ads_account_id = a.id
+            WHERE a.plataforma = 'meta'
+              AND a.status = 'ativo'
+              AND a.sync_paused = false
+              AND a.bm_token IS NOT NULL
+              AND (a.token_expira_em IS NULL OR a.token_expira_em >= NOW())
+              AND (s.cooldown_until IS NULL OR s.cooldown_until <= NOW())
+              AND NOT EXISTS (
+                  SELECT 1 FROM sync_jobs j
+                  WHERE j.ads_account_id = a.id::text
+                    AND j.status IN ('pending', 'running')
+              )
+            RETURNING id
+        """), {"modo": modo, "tipo": tipo}).fetchall()
+        db.commit()
+    log.info("Scheduler: %d conta(s) enfileiradas tipo=%s", len(rows), tipo)
 
-        def _sync_conta(conta_id: str, account_id_meta: str) -> None:
-            with SessionLocal() as conta_db:
-                try:
-                    resultado = sincronizar_conta(conta_id, conta_db)
-                    log.info("Conta %s: %s", account_id_meta, resultado)
-                except MetaRateLimitError as exc:
-                    try:
-                        conta_db.rollback()
-                    except Exception:
-                        pass
-                    log.warning(
-                        "Conta %s em cooldown por rate limit Meta endpoint=%s usage=%s cooldown=%.2fs",
-                        account_id_meta,
-                        exc.endpoint,
-                        exc.usage_percent,
-                        float(exc.cooldown_seconds or 0.0),
-                    )
-                except MetaContaInacessivelError as exc:
-                    try:
-                        conta_db.rollback()
-                    except Exception:
-                        pass
-                    import uuid as _uuid
-                    c = conta_db.get(AdsAccount, _uuid.UUID(conta_id))
-                    if c:
-                        c.sync_paused = True
-                        conta_db.commit()
-                    log.warning("Conta %s pausada após erro terminal no sync: %s", account_id_meta, exc)
-                except Exception as exc:
-                    log.exception("Erro sync conta %s: %s", account_id_meta, exc)
 
-        max_workers = max(1, int(settings.META_SYNC_MAX_PARALLEL_ACCOUNTS))
-        log.info("Scheduler: processando %d contas com %d workers paralelos", len(contas), max_workers)
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(_sync_conta, str(conta.id), conta.account_id): conta
-                for conta in contas
-            }
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception as exc:
-                    log.exception("Erro inesperado em thread de sync: %s", exc)
+def _job_enfileirar_leve() -> None:
+    _enfileirar_contas("leve")
 
-    log.info("Scheduler: sync concluído")
 
-    # Gera os insights de IA logo após o sync (dados frescos), p/ Meta e Google.
-    # Best-effort: nunca derruba o job de sync.
+def _job_enfileirar_pesado() -> None:
+    _enfileirar_contas("pesado")
+
+
+def _job_gerar_insights_ia() -> None:
+    """Cron próprio (pós-enfileiramento). Best-effort."""
     try:
         _gerar_insights_ia()
     except Exception as exc:
-        log.exception("Erro ao gerar insights de IA pós-sync: %s", exc)
+        log.exception("Erro ao gerar insights de IA: %s", exc)
+
+
+def _job_sweeper() -> None:
+    """Spec 002 (B4): repara cobertura. Detecta conta ativa COM gasto e catálogo
+    mas SEM insights (ou defasada >1 dia) e enfileira backfill serializado —
+    máx META_SYNC_MAX_PARALLEL_ACCOUNTS por ciclo, sem duplicar job da conta.
+    Reaproveita o "nunca desistir" do worker (não repete o rate-limit do
+    cadastro em massa)."""
+    with SessionLocal() as db:
+        rows = db.execute(text("""
+            INSERT INTO sync_jobs
+                (id, ads_account_id, modo_sync, tipo, status, next_run_at,
+                 attempts, progresso, created_at, updated_at)
+            SELECT gen_random_uuid(), a.id::text, 'backfill', 'backfill', 'pending',
+                   NOW(), 0, 0, NOW(), NOW()
+            FROM ads_accounts a
+            LEFT JOIN meta_sync_states s ON s.ads_account_id = a.id
+            LEFT JOIN (
+                SELECT ads_account_id, MAX(data) AS ultima, COUNT(*) AS n
+                FROM meta_insights_diarios GROUP BY ads_account_id
+            ) d ON d.ads_account_id = a.id
+            WHERE a.plataforma = 'meta'
+              AND a.status = 'ativo'
+              AND a.sync_paused = false
+              AND a.bm_token IS NOT NULL
+              AND (a.token_expira_em IS NULL OR a.token_expira_em >= NOW())
+              AND a.amount_spent > 0
+              AND EXISTS (SELECT 1 FROM meta_campaigns_catalog c WHERE c.ads_account_id = a.id)
+              AND (COALESCE(d.n, 0) = 0 OR d.ultima < CURRENT_DATE - 1)
+              AND (s.cooldown_until IS NULL OR s.cooldown_until <= NOW())
+              AND NOT EXISTS (
+                  SELECT 1 FROM sync_jobs j
+                  WHERE j.ads_account_id = a.id::text
+                    AND j.status IN ('pending', 'running')
+              )
+            ORDER BY COALESCE(d.n, 0) ASC, a.amount_spent DESC
+            LIMIT :max
+            RETURNING id
+        """), {"max": max(1, int(settings.META_SYNC_MAX_PARALLEL_ACCOUNTS))}).fetchall()
+        db.commit()
+    if rows:
+        log.info("Sweeper: %d backfill(s) de cobertura enfileirados", len(rows))
 
 
 def _gerar_insights_ia() -> None:
@@ -212,13 +221,46 @@ def _job_process_whatsapp_events() -> None:
 
 
 def iniciar_scheduler() -> None:
-    # 06:00, 12:00, 18:00 horário de Brasília
+    # Sync LEVE (só insights recentes): enfileira jobs às 06h, 12h, 18h (Brasília).
     scheduler.add_job(
-        _job_sync_todas_contas,
+        _job_enfileirar_leve,
         CronTrigger(hour="6,12,18", timezone="America/Sao_Paulo"),
-        id="meta_sync",
+        id="meta_sync_leve",
         replace_existing=True,
+        max_instances=1,
+        coalesce=True,
         misfire_grace_time=600,
+    )
+    # Sync PESADO (catálogo + públicos): 1x/dia, madrugada Brasília.
+    scheduler.add_job(
+        _job_enfileirar_pesado,
+        CronTrigger(hour=str(settings.META_SYNC_PESADO_HOUR_BRT), timezone="America/Sao_Paulo"),
+        id="meta_sync_pesado",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=600,
+    )
+    # Insights de IA: cron próprio ~40min após cada janela leve (dados frescos).
+    scheduler.add_job(
+        _job_gerar_insights_ia,
+        CronTrigger(hour="6,12,18", minute=40, timezone="America/Sao_Paulo"),
+        id="meta_insights_ia",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=600,
+    )
+    # Sweeper de cobertura: repara contas com gasto sem insights / defasadas.
+    scheduler.add_job(
+        _job_sweeper,
+        "interval",
+        minutes=max(1, int(settings.META_SWEEPER_INTERVAL_MINUTES)),
+        id="meta_sweeper",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
     )
     scheduler.add_job(
         _job_process_whatsapp_events,
@@ -241,10 +283,12 @@ def iniciar_scheduler() -> None:
         misfire_grace_time=120,
     )
     scheduler.start()
-    job = scheduler.get_job("meta_sync")
+    job = scheduler.get_job("meta_sync_leve")
     next_run = job.next_run_time.isoformat() if job and job.next_run_time else "n/a"
     log.info(
-        "Scheduler iniciado — jobs Meta Ads às 06h, 12h, 18h (Brasília); próximo=%s; fila WhatsApp a cada 5s",
+        "Scheduler iniciado — enfileira LEVE 06/12/18h, PESADO %sh, sweeper %dmin (Brasília); próximo leve=%s",
+        settings.META_SYNC_PESADO_HOUR_BRT,
+        settings.META_SWEEPER_INTERVAL_MINUTES,
         next_run,
     )
 
