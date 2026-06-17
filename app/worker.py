@@ -36,11 +36,68 @@ _active_threads: list[threading.Thread] = []
 _threads_lock = threading.Lock()
 
 
-def _run_sync_job(job_id: str, ads_account_id: str, modo_sync: str) -> None:
-    """Executa um sync_job em background e atualiza o registro no banco."""
+def _tipo_to_modo(tipo: str) -> str:
+    """Mapeia sync_jobs.tipo (leve|pesado|backfill) -> modo_sync do sincronizar_conta.
+
+    B3 refina isto com um parâmetro `escopo` dedicado; em B2 o tipo já é a fonte
+    de verdade (corrige a antiga coerção que rebaixava tudo para 'recorrente').
+    """
+    return "backfill" if tipo == "backfill" else "recorrente"
+
+
+def _backoff_reenfileira(attempts: int) -> float:
+    base = max(float(settings.META_RETRY_BASE_INTERVAL), 1.0)
+    cap = max(float(settings.META_RETRY_MAX_INTERVAL), base)
+    return min(base * (2 ** max(int(attempts), 0)), cap)
+
+
+def _cooldown_state_restante(db, ads_account_id: str) -> float:
+    """Segundos restantes do cooldown gravado em meta_sync_states (unifica B1/B2)."""
+    try:
+        row = db.execute(text("""
+            SELECT EXTRACT(EPOCH FROM (cooldown_until - NOW()))
+            FROM meta_sync_states
+            WHERE ads_account_id = CAST(:id AS uuid) AND cooldown_until > NOW()
+        """), {"id": ads_account_id}).scalar()
+        return float(row) if row and row > 0 else 0.0
+    except Exception:
+        return 0.0
+
+
+def _reenfileirar(job_id: str, ads_account_id: str, attempts: int, exc: MetaRateLimitError) -> None:
+    """Rate limit ADIA, não cancela (regra 1): volta o job para pending com
+    next_run_at futuro e attempts++. NUNCA marca 'error'."""
+    with SessionLocal() as db:
+        espera = max(
+            float(getattr(exc, "cooldown_seconds", 0.0) or 0.0),
+            _backoff_reenfileira(attempts),
+            _cooldown_state_restante(db, ads_account_id),
+        )
+        espera = min(espera, float(settings.META_RETRY_MAX_INTERVAL))
+        db.execute(text("""
+            UPDATE sync_jobs
+            SET status = 'pending',
+                attempts = attempts + 1,
+                next_run_at = NOW() + make_interval(secs => :secs),
+                etapa_atual = 'aguardando_rate_limit',
+                erro = NULL,
+                updated_at = NOW()
+            WHERE id = :id
+        """), {"secs": espera, "id": job_id})
+        db.commit()
+    log.info(
+        "Worker: job %s conta %s re-enfileirado em %.0fs (rate limit, attempts=%d)",
+        job_id, ads_account_id, espera, attempts + 1,
+    )
+
+
+def _run_sync_job(job_id: str, ads_account_id: str, tipo: str, attempts: int) -> None:
+    """Executa um sync_job (já marcado 'running' pelo claim atômico) e atualiza o registro."""
     thread = threading.current_thread()
     with _threads_lock:
         _active_threads.append(thread)
+
+    modo_sync = _tipo_to_modo(tipo)
 
     def _set(etapa: str, progresso: int) -> None:
         with SessionLocal() as db:
@@ -70,11 +127,6 @@ def _run_sync_job(job_id: str, ads_account_id: str, modo_sync: str) -> None:
 
     try:
         with SessionLocal() as db:
-            db.execute(text(
-                "UPDATE sync_jobs SET status = 'running', updated_at = NOW() WHERE id = :id"
-            ), {"id": job_id})
-            db.commit()
-
             try:
                 result = sincronizar_conta(ads_account_id, db, on_progress=_set, modo_sync=modo_sync)
                 totais = result.get("totais") or {}
@@ -84,13 +136,8 @@ def _run_sync_job(job_id: str, ads_account_id: str, modo_sync: str) -> None:
                     db.rollback()
                 except Exception:
                     pass
-                _finalizar(
-                    "error",
-                    erro=(
-                        "Rate limit temporário da Meta. "
-                        f"Tente novamente após o cooldown atual. ({exc})"
-                    ),
-                )
+                # Rate limit NUNCA vira erro — re-enfileira (regra 1).
+                _reenfileirar(job_id, ads_account_id, attempts, exc)
             except MetaContaInacessivelError as exc:
                 try:
                     db.rollback()
@@ -113,25 +160,41 @@ def _run_sync_job(job_id: str, ads_account_id: str, modo_sync: str) -> None:
 
 
 def _poll_pending_jobs() -> None:
-    """Busca jobs pending e dispara threads para cada um."""
-    batch = max(1, int(settings.META_SYNC_WORKER_POLL_BATCH))
+    """Reivindica jobs prontos (status='pending' AND next_run_at<=NOW()) de forma
+    atômica (FOR UPDATE SKIP LOCKED) respeitando o teto global de concorrência."""
+    cap = max(1, int(settings.META_SYNC_MAX_PARALLEL_ACCOUNTS))
+    with _threads_lock:
+        ativos = len(_active_threads)
+    livre = cap - ativos
+    if livre <= 0:
+        return
+    n = min(livre, max(1, int(settings.META_SYNC_WORKER_POLL_BATCH)))
+
     with SessionLocal() as db:
-        rows = db.execute(text(f"""
-            SELECT id, ads_account_id, modo_sync
-            FROM sync_jobs
-            WHERE status = 'pending'
-            ORDER BY created_at ASC
-            LIMIT {batch}
-        """)).fetchall()
+        rows = db.execute(text("""
+            UPDATE sync_jobs
+            SET status = 'running', updated_at = NOW()
+            WHERE id IN (
+                SELECT id FROM sync_jobs
+                WHERE status = 'pending' AND next_run_at <= NOW()
+                ORDER BY next_run_at ASC
+                LIMIT :n
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id, ads_account_id, tipo, attempts
+        """), {"n": n}).fetchall()
+        db.commit()
 
     for row in rows:
         job_id = str(row.id)
         ads_account_id = str(row.ads_account_id)
-        modo_sync = row.modo_sync if row.modo_sync in ("recorrente", "backfill") else "recorrente"
-        log.info("Worker: iniciando sync job %s conta %s", job_id, ads_account_id)
+        tipo = row.tipo or "leve"
+        attempts = int(row.attempts or 0)
+        log.info("Worker: iniciando sync job %s conta %s tipo=%s attempts=%d",
+                 job_id, ads_account_id, tipo, attempts)
         t = threading.Thread(
             target=_run_sync_job,
-            args=(job_id, ads_account_id, modo_sync),
+            args=(job_id, ads_account_id, tipo, attempts),
             daemon=False,
             name=f"sync-{job_id[:8]}",
         )

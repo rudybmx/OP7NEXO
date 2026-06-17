@@ -1757,7 +1757,13 @@ def _parse_meta_datetime(raw: Any) -> datetime | None:
 
 
 def marcar_sync_jobs_ativos_como_interrompidos(motivo: str = SYNC_JOB_INTERRUPTED_ERROR) -> int:
-    """Marca jobs ativos antigos como interrompidos após restart do serviço."""
+    """Após restart do worker: re-enfileira jobs ativos (regra 1 — nunca desistir).
+
+    Spec 002: um restart NÃO transforma sync_jobs em 'error' — eles voltam para
+    'pending' com next_run_at=NOW() para o worker re-executá-los. As linhas
+    'running' de meta_sync_log são fechadas como interrompidas (auditoria) e o
+    meta_sync_state só é rebaixado quando estava genuinamente 'running'.
+    """
     with SessionLocal() as db:
         contas = db.execute(
             text("""
@@ -1769,13 +1775,14 @@ def marcar_sync_jobs_ativos_como_interrompidos(motivo: str = SYNC_JOB_INTERRUPTE
         result = db.execute(
             text("""
                 UPDATE sync_jobs
-                SET status = 'error',
-                    etapa_atual = 'interrompido',
-                    erro = :motivo,
+                SET status = 'pending',
+                    etapa_atual = 'reenfileirado_restart',
+                    next_run_at = NOW(),
+                    erro = NULL,
                     updated_at = NOW()
                 WHERE status IN ('pending', 'running')
             """),
-            {"motivo": motivo},
+            {},
         )
         if contas:
             db.execute(

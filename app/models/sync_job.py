@@ -16,6 +16,12 @@ class SyncJob(Base):
     )
     ads_account_id: Mapped[str] = mapped_column(String, nullable=False)
     modo_sync: Mapped[str] = mapped_column(String(30), nullable=False, default="recorrente")
+    # Spec 002: escopo do sync (leve|pesado|backfill) e agendamento "nunca desistir".
+    tipo: Mapped[str] = mapped_column(String(10), nullable=False, default="leve")
+    next_run_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     etapa_atual: Mapped[str | None] = mapped_column(String, nullable=True)
     progresso: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
