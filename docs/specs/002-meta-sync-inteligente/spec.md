@@ -88,3 +88,14 @@ senão repetiria backfill em conta parada a cada ciclo, queimando quota.
   enfileira backfill serializado respeitando o cap. ✅
 - **B5**: tier confirmado `development_access` → **ação manual do dono**: solicitar Advanced Access
   no App Dashboard Meta (resolve a raiz da quota baixa).
+- **Nunca desistir (SC-1)**: `_reenfileirar` validado direto — rate limit → `status='pending'`,
+  `attempts++`, `next_run_at = max(estimated, backoff)` no futuro (nunca `error`). ✅
+- **Cap sob carga (SC-2)**: `_enfileirar_contas('leve')` (~68 jobs) → `running` manteve-se **≤ 4** com
+  60+ pending. Claim atômico + cap global comprovados sob carga real. ✅
+
+## Limitação conhecida (decisão deliberada)
+**Dedup do enqueue é POR CONTA (qualquer pending/running), não por conta+tipo** (como sugeria o handoff).
+Motivo: em `development_access` um backlog não-deduplicado explodiria a quota. Tradeoff: um job `pesado`
+preso em rate limit repetido bloqueia o `leve` (barato, ~12 req) da mesma conta até o pesado completar —
+trabalha contra a SC-2 nesse caso de borda. Aceitável porque o pesado também atualiza os números do dia;
+quem precisar priorizar o leve deve revisar o dedup. **A raiz é o tier (B5).**
