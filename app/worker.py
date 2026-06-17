@@ -36,13 +36,20 @@ _active_threads: list[threading.Thread] = []
 _threads_lock = threading.Lock()
 
 
-def _tipo_to_modo(tipo: str) -> str:
-    """Mapeia sync_jobs.tipo (leve|pesado|backfill) -> modo_sync do sincronizar_conta.
+def _tipo_to_args(tipo: str) -> tuple[str, str]:
+    """Mapeia sync_jobs.tipo (leve|pesado|backfill) -> (modo_sync, escopo).
 
-    B3 refina isto com um parâmetro `escopo` dedicado; em B2 o tipo já é a fonte
-    de verdade (corrige a antiga coerção que rebaixava tudo para 'recorrente').
+    `tipo` é a fonte de verdade do escopo (corrige a antiga coerção que rebaixava
+    qualquer valor desconhecido para 'recorrente').
+      leve     -> ('recorrente', 'leve')    só insights recentes
+      pesado   -> ('recorrente', 'pesado')  tudo (catálogo + públicos)
+      backfill -> ('backfill', 'backfill')   tudo, janela longa
     """
-    return "backfill" if tipo == "backfill" else "recorrente"
+    if tipo == "backfill":
+        return "backfill", "backfill"
+    if tipo == "pesado":
+        return "recorrente", "pesado"
+    return "recorrente", "leve"
 
 
 def _backoff_reenfileira(attempts: int) -> float:
@@ -97,7 +104,7 @@ def _run_sync_job(job_id: str, ads_account_id: str, tipo: str, attempts: int) ->
     with _threads_lock:
         _active_threads.append(thread)
 
-    modo_sync = _tipo_to_modo(tipo)
+    modo_sync, escopo = _tipo_to_args(tipo)
 
     def _set(etapa: str, progresso: int) -> None:
         with SessionLocal() as db:
@@ -128,7 +135,7 @@ def _run_sync_job(job_id: str, ads_account_id: str, tipo: str, attempts: int) ->
     try:
         with SessionLocal() as db:
             try:
-                result = sincronizar_conta(ads_account_id, db, on_progress=_set, modo_sync=modo_sync)
+                result = sincronizar_conta(ads_account_id, db, on_progress=_set, modo_sync=modo_sync, escopo=escopo)
                 totais = result.get("totais") or {}
                 _finalizar("done", totais=totais)
             except MetaRateLimitError as exc:
@@ -170,16 +177,22 @@ def _poll_pending_jobs() -> None:
         return
     n = min(livre, max(1, int(settings.META_SYNC_WORKER_POLL_BATCH)))
 
+    # IMPORTANTE: este worker processa apenas contas META (chama sincronizar_conta
+    # do meta_sync). Jobs de contas Google são processados pelo runner inline do
+    # próprio endpoint Google — filtrar por plataforma evita o worker rodar sync
+    # Meta sobre conta Google (sync_jobs é compartilhada entre plataformas).
     with SessionLocal() as db:
         rows = db.execute(text("""
             UPDATE sync_jobs
             SET status = 'running', updated_at = NOW()
             WHERE id IN (
-                SELECT id FROM sync_jobs
-                WHERE status = 'pending' AND next_run_at <= NOW()
-                ORDER BY next_run_at ASC
+                SELECT j.id FROM sync_jobs j
+                JOIN ads_accounts a ON a.id::text = j.ads_account_id
+                WHERE j.status = 'pending' AND j.next_run_at <= NOW()
+                  AND a.plataforma = 'meta'
+                ORDER BY j.next_run_at ASC
                 LIMIT :n
-                FOR UPDATE SKIP LOCKED
+                FOR UPDATE OF j SKIP LOCKED
             )
             RETURNING id, ads_account_id, tipo, attempts
         """), {"n": n}).fetchall()

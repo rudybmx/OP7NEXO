@@ -168,7 +168,10 @@ def _iniciar_sync_conta(ads_account_id: str, db: Session, modo_sync: str = "reco
     if job_ativo:
         return str(job_ativo.id), False
 
-    job = SyncJob(ads_account_id=ads_account_id, modo_sync=modo_sync, status="pending", progresso=0)
+    # Spec 002: tipo controla o escopo no worker. Trigger manual = full sync
+    # (pesado) para refrescar tudo; backfill mantém a janela longa.
+    tipo = "backfill" if modo_sync == "backfill" else "pesado"
+    job = SyncJob(ads_account_id=ads_account_id, modo_sync=modo_sync, tipo=tipo, status="pending", progresso=0)
     db.add(job)
     db.commit()
     db.refresh(job)

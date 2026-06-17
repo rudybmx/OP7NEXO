@@ -1765,15 +1765,21 @@ def marcar_sync_jobs_ativos_como_interrompidos(motivo: str = SYNC_JOB_INTERRUPTE
     meta_sync_state só é rebaixado quando estava genuinamente 'running'.
     """
     with SessionLocal() as db:
+        # Apenas jobs de contas META (domínio deste worker). Jobs Google são
+        # processados pelo runner inline do endpoint Google — não tocar.
+        meta_filter = (
+            "ads_account_id IN (SELECT id::text FROM ads_accounts WHERE plataforma = 'meta')"
+        )
         contas = db.execute(
-            text("""
+            text(f"""
                 SELECT DISTINCT ads_account_id
                 FROM sync_jobs
                 WHERE status IN ('pending', 'running')
+                  AND {meta_filter}
             """)
         ).scalars().all()
         result = db.execute(
-            text("""
+            text(f"""
                 UPDATE sync_jobs
                 SET status = 'pending',
                     etapa_atual = 'reenfileirado_restart',
@@ -1781,6 +1787,7 @@ def marcar_sync_jobs_ativos_como_interrompidos(motivo: str = SYNC_JOB_INTERRUPTE
                     erro = NULL,
                     updated_at = NOW()
                 WHERE status IN ('pending', 'running')
+                  AND {meta_filter}
             """),
             {},
         )
@@ -2946,7 +2953,16 @@ def sincronizar_conta(
     db: Session,
     on_progress=None,  # callable(etapa: str, progresso: int) | None
     modo_sync: str = "recorrente",
+    escopo: str | None = None,
 ) -> dict:
+    # Spec 002 (B3): escopo controla o que sincronizar.
+    #   leve   -> só insights recentes (pula catálogo/vídeos/públicos)
+    #   pesado -> tudo (catálogo incremental + públicos)
+    #   backfill -> tudo, janela longa desde periodo_sync_inicio
+    # Compat: callers antigos passam só modo_sync; default = pesado (full sync),
+    # exceto backfill.
+    if escopo is None:
+        escopo = "backfill" if modo_sync == "backfill" else "pesado"
     conta: AdsAccount | None = db.get(AdsAccount, ads_account_id)
     if not conta:
         raise ValueError(f"AdsAccount {ads_account_id} não encontrada")
@@ -2982,7 +2998,7 @@ def sincronizar_conta(
         db.flush()
         log_id = log_entry.id
 
-        result = _sincronizar_conta_impl(ads_account_id, db, on_progress=on_progress, modo_sync=modo_sync)
+        result = _sincronizar_conta_impl(ads_account_id, db, on_progress=on_progress, modo_sync=modo_sync, escopo=escopo)
         totais_final = result.get("totais") or {}
         if result.get("skipped"):
             _upsert_meta_sync_state(
@@ -3068,6 +3084,7 @@ def _sincronizar_conta_impl(
     db: Session,
     on_progress=None,
     modo_sync: str = "recorrente",
+    escopo: str = "pesado",
 ) -> dict:
     conta: AdsAccount | None = db.get(AdsAccount, ads_account_id)
     if not conta:
@@ -3094,7 +3111,10 @@ def _sincronizar_conta_impl(
 
     token = conta.bm_token
     meta_account_id = conta.account_id  # e.g. "act_123456789"
-    time_range = _janela_insights_para_conta(conta, modo_sync)
+    # Janela de insights: backfill = longa (desde periodo_sync_inicio); leve/pesado = 3 dias.
+    time_range = _janela_insights_para_conta(conta, "backfill" if escopo == "backfill" else "recorrente")
+    is_leve = escopo == "leve"
+    catalog_watermarks: dict = {}
 
     totais: dict[str, int] = {
         "catalog_campanhas": 0,
@@ -3196,14 +3216,16 @@ def _sincronizar_conta_impl(
         db.commit()
         _progress("balance", 10)
 
-        _progress("catalogo", 12)
-        state_para_catalogo = _get_meta_sync_state(db, ads_account_id)
-        prev_watermarks = (state_para_catalogo.watermarks or {}) if state_para_catalogo else {}
-        catalog_watermarks = _sync_catalogo(
-            client, db, conta, meta_account_id, token, totais,
-            watermarks_anteriores=prev_watermarks,
-        )
-        _progress("catalogo", 25)
+        # LEVE pula catálogo (reusa o catálogo já persistido por syncs pesados).
+        if not is_leve:
+            _progress("catalogo", 12)
+            state_para_catalogo = _get_meta_sync_state(db, ads_account_id)
+            prev_watermarks = (state_para_catalogo.watermarks or {}) if state_para_catalogo else {}
+            catalog_watermarks = _sync_catalogo(
+                client, db, conta, meta_account_id, token, totais,
+                watermarks_anteriores=prev_watermarks,
+            )
+            _progress("catalogo", 25)
 
         _progress("diarios", 27)
         _sync_diarios(client, db, meta_account_id, token, time_range, totais)
@@ -3217,49 +3239,51 @@ def _sincronizar_conta_impl(
         _sync_anuncios(client, db, meta_account_id, token, time_range, conta.id, totais, on_progress=_progress)
         _progress("anuncios", 72)
 
-        _progress("videos", 73)
-        _sync_video_metrics(client, db, meta_account_id, token, time_range, conta.id)
-        _progress("videos", 74)
+        # LEVE pula vídeos e públicos (etapas caras — só no pesado/backfill).
+        if not is_leve:
+            _progress("videos", 73)
+            _sync_video_metrics(client, db, meta_account_id, token, time_range, conta.id)
+            _progress("videos", 74)
 
-        _progress("publicos", 74)
-        _sync_publicos_demograficos(client, db, meta_account_id, token, time_range, conta.id, totais)
-        _sync_publicos_placement(client, db, meta_account_id, token, time_range, conta.id, totais)
-        _sync_publicos_device(client, db, meta_account_id, token, time_range, conta.id, totais)
-        _sync_publicos_hourly(client, db, meta_account_id, token, time_range, conta.id, totais)
-        _sync_publicos_region(client, db, meta_account_id, token, time_range, conta.id, totais)
-        _progress("publicos", 80)
+            _progress("publicos", 74)
+            _sync_publicos_demograficos(client, db, meta_account_id, token, time_range, conta.id, totais)
+            _sync_publicos_placement(client, db, meta_account_id, token, time_range, conta.id, totais)
+            _sync_publicos_device(client, db, meta_account_id, token, time_range, conta.id, totais)
+            _sync_publicos_hourly(client, db, meta_account_id, token, time_range, conta.id, totais)
+            _sync_publicos_region(client, db, meta_account_id, token, time_range, conta.id, totais)
+            _progress("publicos", 80)
 
-        total_camp_rows = db.execute(text("""
-            SELECT COUNT(DISTINCT campaign_id)
-            FROM meta_campaigns_catalog
-            WHERE ads_account_id = CAST(:uuid AS uuid)
-              AND campaign_id IS NOT NULL
-        """), {"uuid": str(conta.id)}).scalar() or 0
-        if modo_sync == "backfill" and not settings.META_SYNC_PUBLICOS_CAMPANHA_BACKFILL:
-            valid_camps = []
-        else:
-            valid_camps = _campanhas_publicos_relevantes(
-                db,
-                conta.id,
-                limit=settings.META_SYNC_PUBLICOS_CAMPANHA_LIMIT,
+            total_camp_rows = db.execute(text("""
+                SELECT COUNT(DISTINCT campaign_id)
+                FROM meta_campaigns_catalog
+                WHERE ads_account_id = CAST(:uuid AS uuid)
+                  AND campaign_id IS NOT NULL
+            """), {"uuid": str(conta.id)}).scalar() or 0
+            if escopo == "backfill" and not settings.META_SYNC_PUBLICOS_CAMPANHA_BACKFILL:
+                valid_camps = []
+            else:
+                valid_camps = _campanhas_publicos_relevantes(
+                    db,
+                    conta.id,
+                    limit=settings.META_SYNC_PUBLICOS_CAMPANHA_LIMIT,
+                )
+            totais["publicos_campanhas_processadas"] = len(valid_camps)
+            totais["publicos_campanhas_puladas"] = max(int(total_camp_rows) - len(valid_camps), 0)
+            for i, cid in enumerate(valid_camps):
+                _sync_publicos_demograficos(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
+                _sync_publicos_placement(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
+                _sync_publicos_device(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
+                _sync_publicos_hourly(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
+                _sync_publicos_region(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
+                pct = 80 + int(15 * (i + 1) / max(len(valid_camps), 1))
+                _progress("publicos_campanha", pct)
+
+            log.info(
+                "Sync públicos por campanha concluído: processadas=%d puladas=%d escopo=%s",
+                totais["publicos_campanhas_processadas"],
+                totais["publicos_campanhas_puladas"],
+                escopo,
             )
-        totais["publicos_campanhas_processadas"] = len(valid_camps)
-        totais["publicos_campanhas_puladas"] = max(int(total_camp_rows) - len(valid_camps), 0)
-        for i, cid in enumerate(valid_camps):
-            _sync_publicos_demograficos(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
-            _sync_publicos_placement(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
-            _sync_publicos_device(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
-            _sync_publicos_hourly(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
-            _sync_publicos_region(client, db, meta_account_id, token, time_range, conta.id, totais, campaign_id=cid)
-            pct = 80 + int(15 * (i + 1) / max(len(valid_camps), 1))
-            _progress("publicos_campanha", pct)
-
-        log.info(
-            "Sync públicos por campanha concluído: processadas=%d puladas=%d modo=%s",
-            totais["publicos_campanhas_processadas"],
-            totais["publicos_campanhas_puladas"],
-            modo_sync,
-        )
         _progress("finalizando", 98)
 
     totais["api_requests"] = client.request_count
