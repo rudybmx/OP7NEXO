@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { Sparkles, Image as ImageIcon, History } from 'lucide-react'
+import { Sparkles, Image as ImageIcon, History, Trash2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { getToken } from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -24,6 +24,8 @@ export function HistoricoCriativos({ onUsarEstrutura, onUsarImagem }: {
   const { workspaceAtual: wsId } = useWorkspace()
   const [itens, setItens] = useState<HistItemCard[]>([])
   const [loading, setLoading] = useState(true)
+  const [confirmar, setConfirmar] = useState<HistItemCard | null>(null)
+  const [apagando, setApagando] = useState(false)
 
   useEffect(() => {
     if (!wsId) return
@@ -34,6 +36,25 @@ export function HistoricoCriativos({ onUsarEstrutura, onUsarImagem }: {
       .catch(() => toast.error('Erro ao carregar o histórico.'))
       .finally(() => setLoading(false))
   }, [wsId])
+
+  const apagar = async () => {
+    if (!wsId || !confirmar) return
+    const id = confirmar.id
+    setApagando(true)
+    try {
+      const res = await fetch(`/api/proxy/design/historico/${id}?workspace_id=${wsId}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${getToken() ?? ''}` },
+      })
+      if (!res.ok) throw new Error()
+      setItens(prev => prev.filter(x => x.id !== id))
+      toast.success('Criativo apagado do histórico.')
+      setConfirmar(null)
+    } catch {
+      toast.error('Não consegui apagar o criativo.')
+    } finally {
+      setApagando(false)
+    }
+  }
 
   const usarImagem = async (it: HistItemCard) => {
     try {
@@ -83,10 +104,43 @@ export function HistoricoCriativos({ onUsarEstrutura, onUsarImagem }: {
                     className="px-3 h-8 rounded-[var(--ws-radius-lg)] text-[10px] font-bold uppercase tracking-wider text-[var(--ws-blue)] border border-[var(--ws-blue)]/40 bg-[rgba(62,91,255,0.06)] hover:bg-[rgba(62,91,255,0.12)] transition-all">
                     Usar imagem
                   </button>
+                  <button onClick={() => setConfirmar(it)} title="Apagar do histórico" aria-label="Apagar do histórico"
+                    className="w-8 h-8 shrink-0 flex items-center justify-center rounded-[var(--ws-radius-lg)] text-[#a32d2d] border border-[#a32d2d]/30 hover:bg-[rgba(163,45,45,0.08)] transition-all">
+                    <Trash2 size={13} />
+                  </button>
                 </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Modal de confirmação de exclusão */}
+      {confirmar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+          onClick={() => { if (!apagando) setConfirmar(null) }}>
+          <div onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm rounded-[var(--ws-radius-xl)] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] backdrop-blur-md p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 shrink-0 rounded-full bg-[rgba(163,45,45,0.12)] flex items-center justify-center">
+                <AlertTriangle size={18} className="text-[#a32d2d]" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-[14px] font-bold text-[var(--ws-text-1)]">Apagar criativo?</h4>
+                <p className="text-[12px] text-[var(--ws-text-2)] mt-1">Isso remove o criativo do histórico. Não dá pra desfazer.</p>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setConfirmar(null)} disabled={apagando}
+                className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold uppercase tracking-wider text-[var(--ws-text-2)] border border-[var(--ws-glass-border)] hover:border-[var(--ws-text-3)] disabled:opacity-50 transition-all">
+                Cancelar
+              </button>
+              <button onClick={apagar} disabled={apagando}
+                className="flex-1 h-9 rounded-[var(--ws-radius-lg)] text-[11px] font-bold uppercase tracking-wider text-white bg-[#a32d2d] hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                {apagando ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Apagando...</> : <><Trash2 size={13} /> Apagar</>}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
