@@ -175,6 +175,22 @@ lock-deploy docker compose -f /root/op7nexo-front/docker-compose.yml up -d --bui
 - Se passar de 10 min sem conseguir, **FALHA** (exit 75) — tente de novo depois.
 - **NÃO** altere esse comportamento. **NÃO** tente burlar o lock. É regra de coordenação entre agentes.
 
+## BRANCH DE PRODUÇÃO + ANTI-DOWNGRADE (OBRIGATÓRIO)
+
+> Contexto: o working tree é COMPARTILHADO por vários agentes e a branch em checkout **muda sozinha**. Já causou downgrade de produção (deploy de uma branch atrasada → features sumiram). Estas regras impedem isso.
+
+- A branch de produção de cada projeto é **declarada em `/root/deploy.env`** (máquina-legível, fonte de verdade). **NUNCA assuma `main`.** Hoje: front=`feat/estudio-criativos-front`; api/worker=`feat/meta-sync-inteligente`.
+- O `deploy.sh` builda **SEMPRE de `origin/<branch-de-prod>`** num git worktree isolado em `/tmp` — ignora o checkout local (anti-downgrade). Consequências práticas:
+  - **Para sua mudança ir pro ar, você TEM que `git push` na branch de produção ANTES do deploy.** Trabalho local não-pushado **não sobe**.
+  - Emergência (subir um ref específico): `DEPLOY_REF=<sha|branch> lock-deploy bash /root/deploy.sh front` (escape consciente).
+- **Nunca confie em `git branch --show-current`** para decidir o que deployar — outro agente pode ter flipado a branch.
+
+## COMMITS — disciplina (tree compartilhado, OBRIGATÓRIO)
+
+- Commit **granular e semântico**: `git add <arquivos do escopo>`. **NUNCA `git add -A` / `git add .` cego** — risco de commitar `.env`, `node_modules`, build quebrado ou trabalho de outro agente.
+- **Push ao concluir cada ajuste** — nada não-commitado fica seguro no tree compartilhado (outro agente reverte/flipa).
+- **NUNCA `git push --force`** em branch de produção/compartilhada. Se o push for rejeitado, faça `git pull --rebase` e re-push (ou pare e reporte) — jamais `--force`.
+
 ## CONTEXT7 — DOCUMENTAÇÃO ATUALIZADA
 
 Antes de escrever código para qualquer biblioteca externa (Next.js, React, Prisma, Drizzle, Tailwind, etc.):
