@@ -89,7 +89,7 @@ Regras:
 - Migrations numeradas sequencialmente: `0XX_descricao.sql`
 - Sempre filtrar por `workspace_id` em queries multi-tenant
 - Soft delete padrão: campo `ativo BOOLEAN DEFAULT true`
-- Após qualquer migration: `bash /root/deploy.sh api`
+- Após qualquer migration: `lock-deploy bash /root/deploy.sh api`
 
 ## FLUXO DE ENTREGA
 
@@ -135,10 +135,10 @@ TOKEN=$(curl -s -X POST https://api.op7franquia.com.br/auth/login \
   -d '{"email":"admin@op7nexo.com","senha":"admin123"}' \
   | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
 
-# Deploy (USAR SEMPRE ESTE — nunca docker compose up direto)
-bash /root/deploy.sh api        # só API
-bash /root/deploy.sh front      # só front
-bash /root/deploy.sh both       # ambos em sequência
+# Deploy (USAR SEMPRE SOB lock-deploy — nunca docker compose up direto)
+lock-deploy bash /root/deploy.sh api        # só API
+lock-deploy bash /root/deploy.sh front      # só front
+lock-deploy bash /root/deploy.sh both       # ambos em sequência
 
 # Logs
 cd /root/op7nexo-api && docker compose logs -f --tail=50
@@ -149,23 +149,41 @@ graphify src/ docs/ --update   # incremental (só arquivos modificados)
 graphify src/ docs/            # rebuild completo (primeiro run ou >24h)
 ```
 
-## DEPLOY — REGRA OBRIGATÓRIA
+## DEPLOY — REGRA OBRIGATÓRIA (lock-deploy)
 
-**NUNCA** rodar `docker compose up` diretamente.
-**SEMPRE** usar:
+**NUNCA** rodar `docker compose` / `docker build` / restart de container / `bash /root/deploy.sh` direto. Qualquer comando que faça **deploy, build, restart ou alteração em produção** (em QUALQUER VPS) tem que passar pelo `lock-deploy` — é a trava única de coordenação entre agentes (eu + Samuel + agentes não deployam ao mesmo tempo).
+
+**SEMPRE** envolver o deploy com `lock-deploy`:
 ```bash
-bash /root/deploy.sh api    # deploy da API
-bash /root/deploy.sh front  # deploy do front
-bash /root/deploy.sh both   # os dois em sequência (não paralelo)
-```
-O script tem lock — impede dois agentes deployando ao mesmo tempo.
+lock-deploy bash /root/deploy.sh api    # deploy da API
+lock-deploy bash /root/deploy.sh front  # deploy do front
+lock-deploy bash /root/deploy.sh both   # os dois em sequência (não paralelo)
 
-### Comportamento em caso de lock (fila)
-Se o script retornar erro de lock (outro agente deployando):
-1. Aguarde 30 segundos
-2. Tente novamente — máximo 5 tentativas
-3. Se após 5 tentativas o lock persistir, **pare e reporte ao usuário**
-Nunca ignore o lock. Nunca force o deploy.
+# Qualquer outro comando de deploy também vai sob o lock, ex.:
+lock-deploy docker compose -f /root/op7nexo-api/docker-compose.yml up -d --build
+```
+
+### Comportamento do lock (`/usr/local/bin/lock-deploy`)
+- Lock real via `flock` em `/var/lock/deploy.lock` (única trava válida).
+- Se outro deploy estiver rodando, **AGUARDA até 10 min** (checa a cada 10s) e executa automaticamente quando liberar.
+- Se passar de 10 min sem conseguir, **FALHA** (exit 75) — tente de novo depois.
+- **NÃO** altere esse comportamento. **NÃO** tente burlar o lock. É regra de coordenação entre agentes.
+
+## BRANCH DE PRODUÇÃO + ANTI-DOWNGRADE (OBRIGATÓRIO)
+
+> Contexto: o working tree é COMPARTILHADO por vários agentes e a branch em checkout **muda sozinha**. Já causou downgrade de produção (deploy de uma branch atrasada → features sumiram). Estas regras impedem isso.
+
+- A branch de produção de cada projeto é **declarada em `/root/deploy.env`** (máquina-legível, fonte de verdade). **NUNCA assuma `main`.** Hoje: api/worker=`feat/meta-sync-inteligente`; front=`feat/estudio-criativos-front`.
+- O `deploy.sh` builda **SEMPRE de `origin/<branch-de-prod>`** num git worktree isolado em `/tmp` — ignora o checkout local (anti-downgrade). Consequências práticas:
+  - **Para sua mudança ir pro ar, você TEM que `git push` na branch de produção ANTES do deploy.** Trabalho local não-pushado **não sobe**.
+  - Emergência (subir um ref específico): `DEPLOY_REF=<sha|branch> lock-deploy bash /root/deploy.sh api` (escape consciente).
+- **Nunca confie em `git branch --show-current`** para decidir o que deployar — outro agente pode ter flipado a branch.
+
+## COMMITS — disciplina (tree compartilhado, OBRIGATÓRIO)
+
+- Commit **granular e semântico**: `git add <arquivos do escopo>`. **NUNCA `git add -A` / `git add .` cego** — risco de commitar `.env`, segredos, arquivos de migração não-revisados ou trabalho de outro agente.
+- **Push ao concluir cada ajuste** — nada não-commitado fica seguro no tree compartilhado (outro agente reverte/flipa).
+- **NUNCA `git push --force`** em branch de produção/compartilhada. Se o push for rejeitado, faça `git pull --rebase` e re-push (ou pare e reporte) — jamais `--force`.
 
 ## CONTEXT7 — DOCUMENTAÇÃO ATUALIZADA
 
