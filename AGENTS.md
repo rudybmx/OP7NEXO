@@ -25,6 +25,14 @@ Você é o engenheiro autônomo do projeto OP7NEXO. Age como especialista sênio
 Antes de qualquer tarefa, execute em sequência:
 
 ```bash
+# 0. ISOLAMENTO — criar worktree dedicado para esta sessão (OBRIGATÓRIO)
+#    Nunca edite código diretamente em /root/op7nexo-front (tree compartilhado).
+#    O hook pre-commit BLOQUEIA commits diretos no tree compartilhado.
+bash /root/agent-worktree.sh front <id-da-tarefa>
+# ex.: bash /root/agent-worktree.sh front fix-auth
+# -> cria /root/wt/front-fix-auth; TRABALHE LÁ, não em /root/op7nexo-front
+# Para ver worktrees ativos: git -C /root/op7nexo-front worktree list
+
 # 1. Carregar mapa do projeto
 cat /root/op7nexo-api/CONTEXT.md
 cat /root/op7nexo-front/CONTEXT.md
@@ -123,9 +131,11 @@ Se a implementação mudou comportamento, atualize a spec correspondente em `doc
 
 ### 3. Commit + Push no GitHub
 ```bash
-git add -A
+# DENTRO DO WORKTREE ISOLADO (/root/wt/front-<id>) — não no tree compartilhado
+git add src/caminho/do/arquivo.tsx src/outro/arquivo.ts   # GRANULAR — nunca git add -A
 git commit -m "tipo: descrição clara do que foi feito"
-git push
+git push origin agent/<id>
+# Depois merge em production + deploy (ver seção ISOLAMENTO POR AGENTE)
 ```
 Use Conventional Commits: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`.
 
@@ -191,17 +201,44 @@ lock-deploy docker compose -f /root/op7nexo-front/docker-compose.yml up -d --bui
 - **Push ao concluir cada ajuste** — nada não-commitado fica seguro no tree compartilhado (outro agente reverte/flipa).
 - **NUNCA `git push --force`** em branch de produção/compartilhada. Se o push for rejeitado, faça `git pull --rebase` e re-push (ou pare e reporte) — jamais `--force`.
 
-## ISOLAMENTO POR AGENTE (R4 — recomendado)
+## ISOLAMENTO POR AGENTE (R4 — OBRIGATÓRIO)
 
-Para não brigar pelo working tree compartilhado (que flipa de branch entre agentes) e dar rastreabilidade, cada sessão deve trabalhar num **worktree próprio**:
+> **Por quê:** 3 agentes rodam em paralelo no mesmo sistema. Sem isolamento, commits diretos no `/root/op7nexo-front` se mesclam, branches flipam entre sessões, e é impossível auditar "qual agente fez o quê". O hook `pre-commit` BLOQUEIA commits no tree compartilhado para reforçar esta regra.
+
+**Fluxo obrigatório:**
 
 ```bash
-bash /root/agent-worktree.sh front <id-sessao>   # ex.: kanban-crm
-# -> cria /root/wt/front-<id-sessao> na branch agent/<id-sessao>,
-#    com identidade git "Rudy (agente <id-sessao>)" (log/reflog auditáveis).
+# INÍCIO DA SESSÃO — uma vez por sessão/tarefa
+bash /root/agent-worktree.sh front <id-da-tarefa>
+# Exemplos: bash /root/agent-worktree.sh front fix-auth
+#           bash /root/agent-worktree.sh front kanban-crm
+# -> cria /root/wt/front-<id> na branch agent/<id>
+# -> configura identidade git "Rudy (agente <id>)" (auditável no log)
+
+# DURANTE — trabalhe DENTRO do worktree
+cd /root/wt/front-<id>
+# ... edite, teste, commit granular ...
+
+# VER WORKTREES ATIVOS (todos os agentes)
+git -C /root/op7nexo-front worktree list
+
+# LIBERAR EM PRODUÇÃO — ao concluir a tarefa
+git -C /root/wt/front-<id> push origin agent/<id>
+git -C /root/op7nexo-front fetch origin
+git -C /root/op7nexo-front checkout production
+git -C /root/op7nexo-front merge --ff-only agent/<id>   # ou merge revisado
+git -C /root/op7nexo-front push origin production
+lock-deploy bash /root/deploy.sh front
+
+# LIMPEZA — opcional, após liberar
+git -C /root/op7nexo-front worktree remove /root/wt/front-<id>
+git -C /root/op7nexo-front branch -d agent/<id>
 ```
-- Trabalhe **dentro de `/root/wt/...`**, não em `/root/op7nexo-front` (esse fica para leitura/deploy).
-- Ao concluir: commit granular + push da `agent/<id>`; para liberar em produção, faça merge/ff na branch de produção (ver `deploy.env`) e `git push`, então `lock-deploy bash /root/deploy.sh front`.
+
+**Escape** (sessão única, sem outros agentes ativos, escopo claro):
+```bash
+ALLOW_SHARED_COMMIT=1 git -C /root/op7nexo-front commit -m "..."
+```
 
 ## CONTEXT7 — DOCUMENTAÇÃO ATUALIZADA
 
