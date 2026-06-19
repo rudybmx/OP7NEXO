@@ -304,7 +304,7 @@ export function SaldoFinanceiroCard({
           align="start"
           side="bottom"
           sideOffset={10}
-          className="w-[340px] p-0 border-0 bg-transparent shadow-none"
+          className="w-auto min-w-[320px] max-w-[min(92vw,560px)] p-0 border-0 bg-transparent shadow-none"
           onMouseEnter={openHover}
           onMouseLeave={closeHover}
         >
@@ -384,7 +384,7 @@ export function SaldoFinanceiroCard({
                         borderTop: '1px solid var(--ws-divider)',
                         paddingTop: 8,
                       }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
                           <div style={{
                             width: 22, height: 22, borderRadius: '50%',
                             background: stateTone.accentSoft,
@@ -395,12 +395,13 @@ export function SaldoFinanceiroCard({
                           </div>
                           <span style={{
                             fontSize: 11, color: 'var(--ws-text-1)',
+                            minWidth: 0,
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                           }}>
                             {accountLabel(conta)}
                           </span>
                         </div>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ws-text-1)', flexShrink: 0 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ws-text-1)', flexShrink: 0, marginLeft: 8 }}>
                           {formatCurrency(conta.displayBalanceAmount ?? conta.availableBalance ?? 0, conta.currency)}
                         </span>
                       </div>
