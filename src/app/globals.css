@@ -87,9 +87,13 @@
   --color-sidebar-accent-foreground: #ffffff;
   --color-sidebar-border: rgba(255, 255, 255, 0.08);
   --color-sidebar-ring: rgba(255, 255, 255, 0.2);
-  --font-sans: var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-sans-base), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-heading: var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans-base), ui-sans-serif, system-ui, sans-serif;
+  /* Tipografia — base 14px = text-sm (Tailwind). 12/14/16/18/20/24/30 já são
+     defaults do Tailwind (text-xs..text-3xl). Só adicionamos o tier micro 11px. */
+  --text-micro: 0.6875rem;        /* 11px */
+  --text-micro--line-height: 1.4;
   --radius-sm: 4px;
   --radius-md: 5px;
   --radius-lg: 6px;
@@ -483,17 +487,94 @@ button {
 
 /* ============================================
    FONT GLOBAL FIX
-   Garante Plus Jakarta Sans no body e em
-   elementos portalizados (Popover, Dialog,
-   Dropdown, Toast — position: fixed/portal)
+   Garante Inter no body e em elementos
+   portalizados (Popover, Dialog, Dropdown,
+   Toast — position: fixed/portal).
+   Base tipográfica: 14px / peso 400 (maioria
+   do conteúdo). Ver docs/specs/tipografia.
    ============================================ */
 body {
-  font-family: var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans-base), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.875rem; /* 14px — tamanho majoritário */
+  font-weight: 400;
 }
 
 [data-radix-popper-content-wrapper],
 [data-radix-portal] {
-  font-family: var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans-base), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ============================================
+   TIPOGRAFIA — classes semânticas (o padrão)
+   Inter · base 14px. Pesos: 400 corpo · 500 cabeçalho de tabela/label/botão
+   · 600 título de seção/página · 700 restrito. Ver docs/specs/tipografia.
+   Utilities do Tailwind (text-xs..text-3xl) sobrescrevem estas classes por
+   instância — útil para exceções pontuais.
+   ============================================ */
+@layer components {
+  /* Tabelas */
+  .ds-table-th {
+    font-size: 0.875rem;      /* 14px */
+    font-weight: 500;
+    line-height: 1.4;
+    text-align: left;
+    color: var(--ws-text-2);
+  }
+  .ds-table-td {
+    font-size: 0.875rem;      /* 14px */
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--ws-text-1);
+  }
+  .ds-table-num { font-variant-numeric: tabular-nums; }  /* colunas numéricas */
+
+  /* Formulários / rótulos */
+  .ds-label {
+    font-size: 0.875rem;      /* 14px */
+    font-weight: 500;
+    color: var(--ws-text-2);
+  }
+  .ds-help {
+    font-size: 0.75rem;       /* 12px */
+    font-weight: 400;
+    color: var(--ws-text-3);
+  }
+
+  /* KPI / métricas */
+  .ds-kpi-label {
+    font-size: 0.75rem;       /* 12px */
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ws-text-3);
+  }
+  .ds-kpi-value {
+    font-size: 1.25rem;       /* 20px */
+    font-weight: 500;
+    color: var(--ws-text-1);
+  }
+
+  /* Títulos */
+  .ds-page-title {
+    font-size: 1.5rem;        /* 24px */
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--ws-text-1);
+  }
+  .ds-section-title {
+    font-size: 1.125rem;      /* 18px */
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--ws-text-1);
+  }
+
+  /* Metadado ultra-denso (timestamps, utm, código) */
+  .ds-micro {
+    font-size: 0.6875rem;     /* 11px */
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--ws-text-3);
+  }
 }
 
 /* ============================================
