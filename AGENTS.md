@@ -253,17 +253,26 @@ Referência completa das 10 heurísticas: https://www.nngroup.com/articles/ten-u
 
 ## Padrão Visual de Componentes
 
+### Tipografia (padrão — refator 2026-06; ver `docs/specs/tipografia/`)
+- Fonte: **Inter** (`--font-sans-base`). Base **14px** (`text-sm`) — tamanho majoritário do conteúdo.
+- Pesos: **400** corpo/células · **500** cabeçalho de tabela, botão, nav, label, valor de KPI · **600** título de seção/página · **700** restrito (H1/ênfase forte).
+- Tier compacto **11–12px** só para metadado denso, badge, timestamp e label de KPI. Tamanhos = defaults do Tailwind (`text-xs`=12 … `text-3xl`=30); 11px = `text-micro` / `.ds-micro`.
+- Classes semânticas (globals.css): `.ds-table-th` (14/500 sentence-case) · `.ds-table-td` (14/400) · `.ds-table-num` (tabular-nums) · `.ds-label` · `.ds-help` · `.ds-kpi-label` · `.ds-kpi-value` · `.ds-page-title` · `.ds-section-title`. Tabelas inline: `wsTableHeadStyle`/`wsTableCellStyle` (`ui/ws-table.tsx`).
+- ❌ NÃO usar `style={{ fontSize }}` inline nem `text-[Npx]` arbitrário em código novo. ❌ Cabeçalho de tabela NÃO é uppercase (uppercase só em label de KPI).
+
 ### Cards KPI
 - Background: var(--card)
 - Border light: 0.5px solid rgba(15,39,68,0.10)
 - Border dark:  0.5px solid rgba(255,255,255,0.08)
 - Border-radius: 6px
 - Padding: 12px 14px
-- Label: 10px uppercase letter-spacing 0.06em color muted
-- Value: 20px font-weight 500
-- Delta: 11px — green #3b6d11 / red #a32d2d / neutral muted
+- Label: **12px / peso 500** uppercase letter-spacing 0.06em color muted (`.ds-kpi-label`)
+- Value: **20px / peso 500** (`.ds-kpi-value`)
+- Delta: 11–12px — green #3b6d11 / red #a32d2d / neutral muted
 
 ### Tabelas
+- Cabeçalho (th): **14px / peso 500 / sentence-case** (`.ds-table-th` ou `wsTableHeadStyle`). NÃO uppercase.
+- Célula (td): **14px / peso 400** (`.ds-table-td` ou `wsTableCellStyle`); colunas numéricas com `.ds-table-num` (tabular-nums).
 - Outer border light: 0.5px solid rgba(15,39,68,0.10)
 - Row border light:   0.5px solid rgba(15,39,68,0.08)
 - Header bg light:    rgba(15,39,68,0.04)
