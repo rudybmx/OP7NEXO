@@ -365,7 +365,8 @@ def _prompt_reverso(cs: dict, densidade_ajuste: str, logo_mode: str = "compor") 
 
 
 def montar_prompt_integrado(
-    spec: dict, *, tem_logo: bool = False, tem_referencia: bool = False
+    spec: dict, *, tem_logo: bool = False, tem_referencia: bool = False,
+    tem_personagem: bool = False,
 ) -> str:
     g = spec.get
     cs = g("creative_spec") or {}
@@ -391,6 +392,19 @@ def montar_prompt_integrado(
         L.append(f"Regras visuais da MARCA (sempre siga): {g('visual_rules')}.")
     if g("forbidden_rules"):
         L.append(f"NUNCA faça (proibido pela MARCA): {g('forbidden_rules')}.")
+    if tem_personagem:
+        L.append(
+            "PESSOA REAL: as fotos anexadas (primeiras imagens) representam a MESMA pessoa — "
+            "use como fonte de identidade do personagem do criativo. PRESERVE o rosto FIEL: "
+            "formato do rosto, olhos, nariz, boca, tom de pele, cabelo e idade aparente; a pessoa "
+            "deve ser CLARAMENTE RECONHECÍVEL como a das fotos. NÃO rejuvenesça, NÃO embeleze, "
+            "NÃO troque etnia, NÃO altere gênero, NÃO misture características de pessoas diferentes "
+            "e NÃO estilize o rosto. Integre de forma fotorrealista, coerente com a luz da cena. "
+            "PRIORIDADE: 1) identidade da pessoa, 2) composição, 3) estilo (se houver imagem de "
+            "referência, ela é só ESTILO — não copie pessoas dela)."
+        )
+        if g("personagem_descricao"):
+            L.append(f"Como o personagem deve aparecer na arte: {g('personagem_descricao')}.")
     replica = tem_referencia and (g("reference_usage") == "replica")
 
     # No modo réplica, a referência manda na paleta — as cores da marca NÃO repintam.
@@ -499,9 +513,12 @@ def criar_geracao_integrada(
     spec: dict,
     tem_logo: bool = False,
     tem_referencia: bool = False,
+    tem_personagem: bool = False,
 ) -> CriativoGeracao:
     size = resolve_generation_size(spec.get("creative_format"))
-    prompt = montar_prompt_integrado(spec, tem_logo=tem_logo, tem_referencia=tem_referencia)
+    prompt = montar_prompt_integrado(
+        spec, tem_logo=tem_logo, tem_referencia=tem_referencia, tem_personagem=tem_personagem
+    )
     ger = CriativoGeracao(
         workspace_id=workspace_id,
         user_id=user_id,
@@ -510,7 +527,8 @@ def criar_geracao_integrada(
         generation_size=size,
         model=_image_model(),
         prompt_final=prompt,
-        params_json={**spec, "modo": "integrado", "tem_logo": tem_logo, "tem_referencia": tem_referencia},
+        params_json={**spec, "modo": "integrado", "tem_logo": tem_logo,
+                     "tem_referencia": tem_referencia, "tem_personagem": tem_personagem},
         status="pending",
     )
     db.add(ger)
@@ -525,14 +543,19 @@ def executar_geracao_integrada(
     *,
     logo_bytes: bytes | None = None,
     referencia_bytes: bytes | None = None,
+    personagem_bytes: list[bytes] | None = None,
 ) -> CriativoGeracao:
-    """Gera a arte integrada (images.edit se houver logo/ref; senão generate)."""
+    """Gera a arte integrada (images.edit se houver personagem/logo/ref; senão generate)."""
     spec = ger.params_json or {}
     quality = spec.get("quality", "medium")
     logo_mode = spec.get("logo_mode", "compor")
     try:
         client = _image_client()
         imagens: list[tuple[str, bytes, str]] = []
+        # Personagem PRIMEIRO (fonte de identidade); gpt-image-2 já processa toda
+        # imagem de entrada em alta fidelidade (não há param input_fidelity).
+        for i, pb in enumerate(personagem_bytes or [], 1):
+            imagens.append((f"personagem_{i}.png", pb, "image/png"))
         # No modo "compor" a logo NÃO vai ao modelo (pra ele não desenhar nada);
         # é composta depois. No "integrar" a logo vai e o modelo a desenha.
         if logo_bytes and logo_mode == "integrar":

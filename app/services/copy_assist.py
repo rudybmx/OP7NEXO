@@ -69,6 +69,7 @@ _CAMPO = {
     "bullet": "Crie um bullet de BENEFÍCIO (não característica), curto e direto, até ~5 palavras.",
     "selo": "Crie um selo curto de credibilidade ou urgência (ex.: 'Mais de 10 anos', 'Últimas vagas').",
     "copy_extra": "Crie uma copy de apoio curta e persuasiva (1 frase) usando AIDA ou PAS (problema, agitação, solução).",
+    "personagem": "Reescreva como DESCRIÇÃO VISUAL de como a PESSOA deve aparecer no criativo: pose, ação, enquadramento, ambiente/cenário, iluminação, vestuário e expressão. Mantenha fidelidade ao rosto — NÃO invente identidade nem descreva feições novas. 1 parágrafo curto e concreto. NÃO é copy de anúncio.",
 }
 
 
@@ -94,11 +95,20 @@ def melhorar_copy(
     regra = _CAMPO.get(campo, "Melhore o texto a seguir mantendo a intenção.")
     obj = _direcao_objetivo(objective)
 
-    sistema = (
-        "Você é um copywriter de performance para anúncios (Meta Ads). "
-        + _GATILHOS
-        + " Responda APENAS com o texto final — sem aspas, sem rótulo, sem explicação."
-    )
+    if campo == "personagem":
+        sistema = (
+            "Você é diretor de arte. Reescreve a descrição de como uma PESSOA real deve "
+            "aparecer numa arte publicitária, enriquecendo cena, pose, ação, enquadramento, "
+            "ambiente, iluminação, vestuário e expressão — SEM inventar nem alterar a "
+            "identidade/feições do rosto (a pessoa vem de fotos). Responda APENAS com o texto "
+            "final, 1 parágrafo, em português, sem aspas, sem rótulo."
+        )
+    else:
+        sistema = (
+            "Você é um copywriter de performance para anúncios (Meta Ads). "
+            + _GATILHOS
+            + " Responda APENAS com o texto final — sem aspas, sem rótulo, sem explicação."
+        )
     partes = [regra]
     if obj:
         partes.append(obj)

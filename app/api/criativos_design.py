@@ -33,6 +33,10 @@ router = APIRouter(prefix="/design", tags=["design"])
 
 _QUALITIES = {"low", "medium", "high", "auto"}
 
+# Personagem (fotos de pessoa): limites de payload (5 fotos de iPhone seriam ~50MB).
+MAX_PERSONAGEM_IMGS = 5
+MAX_PERSONAGEM_TOTAL_B64 = 25 * 1024 * 1024  # ~25MB de base64 somados
+
 
 def custo_tokens(spec: dict) -> int:
     """Custo em tokens de uma geração: Modelo Reverso=3, alta=2, demais=1."""
@@ -320,6 +324,9 @@ class GerarIn(BaseModel):
     copy_extra: Optional[str] = Field(default=None, max_length=2000)
     logo_base64: Optional[str] = None
     referencia_base64: Optional[str] = None
+    # Personagem: fotos da MESMA pessoa (rosto fiel) + descrição da cena.
+    personagem_descricao: Optional[str] = Field(default=None, max_length=1500)
+    personagem_base64: Optional[list[str]] = None
 
 
 @router.post("/gerar")
@@ -340,7 +347,7 @@ def gerar(
     logo_bytes = _decode_img(payload.logo_base64)
     ref_bytes = _decode_img(payload.referencia_base64)
 
-    spec = payload.model_dump(exclude={"workspace_id", "logo_base64", "referencia_base64"})
+    spec = payload.model_dump(exclude={"workspace_id", "logo_base64", "referencia_base64", "personagem_base64"})
     ws_id = payload.workspace_id
     user_id = usuario.id
 
@@ -350,6 +357,22 @@ def gerar(
     brand_kit.aplicar_no_spec(spec, bk)
     if logo_bytes is None and bk:
         logo_bytes = brand_kit.logo_bytes(db, ws_id)
+
+    # Personagem: fotos da MESMA pessoa → vão ao images.edit (gpt-image-2 já
+    # processa em alta fidelidade). Valida payload ANTES de decodificar.
+    personagem_bytes: list[bytes] = []
+    if payload.personagem_base64:
+        if len(payload.personagem_base64) > MAX_PERSONAGEM_IMGS:
+            raise HTTPException(413, f"Máximo de {MAX_PERSONAGEM_IMGS} fotos de personagem.")
+        if sum(len(b or "") for b in payload.personagem_base64) > MAX_PERSONAGEM_TOTAL_B64:
+            raise HTTPException(413, "Fotos de personagem muito grandes — reduza o tamanho ou a quantidade.")
+        for b in payload.personagem_base64[:MAX_PERSONAGEM_IMGS]:
+            img = _decode_img(b)
+            if img:
+                personagem_bytes.append(img)
+    tem_personagem = bool(personagem_bytes)
+    if tem_personagem:
+        spec["quality"] = "high"  # rosto fiel rende muito melhor em alta qualidade
 
     tem_logo = bool(logo_bytes)
     tem_ref = bool(ref_bytes)
@@ -378,11 +401,13 @@ def gerar(
                 spec=spec,
                 tem_logo=tem_logo,
                 tem_referencia=tem_ref,
+                tem_personagem=tem_personagem,
             )
             yield _sse("generation.created", {"generation_id": str(ger.id), "status": "pending"})
 
             image_gen.executar_geracao_integrada(
-                gdb, ger, logo_bytes=logo_bytes, referencia_bytes=ref_bytes
+                gdb, ger, logo_bytes=logo_bytes, referencia_bytes=ref_bytes,
+                personagem_bytes=personagem_bytes,
             )
 
             if ger.status == "done":
