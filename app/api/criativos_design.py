@@ -6,6 +6,7 @@ final (template+logo+textos) e demais rotas vêm nas fatias seguintes.
 """
 import base64
 import json
+import threading
 import uuid
 from typing import Optional
 
@@ -403,22 +404,43 @@ def gerar(
                 tem_referencia=tem_ref,
                 tem_personagem=tem_personagem,
             )
-            yield _sse("generation.created", {"generation_id": str(ger.id), "status": "pending"})
+            gid = ger.id
+            yield _sse("generation.created", {"generation_id": str(gid), "status": "pending"})
 
-            image_gen.executar_geracao_integrada(
-                gdb, ger, logo_bytes=logo_bytes, referencia_bytes=ref_bytes,
-                personagem_bytes=personagem_bytes,
-            )
+            # A geração (OpenAI) leva 60-180s na Alta — roda em thread (sessão DB
+            # própria; SQLAlchemy não é thread-safe) enquanto o SSE emite heartbeat
+            # a cada ~12s. Sem isso a conexão fica ociosa e o edge (Cloudflare/QUIC)
+            # a derruba (ERR_QUIC_PROTOCOL_ERROR) mesmo o servidor concluindo.
+            done_ev = threading.Event()
 
-            if ger.status == "done":
+            def _run() -> None:
+                try:
+                    with SessionLocal() as wdb:
+                        g = wdb.get(CriativoGeracao, gid)
+                        image_gen.executar_geracao_integrada(
+                            wdb, g, logo_bytes=logo_bytes, referencia_bytes=ref_bytes,
+                            personagem_bytes=personagem_bytes,
+                        )
+                finally:
+                    done_ev.set()
+
+            threading.Thread(target=_run, daemon=True).start()
+            while not done_ev.wait(timeout=12):
+                yield ": keep-alive\n\n"
+
+            # A thread commitou noutra sessão → expira o cache pra não ler "pending".
+            gdb.expire_all()
+            ger = gdb.get(CriativoGeracao, gid)
+
+            if ger and ger.status == "done":
                 # Débito só no sucesso (geração que falha não cobra).
                 estudio_wallet.debitar(
-                    gdb, ws_id, custo, "Geração de criativo", referencia=str(ger.id), origem="consumo"
+                    gdb, ws_id, custo, "Geração de criativo", referencia=str(gid), origem="consumo"
                 )
                 yield _sse(
                     "generation.completed",
                     {
-                        "generation_id": str(ger.id),
+                        "generation_id": str(gid),
                         "base_image_url": ger.imagem_base_url,
                         "usage": ger.usage,
                         "custo_tokens": custo,
@@ -429,13 +451,17 @@ def gerar(
                 yield _sse(
                     "generation.failed",
                     {
-                        "generation_id": str(ger.id),
-                        "error_code": ger.error_code,
-                        "error_message": ger.error_message,
+                        "generation_id": str(gid),
+                        "error_code": (ger.error_code if ger else "erro_geracao"),
+                        "error_message": (ger.error_message if ger else "Falha na geração."),
                     },
                 )
 
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 class AnalisarModeloIn(BaseModel):
