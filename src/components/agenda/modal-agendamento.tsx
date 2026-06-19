@@ -243,7 +243,7 @@ export function ModalAgendamento({
           display: 'flex',
           flexDirection: 'column',
           boxShadow: 'var(--ws-glass-shadow)',
-          fontFamily: 'Plus Jakarta Sans, sans-serif'
+          fontFamily: 'var(--font-sans-base), sans-serif'
         }}
         className="text-white"
       >

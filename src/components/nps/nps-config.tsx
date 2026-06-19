@@ -77,7 +77,7 @@ function TextArea({ value, onChange, placeholder, rows = 4 }: { value: string; o
         color: 'var(--ws-text-1)',
         resize: 'vertical',
         outline: 'none',
-        fontFamily: 'Plus Jakarta Sans, sans-serif',
+        fontFamily: 'var(--font-sans-base), sans-serif',
         lineHeight: 1.6,
       }}
       onFocus={e => (e.target.style.borderColor = 'var(--ws-blue)')}
@@ -412,7 +412,7 @@ export function NpsConfig({ configs, onAtualizar }: NpsConfigProps) {
                   fontSize: 13,
                   lineHeight: 1.6,
                   resize: 'vertical',
-                  fontFamily: 'Plus Jakarta Sans, sans-serif',
+                  fontFamily: 'var(--font-sans-base), sans-serif',
                   outline: 'none',
                 }}
               />

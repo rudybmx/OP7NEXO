@@ -193,7 +193,7 @@ export function RecorrenciaPainel({ isOpen, onClose, configInit, onSave }: Recor
                     color: 'var(--ws-text-1)',
                     fontSize: 13,
                     outline: 'none',
-                    fontFamily: 'Plus Jakarta Sans, sans-serif',
+                    fontFamily: 'var(--font-sans-base), sans-serif',
                   }}
                 />
               </div>
@@ -252,7 +252,7 @@ export function RecorrenciaPainel({ isOpen, onClose, configInit, onSave }: Recor
                     color: 'var(--ws-text-1)',
                     fontSize: 13,
                     outline: 'none',
-                    fontFamily: 'Plus Jakarta Sans, sans-serif',
+                    fontFamily: 'var(--font-sans-base), sans-serif',
                   }}>
                     <SelectValue />
                   </SelectTrigger>
@@ -282,7 +282,7 @@ export function RecorrenciaPainel({ isOpen, onClose, configInit, onSave }: Recor
                         color: 'var(--ws-text-1)',
                         fontSize: 13,
                         outline: 'none',
-                        fontFamily: 'Plus Jakarta Sans, sans-serif',
+                        fontFamily: 'var(--font-sans-base), sans-serif',
                         paddingRight: '40px'
                       }}
                     />
@@ -327,7 +327,7 @@ export function RecorrenciaPainel({ isOpen, onClose, configInit, onSave }: Recor
                     color: 'var(--ws-text-1)',
                     fontSize: 13,
                     outline: 'none',
-                    fontFamily: 'Plus Jakarta Sans, sans-serif',
+                    fontFamily: 'var(--font-sans-base), sans-serif',
                   }}
                 />
               </div>
@@ -368,7 +368,7 @@ export function RecorrenciaPainel({ isOpen, onClose, configInit, onSave }: Recor
                     color: 'var(--ws-text-1)',
                     fontSize: 13,
                     outline: 'none',
-                    fontFamily: 'Plus Jakarta Sans, sans-serif',
+                    fontFamily: 'var(--font-sans-base), sans-serif',
                   }}>
                     <SelectValue />
                   </SelectTrigger>
@@ -395,7 +395,7 @@ export function RecorrenciaPainel({ isOpen, onClose, configInit, onSave }: Recor
                     color: 'var(--ws-text-1)',
                     fontSize: 13,
                     outline: 'none',
-                    fontFamily: 'Plus Jakarta Sans, sans-serif',
+                    fontFamily: 'var(--font-sans-base), sans-serif',
                   }}
                 />
               </div>
@@ -416,7 +416,7 @@ export function RecorrenciaPainel({ isOpen, onClose, configInit, onSave }: Recor
                     color: 'var(--ws-text-1)',
                     fontSize: 13,
                     outline: 'none',
-                    fontFamily: 'Plus Jakarta Sans, sans-serif',
+                    fontFamily: 'var(--font-sans-base), sans-serif',
                   }}
                 />
               </div>
@@ -435,7 +435,7 @@ export function RecorrenciaPainel({ isOpen, onClose, configInit, onSave }: Recor
                     color: 'var(--ws-text-1)',
                     fontSize: 13,
                     outline: 'none',
-                    fontFamily: 'Plus Jakarta Sans, sans-serif',
+                    fontFamily: 'var(--font-sans-base), sans-serif',
                   }}>
                     <SelectValue />
                   </SelectTrigger>
@@ -516,7 +516,7 @@ export function RecorrenciaPainel({ isOpen, onClose, configInit, onSave }: Recor
                       fontSize: 13,
                       minHeight: '100px',
                       outline: 'none',
-                      fontFamily: 'Plus Jakarta Sans, sans-serif',
+                      fontFamily: 'var(--font-sans-base), sans-serif',
                     }}
                   />
 

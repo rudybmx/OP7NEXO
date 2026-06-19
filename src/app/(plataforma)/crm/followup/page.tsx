@@ -124,7 +124,7 @@ export default function FollowupPage() {
             fontWeight: 600,
             color: 'var(--ws-text-1)',
             letterSpacing: '-0.3px',
-            fontFamily: 'Plus Jakarta Sans'
+            fontFamily: 'var(--font-sans-base)'
           }}>
             Follow-up / Resgate
           </h1>

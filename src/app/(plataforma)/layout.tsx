@@ -25,7 +25,7 @@ export default function LayoutPlataforma({
           height: '100dvh',
           minHeight: 0,
           overflow: 'hidden',
-          fontFamily: 'var(--font-plus-jakarta-sans)',
+          fontFamily: 'var(--font-sans-base)',
           background: 'var(--bg)',
         }}
       >

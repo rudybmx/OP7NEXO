@@ -39,7 +39,7 @@ const CustomYAxisTick = ({ x, y, payload }: any) => {
   const config = plataformaConfig[payload.value.toLowerCase()] || { label: payload.value, emoji: '•', cor: '#8892b0' }
   return (
     <g transform={`translate(${x},${y})`}>
-      <text x={-8} y={4} textAnchor="end" fontSize={11} fill="var(--ws-text-2)" fontFamily="Plus Jakarta Sans">
+      <text x={-8} y={4} textAnchor="end" fontSize={11} fill="var(--ws-text-2)" fontFamily="inherit">
         {config.emoji} {config.label}
       </text>
     </g>
