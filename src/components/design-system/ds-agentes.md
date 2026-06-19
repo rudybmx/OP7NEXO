@@ -1,7 +1,7 @@
 # Op7 Nexo — Guia para Agentes de IA
 
 ## Stack
-Next.js 16 App Router · TypeScript · Tailwind CSS v4 · shadcn/ui · Recharts · lucide-react
+Next.js 16 App Router · TypeScript · Tailwind CSS v4 · **Inter** (tipografia) · shadcn/ui · Recharts · lucide-react
 
 ## Como criar um novo componente
 
@@ -42,7 +42,8 @@ Nunca usar hex hardcoded. Sempre usar os tokens:
 - Primário: `var(--ws-text-1)` = #0E142A [light] / #ffffff [dark]
 - Secundário: `var(--ws-text-2)` = #4a5580 [light] / rgba(255,255,255,0.55) [dark]
 - Muted: `var(--ws-text-3)` = #8892b0 [light] / rgba(255,255,255,0.30) [dark]
-- Labels uppercase: font-size 9-10px, letter-spacing 0.06-0.10em, color var(--ws-text-3)
+- Tipografia: **Inter**, base **14px** (a maioria). Pesos: 400 corpo · 500 cabeçalho de tabela/botão/label · 600 título · 700 restrito.
+- Labels de KPI (uppercase): 12px/500, letter-spacing 0.06em, color var(--ws-text-3). Cabeçalho de tabela NÃO é uppercase. Ver `docs/specs/tipografia/`.
 
 ### 4. Tabelas
 ```
@@ -52,6 +53,7 @@ Divisor: 1px solid var(--ws-divider)
 Hover row: rgba(62,91,255,0.03)
 Pausado/inativo: opacity 0.65
 ```
+Tipografia: cabeçalho **14px/500 sentence-case** (`.ds-table-th`); célula **14px/400** (`.ds-table-td`); números `tabular-nums` (`.ds-table-num`).
 
 ### 5. Gráficos (Recharts)
 ```tsx
@@ -70,7 +72,7 @@ const tooltipStyle = {
 
 ### 6. Badges
 - Sempre com border + background soft (nunca background sólido)
-- font-size: 10px, font-weight: 600, border-radius: 9999px
+- font-size: 12px, font-weight: 500, border-radius: 9999px
 - padding: 2px 9px
 - Ver todas as variações em ds-badges.tsx
 
@@ -97,7 +99,7 @@ transform: translateY(-1px);
 ### 10. Regras de NÃO fazer
 - ❌ Nunca usar position:fixed (quebra em iframes)
 - ❌ Nunca usar cores hardcoded — sempre tokens
-- ❌ Nunca usar font-weight 600+ (exceto botões e valores numéricos grandes)
+- ❌ Evitar font-weight 700 (restrito a H1/ênfase forte). Hierarquia: 400 corpo · 500 cabeçalho/botão/label · 600 título de seção
 - ❌ Nunca usar sombra com cor sólida — sempre rgba
 - ❌ Nunca criar header separado — ele não existe nesta versão
 - ❌ Nunca usar backdrop-filter sem fallback background (quebra no Safari)
