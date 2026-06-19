@@ -1,5 +1,21 @@
 import React from 'react'
 
+/** Estilos de tabela inline — espelham `.ds-table-th` / `.ds-table-td` (globals.css).
+ * Use em tabelas montadas com `style={{}}` para padronizar a tipografia (14px). */
+export const wsTableHeadStyle: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 500,
+  lineHeight: 1.4,
+  textAlign: 'left',
+  color: 'var(--ws-text-2)',
+}
+export const wsTableCellStyle: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 400,
+  lineHeight: 1.45,
+  color: 'var(--ws-text-1)',
+}
+
 interface WSTableShellProps {
   children: React.ReactNode
   style?: React.CSSProperties
