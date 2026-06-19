@@ -271,9 +271,11 @@ def gerar_base(
 _BASE_TXT = (
     "Texto integrado à arte de forma elegante (não use texto solto/sobreposto sem "
     "composição). Hierarquia clara: headline forte, subtítulo legível, CTA em botão "
-    "evidente. Alto contraste e área segura nas bordas para Meta Ads. Logo fiel, sem "
-    "distorcer. Ortografia em português do Brasil impecável, SEM travessão (—). "
-    "Visual de agência, premium."
+    "evidente. Alto contraste. RESPIRO/margem de segurança de ~10% em TODAS as bordas: "
+    "headline, subtítulo, CTA e logo DENTRO da zona central segura — NADA de conteúdo "
+    "essencial colado nas bordas (a arte é cortada para o formato final do canal). "
+    "Composição equilibrada e arejada. Logo fiel, sem distorcer. Ortografia em português "
+    "do Brasil impecável, SEM travessão (—). Visual de agência, premium."
 )
 _FORBIDDEN_TXT = (
     "Evite: antes/depois, promessa de resultado, instrumentos clínicos invasivos, "
@@ -583,6 +585,15 @@ def executar_geracao_integrada(
         request_id = getattr(raw, "request_id", None)
         resp = raw.parse()
         content = base64.b64decode(resp.data[0].b64_json)
+
+        # Reenquadra pro tamanho EXATO do canal antes de compor a logo (gpt-image-2 só
+        # tem 1024²/1024×1536/1536×1024; 4:5 e 9:16 caíam em 2:3). object-cover.
+        from app.services import criativo_render
+
+        try:
+            content = criativo_render.ajustar_para_canvas(content, ger.creative_format)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[image_gen] ajuste de canvas falhou geracao=%s: %s", ger.id, exc)
 
         # Modo "compor": compõe a logo real na posição (do JSON no reverso; default nos demais)
         if logo_bytes and logo_mode == "compor":
