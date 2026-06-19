@@ -179,7 +179,7 @@ lock-deploy docker compose -f /root/op7nexo-front/docker-compose.yml up -d --bui
 
 > Contexto: o working tree é COMPARTILHADO por vários agentes e a branch em checkout **muda sozinha**. Já causou downgrade de produção (deploy de uma branch atrasada → features sumiram). Estas regras impedem isso.
 
-- A branch de produção de cada projeto é **declarada em `/root/deploy.env`** (máquina-legível, fonte de verdade). **NUNCA assuma `main`.** Hoje: front=`feat/estudio-criativos-front`; api/worker=`feat/meta-sync-inteligente`.
+- A branch de produção de cada projeto é **declarada em `/root/deploy.env`** (máquina-legível, fonte de verdade). **NUNCA assuma `main`.** Branch de produção = **`production`** (front e api). Trabalho de feature fica em `agent/<id>`/feature branches; **para liberar em produção: `git checkout production && git merge --ff-only <sua-branch>` (ou merge revisado) + `git push`**, depois deploy.
 - O `deploy.sh` builda **SEMPRE de `origin/<branch-de-prod>`** num git worktree isolado em `/tmp` — ignora o checkout local (anti-downgrade). Consequências práticas:
   - **Para sua mudança ir pro ar, você TEM que `git push` na branch de produção ANTES do deploy.** Trabalho local não-pushado **não sobe**.
   - Emergência (subir um ref específico): `DEPLOY_REF=<sha|branch> lock-deploy bash /root/deploy.sh front` (escape consciente).
