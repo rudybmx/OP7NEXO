@@ -101,7 +101,7 @@ export function DSShell() {
       zIndex: 50,
       display: 'flex',
       background: 'var(--ws-page-bg)',
-      fontFamily: 'var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif',
+      fontFamily: 'var(--font-sans-base), ui-sans-serif, system-ui, sans-serif',
       overflow: 'hidden',
     }}>
       {/* Sidebar DS */}

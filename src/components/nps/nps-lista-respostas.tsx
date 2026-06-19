@@ -142,7 +142,7 @@ function ExpandedRow({ resposta, onRegistrarAcao }: { resposta: NpsResposta; onR
               color: 'var(--ws-text-1)',
               fontSize: 13,
               resize: 'vertical',
-              fontFamily: 'Plus Jakarta Sans, sans-serif',
+              fontFamily: 'var(--font-sans-base), sans-serif',
               outline: 'none',
             }}
           />
@@ -194,7 +194,7 @@ function ExpandedRow({ resposta, onRegistrarAcao }: { resposta: NpsResposta; onR
               color: 'var(--ws-text-1)',
               fontSize: 13,
               resize: 'vertical',
-              fontFamily: 'Plus Jakarta Sans, sans-serif',
+              fontFamily: 'var(--font-sans-base), sans-serif',
               outline: 'none',
             }}
           />

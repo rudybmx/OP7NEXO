@@ -326,7 +326,7 @@ function PanelEdicao({
       {/* Slide Panel (Left to Right) */}
       <div 
         className={`relative w-full max-w-[520px] h-[100dvh] flex flex-col bg-[#0E142A]/90 backdrop-blur-2xl border-r border-white/10 shadow-2xl transition-transform duration-500 ease-out ${aberto ? 'translate-x-0' : '-translate-x-full'}`}
-        style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}
+        style={{ fontFamily: 'var(--font-sans-base), sans-serif' }}
       >
         {/* Linha de brilho no topo */}
         <div style={{ position:'absolute',top:0,left:0,right:0,height:1, background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent)', pointerEvents:'none' }} />

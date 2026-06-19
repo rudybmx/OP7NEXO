@@ -650,7 +650,7 @@ export function PaginaContatos() {
   }
 
   return (
-    <div style={{ padding: '24px 32px', fontFamily: 'var(--font-plus-jakarta-sans)' }}>
+    <div style={{ padding: '24px 32px', fontFamily: 'var(--font-sans-base)' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, gap: 16, flexWrap: 'wrap' }}>
