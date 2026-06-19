@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import {
   Sparkles, Image as ImageIcon, Type, Layout, History, Send, AlertCircle,
-  Download, Upload, Wand2, Trash2, Palette, Save, FolderOpen, X,
+  Download, Upload, Wand2, Trash2, Palette, Save, FolderOpen, X, Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getToken } from '@/lib/api-client'
@@ -61,6 +61,27 @@ function readFileAsDataUrl(file: File, onload: (s: string) => void) {
   const r = new FileReader()
   r.onload = () => { if (typeof r.result === 'string') onload(r.result) }
   r.readAsDataURL(file)
+}
+
+// Redimensiona a imagem no cliente antes do base64 (evita payload gigante:
+// 5 fotos de iPhone seriam ~50MB). Lado maior limitado a `max` px, JPEG.
+async function fileToResizedDataUrl(file: File, max = 1280, quality = 0.85): Promise<string> {
+  const dataUrl: string = await new Promise((res, rej) => {
+    const r = new FileReader()
+    r.onload = () => res(String(r.result)); r.onerror = rej
+    r.readAsDataURL(file)
+  })
+  const img = await new Promise<HTMLImageElement>((res, rej) => {
+    const im = new window.Image(); im.onload = () => res(im); im.onerror = rej; im.src = dataUrl
+  })
+  const escala = Math.min(1, max / Math.max(img.width, img.height))
+  const w = Math.round(img.width * escala), h = Math.round(img.height * escala)
+  const canvas = document.createElement('canvas')
+  canvas.width = w; canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return dataUrl
+  ctx.drawImage(img, 0, 0, w, h)
+  return canvas.toDataURL('image/jpeg', quality)
 }
 
 // Extrai as 3 cores por ÁREA de pixels (regra 60/30/10) de um modelo/referência.
@@ -222,6 +243,10 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
 
   const [formatsSel, setFormatsSel] = useState<string[]>(['45'])
   const [quality, setQuality] = useState('medium')
+  // Personagem: fotos da MESMA pessoa (rosto fiel) + descrição da cena. Força Alta.
+  const [usarPersonagem, setUsarPersonagem] = useState(false)
+  const [personagemImgs, setPersonagemImgs] = useState<string[]>([])
+  const [personagemDesc, setPersonagemDesc] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const [isGenerating, setIsGenerating] = useState(false)
@@ -544,7 +569,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
     } catch { /* silencioso */ }
   }
   useEffect(() => { carregarSaldo() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [wsId])
-  const custoUm = reverso ? 3 : (quality === 'high' ? 2 : 1)   // reverso 3 · alta 2 · medium 1
+  const custoUm = reverso ? 3 : ((quality === 'high' || usarPersonagem) ? 2 : 1)   // reverso 3 · alta/personagem 2 · medium 1
   const custoTotal = custoUm * (formatsSel.length || 1)
   const semSaldo = saldoTokens != null && saldoTokens < custoTotal
 
@@ -554,6 +579,24 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
       if (prev.length >= 2) return [prev[prev.length - 1], id]
       return [...prev, id]
     })
+  }
+
+  const handlePersonagemUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    const livres = 5 - personagemImgs.length
+    if (livres <= 0) { toast.error('Máximo de 5 fotos de personagem.'); return }
+    if (files.length > livres) toast.error('Máximo de 5 fotos — as excedentes foram ignoradas.')
+    try {
+      const novas: string[] = []
+      for (const f of files.slice(0, livres)) {
+        if (!f.type.startsWith('image/')) continue
+        if (f.size > 15 * 1024 * 1024) { toast.error(`"${f.name}" é muito grande (máx 15MB).`); continue }
+        novas.push(await fileToResizedDataUrl(f))
+      }
+      if (novas.length) setPersonagemImgs(prev => [...prev, ...novas].slice(0, 5))
+    } catch { toast.error('Não consegui processar a(s) imagem(ns).') }
   }
 
   const gerarUm = async (creative_format: string, setAsResult: boolean): Promise<boolean> => {
@@ -570,7 +613,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
       footer: cidade.trim() || undefined,
       creative_format,
       densidade,
-      quality,
+      quality: usarPersonagem ? 'high' : quality,   // personagem força Alta (rosto fiel)
       reference_usage: referenceUsage,
       cor_60: cor60.trim() || undefined,
       cor_30: cor30.trim() || undefined,
@@ -578,6 +621,8 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
       logo_mode: logoMode,
       logo_base64: logoUrl ?? undefined,
       referencia_base64: referenceUrl ?? undefined,
+      personagem_descricao: usarPersonagem ? (personagemDesc.trim() || undefined) : undefined,
+      personagem_base64: usarPersonagem && personagemImgs.length ? personagemImgs : undefined,
     }
     if (densidade === 'rico') {
       body.bullets = bullets.map(b => b.trim()).filter(Boolean)
@@ -638,6 +683,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
     if (!wsId) { toast.error('Selecione um workspace.'); return }
     if (reverso && !creativeSpec) { toast.error('Analise o modelo de exemplo primeiro.'); return }
     if (!reverso && !briefing.trim() && !headline.trim()) { toast.error('Diga o que anunciar (ou ao menos a headline).'); return }
+    if (usarPersonagem && personagemImgs.length === 0) { toast.error('Adicione ao menos uma foto do personagem.'); return }
     if (semSaldo) { toast.error(`Saldo insuficiente (${saldoTokens}). Este criativo custa ${custoTotal} token(s).`); return }
     setIsGenerating(true); setResultImage(null); setError(null)
     try {
@@ -801,6 +847,47 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
                       ))}
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Personagem — fotos da MESMA pessoa (rosto fiel). Off no Modelo Reverso. */}
+        {!reverso && (
+          <div className="space-y-3">
+            <label className="flex items-center justify-between gap-2 cursor-pointer">
+              <span className={labelCls}><Users size={14} className="text-[var(--ws-blue)]" /> Usar personagem <span className="text-[9px] font-medium normal-case text-[var(--ws-text-3)]">(sua foto ou de alguém)</span></span>
+              <input type="checkbox" checked={usarPersonagem}
+                onChange={e => { setUsarPersonagem(e.target.checked); if (e.target.checked) setQuality('high') }}
+                className="w-4 h-4 accent-[var(--ws-blue)] cursor-pointer" />
+            </label>
+            {usarPersonagem && (
+              <div className="space-y-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] p-3">
+                <p className="text-[10px] text-[var(--ws-text-3)]">Até 5 fotos nítidas da <b>MESMA</b> pessoa (ângulos diferentes) — não misture pessoas. Usa <b>Alta qualidade</b> (2 tokens); o rosto é mantido fiel.</p>
+                <div className="grid grid-cols-5 gap-2">
+                  {personagemImgs.map((src, i) => (
+                    <div key={i} className="relative aspect-square rounded-[var(--ws-radius-lg)] overflow-hidden border border-[var(--ws-glass-border)] group">
+                      <img src={src} alt={`pessoa ${i + 1}`} className="w-full h-full object-cover" />
+                      <button onClick={() => setPersonagemImgs(prev => prev.filter((_, j) => j !== i))} title="Remover"
+                        className="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"><X size={11} /></button>
+                    </div>
+                  ))}
+                  {personagemImgs.length < 5 && (
+                    <label className="aspect-square rounded-[var(--ws-radius-lg)] border border-dashed border-[var(--ws-glass-border)] flex flex-col items-center justify-center gap-1 cursor-pointer text-[var(--ws-text-3)] hover:border-[var(--ws-blue)] hover:text-[var(--ws-blue)] transition-all">
+                      <Upload size={14} /><span className="text-[8px] font-bold uppercase tracking-wider">Foto</span>
+                      <input type="file" accept="image/*" multiple className="hidden" onChange={handlePersonagemUpload} />
+                    </label>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className={labelCls}><Sparkles size={13} className="text-[var(--ws-blue)]" /> Como o personagem deve aparecer</span>
+                    <BotaoIA loading={melhorando === 'personagem'} onClick={() => melhorarCopy('personagem', personagemDesc, setPersonagemDesc)} label="Melhorar" />
+                  </div>
+                  <textarea value={personagemDesc} onChange={e => setPersonagemDesc(e.target.value)} rows={2}
+                    placeholder="ex.: a pessoa sentada numa cadeira de praia, sorrindo, fim de tarde"
+                    className={`${inputCls} h-auto py-2 resize-none`} maxLength={1500} />
                 </div>
               </div>
             )}
@@ -1110,7 +1197,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
         </div>
 
         {/* Gerar */}
-        <button onClick={handleGenerate} disabled={isGenerating || semSaldo}
+        <button onClick={handleGenerate} disabled={isGenerating || semSaldo || (usarPersonagem && personagemImgs.length === 0)}
           className="w-full py-4 bg-[var(--ws-gold)] hover:opacity-90 disabled:opacity-50 text-white font-bold rounded-[var(--ws-radius-lg)] shadow-lg transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs">
           {isGenerating ? (
             <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Gerando...</>
