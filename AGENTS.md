@@ -191,6 +191,18 @@ lock-deploy docker compose -f /root/op7nexo-front/docker-compose.yml up -d --bui
 - **Push ao concluir cada ajuste** — nada não-commitado fica seguro no tree compartilhado (outro agente reverte/flipa).
 - **NUNCA `git push --force`** em branch de produção/compartilhada. Se o push for rejeitado, faça `git pull --rebase` e re-push (ou pare e reporte) — jamais `--force`.
 
+## ISOLAMENTO POR AGENTE (R4 — recomendado)
+
+Para não brigar pelo working tree compartilhado (que flipa de branch entre agentes) e dar rastreabilidade, cada sessão deve trabalhar num **worktree próprio**:
+
+```bash
+bash /root/agent-worktree.sh front <id-sessao>   # ex.: kanban-crm
+# -> cria /root/wt/front-<id-sessao> na branch agent/<id-sessao>,
+#    com identidade git "Rudy (agente <id-sessao>)" (log/reflog auditáveis).
+```
+- Trabalhe **dentro de `/root/wt/...`**, não em `/root/op7nexo-front` (esse fica para leitura/deploy).
+- Ao concluir: commit granular + push da `agent/<id>`; para liberar em produção, faça merge/ff na branch de produção (ver `deploy.env`) e `git push`, então `lock-deploy bash /root/deploy.sh front`.
+
 ## CONTEXT7 — DOCUMENTAÇÃO ATUALIZADA
 
 Antes de escrever código para qualquer biblioteca externa (Next.js, React, Prisma, Drizzle, Tailwind, etc.):
