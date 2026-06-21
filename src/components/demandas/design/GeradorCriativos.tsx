@@ -16,6 +16,7 @@ const FORMATS = [
   { id: '916', title: '9:16', sub: 'Stories/Reel' },
 ]
 const FORMAT_TO_CREATIVE: Record<string, string> = { '45': 'feed_4x5', '11': 'feed_1x1', '916': 'story' }
+const CREATIVE_TO_LABEL: Record<string, string> = { feed_4x5: '4:5', feed_1x1: '1:1', story: '9:16' }
 
 const OBJETIVOS = [
   { id: 'agendamento no WhatsApp', label: 'Agendar WhatsApp', hint: 'CTA conversacional e direto, leve urgência e baixa fricção (foco em chamar no WhatsApp).' },
@@ -251,6 +252,8 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
 
   const [isGenerating, setIsGenerating] = useState(false)
   const [resultImage, setResultImage] = useState<string | null>(null)
+  // Multiformato: a mesma arte em vários enquadramentos (galeria de resultados).
+  const [resultImages, setResultImages] = useState<{ url: string; fmt: string }[]>([])
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<HistItem[]>([])
 
@@ -599,7 +602,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
     } catch { toast.error('Não consegui processar a(s) imagem(ns).') }
   }
 
-  const gerarUm = async (creative_format: string, setAsResult: boolean): Promise<boolean> => {
+  const gerar = async (creative_formats: string[]): Promise<boolean> => {
     const body: Record<string, unknown> = {
       workspace_id: wsId,
       product: briefing.trim() || undefined,
@@ -611,7 +614,8 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
       subheadline: subheadline.trim() || undefined,
       cta: cta.trim() || undefined,
       footer: cidade.trim() || undefined,
-      creative_format,
+      creative_format: creative_formats[0],
+      creative_formats,   // multiformato: a mesma arte reenquadrada em cada um
       densidade,
       quality: usarPersonagem ? 'high' : quality,   // personagem força Alta (rosto fiel)
       reference_usage: referenceUsage,
@@ -660,9 +664,15 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
         if (ev === 'generation.completed' && data?.base_image_url) {
           ok = true
           if (typeof data.saldo_tokens === 'number') setSaldoTokens(data.saldo_tokens)
-          if (setAsResult) setResultImage(data.base_image_url)
+          const outs: { generation_id: string; base_image_url: string; creative_format: string }[] =
+            Array.isArray(data.outputs) && data.outputs.length
+              ? data.outputs
+              : [{ generation_id: data.generation_id, base_image_url: data.base_image_url, creative_format: creative_formats[0] }]
+          setResultImage(outs[0].base_image_url)
+          setResultImages(outs.map(o => ({ url: o.base_image_url, fmt: CREATIVE_TO_LABEL[o.creative_format] || o.creative_format })))
+          const titulo = headline.trim() || briefing.trim() || 'Criativo'
           setHistory(prev => [
-            { id: data.generation_id, url: data.base_image_url, titulo: headline.trim() || briefing.trim() || 'Criativo', at: Date.now() },
+            ...outs.map(o => ({ id: o.generation_id, url: o.base_image_url, titulo, at: Date.now() })),
             ...prev,
           ].slice(0, 12))
         } else if (ev === 'generation.failed') {
@@ -685,17 +695,12 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
     if (!reverso && !briefing.trim() && !headline.trim()) { toast.error('Diga o que anunciar (ou ao menos a headline).'); return }
     if (usarPersonagem && personagemImgs.length === 0) { toast.error('Adicione ao menos uma foto do personagem.'); return }
     if (semSaldo) { toast.error(`Saldo insuficiente (${saldoTokens}). Este criativo custa ${custoTotal} token(s).`); return }
-    setIsGenerating(true); setResultImage(null); setError(null)
+    setIsGenerating(true); setResultImage(null); setResultImages([]); setError(null)
     try {
-      const formatos = formatsSel.length ? formatsSel : ['45']
-      let primeiro = true
-      let sucesso = 0
-      for (const fmt of formatos) {
-        const ok = await gerarUm(FORMAT_TO_CREATIVE[fmt] ?? 'feed_4x5', primeiro)
-        if (ok) sucesso++
-        primeiro = false
-      }
-      if (sucesso) { limparRascunho(); toast.success(sucesso > 1 ? `${sucesso} criativos gerados!` : 'Criativo gerado!') }
+      // 1 chamada só: a MESMA arte é gerada uma vez e reenquadrada em cada formato.
+      const formatos = (formatsSel.length ? formatsSel : ['45']).map(f => FORMAT_TO_CREATIVE[f] ?? 'feed_4x5')
+      const ok = await gerar(formatos)
+      if (ok) { limparRascunho(); toast.success(formatos.length > 1 ? `${formatos.length} formatos gerados!` : 'Criativo gerado!') }
       else toast.error('Não foi possível gerar.')
     } finally {
       setIsGenerating(false)
@@ -1139,7 +1144,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
         <div className="space-y-3">
           <label className={labelCls}>
             <Layout size={14} className="text-[var(--ws-blue)]" /> Onde você vai usar?
-            <span className="text-[9px] font-medium normal-case text-[var(--ws-text-3)]">(até 2 — cada formato é uma geração)</span>
+            <span className="text-[9px] font-medium normal-case text-[var(--ws-text-3)]">(até 2 — a mesma arte em 2 formatos)</span>
           </label>
           <div className="grid grid-cols-3 gap-3">
             {FORMATS.map(f => {
@@ -1220,9 +1225,20 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
             {resultImage ? (
               <>
                 <img src={resultImage} alt="Criativo" className="max-h-full max-w-full object-contain rounded-[var(--ws-radius-lg)] shadow-inner animate-in zoom-in duration-500" />
+                {resultImages.length > 1 && (
+                  <div className="shrink-0 flex items-center justify-center gap-2 flex-wrap">
+                    {resultImages.map((r, i) => (
+                      <button key={i} onClick={() => setResultImage(r.url)} title={`Formato ${r.fmt}`}
+                        className={`relative w-12 h-12 rounded-md overflow-hidden border-2 transition-all ${resultImage === r.url ? 'border-[var(--ws-gold)]' : 'border-transparent opacity-70 hover:opacity-100'}`}>
+                        <img src={r.url} className="w-full h-full object-cover" />
+                        <span className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[8px] font-bold text-center leading-tight">{r.fmt}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <a href={resultImage} target="_blank" rel="noopener noreferrer" download
                   className="shrink-0 px-4 py-2 bg-[var(--ws-gold)] hover:opacity-90 text-white text-[10px] font-bold uppercase tracking-wider rounded-md flex items-center gap-2 shadow-sm">
-                  <Download size={12} /> Baixar criativo
+                  <Download size={12} /> Baixar {resultImages.length > 1 ? 'este formato' : 'criativo'}
                 </a>
               </>
             ) : error ? (
@@ -1251,7 +1267,7 @@ export function GeradorCriativos({ seedModelo = null }: { seedModelo?: SeedModel
           </div>
           <div className="flex-1 flex flex-col gap-2 p-3 overflow-y-auto scrollbar-hide">
             {history.length > 0 ? history.map(item => (
-              <button key={item.id} onClick={() => { setResultImage(item.url); setError(null) }}
+              <button key={item.id} onClick={() => { setResultImage(item.url); setResultImages([]); setError(null) }}
                 className="flex items-center gap-3 p-2 rounded-lg bg-white/40 border border-white/60 hover:bg-white/60 transition-all text-left">
                 <div className="w-10 h-10 rounded bg-gray-200 overflow-hidden shrink-0"><img src={item.url} className="w-full h-full object-cover" /></div>
                 <div className="flex-1 min-w-0">
