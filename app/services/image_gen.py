@@ -54,6 +54,17 @@ def resolve_generation_size(creative_format: str | None) -> str:
     return _FORMAT_TO_SIZE.get(creative_format.strip().lower(), _SIZE_QUADRADO)
 
 
+# Multiformato: para gerar UMA base e recortá-la (object-cover) em vários formatos,
+# geramos no size mais "retrato" entre os escolhidos — dá pra cortar pros mais
+# largos/baixos sem inventar pixel, mas não o contrário (rank: retrato>quadrado>paisagem).
+_SIZE_RANK = {_SIZE_RETRATO: 3, _SIZE_QUADRADO: 2, _SIZE_PAISAGEM: 1}
+
+
+def _master_generation_size(creative_formats: list[str]) -> str:
+    sizes = [resolve_generation_size(f) for f in creative_formats] or [_SIZE_QUADRADO]
+    return max(sizes, key=lambda s: _SIZE_RANK.get(s, 0))
+
+
 # Guardrail anti-texto/logo (best-effort): pedido explícito de base limpa.
 _GUARDRAIL = (
     "Generate ONLY the visual background/scene for an advertisement. "
@@ -368,7 +379,7 @@ def _prompt_reverso(cs: dict, densidade_ajuste: str, logo_mode: str = "compor") 
 
 def montar_prompt_integrado(
     spec: dict, *, tem_logo: bool = False, tem_referencia: bool = False,
-    tem_personagem: bool = False,
+    tem_personagem: bool = False, multiformato: bool = False,
 ) -> str:
     g = spec.get
     cs = g("creative_spec") or {}
@@ -500,7 +511,17 @@ def montar_prompt_integrado(
             "premium, com bastante espaço negativo."
         )
 
-    L.append(f"Formato: {g('creative_format') or 'feed_1x1'}.")
+    if multiformato:
+        L.append(
+            "IMPORTANTE — esta MESMA arte será RECORTADA em vários formatos (vertical, "
+            "quadrado e/ou horizontal). Componha numa tela VERTICAL e mantenha TODO o "
+            "conteúdo essencial (textos, rosto/pessoa, logo, produto, CTA) dentro da "
+            "ZONA CENTRAL SEGURA: ~65% central, deixando ~17% de margem livre em CADA "
+            "borda (topo, base e laterais). Nada essencial encostado nas bordas — elas "
+            "podem ser cortadas. Apenas fundo/cenário pode sangrar até as bordas."
+        )
+    else:
+        L.append(f"Formato: {g('creative_format') or 'feed_1x1'}.")
     if g("briefing"):
         L.append(f"Observações extras: {g('briefing')}.")
     L.append(_BASE_TXT + " " + _FORBIDDEN_TXT)
@@ -516,10 +537,13 @@ def criar_geracao_integrada(
     tem_logo: bool = False,
     tem_referencia: bool = False,
     tem_personagem: bool = False,
+    multiformato: bool = False,
+    generation_size_override: str | None = None,
 ) -> CriativoGeracao:
-    size = resolve_generation_size(spec.get("creative_format"))
+    size = generation_size_override or resolve_generation_size(spec.get("creative_format"))
     prompt = montar_prompt_integrado(
-        spec, tem_logo=tem_logo, tem_referencia=tem_referencia, tem_personagem=tem_personagem
+        spec, tem_logo=tem_logo, tem_referencia=tem_referencia,
+        tem_personagem=tem_personagem, multiformato=multiformato,
     )
     ger = CriativoGeracao(
         workspace_id=workspace_id,
@@ -530,12 +554,99 @@ def criar_geracao_integrada(
         model=_image_model(),
         prompt_final=prompt,
         params_json={**spec, "modo": "integrado", "tem_logo": tem_logo,
-                     "tem_referencia": tem_referencia, "tem_personagem": tem_personagem},
+                     "tem_referencia": tem_referencia, "tem_personagem": tem_personagem,
+                     "multiformato": multiformato},
         status="pending",
     )
     db.add(ger)
     db.commit()
     db.refresh(ger)
+    return ger
+
+
+def _montar_imagens_edit(
+    *, logo_bytes: bytes | None, logo_mode: str,
+    referencia_bytes: bytes | None, personagem_bytes: list[bytes] | None,
+) -> list[tuple[str, bytes, str]]:
+    """Imagens de entrada p/ images.edit, na ordem de prioridade do modelo."""
+    imagens: list[tuple[str, bytes, str]] = []
+    # Personagem PRIMEIRO (fonte de identidade); gpt-image-2 já processa toda
+    # imagem de entrada em alta fidelidade (não há param input_fidelity).
+    for i, pb in enumerate(personagem_bytes or [], 1):
+        imagens.append((f"personagem_{i}.png", pb, "image/png"))
+    # No modo "compor" a logo NÃO vai ao modelo (pra ele não desenhar nada);
+    # é composta depois. No "integrar" a logo vai e o modelo a desenha.
+    if logo_bytes and logo_mode == "integrar":
+        imagens.append(("logo.png", logo_bytes, "image/png"))
+    if referencia_bytes:
+        imagens.append(("referencia.png", referencia_bytes, "image/png"))
+    return imagens
+
+
+def _render_base(
+    prompt: str, *, generation_size: str, quality: str,
+    logo_bytes: bytes | None = None, logo_mode: str = "compor",
+    referencia_bytes: bytes | None = None, personagem_bytes: list[bytes] | None = None,
+) -> tuple[bytes, dict, str | None, str]:
+    """Chama o gpt-image-2 (edit se houver imagens de entrada; senão generate) e
+    devolve (conteúdo_png, usage, request_id, model_snapshot). SEM pós-processo."""
+    client = _image_client()
+    imagens = _montar_imagens_edit(
+        logo_bytes=logo_bytes, logo_mode=logo_mode,
+        referencia_bytes=referencia_bytes, personagem_bytes=personagem_bytes,
+    )
+    if imagens:
+        raw = client.images.with_raw_response.edit(
+            model=_image_model(), image=imagens, prompt=prompt,
+            size=generation_size, quality=quality, n=1,
+        )
+    else:
+        raw = client.images.with_raw_response.generate(
+            model=_image_model(), prompt=prompt,
+            size=generation_size, quality=quality, n=1,
+        )
+    request_id = getattr(raw, "request_id", None)
+    resp = raw.parse()
+    content = base64.b64decode(resp.data[0].b64_json)
+    usage = resp.usage.model_dump() if getattr(resp, "usage", None) else {}
+    model_snapshot = getattr(resp, "model", None) or _image_model()
+    return content, usage, request_id, model_snapshot
+
+
+def _compose_e_persistir(
+    db: Session, ger: CriativoGeracao, base_content: bytes, *,
+    logo_bytes: bytes | None = None, logo_mode: str = "compor",
+) -> CriativoGeracao:
+    """Reenquadra a base pro formato do `ger` (object-cover), compõe a logo real
+    (modo compor) e salva no storage. Não altera status (quem chama decide)."""
+    from app.services import criativo_render
+
+    content = base_content
+    # Reenquadra pro tamanho EXATO do canal (gpt-image-2 só tem 1024²/1024×1536/1536×1024).
+    try:
+        content = criativo_render.ajustar_para_canvas(content, ger.creative_format)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[image_gen] ajuste de canvas falhou geracao=%s: %s", ger.id, exc)
+
+    # Modo "compor": compõe a logo real na posição (do JSON no reverso; default nos demais)
+    if logo_bytes and logo_mode == "compor":
+        spec = ger.params_json or {}
+        cs = spec.get("creative_spec") or {}
+        logo_region = cs.get("logo") or (cs.get("regions") or {}).get("logo") or {}
+        try:
+            content = criativo_render.aplicar_logo(
+                content,
+                logo_bytes,
+                creative_format=ger.creative_format,
+                position=logo_region.get("posicao") or logo_region.get("position") or "topo-esquerda",
+                size=logo_region.get("tamanho") or logo_region.get("size") or "media",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[image_gen] composicao de logo falhou geracao=%s: %s", ger.id, exc)
+
+    object_name = f"workspaces/{ger.workspace_id}/criativos/finais/{ger.id}.png"
+    put_bytes(settings.MINIO_BUCKET_CRIATIVOS, object_name, content, "image/png")
+    ger.imagem_base_url = public_url(settings.MINIO_BUCKET_CRIATIVOS, object_name)
     return ger
 
 
@@ -547,80 +658,20 @@ def executar_geracao_integrada(
     referencia_bytes: bytes | None = None,
     personagem_bytes: list[bytes] | None = None,
 ) -> CriativoGeracao:
-    """Gera a arte integrada (images.edit se houver personagem/logo/ref; senão generate)."""
+    """Gera a arte integrada (1 formato): renderiza a base e persiste o final."""
     spec = ger.params_json or {}
     quality = spec.get("quality", "medium")
     logo_mode = spec.get("logo_mode", "compor")
     try:
-        client = _image_client()
-        imagens: list[tuple[str, bytes, str]] = []
-        # Personagem PRIMEIRO (fonte de identidade); gpt-image-2 já processa toda
-        # imagem de entrada em alta fidelidade (não há param input_fidelity).
-        for i, pb in enumerate(personagem_bytes or [], 1):
-            imagens.append((f"personagem_{i}.png", pb, "image/png"))
-        # No modo "compor" a logo NÃO vai ao modelo (pra ele não desenhar nada);
-        # é composta depois. No "integrar" a logo vai e o modelo a desenha.
-        if logo_bytes and logo_mode == "integrar":
-            imagens.append(("logo.png", logo_bytes, "image/png"))
-        if referencia_bytes:
-            imagens.append(("referencia.png", referencia_bytes, "image/png"))
-
-        if imagens:
-            raw = client.images.with_raw_response.edit(
-                model=_image_model(),
-                image=imagens,
-                prompt=ger.prompt_final,
-                size=ger.generation_size,
-                quality=quality,
-                n=1,
-            )
-        else:
-            raw = client.images.with_raw_response.generate(
-                model=_image_model(),
-                prompt=ger.prompt_final,
-                size=ger.generation_size,
-                quality=quality,
-                n=1,
-            )
-        request_id = getattr(raw, "request_id", None)
-        resp = raw.parse()
-        content = base64.b64decode(resp.data[0].b64_json)
-
-        # Reenquadra pro tamanho EXATO do canal antes de compor a logo (gpt-image-2 só
-        # tem 1024²/1024×1536/1536×1024; 4:5 e 9:16 caíam em 2:3). object-cover.
-        from app.services import criativo_render
-
-        try:
-            content = criativo_render.ajustar_para_canvas(content, ger.creative_format)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("[image_gen] ajuste de canvas falhou geracao=%s: %s", ger.id, exc)
-
-        # Modo "compor": compõe a logo real na posição (do JSON no reverso; default nos demais)
-        if logo_bytes and logo_mode == "compor":
-            cs = spec.get("creative_spec") or {}
-            logo_region = cs.get("logo") or (cs.get("regions") or {}).get("logo") or {}
-            try:
-                from app.services import criativo_render
-
-                content = criativo_render.aplicar_logo(
-                    content,
-                    logo_bytes,
-                    creative_format=ger.creative_format,
-                    position=logo_region.get("posicao") or logo_region.get("position") or "topo-esquerda",
-                    size=logo_region.get("tamanho") or logo_region.get("size") or "media",
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.warning("[image_gen] composicao de logo falhou geracao=%s: %s", ger.id, exc)
-
-        object_name = f"workspaces/{ger.workspace_id}/criativos/finais/{ger.id}.png"
-        put_bytes(settings.MINIO_BUCKET_CRIATIVOS, object_name, content, "image/png")
-        url = public_url(settings.MINIO_BUCKET_CRIATIVOS, object_name)
-
-        usage = resp.usage.model_dump() if getattr(resp, "usage", None) else {}
-        ger.imagem_base_url = url
+        content, usage, request_id, model_snapshot = _render_base(
+            ger.prompt_final, generation_size=ger.generation_size, quality=quality,
+            logo_bytes=logo_bytes, logo_mode=logo_mode,
+            referencia_bytes=referencia_bytes, personagem_bytes=personagem_bytes,
+        )
+        _compose_e_persistir(db, ger, content, logo_bytes=logo_bytes, logo_mode=logo_mode)
         ger.usage = usage
         ger.request_id = request_id
-        ger.model_snapshot = getattr(resp, "model", None) or _image_model()
+        ger.model_snapshot = model_snapshot
         ger.status = "done"
         db.commit()
         db.refresh(ger)
@@ -635,3 +686,63 @@ def executar_geracao_integrada(
         db.refresh(ger)
         log.warning("[image_gen] falha integrado geracao=%s code=%s err=%s", ger.id, code, str(exc)[:200])
     return ger
+
+
+def executar_geracao_multiformato(
+    db: Session,
+    gers: list[CriativoGeracao],
+    *,
+    logo_bytes: bytes | None = None,
+    referencia_bytes: bytes | None = None,
+    personagem_bytes: list[bytes] | None = None,
+) -> list[CriativoGeracao]:
+    """Gera UMA base (1 chamada de IA) no master size e a reenquadra em cada formato
+    dos `gers` → a MESMA arte em N proporções. usage/registro só no 1º (1 chamada)."""
+    if not gers:
+        return []
+    base = gers[0]
+    spec = base.params_json or {}
+    quality = spec.get("quality", "medium")
+    logo_mode = spec.get("logo_mode", "compor")
+    master = _master_generation_size([g.creative_format for g in gers])
+    try:
+        content, usage, request_id, model_snapshot = _render_base(
+            base.prompt_final, generation_size=master, quality=quality,
+            logo_bytes=logo_bytes, logo_mode=logo_mode,
+            referencia_bytes=referencia_bytes, personagem_bytes=personagem_bytes,
+        )
+    except Exception as exc:  # noqa: BLE001
+        code, msg = _map_error(exc)
+        for g in gers:
+            g.status = "error"
+            g.error_code = code
+            g.error_message = msg
+        db.commit()
+        log.warning("[image_gen] falha multiformato base code=%s err=%s", code, str(exc)[:200])
+        return gers
+
+    # Mesma base → reenquadra/persiste em cada formato (Pillow, sem custo de IA).
+    for i, g in enumerate(gers):
+        try:
+            _compose_e_persistir(db, g, content, logo_bytes=logo_bytes, logo_mode=logo_mode)
+            g.usage = usage if i == 0 else {}
+            g.request_id = request_id
+            g.model_snapshot = model_snapshot
+            g.status = "done"
+        except Exception as exc:  # noqa: BLE001
+            code, msg = _map_error(exc)
+            g.status = "error"
+            g.error_code = code
+            g.error_message = msg
+            log.warning("[image_gen] falha compose multiformato geracao=%s: %s", g.id, str(exc)[:200])
+    db.commit()
+    for g in gers:
+        db.refresh(g)
+    # Registra o uso da ÚNICA chamada de IA na 1ª linha concluída (não na linha 0,
+    # que pode ter falhado no compose enquanto outro formato deu certo).
+    done = next((g for g in gers if g.status == "done"), None)
+    if done is not None:
+        log.info("[image_gen] multiformato tokens=%s formatos=%s",
+                 usage.get("total_tokens"), [g.creative_format for g in gers])
+        _registrar_uso_imagem(done, usage)
+    return gers

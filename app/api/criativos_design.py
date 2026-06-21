@@ -305,6 +305,8 @@ class GerarIn(BaseModel):
     cta: Optional[str] = None
     footer: Optional[str] = None
     creative_format: Optional[str] = "feed_1x1"
+    # Multiformato: a MESMA arte reenquadrada em vários formatos (1 geração de IA).
+    creative_formats: Optional[list[str]] = None
     estilo: Optional[str] = None
     tone: Optional[str] = None
     primary_color: Optional[str] = None
@@ -377,35 +379,56 @@ def gerar(
 
     tem_logo = bool(logo_bytes)
     tem_ref = bool(ref_bytes)
-    custo = custo_tokens(spec)
+
+    # Formatos: a lista (multiformato) tem prioridade; senão o creative_format único.
+    raw_formats = payload.creative_formats or (
+        [payload.creative_format] if payload.creative_format else ["feed_1x1"]
+    )
+    formats: list[str] = []
+    for f in raw_formats:
+        f = (f or "").strip()
+        if f and f not in formats:
+            formats.append(f)
+    formats = formats[:2] or ["feed_1x1"]
+    multi = len(formats) > 1
+
+    custo_unit = custo_tokens(spec)
+    custo_total = custo_unit * len(formats)  # cobrança POR FORMATO (mesma arte, N arquivos)
 
     def stream():
         with SessionLocal() as gdb:
-            # Pré-checagem de saldo: bloqueia (sem chamar a OpenAI) se insuficiente.
-            if not estudio_wallet.tem_saldo(gdb, ws_id, custo):
+            # Pré-checagem de saldo (pior caso): bloqueia sem chamar a OpenAI.
+            if not estudio_wallet.tem_saldo(gdb, ws_id, custo_total):
                 yield _sse(
                     "generation.failed",
                     {
                         "error_code": "saldo_insuficiente",
                         "error_message": (
-                            f"Saldo insuficiente: este criativo custa {custo} token(s) e o "
+                            f"Saldo insuficiente: este criativo custa {custo_total} token(s) e o "
                             f"saldo é {estudio_wallet.saldo(gdb, ws_id)}. Carregue tokens para gerar."
                         ),
                     },
                 )
                 return
 
-            ger = image_gen.criar_geracao_integrada(
-                gdb,
-                workspace_id=ws_id,
-                user_id=user_id,
-                spec=spec,
-                tem_logo=tem_logo,
-                tem_referencia=tem_ref,
-                tem_personagem=tem_personagem,
-            )
-            gid = ger.id
-            yield _sse("generation.created", {"generation_id": str(gid), "status": "pending"})
+            # 1 formato → fluxo single intacto; ≥2 → multiformato (1 geração reenquadrada).
+            master = image_gen._master_generation_size(formats) if multi else None
+            gers = [
+                image_gen.criar_geracao_integrada(
+                    gdb,
+                    workspace_id=ws_id,
+                    user_id=user_id,
+                    spec={**spec, "creative_format": fmt},
+                    tem_logo=tem_logo,
+                    tem_referencia=tem_ref,
+                    tem_personagem=tem_personagem,
+                    multiformato=multi,
+                    generation_size_override=master,
+                )
+                for fmt in formats
+            ]
+            gids = [g.id for g in gers]
+            yield _sse("generation.created", {"generation_id": str(gids[0]), "status": "pending"})
 
             # A geração (OpenAI) leva 60-180s na Alta — roda em thread (sessão DB
             # própria; SQLAlchemy não é thread-safe) enquanto o SSE emite heartbeat
@@ -416,11 +439,17 @@ def gerar(
             def _run() -> None:
                 try:
                     with SessionLocal() as wdb:
-                        g = wdb.get(CriativoGeracao, gid)
-                        image_gen.executar_geracao_integrada(
-                            wdb, g, logo_bytes=logo_bytes, referencia_bytes=ref_bytes,
-                            personagem_bytes=personagem_bytes,
-                        )
+                        rows = [wdb.get(CriativoGeracao, gid) for gid in gids]
+                        if multi:
+                            image_gen.executar_geracao_multiformato(
+                                wdb, rows, logo_bytes=logo_bytes, referencia_bytes=ref_bytes,
+                                personagem_bytes=personagem_bytes,
+                            )
+                        else:
+                            image_gen.executar_geracao_integrada(
+                                wdb, rows[0], logo_bytes=logo_bytes, referencia_bytes=ref_bytes,
+                                personagem_bytes=personagem_bytes,
+                            )
                 finally:
                     done_ev.set()
 
@@ -430,30 +459,45 @@ def gerar(
 
             # A thread commitou noutra sessão → expira o cache pra não ler "pending".
             gdb.expire_all()
-            ger = gdb.get(CriativoGeracao, gid)
+            rows = [gdb.get(CriativoGeracao, gid) for gid in gids]
+            done_rows = [r for r in rows if r and r.status == "done"]
 
-            if ger and ger.status == "done":
-                # Débito só no sucesso (geração que falha não cobra).
+            if done_rows:
+                # Cobra só o que entregou (por formato concluído) — débito único.
+                custo_cobrado = custo_unit * len(done_rows)
                 estudio_wallet.debitar(
-                    gdb, ws_id, custo, "Geração de criativo", referencia=str(gid), origem="consumo"
+                    gdb, ws_id, custo_cobrado,
+                    "Geração de criativo" + (f" ({len(done_rows)} formatos)" if multi else ""),
+                    referencia=str(done_rows[0].id), origem="consumo",
                 )
+                outputs = [
+                    {
+                        "generation_id": str(r.id),
+                        "base_image_url": r.imagem_base_url,
+                        "creative_format": r.creative_format,
+                    }
+                    for r in done_rows
+                ]
+                first = done_rows[0]
                 yield _sse(
                     "generation.completed",
                     {
-                        "generation_id": str(gid),
-                        "base_image_url": ger.imagem_base_url,
-                        "usage": ger.usage,
-                        "custo_tokens": custo,
+                        "generation_id": str(first.id),
+                        "base_image_url": first.imagem_base_url,
+                        "outputs": outputs,
+                        "usage": first.usage,
+                        "custo_tokens": custo_cobrado,
                         "saldo_tokens": estudio_wallet.saldo(gdb, ws_id),
                     },
                 )
             else:
+                first = rows[0] if rows else None
                 yield _sse(
                     "generation.failed",
                     {
-                        "generation_id": str(gid),
-                        "error_code": (ger.error_code if ger else "erro_geracao"),
-                        "error_message": (ger.error_message if ger else "Falha na geração."),
+                        "generation_id": str(gids[0]),
+                        "error_code": (first.error_code if first else "erro_geracao"),
+                        "error_message": (first.error_message if first else "Falha na geração."),
                     },
                 )
 
