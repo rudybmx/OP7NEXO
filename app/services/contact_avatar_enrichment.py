@@ -316,6 +316,10 @@ def _jid_type(jid: str) -> str:
         return "lid"
     if "@g.us" in jid:
         return "group"
+    if "@newsletter" in jid:
+        return "newsletter"
+    if "@broadcast" in jid:
+        return "broadcast"
     return "individual"
 
 
@@ -356,6 +360,20 @@ def process_contact_avatar_enrichment_job(db: Session, job: dict[str, Any]) -> d
         raise RuntimeError("Job contact_avatar_enrichment incompleto")
 
     jt = _jid_type(jid)
+
+    # Newsletter/broadcast não têm foto de perfil de usuário — buscar trava o
+    # evolution-go (15s) e monopoliza o worker. Pular cedo (marca fetched p/ não repetir).
+    if jt in ("newsletter", "broadcast"):
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_contatos
+                SET avatar_fetched_at = NOW(), updated_at = NOW()
+                WHERE id = CAST(:cid AS uuid) AND workspace_id = CAST(:ws AS uuid)
+            """),
+            {"cid": contact_id, "ws": workspace_id},
+        )
+        db.commit()
+        return {"status": "skipped"}
 
     # Verificar TTL: se já buscou recentemente, skip
     row = db.execute(
