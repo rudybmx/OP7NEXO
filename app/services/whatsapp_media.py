@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import mimetypes
 import os
+import shutil
+import subprocess
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,6 +17,8 @@ from sqlalchemy.orm import Session
 from app.services import evolution as evo_service
 from app.services.object_storage import put_bytes, public_url
 from app.services.redis_pub import publish_whatsapp_event
+
+logger = logging.getLogger(__name__)
 
 MEDIA_BUCKET = "whatsapp-media"
 MAX_MEDIA_BYTES = 25 * 1024 * 1024
@@ -216,6 +221,54 @@ def process_media_download_job(db: Session, job: dict[str, Any]) -> None:
         raise
 
 
+# Formatos de áudio que NÃO tocam universalmente no browser (Safari/iOS não
+# suportam ogg/opus/webm). Voice notes do WhatsApp chegam como audio/ogg;opus.
+_AUDIO_TRANSCODE_HINTS = ("ogg", "opus", "webm", "amr", "3gpp", "3gp")
+_AUDIO_UNIVERSAL_HINTS = ("mp4", "aac", "mpeg", "mp3")
+
+
+def _maybe_transcode_audio(content: bytes, mimetype: str, filename: str | None) -> tuple[bytes, str, str | None]:
+    """Normaliza áudio para audio/mp4 (AAC) — toca em qualquer browser, incl. Safari/iOS.
+
+    Best-effort: se não for áudio alvo, ou ffmpeg faltar/falhar/expirar, devolve o
+    original inalterado (nunca quebra a ingestão). Preserva o tipo (continua áudio →
+    o front mostra player; ptt/voice intactos)."""
+    mt = (mimetype or "").lower()
+    if not mt.startswith("audio/"):
+        return content, mimetype, filename
+    if any(h in mt for h in _AUDIO_UNIVERSAL_HINTS):
+        return content, mimetype, filename
+    if not any(h in mt for h in _AUDIO_TRANSCODE_HINTS):
+        return content, mimetype, filename
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        logger.warning("[media-transcode] ffmpeg ausente; mantendo %s", mimetype)
+        return content, mimetype, filename
+
+    try:
+        proc = subprocess.run(
+            [
+                ffmpeg, "-hide_banner", "-loglevel", "error",
+                "-i", "pipe:0",
+                "-vn", "-c:a", "aac", "-b:a", "96k",
+                "-movflags", "frag_keyframe+empty_moov",
+                "-f", "mp4", "pipe:1",
+            ],
+            input=content,
+            capture_output=True,
+            timeout=30,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            base = os.path.splitext(filename)[0] if filename else "audio"
+            logger.info("[media-transcode] %s -> audio/mp4 (%d->%d bytes)", mimetype, len(content), len(proc.stdout))
+            return proc.stdout, "audio/mp4", f"{base}.m4a"
+        logger.warning("[media-transcode] ffmpeg rc=%s err=%s", proc.returncode, (proc.stderr or b"")[:200])
+    except Exception as exc:
+        logger.warning("[media-transcode] falhou (%s): %s", mimetype, exc)
+    return content, mimetype, filename
+
+
 def store_media_bytes(
     *,
     workspace_id: str,
@@ -226,6 +279,8 @@ def store_media_bytes(
     filename: str | None,
     message_type_raw: str = "",
 ) -> StoredMedia:
+    # Normaliza áudio (opus/ogg/webm → mp4/aac) p/ tocar em qualquer browser.
+    content, mimetype, filename = _maybe_transcode_audio(content, mimetype, filename)
     validate_media(content, mimetype)
     media_type = infer_media_type(mimetype, message_type_raw, filename or "")
     ext = os.path.splitext(filename or "")[1] or mimetypes.guess_extension(mimetype) or ".bin"

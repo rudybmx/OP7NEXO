@@ -144,3 +144,53 @@ class MediaQueueTests(unittest.TestCase):
         insert_sql, insert_params = next((sql, params) for sql, params in db.calls if "insert into public.crm_message_jobs" in sql.lower())
         self.assertIn("media_download", insert_sql.lower())
         self.assertTrue(insert_params["payload"])
+
+
+# ---------------------------------------------------------------------------
+# _maybe_transcode_audio — normalização de áudio p/ mp4/aac (Safari/iOS)
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace  # noqa: E402
+
+
+def test_transcode_audio_mp3_passa_direto(monkeypatch):
+    chamou = {"run": False}
+    monkeypatch.setattr(whatsapp_media.subprocess, "run", lambda *a, **k: chamou.__setitem__("run", True))
+    out = whatsapp_media._maybe_transcode_audio(b"id3data", "audio/mpeg", "a.mp3")
+    assert out == (b"id3data", "audio/mpeg", "a.mp3")
+    assert chamou["run"] is False  # já universal, nem chama ffmpeg
+
+
+def test_transcode_audio_imagem_passa_direto():
+    out = whatsapp_media._maybe_transcode_audio(b"png", "image/png", "x.png")
+    assert out == (b"png", "image/png", "x.png")
+
+
+def test_transcode_audio_opus_vira_mp4(monkeypatch):
+    monkeypatch.setattr(whatsapp_media.shutil, "which", lambda _x: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(
+        whatsapp_media.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout=b"MP4BYTES", stderr=b""),
+    )
+    content, mimetype, filename = whatsapp_media._maybe_transcode_audio(
+        b"OggS-opus", "audio/ogg; codecs=opus", "voice.ogg"
+    )
+    assert mimetype == "audio/mp4"
+    assert filename == "voice.m4a"
+    assert content == b"MP4BYTES"
+
+
+def test_transcode_audio_sem_ffmpeg_mantem_original(monkeypatch):
+    monkeypatch.setattr(whatsapp_media.shutil, "which", lambda _x: None)
+    out = whatsapp_media._maybe_transcode_audio(b"OggS", "audio/ogg; codecs=opus", "voice.ogg")
+    assert out == (b"OggS", "audio/ogg; codecs=opus", "voice.ogg")
+
+
+def test_transcode_audio_ffmpeg_falha_mantem_original(monkeypatch):
+    monkeypatch.setattr(whatsapp_media.shutil, "which", lambda _x: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(
+        whatsapp_media.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=1, stdout=b"", stderr=b"boom"),
+    )
+    out = whatsapp_media._maybe_transcode_audio(b"OggS", "audio/webm", "voice.webm")
+    assert out == (b"OggS", "audio/webm", "voice.webm")

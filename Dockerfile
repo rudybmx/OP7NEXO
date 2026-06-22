@@ -2,9 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Fontes para o render do criativo (Pillow) — DejaVu (regular + bold)
+# fonts-dejavu-core: render do criativo (Pillow). ffmpeg: transcode de áudio
+# inbound do WhatsApp (opus/ogg/webm → mp4/aac) p/ tocar em qualquer browser.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
