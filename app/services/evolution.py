@@ -1101,6 +1101,11 @@ def buscar_foto_perfil(
     """
     digits = "".join(ch for ch in str(numero or "") if ch.isdigit())
     candidate = digits or str(numero or "")
+    numero_str = str(numero or "").strip()
+    # IMPORTANTE: o evolution-go (0.7.x) TRAVA (ReadTimeout) no /user/avatar quando
+    # recebe só os dígitos do número; com o JID completo responde em ~0.2s. Preserva
+    # @lid/@s.whatsapp.net já presentes; caso contrário monta o JID individual.
+    avatar_target = numero_str if "@" in numero_str else (f"{digits}@s.whatsapp.net" if digits else numero_str)
     headers = {"apikey": token, "Content-Type": "application/json"} if token else HEADERS
 
     try:
@@ -1108,7 +1113,7 @@ def buscar_foto_perfil(
             resp = client.post(
                 f"{META}/user/avatar",
                 headers=headers,
-                json={"number": candidate, "preview": True},
+                json={"number": avatar_target, "preview": True},
             )
             if resp.status_code < 400:
                 return _normalize_avatar(resp.json())

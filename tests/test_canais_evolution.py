@@ -207,6 +207,49 @@ class CanaisEvolutionTests(unittest.TestCase):
         self.assertTrue(result["connected"])
         mock_obter_instancia.assert_called_once_with("instance-name", instance_id="instance-id")
 
+    def test_buscar_foto_perfil_usa_jid_completo_no_user_avatar(self):
+        # evolution-go trava no /user/avatar com só dígitos; deve enviar o JID completo
+        responses = [_FakeResponse(200, {"data": {"url": "https://pps.whatsapp.net/x.jpg"}})]
+        calls = []
+
+        class _ClientFactory:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self_inner):
+                return _FakeHttpxClient(responses, calls)
+
+            def __exit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("app.services.evolution.httpx.Client", _ClientFactory):
+            out = evo_service.buscar_foto_perfil("inst", "554391673791", token="tok")
+
+        self.assertIsInstance(out, dict)
+        url, _headers, body = calls[0]
+        self.assertTrue(url.endswith("/user/avatar"))
+        self.assertEqual(body["number"], "554391673791@s.whatsapp.net")
+
+    def test_buscar_foto_perfil_preserva_jid_existente(self):
+        responses = [_FakeResponse(200, {"data": {"url": "https://pps.whatsapp.net/x.jpg"}})]
+        calls = []
+
+        class _ClientFactory:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self_inner):
+                return _FakeHttpxClient(responses, calls)
+
+            def __exit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("app.services.evolution.httpx.Client", _ClientFactory):
+            evo_service.buscar_foto_perfil("inst", "12345@lid", token="tok")
+
+        _url, _headers, body = calls[0]
+        self.assertEqual(body["number"], "12345@lid")
+
     def test_obter_qr_code_retry_ate_receber_payload_com_base64(self):
         responses = [
             _FakeResponse(404, {"message": "not ready"}),
