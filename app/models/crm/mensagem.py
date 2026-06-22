@@ -75,6 +75,11 @@ class Mensagem(Base):
     participant_jid: Mapped[str | None] = mapped_column(String(50), nullable=True)
     participant_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_mentioned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Resposta/citação (reply): referência à mensagem citada (extraída do contextInfo)
+    quoted_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    quoted_remote_jid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    quoted_message_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    quoted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     wa_status: Mapped[str | None] = mapped_column(
         String(20), default="pending", nullable=True
     )

@@ -10,6 +10,7 @@ from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_aces
 from app.models.crm import Mensagem
 from app.models.user import User
 from app.services.whatsapp_media import infer_media_type
+from app.services.whatsapp_normalizer import _extract_mentions, payload_message, payload_root
 
 router = APIRouter(prefix="/mensagens", tags=["mensagens"])
 
@@ -45,9 +46,15 @@ class MensagemOut(BaseModel):
     media_mimetype: str | None = None
     media_filename: str | None = None
     media_caption: str | None = None
+    media_gif: bool = False
     participant_jid: str | None
     participant_name: str | None
     is_mentioned: bool
+    mentioned_jids: list[str] = []
+    quoted_message_id: str | None = None
+    quoted_remote_jid: str | None = None
+    quoted_message_type: str | None = None
+    quoted_text: str | None = None
     midias: list[dict] = []
     ativo: bool
     criado_em: datetime
@@ -74,6 +81,34 @@ _NULL_MEDIA: dict = {
     "media_filename": None,
     "media_caption": None,
 }
+
+
+def _derive_is_gif(m: Mensagem) -> bool:
+    """True quando a mídia é um GIF (no WhatsApp chega como videoMessage com
+    gifPlayback=true, ou mimetype image/gif) — o front renderiza autoplay/loop."""
+    payload = m.payload if isinstance(m.payload, dict) else None
+    if payload:
+        msg = payload_message(payload)
+        for key in ("videoMessage", "VideoMessage"):
+            node = msg.get(key) if isinstance(msg, dict) else None
+            if isinstance(node, dict) and (node.get("gifPlayback") or node.get("GifPlayback")):
+                return True
+    for media in (m.midias or []):
+        if getattr(media, "ativo", True) and str(getattr(media, "mimetype", "") or "").lower() == "image/gif":
+            return True
+    return False
+
+
+def _derive_mentioned_jids(m: Mensagem) -> list[str]:
+    """Lista de JIDs mencionados (@), extraída do payload bruto. O modelo só
+    guarda o boolean is_mentioned; a lista completa fica no payload."""
+    payload = m.payload if isinstance(m.payload, dict) else None
+    if not payload:
+        return []
+    try:
+        return _extract_mentions(payload_message(payload), payload_root(payload))
+    except Exception:
+        return []
 
 
 def _derive_media_fields(m: Mensagem) -> dict:
@@ -217,9 +252,15 @@ def _mensagem_out(m: Mensagem) -> MensagemOut:
         media_mimetype=mf["media_mimetype"],
         media_filename=mf["media_filename"],
         media_caption=mf["media_caption"],
+        media_gif=_derive_is_gif(m),
         participant_jid=m.participant_jid,
         participant_name=m.participant_name,
         is_mentioned=m.is_mentioned,
+        mentioned_jids=_derive_mentioned_jids(m),
+        quoted_message_id=getattr(m, "quoted_message_id", None),
+        quoted_remote_jid=getattr(m, "quoted_remote_jid", None),
+        quoted_message_type=getattr(m, "quoted_message_type", None),
+        quoted_text=getattr(m, "quoted_text", None),
         midias=_dedup_midias(m.midias or []),
         ativo=m.ativo,
         criado_em=m.criado_em,

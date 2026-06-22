@@ -65,6 +65,10 @@ class WhatsAppMessageEvent(BaseModel):
     message_type: str = "conversation"
     text: str = ""
     mentioned_jids: list[str] = Field(default_factory=list)
+    quoted_message_id: str | None = None
+    quoted_remote_jid: str | None = None
+    quoted_message_type: str | None = None
+    quoted_text: str | None = None
     media: WhatsAppMediaPayload = Field(default_factory=WhatsAppMediaPayload)
     received_at: datetime
     received_at_source: Literal["payload", "fallback"] = "fallback"
@@ -240,6 +244,7 @@ def normalize_message_event(
     media = normalize_media_payload(root)
     text = _extract_text(message, info, media)
     mentioned_jids = _extract_mentions(message, root)
+    quoted = _extract_quoted(message, root)
     sender_pn = (
         _first_str(root, "senderPn", "senderPN")
         or _first_str(info, "SenderPn", "SenderPN", "senderPn", "senderPN")
@@ -261,6 +266,10 @@ def normalize_message_event(
         message_type=message_type,
         text=text,
         mentioned_jids=mentioned_jids,
+        quoted_message_id=quoted.get("quoted_message_id"),
+        quoted_remote_jid=quoted.get("quoted_remote_jid"),
+        quoted_message_type=quoted.get("quoted_message_type"),
+        quoted_text=quoted.get("quoted_text"),
         media=media,
         received_at=_parse_timestamp(timestamp_raw),
         received_at_source=_parse_timestamp_source(timestamp_raw),
@@ -528,6 +537,79 @@ def _extract_mentions(message: dict[str, Any], root: dict[str, Any]) -> list[str
             collect(media_node.get("ContextInfo"))
     collect(root.get("contextInfo"))
     return list(dict.fromkeys(mentions))
+
+
+def _quoted_text(quoted_msg: Any) -> str | None:
+    """Texto/legenda da mensagem citada, para preview no front."""
+    if not isinstance(quoted_msg, dict):
+        return None
+    conv = quoted_msg.get("conversation")
+    if isinstance(conv, str) and conv:
+        return conv
+    ext = quoted_msg.get("extendedTextMessage") or quoted_msg.get("ExtendedTextMessage")
+    if isinstance(ext, dict) and ext.get("text"):
+        return str(ext.get("text"))
+    for media_key in MEDIA_MESSAGE_KEYS:
+        node = quoted_msg.get(media_key)
+        if isinstance(node, dict) and node.get("caption"):
+            return str(node.get("caption"))
+    return None
+
+
+def _extract_quoted(message: dict[str, Any], root: dict[str, Any]) -> dict[str, Any]:
+    """Extrai referência à mensagem citada (reply) do contextInfo.
+
+    Retorna dict com quoted_message_id (stanzaId), quoted_remote_jid (participant
+    autor da citada), quoted_message_type e quoted_text. Sem citação → dict vazio.
+    """
+    def find_ctx(container: Any) -> dict[str, Any] | None:
+        if not isinstance(container, dict):
+            return None
+        for key in ("contextInfo", "ContextInfo"):
+            ctx = container.get(key)
+            if isinstance(ctx, dict) and (
+                ctx.get("quotedMessage") or ctx.get("QuotedMessage")
+                or ctx.get("stanzaId") or ctx.get("StanzaId") or ctx.get("stanzaID")
+            ):
+                return ctx
+        return None
+
+    ctx = find_ctx(message)
+    if ctx is None:
+        extended = message.get("extendedTextMessage")
+        if isinstance(extended, dict):
+            ctx = find_ctx(extended)
+    if ctx is None:
+        for media_key in MEDIA_MESSAGE_KEYS:
+            node = message.get(media_key)
+            if isinstance(node, dict):
+                ctx = find_ctx(node)
+                if ctx:
+                    break
+    if ctx is None:
+        ctx = find_ctx(root)
+    if ctx is None:
+        return {}
+
+    stanza = ctx.get("stanzaId") or ctx.get("StanzaId") or ctx.get("stanzaID")
+    participant = ctx.get("participant") or ctx.get("Participant")
+    quoted_msg = ctx.get("quotedMessage") or ctx.get("QuotedMessage") or {}
+    if not (stanza or quoted_msg):
+        return {}
+
+    quoted_type: str | None = None
+    if isinstance(quoted_msg, dict) and quoted_msg:
+        for key in ("conversation", "extendedTextMessage", *MEDIA_MESSAGE_KEYS):
+            if key in quoted_msg:
+                quoted_type = key
+                break
+
+    return {
+        "quoted_message_id": str(stanza) if stanza else None,
+        "quoted_remote_jid": str(participant) if participant else None,
+        "quoted_message_type": quoted_type,
+        "quoted_text": _quoted_text(quoted_msg),
+    }
 
 
 def _extract_number(payload: object) -> str | None:

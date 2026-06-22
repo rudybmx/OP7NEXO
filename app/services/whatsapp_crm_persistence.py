@@ -364,6 +364,10 @@ def process_evolution_message(
         sender_name=sender_name,
         is_group=is_group,
         is_mentioned=is_mentioned,
+        quoted_message_id=normalized.quoted_message_id,
+        quoted_remote_jid=normalized.quoted_remote_jid,
+        quoted_message_type=normalized.quoted_message_type,
+        quoted_text=normalized.quoted_text,
         text_value=msg_text,
         message_type=message_type,
         payload=data,
@@ -1054,6 +1058,10 @@ def _upsert_message(
     sender_name: str,
     is_group: bool,
     is_mentioned: bool,
+    quoted_message_id: str | None = None,
+    quoted_remote_jid: str | None = None,
+    quoted_message_type: str | None = None,
+    quoted_text: str | None = None,
     text_value: str,
     message_type: str,
     payload: dict[str, Any],
@@ -1176,14 +1184,16 @@ def _upsert_message(
                 evolution_msg_id, message_hash, instance, remote_jid, direcao,
                 from_me, remetente_tipo, remetente_nome, conteudo, message_type,
                 status, payload, recebida_em, media_status, media_error, participant_jid, participant_name,
-                is_mentioned, enviada_em, created_at, updated_at
+                is_mentioned, quoted_message_id, quoted_remote_jid, quoted_message_type, quoted_text,
+                enviada_em, created_at, updated_at
             )
             VALUES (
                 CAST(:ws AS uuid), CAST(:canal AS uuid), CAST(:raw_event_id AS uuid), CAST(:cid AS uuid), CAST(:ct AS uuid),
                 :evid, :message_hash, :inst, :jid, :direction,
                 :from_me, :remetente_tipo, :rn, :msg, :mt,
                 :status, CAST(:payload AS jsonb), :ts, :media_status, :media_error, :part_jid, :part_name,
-                :is_mentioned, :sent_ts, NOW(), NOW()
+                :is_mentioned, :quoted_message_id, :quoted_remote_jid, :quoted_message_type, :quoted_text,
+                :sent_ts, NOW(), NOW()
             )
             ON CONFLICT DO NOTHING
             RETURNING id
@@ -1217,6 +1227,10 @@ def _upsert_message(
             "part_jid": participant_jid if is_group else None,
             "part_name": sender_name if is_group else None,
             "is_mentioned": is_mentioned,
+            "quoted_message_id": quoted_message_id,
+            "quoted_remote_jid": quoted_remote_jid,
+            "quoted_message_type": quoted_message_type,
+            "quoted_text": quoted_text,
         },
     )
     mensagem_id = result.scalar()

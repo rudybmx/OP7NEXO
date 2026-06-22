@@ -182,3 +182,71 @@ def test_normalize_connection_events():
     assert qrcode.state == "connecting"
     assert qrcode.qr_code == "qr-base64"
     assert logged_out.state == "disconnected"
+
+
+def test_normalize_extrai_resposta_citada_texto():
+    payload = {
+        "data": {
+            "Info": {
+                "Chat": "5511999999999@s.whatsapp.net",
+                "ID": "msg-reply-1",
+                "Timestamp": 1_700_000_010,
+            },
+            "Message": {
+                "extendedTextMessage": {
+                    "text": "concordo!",
+                    "contextInfo": {
+                        "stanzaId": "ORIG-MSG-ID-123",
+                        "participant": "5511888888888@s.whatsapp.net",
+                        "quotedMessage": {"conversation": "mensagem original citada"},
+                    },
+                },
+            },
+        },
+    }
+
+    event = normalize_message_event(payload, "Message")
+
+    assert event.quoted_message_id == "ORIG-MSG-ID-123"
+    assert event.quoted_remote_jid == "5511888888888@s.whatsapp.net"
+    assert event.quoted_message_type == "conversation"
+    assert event.quoted_text == "mensagem original citada"
+
+
+def test_normalize_resposta_citada_imagem_usa_caption():
+    payload = {
+        "data": {
+            "Info": {"Chat": "5511999999999@s.whatsapp.net", "ID": "msg-reply-2", "Timestamp": 1_700_000_011},
+            "Message": {
+                "extendedTextMessage": {
+                    "text": "que foto!",
+                    "contextInfo": {
+                        "stanzaId": "ORIG-IMG-9",
+                        "participant": "5511888888888@s.whatsapp.net",
+                        "quotedMessage": {"imageMessage": {"caption": "legenda da imagem", "url": "https://x/y.jpg"}},
+                    },
+                },
+            },
+        },
+    }
+
+    event = normalize_message_event(payload, "Message")
+
+    assert event.quoted_message_id == "ORIG-IMG-9"
+    assert event.quoted_message_type == "imageMessage"
+    assert event.quoted_text == "legenda da imagem"
+
+
+def test_normalize_sem_citacao_quoted_none():
+    payload = {
+        "data": {
+            "Info": {"Chat": "5511999999999@s.whatsapp.net", "ID": "msg-plain", "Timestamp": 1_700_000_012},
+            "Message": {"conversation": "oi"},
+        },
+    }
+
+    event = normalize_message_event(payload, "Message")
+
+    assert event.quoted_message_id is None
+    assert event.quoted_text is None
+    assert event.quoted_message_type is None
