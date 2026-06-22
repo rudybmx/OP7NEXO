@@ -40,6 +40,7 @@ export interface MensagemApi {
   mediaMimetype?: string | null
   mediaFilename?: string | null
   mediaCaption?: string | null
+  mediaGif?: boolean
   waStatus?: 'pending' | 'sent' | 'delivered' | 'read' | 'played' | 'failed' | string | null
   failedReason?: string | null
   midias?: MensagemMidiaApi[]
@@ -51,6 +52,7 @@ export interface MensagemApi {
   participantJid?: string | null
   participantName?: string | null
   isMentioned?: boolean
+  mentionedJids?: string[]
   quotedText?: string | null
   quotedAuthor?: string | null
   quotedRemoteJid?: string | null

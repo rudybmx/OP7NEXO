@@ -361,6 +361,44 @@ function renderMidiaError(kind: string | null | undefined, isEntrada: boolean, i
   )
 }
 
+// Destaca @menções (@<número>) no corpo da mensagem em dourado
+function renderConteudoComMencoes(texto: string) {
+  const parts = texto.split(/(@\d{6,})/g)
+  if (parts.length === 1) return texto
+  return parts.map((parte, i) =>
+    /^@\d{6,}$/.test(parte)
+      ? <span key={i} style={{ color: '#c9a84c', fontWeight: 600 }}>{parte}</span>
+      : parte
+  )
+}
+
+// Rótulo amigável do tipo da mensagem citada quando não há texto (ex.: foto, áudio)
+function quotedTypeLabel(messageType: string | null | undefined): string {
+  const t = (messageType || '').toLowerCase()
+  if (t.includes('image')) return '📷 Foto'
+  if (t.includes('sticker')) return 'Figurinha'
+  if (t.includes('audio') || t.includes('ptt')) return '🎤 Áudio'
+  if (t.includes('video') || t.includes('ptv')) return '🎬 Vídeo'
+  if (t.includes('document')) return '📄 Documento'
+  return 'Mensagem'
+}
+
+// Preview do conteúdo citado: texto se houver, senão rótulo do tipo
+function quotedPreview(msg: MensagemApi): string {
+  const txt = (msg.quotedText || '').trim()
+  if (txt) return txt
+  return quotedTypeLabel(msg.quotedMessageType)
+}
+
+// Autor da citação: nome (quando resolvido) ou número do JID citado
+function quotedAuthorLabel(msg: MensagemApi): string {
+  if (msg.quotedAuthor) return msg.quotedAuthor
+  const jid = msg.quotedRemoteJid || ''
+  const digits = jid.split('@')[0].replace(/\D/g, '')
+  if (digits) return `+${digits}`
+  return 'Mensagem citada'
+}
+
 function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpenLightbox: (url: string) => void) {
   const midias = msg.midias?.length
     ? msg.midias
@@ -418,9 +456,40 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpen
           )
         }
         if (kind.includes('video')) {
+          // GIF (videoMessage com gifPlayback): autoplay em loop, mudo, sem controles
+          if (msg.mediaGif) {
+            return (
+              <div key={media.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <video
+                  src={url}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  style={{ display: 'block', width: 220, maxWidth: '100%', borderRadius: 10 }}
+                />
+                {captionText && <span style={{ fontSize: 12, color: mutedColor }}>{captionText}</span>}
+              </div>
+            )
+          }
           return (
             <div key={media.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <video controls src={url} style={{ display: 'block', width: 260, maxWidth: '100%', borderRadius: 10 }} />
+              {captionText && <span style={{ fontSize: 12, color: mutedColor }}>{captionText}</span>}
+            </div>
+          )
+        }
+        // Sticker: renderiza inline como imagem (webp), não como link de download
+        if (kind.includes('sticker')) {
+          return (
+            <div key={media.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <img
+                src={url}
+                alt={captionText || 'Figurinha'}
+                onError={event => { event.currentTarget.style.display = 'none' }}
+                style={{ display: 'block', width: 120, height: 120, objectFit: 'contain', cursor: 'pointer' }}
+                onClick={() => onOpenLightbox(url)}
+              />
               {captionText && <span style={{ fontSize: 12, color: mutedColor }}>{captionText}</span>}
             </div>
           )
@@ -855,9 +924,33 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                       overflowWrap: 'anywhere',
                       minWidth: 120,
                     }}>
+                      {(msg.quotedText || msg.quotedMessageId) && (
+                        <div style={{
+                          borderLeft: '3px solid #c9a84c',
+                          background: isEntrada ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.14)',
+                          borderRadius: 6,
+                          padding: '4px 8px',
+                          marginBottom: 6,
+                          fontSize: 12,
+                        }}>
+                          <div style={{ fontWeight: 600, color: '#c9a84c', fontSize: 11, marginBottom: 2 }}>
+                            {quotedAuthorLabel(msg)}
+                          </div>
+                          <div style={{
+                            opacity: 0.82,
+                            whiteSpace: 'pre-wrap',
+                            overflow: 'hidden',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                          }}>
+                            {quotedPreview(msg)}
+                          </div>
+                        </div>
+                      )}
                       {msg.isMentioned && (
                         <div style={{ fontSize: 10, fontWeight: 700, color: '#c9a84c', marginBottom: 4 }}>
-                          @mention
+                          @ mencionou você
                         </div>
                       )}
                       {renderMidia(msg, isEntrada, isIA, setLightboxUrl)}
@@ -868,7 +961,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         // Suprimir placeholders de mídia quando media_kind conhecido: "[mídia]", "mídia", "(mídia)"
                         const isMidiaText = msg.mediaKind != null && /^[\[(]?(mídia|midia)[\])]?$/i.test(body)
                         if (!msg.conteudo || (temMidia && isPlaceholder) || isMidiaText) return null
-                        return <div style={{ whiteSpace: 'pre-wrap' }}>{msg.conteudo}</div>
+                        return <div style={{ whiteSpace: 'pre-wrap' }}>{renderConteudoComMencoes(msg.conteudo)}</div>
                       })()}
                       <div style={{
                         fontSize: 10,

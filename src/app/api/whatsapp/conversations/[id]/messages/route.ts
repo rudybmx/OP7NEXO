@@ -25,10 +25,16 @@ interface BackendMensagemRow {
   media_mimetype?: string | null
   media_filename?: string | null
   media_caption?: string | null
+  media_gif?: boolean | null
   message_type?: string | null
   participant_jid?: string | null
   participant_name?: string | null
   is_mentioned?: boolean | null
+  mentioned_jids?: string[] | null
+  quoted_message_id?: string | null
+  quoted_remote_jid?: string | null
+  quoted_message_type?: string | null
+  quoted_text?: string | null
   midias?: Array<{
     id: string
     tipo?: string | null
@@ -63,6 +69,7 @@ interface MensagemRespostaRow {
   mediaMimetype: string | null
   mediaFilename: string | null
   mediaCaption: string | null
+  mediaGif: boolean
   midias: Array<{
     id: string
     tipo: string
@@ -77,6 +84,12 @@ interface MensagemRespostaRow {
   participantJid: string | null
   participantName: string | null
   isMentioned: boolean
+  mentionedJids: string[]
+  quotedText: string | null
+  quotedAuthor: string | null
+  quotedRemoteJid: string | null
+  quotedMessageId: string | null
+  quotedMessageType: string | null
 }
 
 type RouteContext = {
@@ -164,10 +177,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
         mediaMimetype: row.media_mimetype ?? null,
         mediaFilename: row.media_filename ?? null,
         mediaCaption: row.media_caption ?? null,
+        mediaGif: row.media_gif || false,
         midias,
         participantJid: row.participant_jid || null,
         participantName: row.participant_name || null,
         isMentioned: row.is_mentioned || false,
+        mentionedJids: row.mentioned_jids || [],
+        quotedText: row.quoted_text ?? null,
+        quotedAuthor: null,
+        quotedRemoteJid: row.quoted_remote_jid ?? null,
+        quotedMessageId: row.quoted_message_id ?? null,
+        quotedMessageType: row.quoted_message_type ?? null,
       }
     })
 
