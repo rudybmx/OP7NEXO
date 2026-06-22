@@ -1081,8 +1081,24 @@ def buscar_contato(instance_name: str, jid: str) -> list[dict[str, Any]]:
         return []
 
 
-def buscar_foto_perfil(instance_name: str, numero: str, *, token: str | None = None) -> dict[str, Any] | str | None:
-    """Busca a foto de perfil do contato."""
+def buscar_foto_perfil(
+    instance_name: str,
+    numero: str,
+    *,
+    token: str | None = None,
+    raise_on_transient: bool = False,
+) -> dict[str, Any] | str | None:
+    """Busca a foto de perfil do contato.
+
+    Retorna dict ({url|base64|mime_type}) ou str (url) quando há foto, ou ``None``
+    quando o contato não tem foto (HTTP 404 — resposta definitiva).
+
+    Com ``raise_on_transient=True``, erros transitórios/de config (timeout, rede,
+    401, 5xx) **levantam exceção** em vez de virarem ``None``. Assim o job de avatar
+    distingue "sem foto" de "falha" e re-tenta sem gravar ``avatar_fetched_at``
+    (que envenenaria o contato por 7 dias). O comportamento default (False) mantém
+    a semântica antiga: qualquer falha vira ``None``.
+    """
     digits = "".join(ch for ch in str(numero or "") if ch.isdigit())
     candidate = digits or str(numero or "")
     headers = {"apikey": token, "Content-Type": "application/json"} if token else HEADERS
@@ -1106,7 +1122,14 @@ def buscar_foto_perfil(instance_name: str, numero: str, *, token: str | None = N
             )
             if legacy_resp.status_code == 404:
                 return None
-            _handle_error(legacy_resp, f"buscar_foto_perfil {numero}")
+            if legacy_resp.status_code >= 400:
+                # Ambos endpoints falharam (ex.: 401 token inválido, 5xx) — não é
+                # "sem foto"; tratar como transitório quando o chamador pedir.
+                if raise_on_transient:
+                    raise EvolutionError(
+                        f"buscar_foto_perfil {numero}: user/avatar={resp.status_code} legacy={legacy_resp.status_code}"
+                    )
+                _handle_error(legacy_resp, f"buscar_foto_perfil {numero}")
             data = _json_or_text(legacy_resp)
             if isinstance(data, dict):
                 return data.get("profilePictureUrl") or data.get("url") or None
@@ -1115,6 +1138,8 @@ def buscar_foto_perfil(instance_name: str, numero: str, *, token: str | None = N
             return None
     except Exception:
         logger.exception("[evolution] buscar_foto_perfil falhou: instance=%s numero=%s", instance_name, numero)
+        if raise_on_transient:
+            raise
         return None
 
 

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import mimetypes
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -13,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.services import waha_service
+from app.services.object_storage import download_and_put, public_url, put_bytes
 from app.services.waha_service import WahaError
 
 logger = logging.getLogger(__name__)
@@ -28,6 +31,64 @@ def _store_sessions() -> frozenset[str]:
     """Sessões com NOWEB Store ativo (allowlist via env WAHA_STORE_SESSIONS)."""
     raw = os.environ.get("WAHA_STORE_SESSIONS", "")
     return frozenset(s.strip() for s in raw.split(",") if s.strip())
+
+
+AVATAR_BUCKET = "whatsapp-avatars"
+
+
+def rehost_avatar(jid: str, foto_info: Any, *, key_prefix: str = "contacts", default_mime: str = "image/jpeg") -> str | None:
+    """Baixa os bytes do avatar e re-hospeda no MinIO (bucket whatsapp-avatars),
+    devolvendo uma URL persistente (`/meta/storage/...`).
+
+    Os provedores (Evolution/WAHA) devolvem URLs cruas do CDN do WhatsApp
+    (`pps.whatsapp.net`) que **expiram** (HTTP 403) — gravar a URL crua faz a
+    imagem sumir no front. Re-hospedar resolve isso.
+
+    Aceita `foto_info` como dict ({url|base64|mime_type}) ou str (url|base64).
+    - Retorna `None` quando NÃO há dado de imagem utilizável (ex.: sem foto).
+    - **Levanta exceção** quando há dado mas o download/upload falha (transitório),
+      para o job poder re-tentar com uma URL fresca em vez de envenenar o TTL.
+    """
+    if not foto_info:
+        return None
+
+    safe_jid = str(jid).replace("@", "_").replace(".", "_")
+
+    avatar_url: str | None = None
+    avatar_b64: str | None = None
+    avatar_mime = default_mime
+
+    if isinstance(foto_info, dict):
+        avatar_url = foto_info.get("url") or None
+        avatar_b64 = foto_info.get("base64") or None
+        avatar_mime = foto_info.get("mime_type") or foto_info.get("mimetype") or default_mime
+    elif isinstance(foto_info, str):
+        if foto_info.startswith("http"):
+            avatar_url = foto_info
+        else:
+            avatar_b64 = foto_info
+
+    if not (avatar_url or avatar_b64):
+        return None  # sem foto utilizável — definitivo, não é falha
+
+    if avatar_b64:
+        raw_b64 = (
+            avatar_b64.split(",", 1)[1]
+            if avatar_b64.startswith("data:") and "," in avatar_b64
+            else avatar_b64
+        )
+        avatar_bytes = base64.b64decode(raw_b64)
+        ext = mimetypes.guess_extension(avatar_mime) or ".jpg"
+        object_key = f"{key_prefix}/{safe_jid}{ext}"
+        put_bytes(AVATAR_BUCKET, object_key, avatar_bytes, avatar_mime)
+        return public_url(AVATAR_BUCKET, object_key)
+
+    # avatar_url presente: baixa do CDN e re-hospeda
+    rehosted = download_and_put(AVATAR_BUCKET, f"{key_prefix}/{safe_jid}.jpg", avatar_url, avatar_mime)
+    if rehosted is None:
+        # tínhamos URL mas o download/upload falhou → transitório, re-tentar
+        raise RuntimeError(f"rehost_avatar: download_and_put falhou jid={jid}")
+    return rehosted
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +390,9 @@ def process_contact_avatar_enrichment_job(db: Session, job: dict[str, Any]) -> d
             raise RuntimeError(f"Sessão WAHA não encontrada workspace={str(workspace_id)[:8]}")
 
         try:
-            url = waha_service.buscar_avatar_chat(session, jid, cfg, timeout=5.0)
+            waha_url = waha_service.buscar_avatar_chat(session, jid, cfg, timeout=5.0)
+            # WAHA devolve a URL crua do pps.whatsapp.net (expira) — re-hospeda.
+            url = rehost_avatar(jid, waha_url)
         except WahaError as exc:
             err_str = str(exc)
             if WAHA_STORE_DISABLED_MSG in err_str:
@@ -358,25 +421,21 @@ def process_contact_avatar_enrichment_job(db: Session, job: dict[str, Any]) -> d
             raise
 
     elif canal_tipo == "whatsapp_evolution" and jt == "individual" and evolution_instance:
-        # Fallback para canais Evolution API (sem WAHA): usa evo_service
+        # Fallback para canais Evolution API (sem WAHA): usa evo_service.
+        # raise_on_transient=True faz timeout/401/5xx levantarem exceção → o job
+        # re-tenta (attempts/max_attempts) sem gravar avatar_fetched_at, em vez de
+        # envenenar o contato por 7 dias. 404 ("sem foto") continua retornando None.
         evolution_instance_token = cfg.get("_evolution_instance_token", "")
-        try:
-            from app.services import evolution as evo_service
-            foto_info = evo_service.buscar_foto_perfil(evolution_instance, jid, token=evolution_instance_token or None)
-            if isinstance(foto_info, dict):
-                url = foto_info.get("url") or None
-            elif isinstance(foto_info, str) and foto_info.startswith("http"):
-                url = foto_info
-            logger.info(
-                "[avatar-enrich] evolution_fallback jid=%s instance=%s workspace=%s has_url=%s",
-                jid, evolution_instance, str(workspace_id)[:8], url is not None,
-            )
-        except Exception as exc:
-            logger.warning(
-                "[avatar-enrich] evolution_fallback falhou jid=%s workspace=%s err=%s",
-                jid, str(workspace_id)[:8], exc,
-            )
-            # Não re-raise — marcar fetched_at para evitar retry infinito em caso de erro persistente
+        from app.services import evolution as evo_service
+        foto_info = evo_service.buscar_foto_perfil(
+            evolution_instance, jid, token=evolution_instance_token or None, raise_on_transient=True
+        )
+        # Re-hospeda no MinIO (trata url E base64); URL crua do pps.whatsapp.net expira.
+        url = rehost_avatar(jid, foto_info)
+        logger.info(
+            "[avatar-enrich] evolution_fallback jid=%s instance=%s workspace=%s has_url=%s",
+            jid, evolution_instance, str(workspace_id)[:8], url is not None,
+        )
 
     else:
         # Canal sem suporte WAHA nem Evolution para este JID — skip silencioso
@@ -490,6 +549,11 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
             canal_tipo, str(workspace_id)[:8],
         )
         return {"status": "skipped"}
+
+    # Re-hospeda o avatar do grupo no MinIO — pictureUrl/WAHA também são URLs
+    # cruas do pps.whatsapp.net que expiram.
+    if avatar_url:
+        avatar_url = rehost_avatar(group_jid, avatar_url, key_prefix="groups")
 
     db.execute(
         text("""
