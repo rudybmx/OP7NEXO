@@ -22,7 +22,7 @@ from app.core.database import SessionLocal, get_db
 from app.core.deps import get_usuario_atual, verificar_acesso_workspace
 from app.models.criativo import CriativoCarrossel, CriativoCarrosselSlide
 from app.models.user import User
-from app.services import carrossel_director, carrossel_gen, creative_vision
+from app.services import carrossel_analise, carrossel_director, carrossel_gen, creative_vision
 from app.services.ai_usage import registrar_uso
 from app.services.image_gen import _map_error
 from app.services.upload_validation import validar_e_normalizar_imagem
@@ -378,3 +378,88 @@ def obter(
         .all()
     )
     return {"carrossel": _car_dict(car), "slides": [_slide_dict(s) for s in slides]}
+
+
+# ───────────────────────────── Análise (advisory) ───────────────────────────
+class AnaliseIn(BaseModel):
+    personagens: list[ItemRefIn] = Field(default_factory=list)
+    objetos: list[ItemRefIn] = Field(default_factory=list)
+
+
+@router.post("/{carrossel_id}/analise")
+def analise(
+    carrossel_id: uuid.UUID,
+    payload: Optional[AnaliseIn] = None,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Análise completa por IA ANTES de gerar (advisory, custo ZERO).
+
+    Lê o roteiro PERSISTIDO (o front faz PUT /roteiro antes) + as descrições de
+    personagens/objetos do payload (estado vivo da tela). Não persiste nada.
+    """
+    car = _get_car(db, carrossel_id, usuario)
+    payload = payload or AnaliseIn()
+    dj = dict(car.director_json or {})
+    if payload.personagens:
+        dj["personagens"] = [{"descricao": (it.descricao or "").strip()} for it in payload.personagens[:5]]
+    if payload.objetos:
+        dj["objetos"] = [{"descricao": (it.descricao or "").strip()} for it in payload.objetos[:5]]
+    try:
+        resultado, usage = carrossel_analise.analisar_carrossel(car, dj_override=dj)
+    except Exception as exc:  # noqa: BLE001
+        code, msg = _map_error(exc)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            detail={"error_code": code, "error_message": msg})
+    registrar_uso(feature="copy", workspace_id=car.workspace_id,
+                  model=get_ai_config("copy").model, kind="text", usage=usage)
+    return resultado.model_dump()
+
+
+# ─────────────────────────────── Históricos ─────────────────────────────────
+@router.get("")
+def listar(
+    workspace_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+    limit: int = 60,
+):
+    """Histórico desta tela: carrosséis do workspace (recentes primeiro)."""
+    verificar_acesso_workspace(usuario, workspace_id, db)
+    cars = (
+        db.query(CriativoCarrossel)
+        .filter(CriativoCarrossel.workspace_id == workspace_id, CriativoCarrossel.ativo.is_(True))
+        .order_by(CriativoCarrossel.criado_em.desc())
+        .limit(max(1, min(int(limit), 200)))
+        .all()
+    )
+    out = []
+    for c in cars:
+        slides = (
+            db.query(CriativoCarrosselSlide)
+            .filter(CriativoCarrosselSlide.carrossel_id == c.id)
+            .order_by(CriativoCarrosselSlide.slide_index.asc())
+            .all()
+        )
+        urls = [s.base_image_url for s in slides if s.base_image_url]
+        out.append({
+            **_car_dict(c),
+            "criado_em": c.criado_em.isoformat() if c.criado_em else None,
+            "capa": urls[0] if urls else None,
+            "thumbs": urls,
+            "n_prontos": len(urls),
+        })
+    return {"carrosseis": out}
+
+
+@router.delete("/{carrossel_id}")
+def excluir(
+    carrossel_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Soft-delete do carrossel (some do histórico)."""
+    car = _get_car(db, carrossel_id, usuario)
+    car.ativo = False
+    db.commit()
+    return {"ok": True}
