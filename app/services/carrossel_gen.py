@@ -62,10 +62,16 @@ def _publish(carrossel_id, event: str, data: dict) -> None:
         log.debug("[carrossel_gen] publish falhou: %s", e)
 
 
-def _montar_prompt_slide(car: CriativoCarrossel, slide: CriativoCarrosselSlide) -> str:
+def _montar_prompt_slide(
+    car: CriativoCarrossel, slide: CriativoCarrosselSlide,
+    pers_items: list[dict] | None = None, obj_items: list[dict] | None = None,
+) -> str:
     """Prompt newsjacking INTEGRADO (texto queimado) a partir da copy + direção.
 
     Reconstrói o prompt a cada geração para refletir edições do usuário na copy.
+    `pers_items`/`obj_items`: refs RESOLVIDAS deste slide (cada item tem `descricao`
+    e `foto`='personagem_N'/'objeto_N' alinhado à imagem enviada ao modelo, ou None
+    quando é só descrição) — ver `_resolver_refs_slide`.
     """
     copy = slide.copy_json or {}
     paleta = (car.director_json or {}).get("paleta") or {}
@@ -122,31 +128,96 @@ def _montar_prompt_slide(car: CriativoCarrossel, slide: CriativoCarrosselSlide) 
         L.append("Renderize, em portugues, integrados na arte e com GRAFIA CORRETA:")
         L.extend(textos)
 
-    dj = car.director_json or {}
-    personagens = [p for p in (dj.get("personagens") or []) if (p or {}).get("descricao")]
-    objetos = [o for o in (dj.get("objetos") or []) if (o or {}).get("descricao")]
-    if personagens:
+    # Personagens/objetos: cada FOTO é uma pessoa/objeto DISTINTO (mapeamento foto->item).
+    pers_items = pers_items or []
+    obj_items = obj_items or []
+    pers_com = [p for p in pers_items if p.get("foto")]
+    pers_sem = [p for p in pers_items if not p.get("foto") and (p.get("descricao") or "").strip()]
+    if pers_com:
+        mapa = "; ".join(f'{p["foto"]} = {(p.get("descricao") or "").strip() or "a pessoa da foto"}'
+                         for p in pers_com)
         L.append(
-            "PESSOA(S) REAL(IS): as fotos anexadas sao a MESMA pessoa de cada personagem. PRESERVE o "
-            "rosto FIEL (formato, olhos, nariz, boca, tom de pele, cabelo, idade); a pessoa deve ser "
-            "CLARAMENTE reconhecivel. NAO rejuvenesca, NAO embeleze, NAO troque etnia/genero. "
-            "Personagens: " + "; ".join(p["descricao"] for p in personagens) + "."
+            "PESSOAS REAIS: cada foto anexada e uma PESSOA DISTINTA. Mapeamento -> " + mapa + ". "
+            "Para CADA pessoa, preserve o ROSTO FIEL da sua respectiva foto (formato do rosto, olhos, "
+            "nariz, boca, tom de pele, cabelo, idade); cada uma deve ser CLARAMENTE reconhecivel. "
+            "NAO funda as pessoas, NAO troque rostos entre as fotos, NAO duplique a mesma pessoa, "
+            "NAO rejuvenesca, NAO embeleze, NAO mude etnia/genero."
         )
-    if objetos:
-        L.append("Inclua estes objetos/produtos integrados na arte: " + "; ".join(o["descricao"] for o in objetos) + ".")
+    if pers_sem:
+        L.append("Personagens adicionais (sem foto, crie coerentes): "
+                 + "; ".join((p.get("descricao") or "").strip() for p in pers_sem) + ".")
+    obj_com = [o for o in obj_items if o.get("foto")]
+    obj_sem = [o for o in obj_items if not o.get("foto") and (o.get("descricao") or "").strip()]
+    if obj_com:
+        mapa = "; ".join(f'{o["foto"]} = {(o.get("descricao") or "").strip() or "o objeto da foto"}'
+                         for o in obj_com)
+        L.append("OBJETOS/PRODUTOS REAIS (imagens anexadas): " + mapa + ". Integre cada objeto na arte "
+                 "com FIDELIDADE ao formato/cor/marca da sua foto, sem inventar variacoes.")
+    if obj_sem:
+        L.append("Objetos adicionais (sem foto): "
+                 + "; ".join((o.get("descricao") or "").strip() for o in obj_sem) + ".")
+    tem_pessoa = bool(pers_com or pers_sem)
     L.append(
         "Hierarquia clara (o olho cai na palavra-bomba primeiro), recorte limpo, sem poluicao. "
-        "Sem marcas registradas." + ("" if personagens else " Sem pessoas reais reconheciveis.")
+        "Sem marcas registradas." + ("" if tem_pessoa else " Sem pessoas reais reconheciveis.")
     )
     return "\n".join(L)
 
 
+def _resolver_refs_slide(
+    car: CriativoCarrossel, slide: CriativoCarrosselSlide,
+    personagens_bytes: dict[int, bytes] | None = None,
+    objetos_bytes: dict[int, bytes] | None = None,
+) -> tuple[list[dict], list[bytes], list[dict], list[bytes]]:
+    """Resolve as refs DESTE slide a partir do pool (director_json) + seleção por slide.
+
+    Seleção em `director_json.slides[i].personagens_idx/objetos_idx` (índices no pool);
+    ausente => usa TODO o pool (compat. Fase 1, front ainda global). Devolve, alinhados:
+    (pers_items, pers_blist, obj_items, obj_blist) — o rótulo `foto` de cada item casa
+    com a posição em `*_blist` (que vai, na mesma ordem, para `images.edit`).
+    """
+    dj = car.director_json or {}
+    sd = next((s for s in (dj.get("slides") or [])
+               if int((s or {}).get("index", -1)) == slide.slide_index), {}) or {}
+
+    def _resolve(pool_key: str, sel_key: str, bmap: dict | None, prefix: str):
+        pool = dj.get(pool_key) or []
+        sel = sd.get(sel_key)
+        idxs = sel if isinstance(sel, list) else list(range(len(pool)))
+        items: list[dict] = []
+        blist: list[bytes] = []
+        k = 0
+        for i in idxs:
+            if not isinstance(i, int) or i < 0 or i >= len(pool):
+                continue
+            desc = ((pool[i] or {}).get("descricao") or "").strip()
+            b = (bmap or {}).get(i)
+            if b is not None:
+                k += 1
+                items.append({"descricao": desc, "foto": f"{prefix}_{k}"})
+                blist.append(b)
+            elif desc:
+                items.append({"descricao": desc, "foto": None})
+        return items, blist
+
+    pers_items, pers_blist = _resolve("personagens", "personagens_idx", personagens_bytes, "personagem")
+    obj_items, obj_blist = _resolve("objetos", "objetos_idx", objetos_bytes, "objeto")
+    return pers_items, pers_blist, obj_items, obj_blist
+
+
 def gerar_slide(
     db: Session, car: CriativoCarrossel, slide: CriativoCarrosselSlide, quality: str,
-    personagem_bytes: list[bytes] | None = None,
+    personagens_bytes: dict[int, bytes] | None = None,
+    objetos_bytes: dict[int, bytes] | None = None,
 ) -> CriativoGeracao:
-    """Gera UM slide: cria a criativo_geracoes (prompt newsjacking), gera e linka."""
-    prompt = _montar_prompt_slide(car, slide)
+    """Gera UM slide: cria a criativo_geracoes (prompt newsjacking), gera e linka.
+
+    Cada slide manda ao modelo SÓ as fotos dos personagens/objetos que ele referencia
+    (resolvidas do pool), com rótulo foto->item para preservar cada rosto fiel.
+    """
+    pers_items, pers_blist, obj_items, obj_blist = _resolver_refs_slide(
+        car, slide, personagens_bytes, objetos_bytes)
+    prompt = _montar_prompt_slide(car, slide, pers_items, obj_items)
     ger = CriativoGeracao(
         workspace_id=car.workspace_id,
         user_id=car.user_id,
@@ -168,7 +239,9 @@ def gerar_slide(
     db.commit()
     db.refresh(ger)
 
-    image_gen.executar_geracao_integrada(db, ger, personagem_bytes=personagem_bytes)  # ger.prompt_final + fotos
+    image_gen.executar_geracao_integrada(
+        db, ger, personagem_bytes=pers_blist or None, objeto_bytes=obj_blist or None,
+    )  # ger.prompt_final + fotos (personagens e objetos com rótulos distintos)
 
     slide.geracao_id = ger.id
     slide.base_image_url = ger.imagem_base_url
@@ -180,7 +253,8 @@ def gerar_slide(
 
 
 def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium",
-                    personagem_bytes: list[bytes] | None = None) -> None:
+                    personagens_bytes: dict[int, bytes] | None = None,
+                    objetos_bytes: dict[int, bytes] | None = None) -> None:
     """Gera todos os slides do carrossel (formato mestre). Idempotente por status.
 
     Pré-cheque de saldo do carrossel inteiro; débito SÓ por slide concluído.
@@ -221,7 +295,7 @@ def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium"
         db.commit()
         _publish(car.id, "carrossel.slide.start", {"index": slide.slide_index, "total": total})
 
-        ger = gerar_slide(db, car, slide, quality, personagem_bytes)
+        ger = gerar_slide(db, car, slide, quality, personagens_bytes, objetos_bytes)
 
         if ger.status == "done":
             estudio_wallet.debitar(
@@ -246,7 +320,8 @@ def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium"
 
 
 def regenerar_slide(db: Session, car: CriativoCarrossel, slide_index: int, quality: str = "medium",
-                    personagem_bytes: list[bytes] | None = None) -> CriativoGeracao:
+                    personagens_bytes: dict[int, bytes] | None = None,
+                    objetos_bytes: dict[int, bytes] | None = None) -> CriativoGeracao:
     """Regenera UM slide isolado (não refaz o carrossel). Débito só no sucesso."""
     slide = (
         db.query(CriativoCarrosselSlide)
@@ -265,7 +340,7 @@ def regenerar_slide(db: Session, car: CriativoCarrossel, slide_index: int, quali
 
     slide.status = "running"
     db.commit()
-    ger = gerar_slide(db, car, slide, quality, personagem_bytes)
+    ger = gerar_slide(db, car, slide, quality, personagens_bytes, objetos_bytes)
     if ger.status == "done":
         estudio_wallet.debitar(
             db, car.workspace_id, custo, "Regeneracao de slide (carrossel)",

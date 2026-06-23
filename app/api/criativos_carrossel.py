@@ -232,6 +232,25 @@ class GerarIn(BaseModel):
     objetos: list[ItemRefIn] = Field(default_factory=list)
 
 
+def _coletar_refs(itens: list[ItemRefIn]) -> tuple[list[dict], dict[int, bytes]]:
+    """Pool de refs: descrições (persistem no director_json, por índice) + fotos
+    decodificadas IN-MEMORY mapeadas pelo MESMO índice do pool (rosto/objeto fiel via
+    images.edit). NÃO pula itens — o índice tem que casar com a seleção por slide
+    (`director_json.slides[i].personagens_idx/objetos_idx`)."""
+    descs: list[dict] = []
+    bmap: dict[int, bytes] = {}
+    for i, it in enumerate((itens or [])[:5]):
+        descs.append({"descricao": (it.descricao or "").strip()})
+        if it.imagem_base64:
+            try:
+                raw = base64.b64decode(it.imagem_base64.split(",")[-1])
+                img, *_ = validar_e_normalizar_imagem(raw, error_code="invalid_reference")
+                bmap[i] = img
+            except Exception:  # noqa: BLE001
+                pass
+    return descs, bmap
+
+
 def _criar_slides(db: Session, car: CriativoCarrossel) -> int:
     """Cria/atualiza as rows de slide a partir do director_json (idempotente)."""
     slides_roteiro = (car.director_json or {}).get("slides") or []
@@ -277,27 +296,14 @@ def gerar(
     car = _get_car(db, carrossel_id, usuario)
     quality = payload.quality if payload.quality in _QUALITIES else "medium"
 
-    # Personagens & objetos: fotos vão IN-MEMORY para a geração (rosto fiel via images.edit);
-    # descrições ficam no director_json (persistidas, entram no prompt de cada slide).
-    fotos: list[bytes] = []
-
-    def _coletar(itens: list[ItemRefIn]) -> list[dict]:
-        descs: list[dict] = []
-        for it in (itens or [])[:5]:
-            if it.imagem_base64:
-                try:
-                    raw = base64.b64decode(it.imagem_base64.split(",")[-1])
-                    img, *_ = validar_e_normalizar_imagem(raw, error_code="invalid_reference")
-                    fotos.append(img)
-                except Exception:  # noqa: BLE001
-                    pass
-            if (it.descricao or "").strip():
-                descs.append({"descricao": it.descricao.strip()})
-        return descs
-
+    # Personagens & objetos: fotos vão IN-MEMORY para a geração (rosto/objeto fiel via
+    # images.edit), indexadas pelo pool; descrições ficam no director_json (persistidas,
+    # entram no prompt de cada slide). Cada slide usa só as refs que seleciona.
+    pers_descs, pers_bytes = _coletar_refs(payload.personagens)
+    obj_descs, obj_bytes = _coletar_refs(payload.objetos)
     dj = dict(car.director_json or {})
-    dj["personagens"] = _coletar(payload.personagens)
-    dj["objetos"] = _coletar(payload.objetos)
+    dj["personagens"] = pers_descs
+    dj["objetos"] = obj_descs
     car.director_json = dj
 
     total = _criar_slides(db, car)
@@ -308,13 +314,13 @@ def gerar(
     custo = carrossel_gen.custo_carrossel(total, quality)
 
     cid = car.id
-    fotos_gen = fotos or None
+    pgen, ogen = (pers_bytes or None), (obj_bytes or None)
 
     def _run() -> None:
         with SessionLocal() as bdb:
             c = bdb.get(CriativoCarrossel, cid)
             if c is not None:
-                carrossel_gen.gerar_carrossel(bdb, c, quality, fotos_gen)
+                carrossel_gen.gerar_carrossel(bdb, c, quality, pgen, ogen)
 
     threading.Thread(target=_run, daemon=True).start()
     return {"carrossel_id": str(car.id), "total": total, "custo_tokens": custo, "status": "queued"}
@@ -331,8 +337,19 @@ def regenerar_slide(
     """Regenera UM slide (síncrono, ~20s). Débito só no sucesso."""
     car = _get_car(db, carrossel_id, usuario)
     quality = payload.quality if payload.quality in _QUALITIES else "medium"
+    # Refresh do pool + fotos (rosto/objeto fiel também na regeneração isolada).
+    pgen = ogen = None
+    if payload.personagens or payload.objetos:
+        pers_descs, pers_bytes = _coletar_refs(payload.personagens)
+        obj_descs, obj_bytes = _coletar_refs(payload.objetos)
+        dj = dict(car.director_json or {})
+        dj["personagens"] = pers_descs
+        dj["objetos"] = obj_descs
+        car.director_json = dj
+        db.commit()
+        pgen, ogen = (pers_bytes or None), (obj_bytes or None)
     try:
-        ger = carrossel_gen.regenerar_slide(db, car, slide_index, quality)
+        ger = carrossel_gen.regenerar_slide(db, car, slide_index, quality, pgen, ogen)
     except PermissionError:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, detail={"error_code": "saldo_insuficiente"})
     except ValueError as e:

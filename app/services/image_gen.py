@@ -567,13 +567,20 @@ def criar_geracao_integrada(
 def _montar_imagens_edit(
     *, logo_bytes: bytes | None, logo_mode: str,
     referencia_bytes: bytes | None, personagem_bytes: list[bytes] | None,
+    objeto_bytes: list[bytes] | None = None,
 ) -> list[tuple[str, bytes, str]]:
-    """Imagens de entrada p/ images.edit, na ordem de prioridade do modelo."""
+    """Imagens de entrada p/ images.edit, na ordem de prioridade do modelo.
+
+    Ordem (DEVE casar com os rótulos do prompt): personagem_N, objeto_N, logo, referencia.
+    """
     imagens: list[tuple[str, bytes, str]] = []
     # Personagem PRIMEIRO (fonte de identidade); gpt-image-2 já processa toda
     # imagem de entrada em alta fidelidade (não há param input_fidelity).
     for i, pb in enumerate(personagem_bytes or [], 1):
         imagens.append((f"personagem_{i}.png", pb, "image/png"))
+    # Objetos/produtos reais: rótulo PRÓPRIO (objeto_N) — não confundir com pessoa.
+    for i, ob in enumerate(objeto_bytes or [], 1):
+        imagens.append((f"objeto_{i}.png", ob, "image/png"))
     # No modo "compor" a logo NÃO vai ao modelo (pra ele não desenhar nada);
     # é composta depois. No "integrar" a logo vai e o modelo a desenha.
     if logo_bytes and logo_mode == "integrar":
@@ -587,6 +594,7 @@ def _render_base(
     prompt: str, *, generation_size: str, quality: str,
     logo_bytes: bytes | None = None, logo_mode: str = "compor",
     referencia_bytes: bytes | None = None, personagem_bytes: list[bytes] | None = None,
+    objeto_bytes: list[bytes] | None = None,
 ) -> tuple[bytes, dict, str | None, str]:
     """Chama o gpt-image-2 (edit se houver imagens de entrada; senão generate) e
     devolve (conteúdo_png, usage, request_id, model_snapshot). SEM pós-processo."""
@@ -594,6 +602,7 @@ def _render_base(
     imagens = _montar_imagens_edit(
         logo_bytes=logo_bytes, logo_mode=logo_mode,
         referencia_bytes=referencia_bytes, personagem_bytes=personagem_bytes,
+        objeto_bytes=objeto_bytes,
     )
     if imagens:
         raw = client.images.with_raw_response.edit(
@@ -657,6 +666,7 @@ def executar_geracao_integrada(
     logo_bytes: bytes | None = None,
     referencia_bytes: bytes | None = None,
     personagem_bytes: list[bytes] | None = None,
+    objeto_bytes: list[bytes] | None = None,
 ) -> CriativoGeracao:
     """Gera a arte integrada (1 formato): renderiza a base e persiste o final."""
     spec = ger.params_json or {}
@@ -667,6 +677,7 @@ def executar_geracao_integrada(
             ger.prompt_final, generation_size=ger.generation_size, quality=quality,
             logo_bytes=logo_bytes, logo_mode=logo_mode,
             referencia_bytes=referencia_bytes, personagem_bytes=personagem_bytes,
+            objeto_bytes=objeto_bytes,
         )
         _compose_e_persistir(db, ger, content, logo_bytes=logo_bytes, logo_mode=logo_mode)
         ger.usage = usage
