@@ -38,5 +38,10 @@
 - [ ] `graphify update`; atualizar `CONTEXT.md`.
 - [ ] Merge `agent/criativos-2` → prod (`api/production` / `production`) + `lock-deploy bash /root/deploy.sh both` **e** `worker`. Migration number resolvido no merge.
 
+## Evoluções (pós-MVP)
+- [x] **Origin B — referência de estilo** (User Story 5): `/diretor` aceita `referencia_base64` → `creative_vision.extrair_creative_spec` extrai estilo (descrição+paleta) → alimenta o diretor; aba "Referência de estilo" + uploader no front.
+- [ ] **Personagens & objetos (5+5)** (User Story 3): storage de fotos por carrossel + uploader + `images.edit` (rosto fiel).
+- [ ] **Buscador de notícias (Origin A)**: Firecrawl gerenciado → 5 pautas.
+
 ## Fora de escopo (Fase 2)
 - [ ] Origin A (Firecrawl gerenciado → 5 pautas). [ ] Modo contínuo/panorâmico (constraint ≤3:1). [ ] 4:3 mestre extra/derivação por outpaint (se necessário).

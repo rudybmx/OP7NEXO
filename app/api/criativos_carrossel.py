@@ -7,6 +7,7 @@ acompanha por polling de `GET /{id}`. Regeneração por slide é síncrona.
 
 Multi-tenant: todo acesso passa por `verificar_acesso_workspace` (via `_get_car`).
 """
+import base64
 import json
 import threading
 import uuid
@@ -21,8 +22,10 @@ from app.core.database import SessionLocal, get_db
 from app.core.deps import get_usuario_atual, verificar_acesso_workspace
 from app.models.criativo import CriativoCarrossel, CriativoCarrosselSlide
 from app.models.user import User
-from app.services import carrossel_director, carrossel_gen
+from app.services import carrossel_director, carrossel_gen, creative_vision
 from app.services.ai_usage import registrar_uso
+from app.services.image_gen import _map_error
+from app.services.upload_validation import validar_e_normalizar_imagem
 
 router = APIRouter(prefix="/design/carrossel", tags=["carrossel"])
 
@@ -72,6 +75,7 @@ class DiretorIn(BaseModel):
     origem: str = "manual"  # manual | referencia
     tema: Optional[str] = Field(default=None, max_length=500)
     referencia_desc: Optional[str] = Field(default=None, max_length=4000)
+    referencia_base64: Optional[str] = None  # Origin B: imagem de referência de estilo
     n_slides: int = Field(default=5, ge=2, le=10)
     master_format: str = "9x16"
 
@@ -84,16 +88,40 @@ def diretor(
 ):
     """Tema → roteiro newsjacking validado (Pydantic + repair). NÃO gera imagem."""
     verificar_acesso_workspace(usuario, payload.workspace_id, db)
-    if not (payload.tema or payload.referencia_desc):
+    if not (payload.tema or payload.referencia_base64 or payload.referencia_desc):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Informe um tema ou uma referência")
     master = payload.master_format if payload.master_format in _MASTERS else "9x16"
+
+    # Origin B — extrai o ESTILO de uma imagem de referência (reusa creative_vision).
+    referencia_desc = payload.referencia_desc
+    if payload.origem == "referencia" and payload.referencia_base64:
+        try:
+            raw = base64.b64decode(payload.referencia_base64.split(",")[-1])
+            img, *_ = validar_e_normalizar_imagem(raw, error_code="invalid_reference")
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Imagem de referência inválida")
+        try:
+            spec, vusage = creative_vision.extrair_creative_spec(img)
+        except Exception as exc:  # noqa: BLE001
+            code, msg = _map_error(exc)
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail={"error_code": code, "error_message": msg})
+        referencia_desc = (spec.get("descricao") or "").strip()
+        paleta = ", ".join([c for c in (spec.get("paleta_de_cores") or []) if c])
+        if paleta:
+            referencia_desc = f"{referencia_desc} Paleta de cores: {paleta}."
+        try:
+            registrar_uso(feature="vision", workspace_id=payload.workspace_id,
+                          model=get_ai_config("vision").model, kind="text", usage=vusage)
+        except Exception:  # noqa: BLE001
+            pass
+
     try:
         roteiro, usage = carrossel_director.gerar_roteiro(
             tema=payload.tema or "",
             n_slides=payload.n_slides,
             master_format=master,
             origem=payload.origem,
-            referencia_desc=payload.referencia_desc,
+            referencia_desc=referencia_desc,
             db=db,
         )
     except carrossel_director.RoteiroInvalidoError as e:
