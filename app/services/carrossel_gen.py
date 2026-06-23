@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 
 from sqlalchemy.orm import Session
@@ -24,6 +25,9 @@ from app.services import estudio_wallet
 from app.services.redis_pub import _get_redis
 
 log = logging.getLogger(__name__)
+
+# Erros que valem retry (transitórios do provedor); o resto é determinístico.
+_TRANSITORIOS = {"provider_error", "timeout", "rate_limited"}
 
 # Tamanhos nativos do gpt-image-2 confirmados no PoC (multiplos de 16, ratio <=3:1).
 _MASTER_SIZE = {
@@ -242,9 +246,17 @@ def gerar_slide(
     db.commit()
     db.refresh(ger)
 
-    image_gen.executar_geracao_integrada(
-        db, ger, personagem_bytes=pers_blist or None, objeto_bytes=obj_blist or None,
-    )  # ger.prompt_final + fotos (personagens e objetos com rótulos distintos)
+    # Geração com retry curto SÓ p/ erros transitórios (502/timeout/rate-limit);
+    # NUNCA re-tenta blocked_by_policy/invalid_prompt (determinísticos).
+    for tentativa in range(1, 4):
+        image_gen.executar_geracao_integrada(
+            db, ger, personagem_bytes=pers_blist or None, objeto_bytes=obj_blist or None,
+        )  # ger.prompt_final + fotos (personagens e objetos com rótulos distintos)
+        if ger.status == "done" or ger.error_code not in _TRANSITORIOS or tentativa == 3:
+            break
+        log.info("[carrossel_gen] slide %s retry %s (transitório: %s)",
+                 slide.slide_index, tentativa, ger.error_code)
+        time.sleep(min(2 * tentativa, 5))
 
     slide.geracao_id = ger.id
     slide.base_image_url = ger.imagem_base_url

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.core.ai_config import get_ai_config
 from app.core.database import SessionLocal, get_db
 from app.core.deps import get_usuario_atual, verificar_acesso_workspace
-from app.models.criativo import CriativoCarrossel, CriativoCarrosselSlide
+from app.models.criativo import CriativoCarrossel, CriativoCarrosselSlide, CriativoGeracao
 from app.models.user import User
 from app.services import carrossel_analise, carrossel_director, carrossel_gen, creative_vision
 from app.services.ai_usage import registrar_uso
@@ -57,8 +57,8 @@ def _car_dict(car: CriativoCarrossel) -> dict:
     }
 
 
-def _slide_dict(s: CriativoCarrosselSlide) -> dict:
-    return {
+def _slide_dict(s: CriativoCarrosselSlide, ger: CriativoGeracao | None = None) -> dict:
+    d = {
         "slide_index": s.slide_index,
         "intensidade": s.intensidade,
         "copy": s.copy_json,
@@ -66,7 +66,13 @@ def _slide_dict(s: CriativoCarrosselSlide) -> dict:
         "base_image_url": s.base_image_url,
         "formatos": s.formatos_json,
         "status": s.status,
+        "error_code": None,
+        "error_message": None,
     }
+    if s.status == "error" and ger is not None:
+        d["error_code"] = ger.error_code
+        d["error_message"] = ger.error_message
+    return d
 
 
 # ───────────────────────────────── Diretor ──────────────────────────────────
@@ -377,7 +383,13 @@ def obter(
         .order_by(CriativoCarrosselSlide.slide_index.asc())
         .all()
     )
-    return {"carrossel": _car_dict(car), "slides": [_slide_dict(s) for s in slides]}
+    # Junta a geração de cada slide (error_code/message ficam lá) — batch, sem N+1.
+    ger_ids = [s.geracao_id for s in slides if s.geracao_id]
+    gers = (
+        {g.id: g for g in db.query(CriativoGeracao).filter(CriativoGeracao.id.in_(ger_ids)).all()}
+        if ger_ids else {}
+    )
+    return {"carrossel": _car_dict(car), "slides": [_slide_dict(s, gers.get(s.geracao_id)) for s in slides]}
 
 
 # ───────────────────────────── Análise (advisory) ───────────────────────────
