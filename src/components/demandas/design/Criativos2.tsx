@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Sparkles, Wand2, RefreshCw, Loader2, AlertCircle, ArrowRight, ArrowLeft, Download,
-  Image as ImageIcon, ScanSearch, History, LayoutGrid, Check, Trash2, ShieldCheck, X,
+  Image as ImageIcon, ScanSearch, History, LayoutGrid, Check, Trash2, ShieldCheck, X, Maximize2,
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { usePersistedState } from '@/hooks/use-estado-persistido'
@@ -25,7 +25,7 @@ type Roteiro = {
   paleta?: { tensao?: string; resolucao?: string; pivo?: string }
   slides?: SlideRoteiro[]; ctas?: { engajamento?: string; conversao?: string }; legenda?: string
 }
-type SlideEstado = { slide_index: number; status: string; base_image_url?: string | null }
+type SlideEstado = { slide_index: number; status: string; base_image_url?: string | null; error_code?: string | null; error_message?: string | null }
 type CarrosselEstado = {
   carrossel: { id: string; status: string; error_code?: string | null; error_message?: string | null }
   slides: SlideEstado[]
@@ -116,6 +116,8 @@ export function Criativos2() {
   const [analise, setAnalise] = useState<Analise | null>(null)
   const [analisando, setAnalisando] = useState(false)
   const [showAnalise, setShowAnalise] = useState(false)
+  const [showVer, setShowVer] = useState(false)
+  const [melhorandoRef, setMelhorandoRef] = useState<string | null>(null)
   // Históricos
   const [historicos, setHistoricos] = useState<HistItem[] | null>(null)
   const [carregandoHist, setCarregandoHist] = useState(false)
@@ -319,6 +321,29 @@ export function Criativos2() {
   }
 
   // ───── UI: pool de personagens/objetos (upload + descrição) ─────
+  // Melhorar com IA a descrição de um personagem/objeto do pool, integrando o contexto
+  // (tema + TODOS os personagens/objetos) — ex.: "personagem com bola no pé".
+  const melhorarRef = useCallback(async (key: 'personagens' | 'objetos', i: number) => {
+    if (!workspaceAtual) return
+    const chave = `${key}:${i}`; setMelhorandoRef(chave); setErro(null)
+    try {
+      const items = key === 'personagens' ? personagens : objetos
+      const setItems = key === 'personagens' ? setPersonagens : setObjetos
+      const atual = items[i]?.descricao || ''
+      const todos = [...personagens.map(p => p.descricao), ...objetos.map(o => o.descricao)].filter(Boolean)
+      const r = await api.post<{ texto: string }>('/design/melhorar-copy', {
+        workspace_id: workspaceAtual,
+        campo: key === 'personagens' ? 'personagem' : 'objeto',
+        texto_atual: atual || undefined,
+        product: `${tema || ''} | personagens: ${personagens.map(p => p.descricao).filter(Boolean).join(', ')} | objetos: ${objetos.map(o => o.descricao).filter(Boolean).join(', ')}`.trim(),
+        objective: 'descrever para integrar bem na arte do carrossel (personagem e objeto coerentes)',
+        existentes: todos.filter(d => d !== atual).slice(0, 8),
+      })
+      setItems(prev => prev.map((x, j) => j === i ? { ...x, descricao: r.texto } : x))
+    } catch (e) { setErro(errMsg(e) || 'Falha ao melhorar com IA.') }
+    finally { setMelhorandoRef(null) }
+  }, [workspaceAtual, tema, personagens, objetos])
+
   const renderRefs = (key: 'personagens' | 'objetos', items: ItemRef[], setItems: React.Dispatch<React.SetStateAction<ItemRef[]>>, lbl: string) => (
     <div className="flex flex-col gap-2">
       <span className="ds-help">{lbl}</span>
@@ -330,6 +355,10 @@ export function Criativos2() {
           </label>
           <input value={it.descricao} onChange={e => setItems(prev => prev.map((x, j) => j === i ? { ...x, descricao: e.target.value } : x))}
             placeholder={key === 'personagens' ? `Personagem ${i + 1}: quem é (nome/papel)` : `Objeto ${i + 1}: o que é`} className={inputCls + ' flex-1'} />
+          <button type="button" onClick={() => melhorarRef(key, i)} disabled={!!melhorandoRef} title="Melhorar com IA"
+            className="shrink-0 h-9 w-9 inline-flex items-center justify-center rounded-[var(--ws-radius-lg)] border border-[var(--ws-blue)]/40 bg-[rgba(62,91,255,0.06)] text-[var(--ws-blue)] hover:bg-[rgba(62,91,255,0.12)] disabled:opacity-50">
+            {melhorandoRef === `${key}:${i}` ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+          </button>
           <button onClick={() => setItems(prev => prev.filter((_, j) => j !== i))} className="ds-help px-1.5 text-base hover:text-[#a32d2d]">×</button>
         </div>
       ))}
@@ -582,6 +611,7 @@ export function Criativos2() {
                 <span className="ds-label">Personagens & objetos (pool — selecione por slide acima)</span>
                 {renderRefs('personagens', personagens, setPersonagens, 'Personagens (até 5, rosto fiel). Recomendado até 3 por slide.')}
                 {renderRefs('objetos', objetos, setObjetos, 'Objetos / produtos (até 5)')}
+                <p className="ds-help">⚠️ Evite fotos de celebridades / figuras públicas — a OpenAI costuma bloquear a geração. Use fotos próprias, de clientes ou de modelos.</p>
               </div>
 
               {/* Ações: analisar + gerar */}
@@ -603,6 +633,9 @@ export function Criativos2() {
                 {!TERMINAIS.includes(estado.carrossel.status)
                   ? <><Loader2 size={16} className="animate-spin text-[var(--ws-blue)]" /> Gerando… ({estado.slides.filter(s => s.status === 'done').length}/{estado.slides.length || (roteiro?.slides || []).length})</>
                   : <span className="ds-label">Carrossel <b className="text-[var(--ws-text-1)] ml-1">{estado.carrossel.status}</b></span>}
+                {estado.slides.some(s => s.base_image_url) && (
+                  <button onClick={() => setShowVer(true)} className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 rounded-[var(--ws-radius-lg)] text-sm border border-[var(--ws-blue)]/50 text-[var(--ws-blue)] bg-[rgba(62,91,255,0.06)] hover:bg-[rgba(62,91,255,0.12)]"><Maximize2 size={14} /> Ver carrossel</button>
+                )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {(estado.slides || []).map(s => (
@@ -612,6 +645,11 @@ export function Criativos2() {
                         : s.status === 'error' ? <AlertCircle size={20} className="text-[#a32d2d]" /> : <Loader2 size={20} className="animate-spin text-[var(--ws-text-3)]" />}
                       <span className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-[11px] flex items-center justify-center">{s.slide_index}</span>
                     </div>
+                    {s.status === 'error' && (
+                      <p className="px-2 pt-1.5 text-[11px] leading-snug text-[#a32d2d]">
+                        {s.error_message || 'Falhou ao gerar.'}{s.error_code === 'blocked_by_policy' ? ' Evite celebridades/figuras públicas; use fotos próprias.' : ''}
+                      </p>
+                    )}
                     <div className="flex items-center justify-between p-2">
                       <button onClick={() => regenerarSlide(s.slide_index)} title="Regenerar" className="ds-help inline-flex items-center gap-1 hover:text-[var(--ws-text-1)]"><RefreshCw size={12} /> Regenerar</button>
                       {s.base_image_url && <a href={s.base_image_url} target="_blank" rel="noreferrer" download title="Baixar" className="ds-help hover:text-[var(--ws-text-1)]"><Download size={13} /></a>}
@@ -659,6 +697,30 @@ export function Criativos2() {
           <LayoutGrid size={22} className="text-[var(--ws-blue)]" />
           <span className="ds-section-title">Modelos de referência</span>
           <p className="ds-help">Em breve: uma biblioteca de modelos curados de carrossel newsjacking. Por enquanto, salve um carrossel pronto pelo botão <b>Usar como modelo</b> na aba Históricos.</p>
+        </div>
+      )}
+
+      {/* ══════════════════ MODAL "VER CARROSSEL" (lado a lado, fit na tela) ══════════════════ */}
+      {showVer && estado && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/85 p-3 sm:p-5" onClick={() => setShowVer(false)}>
+          <div className="flex items-center justify-between text-white mb-3 shrink-0" onClick={e => e.stopPropagation()}>
+            <span className="text-sm font-medium">Carrossel — {estado.slides.filter(s => s.base_image_url).length}/{estado.slides.length} prontos</span>
+            <button onClick={() => setShowVer(false)} title="Fechar" className="h-9 w-9 inline-flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white"><X size={18} /></button>
+          </div>
+          <div className="flex-1 min-h-0 flex items-stretch justify-center gap-2 sm:gap-3" onClick={e => e.stopPropagation()}>
+            {estado.slides.map(s => (
+              <div key={s.slide_index} className="relative flex-1 min-w-0 flex items-center justify-center">
+                {s.base_image_url
+                  ? <img src={s.base_image_url} alt={`Slide ${s.slide_index}`} className="max-h-full max-w-full object-contain rounded-lg shadow-2xl" />
+                  : <div className="flex flex-col items-center justify-center gap-1.5 text-white/60 text-xs px-2 text-center">
+                      {s.status === 'error'
+                        ? <><AlertCircle size={22} className="text-[#ff8b8b]" /><span>{s.error_message || 'Falhou'}</span></>
+                        : <Loader2 size={22} className="animate-spin" />}
+                    </div>}
+                <span className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/70 text-white text-xs flex items-center justify-center">{s.slide_index}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
