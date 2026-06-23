@@ -105,7 +105,10 @@ def _montar_prompt_slide(
     estilo = (dj0.get("estilo") or "").strip()
     if estilo:
         L.append("Estilo visual: " + _ESTILOS.get(estilo, estilo) + ".")
-    estilo_ref = (dj0.get("estilo_referencia") or "").strip()
+    # estilo_referencia POR SLIDE (modo "1 modelo por slide") tem prioridade sobre o global.
+    _sd = next((s for s in (dj0.get("slides") or [])
+                if int((s or {}).get("index", -1)) == slide.slide_index), {}) or {}
+    estilo_ref = (_sd.get("estilo_referencia") or dj0.get("estilo_referencia") or "").strip()
     if estilo_ref:
         L.append(
             "Siga FIELMENTE o estilo desta referencia (cores, composicao, clima, iluminacao): "

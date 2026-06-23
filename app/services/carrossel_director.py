@@ -44,6 +44,11 @@ class SlideRoteiro(BaseModel):
     intensidade: str = "medio"          # alto | medio | baixo | medio-alto
     copy: SlideCopy = Field(default_factory=SlideCopy)
     direcao_imagem: str                 # tipo de imagem + sujeito + emoção/ângulo
+    # Edição por slide (front): índices do pool de personagens/objetos usados AQUI
+    # (None = todos do pool; [] = nenhum) e modelo-reverso por slide.
+    personagens_idx: list[int] | None = None
+    objetos_idx: list[int] | None = None
+    estilo_referencia: str | None = None
 
 
 class Paleta(BaseModel):
