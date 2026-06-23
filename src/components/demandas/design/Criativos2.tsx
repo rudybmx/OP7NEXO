@@ -118,6 +118,7 @@ export function Criativos2() {
   const [showAnalise, setShowAnalise] = useState(false)
   const [showVer, setShowVer] = useState(false)
   const [melhorandoRef, setMelhorandoRef] = useState<string | null>(null)
+  const [regenerando, setRegenerando] = useState<number | null>(null)
   // Históricos
   const [historicos, setHistoricos] = useState<HistItem[] | null>(null)
   const [carregandoHist, setCarregandoHist] = useState(false)
@@ -286,12 +287,14 @@ export function Criativos2() {
 
   const regenerarSlide = useCallback(async (idx: number) => {
     if (!carrosselId) return
+    setRegenerando(idx); setErro(null)
     try {
       await salvarRoteiro()  // regenera já com os textos editados no momento
       await api.post(`/design/carrossel/${carrosselId}/slides/${idx}/regenerar`, { quality, ...refsPayload() })
       if (pollRef.current) clearTimeout(pollRef.current)
       carregarEstado(carrosselId)
     } catch (e) { setErro(errMsg(e) ||'Falha ao regenerar o slide.') }
+    finally { setRegenerando(null) }
   }, [carrosselId, quality, carregarEstado, salvarRoteiro, personagens, objetos])
 
   const reset = () => {
@@ -651,6 +654,11 @@ export function Criativos2() {
                       {s.base_image_url ? <img src={s.base_image_url} alt={`Slide ${s.slide_index}`} className="w-full h-full object-cover" />
                         : (s.status === 'error' || TERMINAIS.includes(estado.carrossel.status)) ? <AlertCircle size={20} className="text-[#a32d2d]" /> : <Loader2 size={20} className="animate-spin text-[var(--ws-text-3)]" />}
                       <span className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-[11px] flex items-center justify-center">{s.slide_index}</span>
+                      {regenerando === s.slide_index && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white text-xs">
+                          <Loader2 size={22} className="animate-spin" /> Regenerando…
+                        </div>
+                      )}
                     </div>
                     {(s.status === 'error' || (TERMINAIS.includes(estado.carrossel.status) && !s.base_image_url && s.status !== 'done')) && (
                       <p className="px-2 pt-1.5 text-[11px] leading-snug text-[#a32d2d]">
@@ -658,7 +666,9 @@ export function Criativos2() {
                       </p>
                     )}
                     <div className="flex items-center justify-between p-2">
-                      <button onClick={() => regenerarSlide(s.slide_index)} title="Regenerar" className="ds-help inline-flex items-center gap-1 hover:text-[var(--ws-text-1)]"><RefreshCw size={12} /> Regenerar</button>
+                      <button onClick={() => regenerarSlide(s.slide_index)} disabled={regenerando !== null} title="Regenerar" className="ds-help inline-flex items-center gap-1 hover:text-[var(--ws-text-1)] disabled:opacity-50">
+                        {regenerando === s.slide_index ? <><Loader2 size={12} className="animate-spin" /> Regenerando…</> : <><RefreshCw size={12} /> Regenerar</>}
+                      </button>
                       {s.base_image_url && <a href={s.base_image_url} target="_blank" rel="noreferrer" download title="Baixar" className="ds-help hover:text-[var(--ws-text-1)]"><Download size={13} /></a>}
                     </div>
                   </div>
