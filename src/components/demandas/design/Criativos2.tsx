@@ -25,6 +25,8 @@ type CarrosselEstado = {
   slides: SlideEstado[]
 }
 
+type Pauta = { titulo: string; assunto: string; personagens?: string[]; linha_criativa?: string; fonte_url?: string | null }
+
 const MASTERS = [{ id: '9x16', label: '9:16 · stories/reels' }, { id: '4x3', label: '4:3 · landscape' }]
 const QUALITIES = [{ id: 'low', label: 'Rascunho' }, { id: 'medium', label: 'Médio' }, { id: 'high', label: 'Alta' }]
 const TERMINAIS = ['done', 'error', 'parcial']
@@ -36,8 +38,11 @@ export function Criativos2() {
   const [nSlides, setNSlides] = usePersistedState<number>('op7-c2-nslides', 5)
   const [master, setMaster] = usePersistedState<string>('op7-c2-master', '9x16')
   const [quality, setQuality] = usePersistedState<string>('op7-c2-quality', 'low')
-  const [origem, setOrigem] = usePersistedState<'manual' | 'referencia'>('op7-c2-origem', 'manual')
+  const [origem, setOrigem] = usePersistedState<'manual' | 'referencia' | 'noticia'>('op7-c2-origem', 'manual')
   const [refImg, setRefImg] = useState<string | null>(null)
+  const [assuntoNoticia, setAssuntoNoticia] = useState('')
+  const [pautas, setPautas] = useState<Pauta[] | null>(null)
+  const [buscandoPautas, setBuscandoPautas] = useState(false)
   const [carrosselId, setCarrosselId] = usePersistedState<string | null>('op7-c2-carrossel', null)
   const [roteiro, setRoteiro] = useState<Roteiro | null>(null)
   const [estado, setEstado] = useState<CarrosselEstado | null>(null)
@@ -53,16 +58,29 @@ export function Criativos2() {
     r.readAsDataURL(f)
   }
 
-  // ───── Diretor: tema/referência -> roteiro (custo zero) ─────
+  // ───── Origin A: buscar pautas de notícia (Firecrawl) ─────
+  const buscarPautas = useCallback(async () => {
+    if (!workspaceAtual || !assuntoNoticia.trim()) { setErro('Informe um assunto.'); return }
+    setBuscandoPautas(true); setErro(null); setPautas(null)
+    try {
+      const r = await api.post<{ pautas: Pauta[] }>('/design/carrossel/pautas', {
+        workspace_id: workspaceAtual, assunto: assuntoNoticia.trim(),
+      })
+      setPautas(r.pautas || [])
+    } catch (e: any) { setErro(e?.message || 'Falha ao buscar pautas.') }
+    finally { setBuscandoPautas(false) }
+  }, [workspaceAtual, assuntoNoticia])
+
+  // ───── Diretor: tema/referência/pauta -> roteiro (custo zero) ─────
   const gerarRoteiro = useCallback(async () => {
     if (!workspaceAtual) return
-    if (origem === 'manual' && !tema.trim()) { setErro('Informe um tema.'); return }
+    if (origem !== 'referencia' && !tema.trim()) { setErro('Escolha um tema ou uma pauta.'); return }
     if (origem === 'referencia' && !refImg) { setErro('Suba uma imagem de referência.'); return }
     setCarregando(true); setErro(null)
     try {
       const r = await api.post<{ carrossel_id: string; director_json: Roteiro }>('/design/carrossel/diretor', {
         workspace_id: workspaceAtual, origem,
-        tema: origem === 'manual' ? tema.trim() : undefined,
+        tema: origem === 'referencia' ? undefined : tema.trim(),
         referencia_base64: origem === 'referencia' ? refImg : undefined,
         n_slides: nSlides, master_format: master,
       })
@@ -154,23 +172,24 @@ export function Criativos2() {
       {/* ETAPA 1 — CONFIG */}
       {etapa === 'config' && (
         <div className={`${card} p-5 flex flex-col gap-4 max-w-2xl`}>
-          {/* Origem: tema manual ou referência de estilo (abas) */}
-          <div className="flex gap-2">
-            {([['manual', 'Tema manual'], ['referencia', 'Referência de estilo']] as const).map(([id, lbl]) => (
+          {/* Origem: tema manual | referência de estilo | pesquisar notícia (abas) */}
+          <div className="flex gap-2 flex-wrap">
+            {([['manual', 'Tema manual'], ['referencia', 'Referência de estilo'], ['noticia', '🔥 Pesquisar notícia']] as const).map(([id, lbl]) => (
               <button key={id} onClick={() => setOrigem(id)}
                 className={`h-9 px-4 rounded-[var(--ws-radius-lg)] text-sm border transition ${origem === id ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'bg-transparent text-[var(--ws-text-2)] border-[var(--ws-glass-border)] hover:border-[var(--ws-blue)]'}`}>
                 {lbl}
               </button>
             ))}
           </div>
-          {origem === 'manual' ? (
+          {origem === 'manual' && (
             <label className="flex flex-col gap-1.5">
               <span className="ds-label">Assunto / tema</span>
               <textarea value={tema} onChange={e => setTema(e.target.value)} rows={3}
                 placeholder="Ex.: o maior erro de quem faz tráfego pago para clínicas"
                 className="w-full p-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-[var(--ws-input-bg,transparent)] text-sm resize-none focus:border-[var(--ws-blue)] outline-none" />
             </label>
-          ) : (
+          )}
+          {origem === 'referencia' && (
             <label className="flex flex-col gap-1.5">
               <span className="ds-label">Imagem de referência (estilo)</span>
               <div className="flex items-center gap-3">
@@ -182,6 +201,35 @@ export function Criativos2() {
               </div>
               <span className="ds-help">A IA lê o estilo (cores, composição, clima) e monta o roteiro nesse visual.</span>
             </label>
+          )}
+          {origem === 'noticia' && (
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-2">
+                <input value={assuntoNoticia} onChange={e => setAssuntoNoticia(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') buscarPautas() }}
+                  placeholder="Assunto de interesse (ex.: tráfego pago para clínicas)"
+                  className="flex-1 h-10 px-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-transparent text-sm outline-none focus:border-[var(--ws-blue)]" />
+                <button onClick={buscarPautas} disabled={buscandoPautas || !assuntoNoticia.trim()} className={botaoPrimario}>
+                  {buscandoPautas ? <><Loader2 size={16} className="animate-spin" /> Buscando…</> : 'Buscar pautas'}
+                </button>
+              </div>
+              {pautas && pautas.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <span className="ds-help">Escolha uma pauta (vira o tema do carrossel):</span>
+                  {pautas.map((p, i) => (
+                    <button key={i} onClick={() => setTema(p.assunto)}
+                      className={`text-left p-3 rounded-[var(--ws-radius-lg)] border transition ${tema === p.assunto ? 'border-[var(--ws-blue)] bg-[rgba(62,91,255,0.06)]' : 'border-[var(--ws-glass-border)] hover:border-[var(--ws-blue)]'}`}>
+                      <div className="text-sm font-medium text-[var(--ws-text-1)]">{p.titulo}</div>
+                      <div className="ds-help mt-0.5">{p.assunto}</div>
+                      {p.personagens && p.personagens.length > 0 && (
+                        <div className="ds-help mt-1">👤 {p.personagens.join(', ')}{p.linha_criativa ? ` · ${p.linha_criativa}` : ''}</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {pautas && pautas.length === 0 && <span className="ds-help">Nenhuma pauta encontrada. Tente outro assunto.</span>}
+            </div>
           )}
           <div className="grid grid-cols-3 gap-3">
             <label className="flex flex-col gap-1.5">
@@ -205,7 +253,7 @@ export function Criativos2() {
               </select>
             </label>
           </div>
-          <button onClick={gerarRoteiro} disabled={carregando || (origem === 'manual' ? !tema.trim() : !refImg)} className={botaoPrimario}>
+          <button onClick={gerarRoteiro} disabled={carregando || (origem === 'referencia' ? !refImg : !tema.trim())} className={botaoPrimario}>
             {carregando ? <><Loader2 size={16} className="animate-spin" /> Gerando roteiro…</> : <><Wand2 size={16} /> Gerar roteiro</>}
           </button>
         </div>
