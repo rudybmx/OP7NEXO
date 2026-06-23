@@ -31,6 +31,14 @@ type ItemRef = { descricao: string; imagem_base64?: string }
 const MASTERS = [{ id: '9x16', label: '9:16 · stories/reels' }, { id: '4x3', label: '4:3 · landscape' }]
 const QUALITIES = [{ id: 'low', label: 'Rascunho' }, { id: 'medium', label: 'Médio' }, { id: 'high', label: 'Alta' }]
 const TERMINAIS = ['done', 'error', 'parcial']
+const ESTILOS = [
+  { id: 'integrado', label: 'Integrado / artístico (não chapado)' },
+  { id: 'chapado', label: 'Chapado / flat' },
+  { id: 'ilustracao', label: 'Ilustração estilizada' },
+  { id: 'foto', label: 'Fotorrealista' },
+]
+const NOMES_HEX: Record<string, string> = { vermelho: '#cc0000', verde: '#1ca84c', amarelo: '#ffd400', azul: '#1450a0', preto: '#111111', branco: '#ffffff', laranja: '#ff6a00', roxo: '#7a5af8', rosa: '#ff5c8d', cinza: '#888888' }
+const toHex = (c?: string) => { if (!c) return '#cccccc'; const s = c.trim().toLowerCase(); return s.startsWith('#') ? s.slice(0, 7) : (NOMES_HEX[s] || '#cccccc') }
 
 export function Criativos2() {
   const { workspaceAtual } = useWorkspace()
@@ -39,6 +47,7 @@ export function Criativos2() {
   const [nSlides, setNSlides] = usePersistedState<number>('op7-c2-nslides', 5)
   const [master, setMaster] = usePersistedState<string>('op7-c2-master', '9x16')
   const [quality, setQuality] = usePersistedState<string>('op7-c2-quality', 'low')
+  const [estilo, setEstilo] = usePersistedState<string>('op7-c2-estilo', 'integrado')
   const [origem, setOrigem] = usePersistedState<'manual' | 'referencia' | 'noticia'>('op7-c2-origem', 'manual')
   const [refImg, setRefImg] = useState<string | null>(null)
   const [assuntoNoticia, setAssuntoNoticia] = useState('')
@@ -82,7 +91,7 @@ export function Criativos2() {
     setCarregando(true); setErro(null)
     try {
       const r = await api.post<{ carrossel_id: string; director_json: Roteiro }>('/design/carrossel/diretor', {
-        workspace_id: workspaceAtual, origem,
+        workspace_id: workspaceAtual, origem, estilo,
         tema: origem === 'referencia' ? undefined : tema.trim(),
         referencia_base64: origem === 'referencia' ? refImg : undefined,
         n_slides: nSlides, master_format: master,
@@ -90,7 +99,7 @@ export function Criativos2() {
       setCarrosselId(r.carrossel_id); setRoteiro(r.director_json); setEtapa('roteiro')
     } catch (e: any) { setErro(e?.message || 'Falha ao gerar o roteiro.') }
     finally { setCarregando(false) }
-  }, [workspaceAtual, origem, tema, refImg, nSlides, master, setCarrosselId])
+  }, [workspaceAtual, origem, estilo, tema, refImg, nSlides, master, setCarrosselId])
 
   const editarCopy = (idx: number, campo: keyof SlideCopy, valor: string) => {
     setRoteiro(prev => {
@@ -287,6 +296,13 @@ export function Criativos2() {
               </select>
             </label>
           </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="ds-label">Estilo visual</span>
+            <select value={estilo} onChange={e => setEstilo(e.target.value)}
+              className="h-10 px-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-transparent text-sm outline-none focus:border-[var(--ws-blue)]">
+              {ESTILOS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </label>
           <button onClick={gerarRoteiro} disabled={carregando || (origem === 'referencia' ? !refImg : !tema.trim())} className={botaoPrimario}>
             {carregando ? <><Loader2 size={16} className="animate-spin" /> Gerando roteiro…</> : <><Wand2 size={16} /> Gerar roteiro</>}
           </button>
@@ -296,13 +312,32 @@ export function Criativos2() {
       {/* ETAPA 2 — ROTEIRO (aprovacao, custo zero) */}
       {etapa === 'roteiro' && roteiro && (
         <div className="flex flex-col gap-3 max-w-3xl">
-          <div className={`${card} p-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm`}>
-            <span className="ds-label">Molde <b className="text-[var(--ws-text-1)] ml-1">{roteiro.molde}</b></span>
-            <span className="ds-label">Tensão <b className="text-[var(--ws-text-1)] ml-1">{roteiro.tensao}</b></span>
-            <span className="ds-label flex gap-1 items-center">Paleta
-              {[roteiro.paleta?.tensao, roteiro.paleta?.resolucao, roteiro.paleta?.pivo].filter(Boolean).map((c, i) =>
-                <span key={i} className="px-1.5 py-0.5 rounded text-[11px] bg-[var(--ws-glass-border)] text-[var(--ws-text-1)]">{c}</span>)}
-            </span>
+          <div className={`${card} p-4 flex flex-wrap items-end gap-4 text-sm`}>
+            <label className="flex flex-col gap-1">
+              <span className="ds-label">Molde</span>
+              <select value={roteiro.molde || 'A'} onChange={e => setRoteiro(r => r ? { ...r, molde: e.target.value } : r)}
+                className="h-9 px-2 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-transparent text-sm outline-none">
+                <option value="A">A · evento/celebridade</option>
+                <option value="B">B · feature/tutorial</option>
+                <option value="C">C · tese (X NÃO É Y)</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 flex-1 min-w-[160px]">
+              <span className="ds-label">Tensão</span>
+              <input value={roteiro.tensao || ''} onChange={e => setRoteiro(r => r ? { ...r, tensao: e.target.value } : r)}
+                className="h-9 px-2 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-transparent text-sm outline-none" />
+            </label>
+            <div className="flex flex-col gap-1">
+              <span className="ds-label">Paleta (tríade: tensão · resolução · pivô)</span>
+              <div className="flex gap-2 items-center">
+                {(['tensao', 'resolucao', 'pivo'] as const).map(k => (
+                  <input key={k} type="color" title={k}
+                    value={toHex((roteiro.paleta || {})[k])}
+                    onChange={e => setRoteiro(r => r ? { ...r, paleta: { ...(r.paleta || {}), [k]: e.target.value } } : r)}
+                    className="w-8 h-8 rounded cursor-pointer border border-[var(--ws-glass-border)] bg-transparent" />
+                ))}
+              </div>
+            </div>
           </div>
           <p className="ds-help">Revise e ajuste a copy antes de gerar (não custa tokens). O texto será desenhado pela IA na arte.</p>
           {(roteiro.slides || []).map(s => (
