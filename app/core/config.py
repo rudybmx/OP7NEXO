@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     openai_vision_model: str = "gpt-4.1"
     # Modelo de TEXTO para o assistente de copy (gera/melhora textos com gatilhos mentais).
     openai_copy_model: str = "gpt-4.1-mini"
+    # Firecrawl — busca de notícias para o buscador de pautas (Origin A do Criativos 2.0).
+    firecrawl_api_key: str = ""
+    firecrawl_api_url: str = "https://api.firecrawl.dev"
     EVOLUTION_API_URL: str = "https://evo.op7franquia.com.br"
     EVOLUTION_API_KEY: str = ""
     SERVER_URL: str = "https://api.op7franquia.com.br"

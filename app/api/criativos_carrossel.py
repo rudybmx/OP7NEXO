@@ -152,6 +152,34 @@ def diretor(
     return {"carrossel_id": str(car.id), "director_json": car.director_json}
 
 
+# ───────────────────────────── Pautas (Origin A) ────────────────────────────
+class PautasIn(BaseModel):
+    workspace_id: uuid.UUID
+    assunto: str = Field(min_length=2, max_length=300)
+
+
+@router.post("/pautas")
+def pautas(
+    payload: PautasIn,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Origin A — busca notícias (Firecrawl) e devolve 5 pautas newsjacking."""
+    verificar_acesso_workspace(usuario, payload.workspace_id, db)
+    from app.services import firecrawl_news
+    try:
+        res, usage = firecrawl_news.buscar_pautas(payload.assunto)
+    except firecrawl_news.PautasIndisponiveisError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            detail={"error_code": "pautas_indisponiveis", "error_message": str(e)})
+    try:
+        registrar_uso(feature="copy", workspace_id=payload.workspace_id,
+                      model=get_ai_config("copy").model, kind="text", usage=usage)
+    except Exception:  # noqa: BLE001
+        pass
+    return {"pautas": [p.model_dump() for p in res.pautas]}
+
+
 # ───────────────────────────── Editar roteiro ───────────────────────────────
 class RoteiroIn(BaseModel):
     director_json: dict
