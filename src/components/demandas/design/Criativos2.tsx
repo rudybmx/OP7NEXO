@@ -287,11 +287,12 @@ export function Criativos2() {
   const regenerarSlide = useCallback(async (idx: number) => {
     if (!carrosselId) return
     try {
+      await salvarRoteiro()  // regenera já com os textos editados no momento
       await api.post(`/design/carrossel/${carrosselId}/slides/${idx}/regenerar`, { quality, ...refsPayload() })
       if (pollRef.current) clearTimeout(pollRef.current)
       carregarEstado(carrosselId)
     } catch (e) { setErro(errMsg(e) ||'Falha ao regenerar o slide.') }
-  }, [carrosselId, quality, carregarEstado, personagens, objetos])
+  }, [carrosselId, quality, carregarEstado, salvarRoteiro, personagens, objetos])
 
   const reset = () => {
     if (pollRef.current) clearTimeout(pollRef.current)
@@ -620,7 +621,7 @@ export function Criativos2() {
                   {analisando ? <><Loader2 size={16} className="animate-spin" /> Analisando…</> : <><ShieldCheck size={16} /> Análise completa por IA</>}
                 </button>
                 <button onClick={gerar} disabled={carregando} className={botaoPrimario}>
-                  {carregando ? <><Loader2 size={16} className="animate-spin" /> Iniciando…</> : <>Gerar carrossel ({(roteiro.slides || []).length} slides) <ArrowRight size={16} /></>}
+                  {carregando ? <><Loader2 size={16} className="animate-spin" /> Iniciando…</> : <>{estado ? 'Regenerar' : 'Gerar'} carrossel ({(roteiro.slides || []).length} slides) <ArrowRight size={16} /></>}
                 </button>
               </div>
             </div>
@@ -637,17 +638,23 @@ export function Criativos2() {
                   <button onClick={() => setShowVer(true)} className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 rounded-[var(--ws-radius-lg)] text-sm border border-[var(--ws-blue)]/50 text-[var(--ws-blue)] bg-[rgba(62,91,255,0.06)] hover:bg-[rgba(62,91,255,0.12)]"><Maximize2 size={14} /> Ver carrossel</button>
                 )}
               </div>
+              {estado.carrossel.status === 'error' && estado.carrossel.error_message && (
+                <div className="flex items-start gap-2 p-2.5 rounded-[var(--ws-radius-lg)] border border-[#a32d2d]/40 bg-[#a32d2d]/10 text-[#a32d2d] text-sm">
+                  <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                  <span>{estado.carrossel.error_message}{estado.carrossel.error_code === 'saldo_insuficiente' ? ' Credite tokens do Estúdio para gerar.' : ''}</span>
+                </div>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {(estado.slides || []).map(s => (
                   <div key={s.slide_index} className={`${card} overflow-hidden flex flex-col`}>
                     <div className={`relative ${master === '4x3' ? 'aspect-[4/3]' : 'aspect-[9/16]'} bg-[var(--ws-glass-border)] flex items-center justify-center`}>
                       {s.base_image_url ? <img src={s.base_image_url} alt={`Slide ${s.slide_index}`} className="w-full h-full object-cover" />
-                        : s.status === 'error' ? <AlertCircle size={20} className="text-[#a32d2d]" /> : <Loader2 size={20} className="animate-spin text-[var(--ws-text-3)]" />}
+                        : (s.status === 'error' || TERMINAIS.includes(estado.carrossel.status)) ? <AlertCircle size={20} className="text-[#a32d2d]" /> : <Loader2 size={20} className="animate-spin text-[var(--ws-text-3)]" />}
                       <span className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-[11px] flex items-center justify-center">{s.slide_index}</span>
                     </div>
-                    {s.status === 'error' && (
+                    {(s.status === 'error' || (TERMINAIS.includes(estado.carrossel.status) && !s.base_image_url && s.status !== 'done')) && (
                       <p className="px-2 pt-1.5 text-[11px] leading-snug text-[#a32d2d]">
-                        {s.error_message || 'Falhou ao gerar.'}{s.error_code === 'blocked_by_policy' ? ' Evite celebridades/figuras públicas; use fotos próprias.' : ''}
+                        {s.error_message || estado.carrossel.error_message || 'Não gerado.'}{s.error_code === 'blocked_by_policy' ? ' Evite celebridades/figuras públicas; use fotos próprias.' : ''}
                       </p>
                     )}
                     <div className="flex items-center justify-between p-2">
