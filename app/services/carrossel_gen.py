@@ -104,15 +104,28 @@ def _montar_prompt_slide(car: CriativoCarrossel, slide: CriativoCarrosselSlide) 
         L.append("Renderize, em portugues, integrados na arte e com GRAFIA CORRETA:")
         L.extend(textos)
 
+    dj = car.director_json or {}
+    personagens = [p for p in (dj.get("personagens") or []) if (p or {}).get("descricao")]
+    objetos = [o for o in (dj.get("objetos") or []) if (o or {}).get("descricao")]
+    if personagens:
+        L.append(
+            "PESSOA(S) REAL(IS): as fotos anexadas sao a MESMA pessoa de cada personagem. PRESERVE o "
+            "rosto FIEL (formato, olhos, nariz, boca, tom de pele, cabelo, idade); a pessoa deve ser "
+            "CLARAMENTE reconhecivel. NAO rejuvenesca, NAO embeleze, NAO troque etnia/genero. "
+            "Personagens: " + "; ".join(p["descricao"] for p in personagens) + "."
+        )
+    if objetos:
+        L.append("Inclua estes objetos/produtos integrados na arte: " + "; ".join(o["descricao"] for o in objetos) + ".")
     L.append(
-        "Hierarquia clara (o olho cai na palavra-bomba primeiro), recorte limpo, sem "
-        "poluicao. Sem marcas registradas e sem pessoas reais reconheciveis."
+        "Hierarquia clara (o olho cai na palavra-bomba primeiro), recorte limpo, sem poluicao. "
+        "Sem marcas registradas." + ("" if personagens else " Sem pessoas reais reconheciveis.")
     )
     return "\n".join(L)
 
 
 def gerar_slide(
-    db: Session, car: CriativoCarrossel, slide: CriativoCarrosselSlide, quality: str
+    db: Session, car: CriativoCarrossel, slide: CriativoCarrosselSlide, quality: str,
+    personagem_bytes: list[bytes] | None = None,
 ) -> CriativoGeracao:
     """Gera UM slide: cria a criativo_geracoes (prompt newsjacking), gera e linka."""
     prompt = _montar_prompt_slide(car, slide)
@@ -137,7 +150,7 @@ def gerar_slide(
     db.commit()
     db.refresh(ger)
 
-    image_gen.executar_geracao_integrada(db, ger)  # gera de ger.prompt_final + MinIO
+    image_gen.executar_geracao_integrada(db, ger, personagem_bytes=personagem_bytes)  # ger.prompt_final + fotos
 
     slide.geracao_id = ger.id
     slide.base_image_url = ger.imagem_base_url
@@ -148,7 +161,8 @@ def gerar_slide(
     return ger
 
 
-def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium") -> None:
+def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium",
+                    personagem_bytes: list[bytes] | None = None) -> None:
     """Gera todos os slides do carrossel (formato mestre). Idempotente por status.
 
     Pré-cheque de saldo do carrossel inteiro; débito SÓ por slide concluído.
@@ -189,7 +203,7 @@ def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium"
         db.commit()
         _publish(car.id, "carrossel.slide.start", {"index": slide.slide_index, "total": total})
 
-        ger = gerar_slide(db, car, slide, quality)
+        ger = gerar_slide(db, car, slide, quality, personagem_bytes)
 
         if ger.status == "done":
             estudio_wallet.debitar(
@@ -213,7 +227,8 @@ def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium"
     })
 
 
-def regenerar_slide(db: Session, car: CriativoCarrossel, slide_index: int, quality: str = "medium") -> CriativoGeracao:
+def regenerar_slide(db: Session, car: CriativoCarrossel, slide_index: int, quality: str = "medium",
+                    personagem_bytes: list[bytes] | None = None) -> CriativoGeracao:
     """Regenera UM slide isolado (não refaz o carrossel). Débito só no sucesso."""
     slide = (
         db.query(CriativoCarrosselSlide)
@@ -232,7 +247,7 @@ def regenerar_slide(db: Session, car: CriativoCarrossel, slide_index: int, quali
 
     slide.status = "running"
     db.commit()
-    ger = gerar_slide(db, car, slide, quality)
+    ger = gerar_slide(db, car, slide, quality, personagem_bytes)
     if ger.status == "done":
         estudio_wallet.debitar(
             db, car.workspace_id, custo, "Regeneracao de slide (carrossel)",

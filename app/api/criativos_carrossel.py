@@ -208,8 +208,15 @@ def editar_roteiro(
 
 
 # ───────────────────────────────── Gerar ────────────────────────────────────
+class ItemRefIn(BaseModel):
+    descricao: str = ""
+    imagem_base64: Optional[str] = None
+
+
 class GerarIn(BaseModel):
     quality: str = "medium"
+    personagens: list[ItemRefIn] = Field(default_factory=list)
+    objetos: list[ItemRefIn] = Field(default_factory=list)
 
 
 def _criar_slides(db: Session, car: CriativoCarrossel) -> int:
@@ -256,6 +263,30 @@ def gerar(
     """
     car = _get_car(db, carrossel_id, usuario)
     quality = payload.quality if payload.quality in _QUALITIES else "medium"
+
+    # Personagens & objetos: fotos vão IN-MEMORY para a geração (rosto fiel via images.edit);
+    # descrições ficam no director_json (persistidas, entram no prompt de cada slide).
+    fotos: list[bytes] = []
+
+    def _coletar(itens: list[ItemRefIn]) -> list[dict]:
+        descs: list[dict] = []
+        for it in (itens or [])[:5]:
+            if it.imagem_base64:
+                try:
+                    raw = base64.b64decode(it.imagem_base64.split(",")[-1])
+                    img, *_ = validar_e_normalizar_imagem(raw, error_code="invalid_reference")
+                    fotos.append(img)
+                except Exception:  # noqa: BLE001
+                    pass
+            if (it.descricao or "").strip():
+                descs.append({"descricao": it.descricao.strip()})
+        return descs
+
+    dj = dict(car.director_json or {})
+    dj["personagens"] = _coletar(payload.personagens)
+    dj["objetos"] = _coletar(payload.objetos)
+    car.director_json = dj
+
     total = _criar_slides(db, car)
     if total == 0:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Roteiro sem slides")
@@ -264,12 +295,13 @@ def gerar(
     custo = carrossel_gen.custo_carrossel(total, quality)
 
     cid = car.id
+    fotos_gen = fotos or None
 
     def _run() -> None:
         with SessionLocal() as bdb:
             c = bdb.get(CriativoCarrossel, cid)
             if c is not None:
-                carrossel_gen.gerar_carrossel(bdb, c, quality)
+                carrossel_gen.gerar_carrossel(bdb, c, quality, fotos_gen)
 
     threading.Thread(target=_run, daemon=True).start()
     return {"carrossel_id": str(car.id), "total": total, "custo_tokens": custo, "status": "queued"}
