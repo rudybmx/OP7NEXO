@@ -1,4 +1,5 @@
 from app.models.criativo.brand_kit import CriativoBrandKit
+from app.models.criativo.carrossel import CriativoCarrossel, CriativoCarrosselSlide
 from app.models.criativo.estilo import CriativoEstilo
 from app.models.criativo.export_job import CriativoExportJob
 from app.models.criativo.geracao import CriativoGeracao
@@ -10,6 +11,8 @@ from app.models.criativo.template import CriativoTemplate
 
 __all__ = [
     "CriativoBrandKit",
+    "CriativoCarrossel",
+    "CriativoCarrosselSlide",
     "CriativoEstilo",
     "CriativoExportJob",
     "CriativoGeracao",
