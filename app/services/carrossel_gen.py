@@ -349,6 +349,17 @@ def regenerar_slide(db: Session, car: CriativoCarrossel, slide_index: int, quali
     if slide is None:
         raise ValueError(f"slide {slide_index} não encontrado no carrossel {car.id}")
 
+    # Re-sincroniza copy/direção/intensidade deste slide a partir do roteiro editado
+    # (director_json) — o front salva o roteiro antes de regenerar, então a regeneração
+    # reflete a edição (inclusive remoção da palavra-bomba, que sai do prompt).
+    dj = car.director_json or {}
+    sd = next((s for s in (dj.get("slides") or [])
+               if int((s or {}).get("index", -1)) == slide_index), None)
+    if sd is not None:
+        slide.copy_json = sd.get("copy") or {}
+        slide.image_prompt = sd.get("direcao_imagem")
+        slide.intensidade = sd.get("intensidade")
+
     custo = _fator(quality)
     if not estudio_wallet.tem_saldo(db, car.workspace_id, custo):
         raise PermissionError("saldo_insuficiente")
