@@ -57,6 +57,8 @@ meta_conjuntos_insights     -- dados de ad sets / conjuntos
 meta_publicos_insights      -- dados de públicos (tem campaign_id desde migration 015)
 meta_criativos_insights     -- dados de criativos
 meta_videos_catalog         -- catálogo de vídeos com source_url, thumbnail_url e image_url_hq persistido no MinIO
+criativo_carrosseis         -- Criativos 2.0: carrossel newsjacking (migration 083); director_json = roteiro do Diretor LLM (texto queimado pelo gpt-image-2)
+criativo_carrossel_slides   -- slides do carrossel; cada um referencia criativo_geracoes (base/usage); formatos_json = url por formato
 ```
 
 ### Migrations
