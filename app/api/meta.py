@@ -307,6 +307,18 @@ def importar_contas_meta(
             db.flush()
             contas_para_sync.append(str(nova.id))
 
+    # Propaga a nova validade para TODAS as contas que já usam o mesmo bm_token
+    # (não só as do payload). Evita falso "token expirado" em contas do mesmo BM
+    # que ficaram de fora da renovação. Só sobe a validade, nunca abaixa.
+    if body.token and body.token_expira_em is not None:
+        db.execute(text("""
+            UPDATE ads_accounts
+            SET token_expira_em = :exp
+            WHERE plataforma = 'meta'
+              AND bm_token = :token
+              AND (token_expira_em IS NULL OR token_expira_em < :exp)
+        """), {"exp": body.token_expira_em, "token": body.token})
+
     db.commit()
 
     for ads_account_id in contas_para_sync:
