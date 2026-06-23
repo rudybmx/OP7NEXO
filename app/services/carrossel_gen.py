@@ -89,6 +89,24 @@ def _montar_prompt_slide(car: CriativoCarrossel, slide: CriativoCarrosselSlide) 
         L.append("Paleta: " + "; ".join(pal) + ".")
     L.append("Tipografia: sans condensada black, ALL CAPS na palavra-bomba.")
 
+    dj0 = car.director_json or {}
+    _ESTILOS = {
+        "integrado": "estilo artistico e INTEGRADO, com profundidade, textura e iluminacao rica (NAO chapado/flat)",
+        "chapado": "estilo flat/chapado, cores solidas, vetorial e minimalista",
+        "ilustracao": "ilustracao estilizada, com tracos e texturas autorais",
+        "foto": "fotorrealista, editorial de alto contraste",
+    }
+    estilo = (dj0.get("estilo") or "").strip()
+    if estilo:
+        L.append("Estilo visual: " + _ESTILOS.get(estilo, estilo) + ".")
+    estilo_ref = (dj0.get("estilo_referencia") or "").strip()
+    if estilo_ref:
+        L.append(
+            "Siga FIELMENTE o estilo desta referencia (cores, composicao, clima, iluminacao): "
+            + estilo_ref[:600]
+            + ". Integre de forma artistica, com profundidade e textura, evitando aparencia chapada."
+        )
+
     textos = []
     if copy.get("palavra_bomba"):
         textos.append(f'- palavra-bomba GIGANTE (domina >=40% do frame): "{copy["palavra_bomba"]}"')

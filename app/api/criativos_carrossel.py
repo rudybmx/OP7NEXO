@@ -76,6 +76,7 @@ class DiretorIn(BaseModel):
     tema: Optional[str] = Field(default=None, max_length=500)
     referencia_desc: Optional[str] = Field(default=None, max_length=4000)
     referencia_base64: Optional[str] = None  # Origin B: imagem de referência de estilo
+    estilo: Optional[str] = None  # integrado | chapado | ilustracao | foto
     n_slides: int = Field(default=5, ge=2, le=10)
     master_format: str = "9x16"
 
@@ -130,6 +131,11 @@ def diretor(
             detail={"error_code": "roteiro_invalido", "error_message": str(e)},
         )
 
+    dj = roteiro.model_dump()
+    if payload.estilo:
+        dj["estilo"] = payload.estilo
+    if payload.origem == "referencia" and referencia_desc:
+        dj["estilo_referencia"] = referencia_desc
     car = CriativoCarrossel(
         workspace_id=payload.workspace_id,
         user_id=usuario.id,
@@ -138,7 +144,7 @@ def diretor(
         molde=roteiro.molde,
         master_format=master,
         n_slides=payload.n_slides,
-        director_json=roteiro.model_dump(),
+        director_json=dj,
         status="pending",
     )
     db.add(car)
@@ -201,7 +207,14 @@ def editar_roteiro(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error_code": "roteiro_invalido", "error_message": str(e)[:300]},
         )
-    car.director_json = roteiro.model_dump()
+    novo = roteiro.model_dump()
+    for k in ("estilo", "estilo_referencia", "personagens", "objetos"):
+        v = (payload.director_json or {}).get(k)
+        if v is None:
+            v = (car.director_json or {}).get(k)
+        if v is not None:
+            novo[k] = v
+    car.director_json = novo
     car.molde = roteiro.molde
     db.commit()
     return {"ok": True, "director_json": car.director_json}
