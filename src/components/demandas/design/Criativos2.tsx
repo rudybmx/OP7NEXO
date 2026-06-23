@@ -26,6 +26,7 @@ type CarrosselEstado = {
 }
 
 type Pauta = { titulo: string; assunto: string; personagens?: string[]; linha_criativa?: string; fonte_url?: string | null }
+type ItemRef = { descricao: string; imagem_base64?: string }
 
 const MASTERS = [{ id: '9x16', label: '9:16 · stories/reels' }, { id: '4x3', label: '4:3 · landscape' }]
 const QUALITIES = [{ id: 'low', label: 'Rascunho' }, { id: 'medium', label: 'Médio' }, { id: 'high', label: 'Alta' }]
@@ -43,6 +44,8 @@ export function Criativos2() {
   const [assuntoNoticia, setAssuntoNoticia] = useState('')
   const [pautas, setPautas] = useState<Pauta[] | null>(null)
   const [buscandoPautas, setBuscandoPautas] = useState(false)
+  const [personagens, setPersonagens] = useState<ItemRef[]>([])
+  const [objetos, setObjetos] = useState<ItemRef[]>([])
   const [carrosselId, setCarrosselId] = usePersistedState<string | null>('op7-c2-carrossel', null)
   const [roteiro, setRoteiro] = useState<Roteiro | null>(null)
   const [estado, setEstado] = useState<CarrosselEstado | null>(null)
@@ -104,11 +107,15 @@ export function Criativos2() {
     setCarregando(true); setErro(null)
     try {
       await api.put(`/design/carrossel/${carrosselId}/roteiro`, { director_json: roteiro })
-      await api.post(`/design/carrossel/${carrosselId}/gerar`, { quality })
+      await api.post(`/design/carrossel/${carrosselId}/gerar`, {
+        quality,
+        personagens: personagens.filter(p => (p.descricao || '').trim() || p.imagem_base64),
+        objetos: objetos.filter(o => (o.descricao || '').trim() || o.imagem_base64),
+      })
       setEtapa('galeria')
     } catch (e: any) { setErro(e?.message || 'Falha ao iniciar a geração.') }
     finally { setCarregando(false) }
-  }, [carrosselId, roteiro, quality])
+  }, [carrosselId, roteiro, quality, personagens, objetos])
 
   // ───── Polling do estado na galeria ─────
   const carregarEstado = useCallback(async (id: string) => {
@@ -145,6 +152,33 @@ export function Criativos2() {
     if (pollRef.current) clearTimeout(pollRef.current)
     setEtapa('config'); setRoteiro(null); setEstado(null); setErro(null); setCarrosselId(null)
   }
+
+  const renderRefs = (
+    key: 'personagens' | 'objetos', items: ItemRef[],
+    setItems: React.Dispatch<React.SetStateAction<ItemRef[]>>, lbl: string,
+  ) => (
+    <div className="flex flex-col gap-2">
+      <span className="ds-help">{lbl}</span>
+      {items.map((it, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <label className="shrink-0 h-9 w-9 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] flex items-center justify-center cursor-pointer overflow-hidden hover:border-[var(--ws-blue)]">
+            {it.imagem_base64 ? <img src={it.imagem_base64} className="w-full h-full object-cover" alt="" /> : <ImageIcon size={14} />}
+            <input type="file" accept="image/*" className="hidden" onChange={e => {
+              const f = e.target.files?.[0]; if (!f) return
+              const r = new FileReader(); r.onload = () => setItems(prev => prev.map((x, j) => j === i ? { ...x, imagem_base64: String(r.result) } : x)); r.readAsDataURL(f)
+            }} />
+          </label>
+          <input value={it.descricao} onChange={e => setItems(prev => prev.map((x, j) => j === i ? { ...x, descricao: e.target.value } : x))}
+            placeholder={key === 'personagens' ? 'Como o personagem aparece (pose, cena)' : 'Objeto/produto a incluir'}
+            className="flex-1 h-9 px-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-transparent text-sm outline-none focus:border-[var(--ws-blue)]" />
+          <button onClick={() => setItems(prev => prev.filter((_, j) => j !== i))} className="ds-help px-1.5 text-base hover:text-[#a32d2d]">×</button>
+        </div>
+      ))}
+      {items.length < 5 && (
+        <button onClick={() => setItems(prev => [...prev, { descricao: '' }])} className="ds-help self-start hover:text-[var(--ws-text-1)]">+ Adicionar {key === 'personagens' ? 'personagem' : 'objeto'}</button>
+      )}
+    </div>
+  )
 
   const card = 'rounded-[14px] border border-[var(--ws-glass-border)] bg-[var(--ws-glass-bg)] backdrop-blur-md'
   const botaoPrimario = 'inline-flex items-center justify-center gap-2 h-10 px-5 rounded-[var(--ws-radius-lg)] text-sm font-medium bg-[var(--ws-blue)] text-white disabled:opacity-50 hover:opacity-90 transition'
@@ -290,6 +324,11 @@ export function Criativos2() {
                 placeholder="Texto de apoio" className="px-3 h-9 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-transparent text-sm outline-none focus:border-[var(--ws-blue)]" />
             </div>
           ))}
+          <div className={`${card} p-4 flex flex-col gap-3`}>
+            <span className="ds-label">Personagens & objetos (opcional)</span>
+            {renderRefs('personagens', personagens, setPersonagens, 'Personagens (até 5, rosto fiel)')}
+            {renderRefs('objetos', objetos, setObjetos, 'Objetos (até 5)')}
+          </div>
           <button onClick={gerar} disabled={carregando} className={botaoPrimario + ' self-start'}>
             {carregando ? <><Loader2 size={16} className="animate-spin" /> Iniciando…</> : <>Gerar carrossel ({nSlides} slides) <ArrowRight size={16} /></>}
           </button>
