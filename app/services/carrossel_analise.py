@@ -127,7 +127,7 @@ def analisar_carrossel(car, dj_override: dict | None = None) -> tuple[AnaliseCar
             {"role": "system", "content": _SYSTEM_ANALISE},
             {"role": "user", "content": contexto + "\n\nFaça a análise."},
         ],
-        **chat_kwargs(model, 1100, temperature=0.4, reasoning_effort="low"),
+        **chat_kwargs(model, 1100, temperature=0.4, reasoning_effort="minimal"),
     )
     usage = resp.usage.model_dump() if getattr(resp, "usage", None) else {}
     raw = resp.choices[0].message.content or "{}"
