@@ -425,6 +425,24 @@ def process_evolution_message(
     except Exception as exc:
         logger.info("[webhook-process] REDIS FALHOU: %s", exc)
 
+    # Central de Agentes (Fase 2): para mensagem RECEBIDA (entrada, não-grupo), enfileira
+    # um job agente_reply com debounce. SAVEPOINT-free + try/except — NUNCA derruba a
+    # persistência da mensagem. Só cria job se houver agente ativo no canal.
+    if direcao == "entrada" and not is_group and conversa_id:
+        try:
+            from app.services.agent_service import enfileirar_agente_reply
+
+            enfileirar_agente_reply(
+                db,
+                workspace_id=workspace_id,
+                canal_id=canal_id,
+                conversa_id=str(conversa_id),
+                mensagem_id=str(mensagem_id) if mensagem_id else None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            logger.warning("[webhook-process] enqueue agente_reply falhou conversa_id=%s: %s", conversa_id, exc)
+
     return _result(
         is_media=should_enqueue_media,
         mensagem_id=str(mensagem_id) if mensagem_id else None,

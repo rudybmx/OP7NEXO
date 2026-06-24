@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -109,6 +110,13 @@ class Conversa(Base):
     )
     favorita: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     fixada: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    # Central de Agentes (Fase 2): resposta automática + handoff por confiança.
+    ai_respondido: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    ai_escalado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    ai_agente_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agentes.id", ondelete="SET NULL"), nullable=True
+    )
+    ai_score_confianca: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     workspace: Mapped["Workspace"] = relationship(  # type: ignore[name-defined]
         foreign_keys=[workspace_id], lazy="select"

@@ -38,6 +38,8 @@ from app.api.networks import router as networks_router
 from app.api.sftp import router as sftp_router
 from app.api.users import router as users_router
 from app.api.workspaces import router as workspaces_router
+from app.api.agentes import router as agentes_router
+from app.api.llm_providers import router as llm_providers_router
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import setup_logging
@@ -147,6 +149,8 @@ app.include_router(criativos_carrossel_router)
 app.include_router(brand_kit_router)
 app.include_router(estudio_tokens_router)
 app.include_router(estudio_stripe_router)
+app.include_router(llm_providers_router)
+app.include_router(agentes_router)
 
 
 @app.get("/health")
