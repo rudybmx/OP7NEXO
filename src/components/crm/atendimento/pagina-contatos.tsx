@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useContatos, type ContatoApi } from '@/hooks/use-contatos'
 import { formatarTelefoneBR } from '@/lib/formatar'
+import { resolveAvatarSrc } from '@/lib/avatar-src'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -745,7 +746,7 @@ export function PaginaContatos() {
                 >
                   <td style={{ padding: '10px 12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <Avatar initials={c.avatarInitials} cor={c.avatarCor} src={c.avatarUrl} size={30} />
+                      <Avatar initials={c.avatarInitials} cor={c.avatarCor} src={resolveAvatarSrc(c.avatarUrl)} size={30} />
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ws-text-1)' }}>{c.nome}</div>
                         {c.email && <div style={{ fontSize: 10, color: 'var(--ws-text-3)' }}>{c.email}</div>}

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, Clock, FileText, PlayCircle, AlertCircle, User } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
+import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { CardRastreamento } from './card-rastreamento'
 import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
@@ -524,7 +525,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
   const titulo = formatHeaderTitle(conversa)
   const telefone = formatarTelefoneBR(conversa.contato.telefone || conversa.remoteJid)
-  const avatarSrc = conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato.avatarUrl) : conversa.contato.avatarUrl
+  const avatarSrc = resolveAvatarSrc(conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato.avatarUrl) : conversa.contato.avatarUrl)
   const avatarFallback = getAvatarFallback(titulo)
   const canalLabel = getCanalBadgeLabel(conversa.canalTipo)
   const canalDetalhe = [conversa.canalNome, conversa.canalNumero].filter(Boolean).join(' · ')

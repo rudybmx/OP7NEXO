@@ -8,6 +8,7 @@ import type { WhatsappCanal } from '@/hooks/use-whatsapp-canais'
 import type { Etiqueta } from '@/hooks/use-etiquetas'
 import { getCanalBadgeLabel, getCanalProviderLabel } from '@/lib/whatsapp-canal'
 import { formatarTelefoneBR } from '@/lib/formatar'
+import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { useBuscarContatoPorNumero } from '@/hooks/use-buscar-contato'
 
 interface PainelInboxProps {
@@ -840,7 +841,7 @@ export function PainelInbox({
           const horario = formatConversationTime(conversa.ultimaMensagemAt)
           const providerLabel = canal ? getCanalProviderLabel(canal) : getCanalBadgeLabel(conversa.canalTipo)
           const channelLabel = formatChannelLabel(canal, conversa)
-          const avatarSrc = conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato.avatarUrl) : conversa.contato.avatarUrl
+          const avatarSrc = resolveAvatarSrc(conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato.avatarUrl) : conversa.contato.avatarUrl)
           const avatarFallback = getAvatarFallback(titulo)
           const unreadCount = conversa.naoLidas > 99 ? '99+' : String(conversa.naoLidas)
           const showStatus = conversa.status !== 'em_atendimento'

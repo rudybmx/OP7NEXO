@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { CalendarClock, Phone, User, Users, MessageSquare, X } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
+import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { useCrmFollowups } from '@/hooks/use-crm-followups'
 import { formatarTelefoneBR } from '@/lib/formatar'
 
@@ -146,7 +147,7 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
         <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--ws-divider)', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
             {(() => {
-              const avatarSrc = conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato?.avatarUrl) : conversa.contato?.avatarUrl
+              const avatarSrc = resolveAvatarSrc(conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato?.avatarUrl) : conversa.contato?.avatarUrl)
               const displayName = conversa.isGroup
                 ? (conversa.groupName || 'Grupo WhatsApp')
                 : conversa.contato.nome
