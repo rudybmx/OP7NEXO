@@ -95,6 +95,24 @@ class ToggleIn(BaseModel):
     status: StatusAgente
 
 
+class SandboxTurno(BaseModel):
+    papel: Literal["cliente", "agente"] = "cliente"
+    texto: str
+
+
+class SandboxIn(BaseModel):
+    mensagem: str = Field(min_length=1)
+    historico_simulado: list[SandboxTurno] = Field(default_factory=list)
+
+
+class SandboxOut(BaseModel):
+    resposta: str
+    score_confianca: float
+    intent: str | None
+    rag_chunks_usados: list[str]
+    tokens_estimados: int
+
+
 class AgenteListItemOut(BaseModel):
     id: str
     nome: str

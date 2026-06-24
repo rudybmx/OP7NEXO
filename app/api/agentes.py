@@ -36,8 +36,11 @@ from app.schemas.agente import (
     HabilidadeOut,
     HorarioIn,
     HorarioOut,
+    SandboxIn,
+    SandboxOut,
     ToggleIn,
 )
+from app.services import agent_service, llm_client_service
 
 router = APIRouter(tags=["agentes"])
 
@@ -406,6 +409,33 @@ def alternar_status(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_CONFLITO_CANAL)
     db.refresh(agente)
     return _agente_out(agente, db)
+
+
+@router.post("/workspaces/{workspace_id}/agentes/{agente_id}/testar", response_model=SandboxOut)
+def testar_agente(
+    workspace_id: uuid.UUID,
+    agente_id: uuid.UUID,
+    payload: SandboxIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Sandbox (dry-run): gera a resposta que o agente daria, SEM gravar uso, SEM enviar
+    ao canal e SEM marcar a conversa. RAG (`rag_chunks_usados`) entra na Fase 3."""
+    _get_workspace_or_404(workspace_id, db)
+    agente = _get_agente_or_404(workspace_id, agente_id, db)
+    try:
+        res = agent_service.gerar_resposta(
+            db, agente, payload.mensagem, [t.model_dump() for t in payload.historico_simulado]
+        )
+    except llm_client_service.LLMConfigError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return SandboxOut(
+        resposta=res["resposta"],
+        score_confianca=res["score_confianca"],
+        intent=res["intent"],
+        rag_chunks_usados=[],
+        tokens_estimados=res["tokens_input"] + res["tokens_output"],
+    )
 
 
 @router.delete("/workspaces/{workspace_id}/agentes/{agente_id}", status_code=status.HTTP_204_NO_CONTENT)
