@@ -76,6 +76,8 @@ class ConversaOut(BaseModel):
     favorita: bool = False
     fixada: bool = False
     ai_ativo: bool = False
+    ai_escalado: bool = False
+    ai_handoff_motivo: str | None = None
     etiquetas: list[EtiquetaOut] = []
 
 
@@ -270,6 +272,8 @@ def _conversa_out(c: Conversa) -> ConversaOut:
         favorita=getattr(c, "favorita", False) or False,
         fixada=getattr(c, "fixada", False) or False,
         ai_ativo=getattr(c, "ai_ativo", False) or False,
+        ai_escalado=getattr(c, "ai_escalado", False) or False,
+        ai_handoff_motivo=getattr(c, "ai_handoff_motivo", None),
         etiquetas=[
             EtiquetaOut(id=str(e.id), nome=e.nome, cor=e.cor)
             for e in (getattr(c, "etiquetas", None) or [])

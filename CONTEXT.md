@@ -379,6 +379,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 ### ✅ Implementado (2026-06-24) — Central de Agentes: chave do agente por conversa (Switch)
 - **Migration 091**: `ai_ativo BOOLEAN NOT NULL DEFAULT false` em `crm_whatsapp_conversas` — liga/desliga do agente **por conversa**, inicia DESLIGADO em todas (opt-in; antes o agente respondia todo contato de um canal ativo). Gate autoritativo em `agent_service.processar_reply` (`if not conversa.ai_ativo: return` — silencioso, sem handoff = humano cuida); `enfileirar_agente_reply` pula o enfileiramento quando desligado. Serializado em `ConversaOut`/`_conversa_out`. Front: Switch (HeroUI v3) no compositor de `/crm/atendimento/conversas` acima do "+", grava via proxy Next `/conversations/{id}/atualizar` (`iaAtiva`→`ai_ativo`, SQL direto).
 
+### ✅ Implementado (2026-06-24) — Central de Agentes: marcação de falha (handoff) + resposta 1ª classe
+- **Migration 093**: `ai_handoff_motivo VARCHAR(40)` + `ai_handoff_at` em `crm_whatsapp_conversas`. `agent_service._handoff` grava o motivo do handoff (`limite_tokens`/`baixa_confianca`/`erro_llm`/`fora_horario`/`config`/`envio_falhou`); `processar_reply` limpa (`ai_escalado=false`, `ai_handoff_motivo=NULL`) ao responder com sucesso. Serializado `ai_escalado`+`ai_handoff_motivo` em `ConversaOut`. Front exibe selo na conversa (inbox) com label do motivo — antes o handoff só ia pro log e o atendente via "sem resposta" sem saber.
+- **Reforço (1ª classe):** `_enviar_resposta` retorna `(enviado, evolution_msg_id)`; o INSERT da resposta grava `evolution_msg_id` (Evolution) → habilita recibo de entrega/leitura. `_publish` ganhou `instance`/`messageType` (paridade com envio humano).
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos

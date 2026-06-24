@@ -123,6 +123,9 @@ class Conversa(Base):
     ai_score_confianca: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Chave por conversa (Switch no atendimento): o agente só responde quando ligado.
     ai_ativo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    # Marcação de falha do agente (handoff): motivo + quando (limite_tokens/baixa_confianca/erro_llm/...).
+    ai_handoff_motivo: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    ai_handoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     workspace: Mapped["Workspace"] = relationship(  # type: ignore[name-defined]
         foreign_keys=[workspace_id], lazy="select"

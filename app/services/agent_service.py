@@ -294,12 +294,12 @@ def _waha_chat_id(remote_jid: str) -> str:
     return f"{digits}@c.us" if digits else jid
 
 
-def _enviar_resposta(conversa, canal, texto: str) -> bool:
+def _enviar_resposta(conversa, canal, texto: str) -> tuple[bool, str | None]:
     """Envia o texto pelo canal, dispatch por `canal.tipo`. Suporta WhatsApp Evolution,
-    WAHA e Cloud API (whatsapp_oficial). Instagram/Facebook/webhook → False (handoff).
-    Reusa os serviços de baixo nível; qualquer erro → False (cai em handoff)."""
+    WAHA e Cloud API (whatsapp_oficial). Instagram/Facebook/webhook → (False, None) (handoff).
+    Retorna (enviado, evolution_msg_id): o msg_id (só Evolution) habilita recibo de entrega/leitura."""
     if canal is None or not texto:
-        return False
+        return False, None
     tipo = (canal.tipo or "").strip()
     config = canal.config if isinstance(canal.config, dict) else {}
     jid = conversa.remote_jid or ""
@@ -308,48 +308,48 @@ def _enviar_resposta(conversa, canal, texto: str) -> bool:
         if tipo == "whatsapp_evolution" or ev is not None:
             ev = ev or {}
             if not conversa.instance or not jid:
-                return False
+                return False, None
             from app.services import evolution as evo_service
 
-            evo_service.enviar_mensagem_texto(
+            resp = evo_service.enviar_mensagem_texto(
                 conversa.instance, jid, texto,
                 instance_id=ev.get("instance_id"), instance_token=ev.get("instance_token"),
             )
-            return True
+            return True, evo_service.extract_evolution_message_id(resp)
 
         if tipo == "whatsapp_waha":
             waha_cfg = config.get("waha") if isinstance(config.get("waha"), dict) else {}
             session = waha_cfg.get("session") or canal.nome or "default"
             chat_id = _waha_chat_id(jid)
             if not chat_id:
-                return False
+                return False, None
             from app.services import waha_service
 
             waha_service.enviar_mensagem_texto(session, waha_cfg, chat_id, texto)
-            return True
+            return True, None
 
         if tipo == "whatsapp_oficial":
             phone_number_id = config.get("phone_number_id") or ""
             access_token = config.get("access_token") or ""
             to = jid.replace("@s.whatsapp.net", "").replace("@c.us", "")
             if not (phone_number_id and access_token and to):
-                return False
+                return False, None
             from app.services import meta_cloud
 
             meta_cloud.enviar_mensagem_texto(
                 phone_number_id=phone_number_id, access_token=access_token, to=to, text=texto
             )
-            return True
+            return True, None
     except Exception as exc:  # noqa: BLE001 — falha de envio → handoff humano
         log.warning("[agente] envio %s falhou conversa=%s: %s", tipo, conversa.id, exc)
-        return False
+        return False, None
 
     # instagram/facebook/webhook/desconhecido: envio não suportado → handoff.
     log.info("[agente] envio não suportado p/ conversa=%s tipo=%s → handoff", conversa.id, tipo)
-    return False
+    return False, None
 
 
-def _publish(conversa, *, tipo: str, texto: str | None = None) -> None:
+def _publish(conversa, *, tipo: str, texto: str | None = None, message_type: str | None = None) -> None:
     try:
         from app.services.redis_pub import publish_whatsapp_event
 
@@ -361,6 +361,8 @@ def _publish(conversa, *, tipo: str, texto: str | None = None) -> None:
                 "remoteJid": conversa.remote_jid or "",
                 "direction": "saida",
                 "text": texto or "",
+                "instance": conversa.instance,
+                "messageType": message_type,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
@@ -370,6 +372,8 @@ def _publish(conversa, *, tipo: str, texto: str | None = None) -> None:
 
 def _handoff(db: Session, conversa, agente: Agente, *, canal_id, score, tokens, motivo: str) -> None:
     conversa.ai_escalado = True
+    conversa.ai_handoff_motivo = motivo
+    conversa.ai_handoff_at = datetime.now(timezone.utc)
     conversa.ai_agente_id = agente.id
     if score is not None:
         conversa.ai_score_confianca = score
@@ -429,7 +433,8 @@ def processar_reply(db: Session, payload: dict) -> None:
     ti, to = res["tokens_input"], res["tokens_output"]
 
     if score >= agente.threshold_confianca and res["resposta"]:
-        if _enviar_resposta(conversa, canal, res["resposta"]):
+        enviado, evo_msg_id = _enviar_resposta(conversa, canal, res["resposta"])
+        if enviado:
             agora = datetime.now(timezone.utc)
             # Persiste a mensagem enviada em crm_whatsapp_mensagens (espelha o envio humano em
             # canais.enviar_mensagem_canal). Necessário: o Evolution NÃO ecoa o envio de volta
@@ -439,10 +444,10 @@ def processar_reply(db: Session, payload: dict) -> None:
                     INSERT INTO public.crm_whatsapp_mensagens
                     (workspace_id, canal_id, conversa_id, contato_id, instance, remote_jid,
                      direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type,
-                     status, recebida_em, created_at, updated_at)
+                     status, evolution_msg_id, recebida_em, created_at, updated_at)
                     VALUES (:ws, :canal, :cid, :ct, :inst, :jid,
                             'saida', true, 'agente', :rn, :msg, 'conversation',
-                            'enviada', NOW(), NOW(), NOW())
+                            'enviada', :evid, NOW(), NOW(), NOW())
                 """),
                 {
                     "ws": str(conversa.workspace_id),
@@ -453,9 +458,12 @@ def processar_reply(db: Session, payload: dict) -> None:
                     "jid": conversa.remote_jid,
                     "rn": agente.nome or "Agente IA",
                     "msg": res["resposta"],
+                    "evid": evo_msg_id,
                 },
             )
             conversa.ai_respondido = True
+            conversa.ai_escalado = False  # resposta OK → limpa a marcação de falha
+            conversa.ai_handoff_motivo = None
             conversa.ai_agente_id = agente.id
             conversa.ai_score_confianca = score
             conversa.ultima_mensagem = res["resposta"]
@@ -467,7 +475,7 @@ def processar_reply(db: Session, payload: dict) -> None:
                 db, agente, canal_id=canal_id, conversa_id=conversa.id,
                 tokens_input=ti, tokens_output=to, escalado=False, score=score,
             )
-            _publish(conversa, tipo="message.upsert", texto=res["resposta"])
+            _publish(conversa, tipo="message.upsert", texto=res["resposta"], message_type="conversation")
         else:
             _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="envio_falhou")
     else:
