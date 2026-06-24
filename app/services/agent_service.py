@@ -431,6 +431,30 @@ def processar_reply(db: Session, payload: dict) -> None:
     if score >= agente.threshold_confianca and res["resposta"]:
         if _enviar_resposta(conversa, canal, res["resposta"]):
             agora = datetime.now(timezone.utc)
+            # Persiste a mensagem enviada em crm_whatsapp_mensagens (espelha o envio humano em
+            # canais.enviar_mensagem_canal). Necessário: o Evolution NÃO ecoa o envio de volta
+            # para o webhook, então sem este INSERT a resposta não aparece no chat.
+            db.execute(
+                text("""
+                    INSERT INTO public.crm_whatsapp_mensagens
+                    (workspace_id, canal_id, conversa_id, contato_id, instance, remote_jid,
+                     direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type,
+                     status, recebida_em, created_at, updated_at)
+                    VALUES (:ws, :canal, :cid, :ct, :inst, :jid,
+                            'saida', true, 'agente', :rn, :msg, 'conversation',
+                            'enviada', NOW(), NOW(), NOW())
+                """),
+                {
+                    "ws": str(conversa.workspace_id),
+                    "canal": str(conversa.canal_id) if conversa.canal_id else None,
+                    "cid": str(conversa.id),
+                    "ct": str(conversa.contato_id) if conversa.contato_id else None,
+                    "inst": conversa.instance,
+                    "jid": conversa.remote_jid,
+                    "rn": agente.nome or "Agente IA",
+                    "msg": res["resposta"],
+                },
+            )
             conversa.ai_respondido = True
             conversa.ai_agente_id = agente.id
             conversa.ai_score_confianca = score
