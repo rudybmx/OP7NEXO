@@ -47,8 +47,11 @@ Dimensão RESPONSÁVEL (`escopo` minhas/equipe e `responsavel_id` legado) é ort
 - [ ] `arquivadas=true` retorna só resolvidas; `arquivadas=false` nunca retorna resolvidas; combinação contraditória segue a precedência (não erro 500).
 - [ ] `acompanhamento=sem_resposta` retorna o mesmo conjunto-base do job `leads_sem_resposta` (mesmos critérios de tempo/direção/piso).
 - [ ] `FILTROS_V2=false` ⇒ tela idêntica à de hoje (regressão zero).
-- [ ] `FILTROS_V2=true` ⇒ cada controle filtra; seleção persiste em reload; paginação/loadMore correta com filtros.
+- [ ] `FILTROS_V2=true` ⇒ cada controle filtra a **primeira página** corretamente (server-side, antes do limit); seleção persiste em reload (`usePersistedState`).
 - [ ] Multi-tenant preservado (toda query mantém `workspace_id` + `verificar_acesso_workspace`).
+
+> **Paginação:** o `useConversas` já pagina por **offset real** no caminho V2 (`loadMore` correto). Porém a `pagina-atendimento` **ainda não renderiza** um controle "carregar mais"/scroll infinito (não desestrutura `loadMore`/`hasMore`) — wiring desse controle é follow-up; o bug corrigido aqui é a **primeira página** (filtro-em-memória pós-limit).
+> **Teste vivo (pós-Fase 0):** o workspace Doutor Feridas (`5cbc61b9-…`) está **vazio**; use um com dados, ex. `a3e76664-40ed-4992-b102-e44737062cdf` (714 conversas) — sanity global validada: 2.639 ativas (2.601 novas, 179 grupos, 9 resolvidas, 1.054 sem-resposta).
 
 ## Fora de escopo (Fase 1)
 Read-state por usuário (`crm_conversa_leituras`), handoff/`ai_*`, threshold por workspace, resgate endpoint, RBAC. Remoção destrutiva do filtro-em-memória legado (só após flip do flag).
