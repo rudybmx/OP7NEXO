@@ -712,7 +712,9 @@ def estado_conexao(instance_name: str, instance_id: str | None = None, instance_
     with httpx.Client(timeout=15) as client:
         resp = client.get(
             f"{META}/instance/status",
-            headers=_headers(instance_id, instance_token),
+            # evolution-go exige apikey=instance_token neste endpoint; com _headers dava
+            # 401 e o poll caía no fallback lento (listar_instancias) → detecção atrasada.
+            headers=_send_headers(instance_id, instance_token),
         )
         if resp.status_code < 400:
             return _normalize_connection(resp.json(), fallback_name=instance_name)
