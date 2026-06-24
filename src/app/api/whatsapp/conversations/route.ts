@@ -45,6 +45,7 @@ interface BackendConversaRow {
   last_outbound_at?: string | null
   favorita?: boolean | null
   fixada?: boolean | null
+  ai_ativo?: boolean | null
   etiquetas?: Array<{ id: string; nome: string; cor: string }> | null
 }
 
@@ -248,7 +249,7 @@ export async function GET(request: NextRequest) {
       instance: row.instance,
       remoteJid: row.remote_jid,
       status: row.status,
-      iaAtiva: true, // legado, removido do schema
+      iaAtiva: row.ai_ativo ?? false,
       naoLidas: row.nao_lidas || 0,
       ultimaMensagem: row.ultima_mensagem || '',
       ultimaMensagemAt: iso(row.ultima_msg_at),

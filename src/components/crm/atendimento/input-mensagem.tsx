@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
 import { FileAudio, FileText, Image, Mic, Pause, Play, Plus, Send, Video, X } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
+import { Switch } from '@heroui/react'
+import { useAtualizarConversa } from '@/hooks/use-atualizar-conversa'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +57,20 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
   const [isPaused, setIsPaused] = useState(false)
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0)
   const [recordingError, setRecordingError] = useState<string | null>(null)
+
+  const { atualizar: atualizarConversa } = useAtualizarConversa()
+  const [agenteAtivo, setAgenteAtivo] = useState(conversa.iaAtiva)
+  const [agenteTogglando, setAgenteTogglando] = useState(false)
+  useEffect(() => {
+    setAgenteAtivo(conversa.iaAtiva)
+  }, [conversa.id, conversa.iaAtiva])
+  const handleToggleAgente = async (next: boolean) => {
+    setAgenteAtivo(next) // otimista (Nielsen #1)
+    setAgenteTogglando(true)
+    const ok = await atualizarConversa(conversa.id, { iaAtiva: next })
+    setAgenteTogglando(false)
+    if (!ok) setAgenteAtivo(!next) // reverte em falha (Nielsen #9)
+  }
 
   const draftText = valor.trim()
   const hasText = draftText.length > 0
@@ -481,6 +497,15 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
           </div>
         </div>
       ) : (
+        <>
+        <div style={agenteSwitchRowStyle}>
+          <Switch size="sm" isSelected={agenteAtivo} onChange={handleToggleAgente} isDisabled={agenteTogglando}>
+            <Switch.Control><Switch.Thumb /></Switch.Control>
+            <Switch.Content className="ds-help">
+              {agenteAtivo ? 'Agente IA respondendo' : 'Agente IA desligado'}
+            </Switch.Content>
+          </Switch>
+        </div>
         <div style={composerRowStyle}>
           <input
             ref={documentInputRef}
@@ -578,6 +603,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
             {primaryAction === 'send' ? <Send size={18} /> : <Mic size={18} />}
           </button>
         </div>
+        </>
       )}
     </div>
   )
@@ -596,6 +622,14 @@ const composerRowStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'flex-end',
   gap: 10,
+}
+
+const agenteSwitchRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  marginBottom: 8,
+  paddingLeft: 2,
 }
 
 const inputShellStyle: CSSProperties = {

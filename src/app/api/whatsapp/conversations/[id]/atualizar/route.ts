@@ -13,7 +13,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (access instanceof Response) return access
 
     const { id } = await context.params
-    const body = await request.json() as { favorita?: boolean; fixada?: boolean }
+    const body = await request.json() as { favorita?: boolean; fixada?: boolean; iaAtiva?: boolean }
     const db = getSql()
 
     const rows = await db`SELECT id, workspace_id FROM public.crm_whatsapp_conversas WHERE id = ${id}::uuid`
@@ -32,6 +32,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (typeof body.fixada === 'boolean') {
       updates.push(`fixada = $${values.length + 1}`)
       values.push(body.fixada)
+    }
+    if (typeof body.iaAtiva === 'boolean') {
+      updates.push(`ai_ativo = $${values.length + 1}`)
+      values.push(body.iaAtiva)
     }
 
     if (updates.length === 0) {
@@ -54,6 +58,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       await db`
         UPDATE public.crm_whatsapp_conversas
         SET fixada = ${body.fixada}, updated_at = NOW()
+        WHERE id = ${id}::uuid
+      `
+    }
+
+    // ai_ativo = chave do agente por conversa (Switch no compositor) — toggle independente
+    if (typeof body.iaAtiva === 'boolean') {
+      await db`
+        UPDATE public.crm_whatsapp_conversas
+        SET ai_ativo = ${body.iaAtiva}, updated_at = NOW()
         WHERE id = ${id}::uuid
       `
     }

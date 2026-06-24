@@ -217,6 +217,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-24) — Central de Agentes: chave do agente por conversa (Switch)
+- Switch (HeroUI v3) no compositor de `/crm/atendimento/conversas` (`src/components/crm/atendimento/input-mensagem.tsx`), acima do "+": liga/desliga o agente IA **por conversa** (estado `conversa.iaAtiva`, otimista + reverte em falha). Grava via `useAtualizarConversa` → proxy `PATCH /api/whatsapp/conversations/{id}/atualizar` (campo `iaAtiva` → coluna `ai_ativo`, SQL direto). O proxy GET (`conversations/route.ts`) agora mapeia `iaAtiva` da coluna real `ai_ativo` (antes hardcoded `true`). Backend: migration 091 + gate em `processar_reply` (default OFF). Desligado = humano cuida; ligado = agente responde só naquela conversa.
+
 ### 🧩 Code-complete, INERTE (2026-06-24) — CRM Atendimento: filtros server-side V2 (`FILTROS_V2`)
 - **Route handler** `GET /api/whatsapp/conversations`: sob `?v2=1`, repassa `canal_id/escopo/acompanhamento/tipo/arquivadas/nao_lidas/responsavel_id` ao FastAPI `GET /conversas` e **pula o filtro-em-memória pós-limit** (corrige bug de paginação). Caminho legado (sem `v2`) inalterado.
 - `use-conversas.ts`: 6º arg opcional `V2Filtros` → caminho v2 com paginação real por **offset** (UI "carregar mais" é follow-up — `loadMore`/`hasMore` ainda não consumidos na página).

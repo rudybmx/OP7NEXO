@@ -15,6 +15,7 @@ function authHeaders(): Record<string, string> {
 interface ConversaPatch {
   favorita?: boolean
   fixada?: boolean
+  iaAtiva?: boolean
 }
 
 export function useAtualizarConversa() {
