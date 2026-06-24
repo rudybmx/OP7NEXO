@@ -258,6 +258,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Dependência `redis==5.2.1` adicionada
 - **Bugfix**: normalização de eventos Evolution Go/legado com `.upper().replace(".", "_")` antes do roteamento interno
 
+### ✅ Implementado (2026-06-24) — Filtro de conversas por etiqueta
+- `GET /conversas` aceita query param `etiqueta_ids` (repetível, `list[UUID]`). Quando informado, faz `JOIN Conversa.etiquetas` + `IN (...)` + `DISTINCT` → conversas com **pelo menos uma** das etiquetas (lógica OR). Isolamento por `workspace_id` mantido (etiqueta de outro ws não casa). Usado pela caixinha de filtro da tela de Atendimento (front).
+- ⚠️ **Bug pré-existente (NÃO meu)**: `POST/DELETE /conversas/{id}/etiquetas/{etiqueta_id}` dá 500 — `c.etiquetas` vem `None` (relationship M2M; `_conversa_out` já tinha guard `or []`). Nenhum workspace tem etiquetas porque aplicar nunca funcionou. O filtro está correto (usa JOIN no SQL, não a coleção da instância), mas fica inerte até a relationship ser corrigida.
+
 ### ✅ Implementado (2026-05-15) — Grupos WhatsApp e @mentions
 - Migration 033: `is_group`, `group_name` em `crm_whatsapp_conversas`; `participant_jid`, `participant_name`, `is_mentioned` em `crm_whatsapp_mensagens`
 - Webhook detecta grupos via `@g.us` no `remote_jid`, extrai remetente real do `key.participant`
