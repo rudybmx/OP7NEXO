@@ -240,6 +240,41 @@ def _normalize_waha_media_url(url: str) -> str:
     return urlunparse(parsed)
 
 
+def _extract_waha_context(inner: dict, root: dict) -> dict | None:
+    """Extrai o contextInfo (reply/menções) do payload WAHA.
+
+    O WAHA NOWEB traz o objeto Baileys cru em `_data.message`, cujos sub-nós carregam
+    `contextInfo` (stanzaId/participant/quotedMessage/mentionedJid) — mesma estrutura
+    do Evolution. Fallback: o campo de alto nível `replyTo` do WAHA.
+    """
+    data = _nested_dict(inner, "_data") or _nested_dict(root, "_data")
+    msg = data.get("message") if isinstance(data, dict) else None
+    if isinstance(msg, dict):
+        candidates = [msg, *[v for v in msg.values() if isinstance(v, dict)]]
+        for container in candidates:
+            ctx = container.get("contextInfo") or container.get("ContextInfo")
+            if isinstance(ctx, dict) and (
+                ctx.get("quotedMessage") or ctx.get("QuotedMessage")
+                or ctx.get("stanzaId") or ctx.get("stanzaID")
+                or ctx.get("mentionedJid") or ctx.get("mentionedJids")
+            ):
+                return ctx
+
+    # Fallback: replyTo de alto nível (WAHA) — monta um contextInfo mínimo
+    reply_to = inner.get("replyTo") or root.get("replyTo")
+    if isinstance(reply_to, dict):
+        rid = reply_to.get("id") or reply_to.get("_serialized") or ""
+        if rid:
+            return {
+                "stanzaId": _waha_short_msg_id(str(rid)),
+                "participant": reply_to.get("participant") or reply_to.get("from") or "",
+                "quotedMessage": {"conversation": reply_to.get("body") or ""},
+            }
+    elif isinstance(reply_to, str) and reply_to:
+        return {"stanzaId": _waha_short_msg_id(reply_to), "quotedMessage": {}}
+    return None
+
+
 def adapt_waha_to_evolution(waha: dict) -> dict:
     """Converte payload inbound WAHA para estrutura compatível com normalize_message_event().
 
@@ -398,6 +433,11 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
             message[msg_key]["error"] = str(media_obj.get("error"))
     else:
         message = {"conversation": msg_text}
+
+    # Repassa o contextInfo (reply/menções) p/ o normalizer extrair quoted_*/mentions.
+    waha_ctx = _extract_waha_context(inner, waha)
+    if waha_ctx:
+        message["contextInfo"] = waha_ctx
 
     key: dict[str, object] = {
         "id": msg_id,

@@ -7,6 +7,7 @@ import os
 import pytest
 
 from app.services.waha_normalizer import _normalize_waha_media_url, adapt_waha_to_evolution, is_ignored_waha_update
+from app.services.whatsapp_normalizer import normalize_message_event
 
 
 # ---------------------------------------------------------------------------
@@ -363,3 +364,61 @@ def test_session_status_vira_connection_update():
             "number": "554799999999@c.us",
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Reply/menções WAHA — contextInfo do _data.message repassado ao node
+# ---------------------------------------------------------------------------
+
+
+def _make_waha_reply(*, with_data: bool = True, reply_to: dict | None = None) -> dict:
+    payload: dict = {
+        "id": "FAKE_REPLY",
+        "from": "5511999999999@s.whatsapp.net",
+        "fromMe": False,
+        "body": "concordo",
+        "timestamp": 1_700_000_000,
+        "pushName": "Lead",
+    }
+    if with_data:
+        payload["_data"] = {
+            "message": {
+                "extendedTextMessage": {
+                    "text": "concordo",
+                    "contextInfo": {
+                        "stanzaId": "ORIG123",
+                        "participant": "5511888888888@s.whatsapp.net",
+                        "quotedMessage": {"conversation": "mensagem original citada"},
+                        "mentionedJid": ["5511777777777@s.whatsapp.net"],
+                    },
+                }
+            }
+        }
+    if reply_to is not None:
+        payload["replyTo"] = reply_to
+    return {"event": "message", "session": "qozt", "payload": payload}
+
+
+def test_waha_reply_via_data_popula_quoted_e_mentions():
+    adapted = adapt_waha_to_evolution(_make_waha_reply())
+    event = normalize_message_event(adapted, adapted.get("event"))
+    assert event.quoted_message_id == "ORIG123"
+    assert event.quoted_text == "mensagem original citada"
+    assert event.quoted_remote_jid == "5511888888888@s.whatsapp.net"
+    assert "5511777777777@s.whatsapp.net" in event.mentioned_jids
+
+
+def test_waha_reply_via_replyto_fallback():
+    adapted = adapt_waha_to_evolution(
+        _make_waha_reply(with_data=False, reply_to={"id": "false_55_ABC999", "participant": "5511888888888@s.whatsapp.net", "body": "oi original"})
+    )
+    event = normalize_message_event(adapted, adapted.get("event"))
+    assert event.quoted_message_id == "ABC999"
+    assert event.quoted_text == "oi original"
+
+
+def test_waha_sem_reply_nao_cria_contexto():
+    adapted = adapt_waha_to_evolution(_make_waha_reply(with_data=False))
+    event = normalize_message_event(adapted, adapted.get("event"))
+    assert event.quoted_message_id is None
+    assert event.mentioned_jids == []
