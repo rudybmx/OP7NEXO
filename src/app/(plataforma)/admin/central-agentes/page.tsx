@@ -10,6 +10,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import api from '@/lib/api-client'
 import { type AgenteInput, type HorarioItem, useAgentes } from '@/hooks/use-agentes'
 import { type LlmProvider, useLlmProviders } from '@/hooks/use-llm-providers'
+import { BaseConhecimentoManager } from '@/components/admin/central-agentes/BaseConhecimentoManager'
 
 type Aba = 'agentes' | 'providers' | 'uso'
 type CanalLite = { id: string; nome: string; tipo?: string | null }
@@ -286,6 +287,14 @@ export default function CentralAgentesPage() {
             <Section titulo="Prompt do sistema (rascunho)">
               <textarea className={inputCls} style={{ ...inputStyle, minHeight: 120, resize: 'vertical' }} value={form.prompt ?? ''} onChange={(e) => setF('prompt', e.target.value)} placeholder="Você é o assistente de atendimento da empresa…" />
               <p className="text-xs mt-1" style={{ color: 'var(--ws-text-2)' }}>Publicação versionada chega na Fase 4.</p>
+            </Section>
+
+            <Section titulo="Base de conhecimento (RAG)">
+              {editId ? (
+                <BaseConhecimentoManager workspaceId={ws} agenteId={editId} />
+              ) : (
+                <p className="text-xs" style={{ color: 'var(--ws-text-2)' }}>Salve o agente primeiro para indexar documentos/FAQs.</p>
+              )}
             </Section>
 
             <Section titulo="Horários de funcionamento">
