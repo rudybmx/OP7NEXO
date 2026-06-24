@@ -14,6 +14,7 @@ from app.models.meta_sync_state import MetaSyncState
 from app.models.meta_sync_log import MetaSyncLog
 from app.models.ads_account_workspace_access import AdsAccountWorkspaceAccess
 from app.models.canal_entrada import CanalEntrada
+from app.models.canal_connect_token import CanalConnectToken
 from app.models.meta_token import MetaToken
 from app.models.crm import (
     Contato,
@@ -80,6 +81,7 @@ __all__ = [
     "MetaSyncLog",
     "AdsAccountWorkspaceAccess",
     "CanalEntrada",
+    "CanalConnectToken",
     "MetaToken",
     "Contato",
     "ConversationAssignment",

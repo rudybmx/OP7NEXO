@@ -36,6 +36,7 @@ from app.models.user_workspace_access import UserWorkspaceAccess
 from app.models.workspace import Workspace
 from app.services import evolution as evo_service
 from app.services import waha_service
+from app.services import connect_token
 from app.services.object_storage import download_and_put, put_bytes, public_url
 from app.services.webhook_api_ingestion import (
     CRM_EXTERNO_ZAPI_PROVIDER,
@@ -1549,6 +1550,15 @@ def conectar_canal(
         return _conectar_instagram(c, db)
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
+    return _conectar_evolution(c, db)
+
+
+def _conectar_evolution(c: CanalEntrada, db: Session) -> ConectarOut:
+    """Núcleo de conexão Evolution — admin e link público chamam isto.
+
+    Cria-ou-reusa a instância, (re)configura o webhook e retorna QR/pairing, ou
+    'connected' se já estiver aberta. Idempotente.
+    """
     if _evolution_protected_name(c):
         raise HTTPException(
             status_code=409,
@@ -1684,6 +1694,15 @@ def status_evolution(
     if c.tipo != "whatsapp_evolution":
         raise HTTPException(status_code=400, detail="Operação disponível apenas para WhatsApp Evolution")
 
+    return _status_evolution_core(c, db)
+
+
+def _status_evolution_core(c: CanalEntrada, db: Session, *, publico: bool = False) -> dict:
+    """Núcleo de status Evolution (leitura) — admin (publico=False) e link público (True).
+
+    Regra de ouro (publico=True): nunca toca `c.status` (administrativo) e não
+    ressuscita um canal já 'disconnected'; só lê estado/QR, não re-arma a sessão.
+    """
     instance_name, instance_id, instance_token = _evolution_meta(c)
 
     try:
@@ -1706,10 +1725,14 @@ def status_evolution(
             except evo_service.EvolutionError as exc:
                 logger.error("[canais] falha ao reconfigurar webhook Evolution: %s", exc)
         elif conn_state == "connecting":
-            c.connection_status = "connecting"
-            db.commit()
+            # Regra de ouro (público): não ressuscita um canal que caiu ('disconnected').
+            if not publico or c.connection_status != "disconnected":
+                c.connection_status = "connecting"
+                db.commit()
         elif conn_state == "close":
-            c.status = "inativo"
+            # Regra de ouro (público): queda automática NÃO desativa o canal (status administrativo).
+            if not publico:
+                c.status = "inativo"
             c.connection_status = "disconnected"
             db.commit()
 
@@ -1739,6 +1762,101 @@ def status_evolution(
             "instance_id": instance_id,
             "error": str(exc),
         }
+
+
+class LinkConexaoOut(BaseModel):
+    token: str
+    link: str
+    expira_em: str
+
+
+@router.post("/canais/{canal_id}/link-conexao", response_model=LinkConexaoOut)
+def gerar_link_conexao(
+    canal_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_usuario_atual),
+):
+    """Gera (ou reusa) o link público de conexão para o admin enviar ao cliente."""
+    c = _get_canal_or_404(canal_id, db)
+    _exigir_admin_canal(usuario, c, db)
+    if c.tipo not in ("whatsapp_evolution", "whatsapp_waha"):
+        raise HTTPException(
+            status_code=400,
+            detail="Link de conexão disponível apenas para canais WhatsApp Evolution ou WAHA",
+        )
+    token_row = connect_token.gerar_ou_reusar_token(db, c.id, c.workspace_id)
+    base = settings.frontend_url.rstrip("/")
+    return LinkConexaoOut(
+        token=token_row.token,
+        link=f"{base}/conectar/{token_row.token}",
+        expira_em=token_row.expires_at.isoformat(),
+    )
+
+
+def _parear_evolution(c: CanalEntrada, db: Session, telefone: str) -> dict:
+    """Pareamento por número (Evolution): garante a instância e pede o código de pareamento."""
+    if _evolution_protected_name(c):
+        raise HTTPException(status_code=409, detail="Canal legado protegido")
+
+    telefone_digits = "".join(ch for ch in str(telefone or "") if ch.isdigit())
+    if len(telefone_digits) < 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Informe o número com DDI e DDD (ex.: 5511999999999)",
+        )
+
+    instance_name, instance_id, instance_token = _evolution_meta(c)
+    exacta = (
+        _instancia_evolution_exata(c, db, instance_name, instance_id, instance_token)
+        if instance_name
+        else None
+    )
+    if exacta:
+        instance_name = exacta["instance_name"]
+        instance_id = exacta["instance_id"] or instance_id
+        instance_token = exacta["instance_token"] or instance_token
+    else:
+        instance_name = _nome_instancia_evo(c)
+        instance_token = instance_token or str(uuid.uuid4())
+        try:
+            instancia = evo_service.criar_instancia(instance_name, token=instance_token)
+            instance_id = instancia.get("instance_id") or instancia.get("id") or instance_id
+            instance_token = instancia.get("instance_token") or instancia.get("token") or instance_token
+            _persistir_evolution_meta(
+                c, db, managed_by="op7nexo", created_by_connect_flow=True,
+                instance_name=instance_name, instance_id=instance_id, instance_token=instance_token,
+            )
+        except evo_service.EvolutionError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+
+    if not c.webhook_token:
+        c.webhook_token = secrets.token_hex(32)
+        db.commit()
+        db.refresh(c)
+    webhook_url = f"{_webhook_base_url()}/webhook/evolution/{c.webhook_token}"
+
+    try:
+        data = evo_service.conectar_instancia(
+            instance_name, webhook_url,
+            instance_id=instance_id, instance_token=instance_token,
+            subscribe=["ALL"], immediate=True, phone=telefone_digits,
+        )
+    except evo_service.EvolutionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    pairing_code = _extrair_pairing_code_evolution(data)
+    if not pairing_code:
+        try:
+            qr_data = evo_service.obter_qr_code(
+                instance_name, instance_id=instance_id, instance_token=instance_token, retries=4,
+            )
+            pairing_code = _extrair_pairing_code_evolution(qr_data)
+        except evo_service.EvolutionError:
+            pairing_code = None
+
+    c.connection_status = "connecting"
+    db.commit()
+    return {"pairing_code": pairing_code, "connection_status": "connecting"}
 
 
 @router.post("/canais/{canal_id}/desconectar")

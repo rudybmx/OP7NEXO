@@ -1490,6 +1490,16 @@ def process_evolution_connection_event(
     )
     db.commit()
 
+    # Anti-hijack: ao conectar de verdade, consome o link público ativo do canal —
+    # fecha a janela em que o cliente fecha a página antes do poll de /status.
+    if connection.state == "connected":
+        try:
+            from app.services.connect_token import consumir_tokens_do_canal
+
+            consumir_tokens_do_canal(db, canal.id)
+        except Exception:
+            logger.exception("[webhook-connection] falha ao consumir token público canal=%s", canal.id)
+
     logger.info("[webhook-connection] canal=%s state=%s", canal.id, connection.state)
     return {
         "state": connection.state,
