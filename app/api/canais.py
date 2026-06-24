@@ -3498,6 +3498,7 @@ async def receber_webhook_evolution(
         try:
             process_evolution_connection_event(db, canal, payload, event=event)
         except Exception:
+            db.rollback()  # limpa a sessão p/ não derrubar o enqueue seguinte
             logger.exception("[webhook-evolution] falha no processamento inline de conexão canal=%s", canal.nome)
 
     try:
@@ -3590,6 +3591,7 @@ async def receber_webhook_waha(
         try:
             process_evolution_connection_event(db, canal, adapted, event=event)
         except Exception:
+            db.rollback()  # limpa a sessão p/ não derrubar o enqueue seguinte
             logger.exception("[webhook-waha] falha no processamento inline de conexão canal=%s", canal.nome)
 
     try:

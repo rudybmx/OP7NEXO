@@ -1453,7 +1453,7 @@ def process_evolution_connection_event(
     if connection.state == "unknown":
         return None
 
-    updates: dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+    updates: dict[str, Any] = {"atualizado_em": datetime.now(timezone.utc)}
     if connection.state == "connected":
         updates.update(
             {
@@ -1463,7 +1463,8 @@ def process_evolution_connection_event(
             }
         )
         if connection.number:
-            updates["numero_telefone"] = connection.number
+            # jid de conexão vem com sufixo de device (ex.: "5543...:1") — guarda só o número
+            updates["numero_telefone"] = connection.number.split(":", 1)[0]
     elif connection.state == "connecting":
         updates["connection_status"] = "connecting"
     elif connection.state == "disconnected":

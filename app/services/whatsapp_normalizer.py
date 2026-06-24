@@ -39,6 +39,8 @@ CONNECTION_EVENT_TYPES = {
     "DISCONNECTED",
     "QRCODE",
     "QR_CODE",
+    "PAIRSUCCESS",
+    "PAIR_SUCCESS",
 }
 
 
@@ -376,7 +378,7 @@ def normalize_connection_event(
     else:
         state = "unknown"
 
-    if event_type == "CONNECTED":
+    if event_type in {"CONNECTED", "PAIRSUCCESS", "PAIR_SUCCESS"}:
         state = "connected"
     elif event_type in {"LOGGEDOUT", "LOGGED_OUT", "DISCONNECTED"}:
         state = "disconnected"
