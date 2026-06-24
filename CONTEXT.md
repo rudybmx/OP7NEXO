@@ -250,6 +250,7 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Assumir conversa da IA via modal ao clicar no input
 - Reabertura: nova conversa criada quando lead manda msg em conversa resolvida
 - IA como responsável (UUID de usuário), removido ia_ativa
+- Filtro de conversas por etiqueta (OR, multi-select): componente `FiltroEtiquetas` (Radix Popover) no topo do PainelInbox; `useConversas` e o proxy `GET /conversations` repassam `etiqueta_ids` para a API; seleção persiste em F5 (usePersistedState `op7-nexo-atendimento-filtro-etiquetas`)
 
 ### ✅ Implementado (2026-05-13) — Adaptação schema real Python/FastAPI
 - `docker-compose.yml` do front: adicionado `DATABASE_URL` apontando para postgres/op7nexo
