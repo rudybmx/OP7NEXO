@@ -463,11 +463,20 @@ def process_contact_avatar_enrichment_job(db: Session, job: dict[str, Any]) -> d
         )
         return {"status": "skipped"}
 
-    # Sucesso: url pode ser str (tem foto) ou None (sem foto)
+    # `url` já é a URL re-hospedada (/meta/storage/...) ou None (sem foto).
+    # Quando None, NÃO preservar uma URL crua/efêmera (pps/fbcdn/fbsbx) legada —
+    # ela expira -> 403 no browser. Limpa para NULL (front mostra iniciais);
+    # um avatar same-origin anterior é mantido.
     db.execute(
         text("""
             UPDATE public.crm_whatsapp_contatos
-            SET avatar_url = COALESCE(:url, avatar_url),
+            SET avatar_url = CASE
+                    WHEN :url IS NOT NULL THEN :url
+                    WHEN avatar_url LIKE '%whatsapp.net%'
+                      OR avatar_url LIKE '%fbcdn%'
+                      OR avatar_url LIKE '%fbsbx%' THEN NULL
+                    ELSE avatar_url
+                END,
                 avatar_fetched_at = NOW(),
                 updated_at = NOW()
             WHERE id = CAST(:cid AS uuid) AND workspace_id = CAST(:ws AS uuid)
@@ -577,7 +586,13 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
         text("""
             UPDATE public.crm_whatsapp_conversas
             SET group_name = COALESCE(:nome, group_name),
-                group_avatar_url = COALESCE(:avatar, group_avatar_url),
+                group_avatar_url = CASE
+                    WHEN :avatar IS NOT NULL THEN :avatar
+                    WHEN group_avatar_url LIKE '%whatsapp.net%'
+                      OR group_avatar_url LIKE '%fbcdn%'
+                      OR group_avatar_url LIKE '%fbsbx%' THEN NULL
+                    ELSE group_avatar_url
+                END,
                 updated_at = NOW()
             WHERE id = CAST(:conv_id AS uuid) AND workspace_id = CAST(:ws AS uuid)
         """),

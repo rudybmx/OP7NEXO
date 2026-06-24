@@ -274,6 +274,11 @@ def _apply_contact_enrichment(
     contact = snapshot.get("contact") if isinstance(snapshot.get("contact"), dict) else {}
     last_activity_at = snapshot.get("last_interaction_at") or snapshot.get("last_message_in_at") or snapshot.get("last_message_out_at")
     avatar_url = _clean_text(contact.get("avatar_url"))
+    # Não persistir URL crua/efêmera do CDN do WhatsApp (pps.whatsapp.net/fbcdn) —
+    # expira -> 403 no browser. O job de avatar (contact_avatar_enrichment) re-hospeda
+    # no MinIO de forma estável; aqui apenas ignoramos a URL crua.
+    if avatar_url and any(h in avatar_url for h in ("whatsapp.net", "fbcdn", "fbsbx")):
+        avatar_url = None
     name = _clean_text(contact.get("name"))
     phone = _normalize_phone(contact.get("phone"))
     metadata_snapshot = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"), default=str)
