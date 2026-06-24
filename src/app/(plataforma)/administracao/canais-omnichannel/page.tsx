@@ -97,6 +97,7 @@ export default function CanaisOmnichannelPage() {
   // Exclusão / Inativação
   const [excluindoId, setExcluindoId] = useState<string | null>(null)
   const [inativandoId, setInativandoId] = useState<string | null>(null)
+  const [gerandoLinkId, setGerandoLinkId] = useState<string | null>(null)
   const [confirmExcluir, setConfirmExcluir] = useState<Canal | null>(null)
   const [confirmInativar, setConfirmInativar] = useState<Canal | null>(null)
 
@@ -240,6 +241,21 @@ export default function CanaisOmnichannelPage() {
       toast.error(errorMessage(err, 'Erro ao inativar canal'))
     } finally {
       setInativandoId(null)
+    }
+  }
+
+  async function gerarLinkConexao(canal: Canal) {
+    setGerandoLinkId(canal.id)
+    try {
+      const resp = await api.post<{ token: string; link: string; expira_em: string }>(
+        `/canais/${canal.id}/link-conexao`,
+      )
+      await navigator.clipboard.writeText(resp.link).catch(() => {})
+      toast.success('Link de conexão copiado!', { description: resp.link })
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Erro ao gerar link de conexão'))
+    } finally {
+      setGerandoLinkId(null)
     }
   }
 
@@ -626,6 +642,25 @@ export default function CanaisOmnichannelPage() {
                           <Pencil size={12} />
                           Editar
                         </button>
+                        {['whatsapp_evolution', 'whatsapp_waha'].includes(c.tipo) && (
+                          <button
+                            onClick={() => gerarLinkConexao(c)}
+                            disabled={gerandoLinkId === c.id}
+                            title="Gerar link para o cliente conectar"
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid var(--ws-glass-border)',
+                              borderRadius: 6, padding: '4px 12px',
+                              fontSize: 12, color: 'var(--ws-text-2)',
+                              cursor: gerandoLinkId === c.id ? 'not-allowed' : 'pointer',
+                              display: 'inline-flex', alignItems: 'center', gap: 5,
+                              opacity: gerandoLinkId === c.id ? 0.6 : 1,
+                            }}
+                          >
+                            {gerandoLinkId === c.id ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />}
+                            Link
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
