@@ -120,6 +120,7 @@ interface UseConversasReturn {
   isLoadingMore: boolean
   error: string | null
   refetch: () => void
+  marcarLidaLocal: (id: string) => void
   loadMore: () => void
   hasMore: boolean
 }
@@ -267,6 +268,12 @@ export function useConversas(
     fetchConversas(false)
   }, [fetchConversas])
 
+  // Atualização otimista local: ao abrir a conversa, some na hora o badge/selo
+  // de não lido (o servidor é limpo em paralelo via marcarLido).
+  const marcarLidaLocal = useCallback((id: string) => {
+    setConversas(prev => prev.map(c => c.id === id ? { ...c, naoLidas: 0, marcadaNaoLida: false } : c))
+  }, [])
+
   const loadMore = useCallback(() => {
     if (isLoadingMore || !hasMore) return
     fetchConversas(true)
@@ -278,6 +285,7 @@ export function useConversas(
     isLoadingMore: enabled ? isLoadingMore : false,
     error: enabled ? error : null,
     refetch,
+    marcarLidaLocal,
     loadMore,
     hasMore,
   }

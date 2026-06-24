@@ -1017,10 +1017,12 @@ export function PainelInbox({
                     {conversa.marcadaNaoLida && (
                       <span style={{
                         ...chipBaseStyle,
-                        background: 'rgba(163, 45, 45, 0.12)',
-                        color: '#a32d2d',
-                        border: '1px solid rgba(163, 45, 45, 0.30)',
-                        fontWeight: 600,
+                        background: 'rgba(255, 43, 61, 0.16)',
+                        color: '#ff2b3d',
+                        border: '1px solid rgba(255, 43, 61, 0.55)',
+                        fontWeight: 700,
+                        letterSpacing: 0.3,
+                        boxShadow: '0 0 8px rgba(255, 43, 61, 0.55)',
                       }}>
                         Não lido
                       </span>
