@@ -80,6 +80,8 @@ export interface ConversaApi {
   remoteJid: string
   status: StatusConversa
   iaAtiva: boolean
+  aiEscalado?: boolean
+  aiHandoffMotivo?: string | null
   naoLidas: number
   marcadaNaoLida?: boolean
   ultimaMensagem: string

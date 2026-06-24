@@ -47,6 +47,8 @@ interface BackendConversaRow {
   favorita?: boolean | null
   fixada?: boolean | null
   ai_ativo?: boolean | null
+  ai_escalado?: boolean | null
+  ai_handoff_motivo?: string | null
   etiquetas?: Array<{ id: string; nome: string; cor: string }> | null
 }
 
@@ -251,6 +253,8 @@ export async function GET(request: NextRequest) {
       remoteJid: row.remote_jid,
       status: row.status,
       iaAtiva: row.ai_ativo ?? false,
+      aiEscalado: row.ai_escalado ?? false,
+      aiHandoffMotivo: row.ai_handoff_motivo ?? null,
       naoLidas: row.nao_lidas || 0,
       marcadaNaoLida: row.marcada_nao_lida ?? false,
       ultimaMensagem: row.ultima_mensagem || '',
