@@ -134,6 +134,38 @@ class BaseConhecimentoIngestOut(BaseModel):
     chunks: int
 
 
+class PromptVersaoOut(BaseModel):
+    id: str
+    status: str
+    prompt_texto: str
+    criado_em: str | None
+    publicado_em: str | None
+    publicado_por: str | None
+    diff_vs_anterior: str | None
+
+
+class UsoTotais(BaseModel):
+    tokens_input: int
+    tokens_output: int
+    tokens_total: int
+    custo_usd: float
+    chamadas: int
+    conversas: int
+    handoffs: int
+    taxa_handoff: float
+    score_medio: float | None
+
+
+class UsoSeriePonto(BaseModel):
+    dia: str
+    tokens: int
+
+
+class UsoDashboardOut(BaseModel):
+    totais: UsoTotais
+    serie: list[UsoSeriePonto]
+
+
 class AgenteListItemOut(BaseModel):
     id: str
     nome: str

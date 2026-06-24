@@ -5,11 +5,12 @@ Agentes têm `workspace_id` (isolamento de dado), mas a autorização é platfor
 """
 from __future__ import annotations
 
+import difflib
 import uuid
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -40,9 +41,13 @@ from app.schemas.agente import (
     BaseConhecimentoOut,
     HorarioIn,
     HorarioOut,
+    PromptVersaoOut,
     SandboxIn,
     SandboxOut,
     ToggleIn,
+    UsoDashboardOut,
+    UsoSeriePonto,
+    UsoTotais,
 )
 from app.services import agent_service, embedding_service, llm_client_service
 
@@ -561,3 +566,178 @@ def remover_agente(
     agente.deleted_at = datetime.now(timezone.utc)
     _sync_links_ativo(agente, False, db)
     db.commit()
+
+
+# ── Fase 4: versionamento de prompt ──────────────────────────────────────────
+def _prompt_versao_out(p: AgentePrompt, diff: str | None) -> PromptVersaoOut:
+    return PromptVersaoOut(
+        id=str(p.id),
+        status=p.status,
+        prompt_texto=p.prompt_texto,
+        criado_em=p.criado_em.isoformat() if p.criado_em else None,
+        publicado_em=p.publicado_em.isoformat() if p.publicado_em else None,
+        publicado_por=str(p.publicado_por) if p.publicado_por else None,
+        diff_vs_anterior=diff,
+    )
+
+
+@router.post("/workspaces/{workspace_id}/agentes/{agente_id}/publicar", response_model=PromptVersaoOut)
+def publicar_prompt(
+    workspace_id: uuid.UUID,
+    agente_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(exigir_platform_admin),
+):
+    """Publica o rascunho atual: cria uma versão `publicado` (snapshot) com timestamp+autor."""
+    _get_workspace_or_404(workspace_id, db)
+    agente = _get_agente_or_404(workspace_id, agente_id, db)
+    draft = (
+        db.query(AgentePrompt)
+        .filter(AgentePrompt.agente_id == agente.id, AgentePrompt.status == "draft")
+        .order_by(AgentePrompt.criado_em.desc())
+        .first()
+    )
+    if not draft or not draft.prompt_texto.strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Não há rascunho de prompt para publicar")
+    pub = AgentePrompt(
+        agente_id=agente.id, prompt_texto=draft.prompt_texto, status="publicado",
+        publicado_em=datetime.now(timezone.utc), publicado_por=usuario.id,
+    )
+    db.add(pub)
+    db.commit()
+    db.refresh(pub)
+    return _prompt_versao_out(pub, None)
+
+
+@router.get("/workspaces/{workspace_id}/agentes/{agente_id}/prompts", response_model=list[PromptVersaoOut])
+def listar_prompts(
+    workspace_id: uuid.UUID,
+    agente_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Histórico de versões (draft + publicadas), recente→antigo, com diff entre publicadas adjacentes."""
+    _get_workspace_or_404(workspace_id, db)
+    _get_agente_or_404(workspace_id, agente_id, db)
+    rows = (
+        db.query(AgentePrompt)
+        .filter(AgentePrompt.agente_id == agente_id)
+        .order_by(AgentePrompt.criado_em.desc())
+        .all()
+    )
+    publicados = sorted([r for r in rows if r.status == "publicado"], key=lambda x: x.criado_em or datetime.min)
+    diffs: dict = {}
+    for i in range(1, len(publicados)):
+        ant, atual = publicados[i - 1], publicados[i]
+        diffs[atual.id] = "\n".join(
+            difflib.unified_diff(
+                (ant.prompt_texto or "").splitlines(),
+                (atual.prompt_texto or "").splitlines(),
+                lineterm="", n=1,
+            )
+        )
+    return [_prompt_versao_out(r, diffs.get(r.id)) for r in rows]
+
+
+@router.post("/workspaces/{workspace_id}/agentes/{agente_id}/reverter/{prompt_id}", response_model=PromptVersaoOut)
+def reverter_prompt(
+    workspace_id: uuid.UUID,
+    agente_id: uuid.UUID,
+    prompt_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(exigir_platform_admin),
+):
+    """Reverter: cria NOVA versão publicada com o conteúdo de `prompt_id` e reflete no rascunho."""
+    _get_workspace_or_404(workspace_id, db)
+    agente = _get_agente_or_404(workspace_id, agente_id, db)
+    alvo = (
+        db.query(AgentePrompt)
+        .filter(AgentePrompt.id == prompt_id, AgentePrompt.agente_id == agente.id)
+        .first()
+    )
+    if not alvo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Versão de prompt não encontrada")
+    nova = AgentePrompt(
+        agente_id=agente.id, prompt_texto=alvo.prompt_texto, status="publicado",
+        publicado_em=datetime.now(timezone.utc), publicado_por=usuario.id,
+    )
+    db.add(nova)
+    _set_draft(agente.id, alvo.prompt_texto, db)  # editor reflete o conteúdo revertido
+    db.commit()
+    db.refresh(nova)
+    return _prompt_versao_out(nova, None)
+
+
+# ── Fase 4: dashboard de uso & consumo ───────────────────────────────────────
+_DASH_WHERE = """
+    u.workspace_id = CAST(:ws AS uuid)
+    AND (:agente IS NULL OR u.agente_id = CAST(:agente AS uuid))
+    AND (:canal  IS NULL OR u.canal_id  = CAST(:canal  AS uuid))
+    AND (:modelo IS NULL OR u.modelo = :modelo)
+    AND u.criado_em >= CAST(:inicio AS date) AND u.criado_em < CAST(:fim AS date)
+"""
+
+
+@router.get("/workspaces/{workspace_id}/agentes/uso/dashboard", response_model=UsoDashboardOut)
+def uso_dashboard(
+    workspace_id: uuid.UUID,
+    agente_id: uuid.UUID | None = Query(None),
+    canal_id: uuid.UUID | None = Query(None),
+    modelo: str | None = Query(None),
+    inicio: date | None = Query(None),
+    fim: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Agregado de consumo do workspace (tokens/custo/conversas/handoff/score) + série diária.
+    Custo via `ai_model_pricing`. Filtros opcionais: agente, canal, modelo, período."""
+    _get_workspace_or_404(workspace_id, db)
+    if fim is None:
+        fim = date.today()
+    if inicio is None:
+        inicio = fim - timedelta(days=30)
+    params = {
+        "ws": str(workspace_id),
+        "agente": str(agente_id) if agente_id else None,
+        "canal": str(canal_id) if canal_id else None,
+        "modelo": modelo,
+        "inicio": inicio.isoformat(),
+        "fim": (fim + timedelta(days=1)).isoformat(),
+    }
+    tot = db.execute(text(f"""
+        SELECT
+            COALESCE(SUM(u.tokens_input),0)  AS ti,
+            COALESCE(SUM(u.tokens_output),0) AS tout,
+            COUNT(*)                         AS chamadas,
+            COUNT(DISTINCT u.conversa_id)    AS conversas,
+            COALESCE(SUM(CASE WHEN u.escalado THEN 1 ELSE 0 END),0) AS handoffs,
+            AVG(u.score_confianca)           AS score_medio,
+            COALESCE(SUM(
+                (u.tokens_input  / 1000000.0) * COALESCE(p.input_usd_1m, 0)
+              + (u.tokens_output / 1000000.0) * COALESCE(p.output_usd_1m, 0)
+            ), 0) AS custo_usd
+        FROM agente_uso_tokens u
+        LEFT JOIN ai_model_pricing p ON p.model = u.modelo
+        WHERE {_DASH_WHERE}
+    """), params).mappings().first()
+
+    chamadas = int(tot["chamadas"] or 0)
+    handoffs = int(tot["handoffs"] or 0)
+    ti = int(tot["ti"] or 0)
+    tout = int(tot["tout"] or 0)
+    totais = UsoTotais(
+        tokens_input=ti, tokens_output=tout, tokens_total=ti + tout,
+        custo_usd=round(float(tot["custo_usd"] or 0), 6),
+        chamadas=chamadas, conversas=int(tot["conversas"] or 0), handoffs=handoffs,
+        taxa_handoff=round(handoffs / chamadas, 4) if chamadas else 0.0,
+        score_medio=round(float(tot["score_medio"]), 4) if tot["score_medio"] is not None else None,
+    )
+    serie_rows = db.execute(text(f"""
+        SELECT date_trunc('day', u.criado_em)::date AS dia,
+               COALESCE(SUM(u.tokens_input + u.tokens_output),0) AS tokens
+        FROM agente_uso_tokens u
+        WHERE {_DASH_WHERE}
+        GROUP BY 1 ORDER BY 1
+    """), params).fetchall()
+    serie = [UsoSeriePonto(dia=r[0].isoformat(), tokens=int(r[1] or 0)) for r in serie_rows]
+    return UsoDashboardOut(totais=totais, serie=serie)

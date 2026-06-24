@@ -351,6 +351,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - **Endpoints** (`app/api/agentes.py`): `POST/GET/DELETE /workspaces/{id}/agentes/{id}/base-conhecimento` (POST: faq/documento por texto, url via fetch+strip HTML; **PDF não suportado** — enviar texto). Validado E2E em **pgvector isolado** (migrations 084..088; indexar/retrieve/injeção/endpoints — 10/10).
 - ⚠️ **DEPLOY:** 087/088 exigem pgvector. **Antes do swap da imagem, migrar só até `086`** (`alembic upgrade 086`), NÃO `head` — senão 087 falha. Front (BaseConhecimentoManager) e Fase 4 pendentes.
 
+### ✅ Implementado (2026-06-24) — Central de Agentes: Fase 4 parcial (versionamento de prompt + dashboard) [backend, SEM migration]
+- **`app/api/agentes.py`** (usa tabelas existentes — `agente_prompts`, `agente_uso_tokens`, `ai_model_pricing`; **nenhuma migration** → deploy seguro no Postgres alpine atual). Endpoints platform_admin: `POST /agentes/{id}/publicar` (snapshot do rascunho → versão `publicado` com autor+timestamp), `GET /agentes/{id}/prompts` (histórico draft+publicadas, diff `difflib` entre publicadas adjacentes), `POST /agentes/{id}/reverter/{prompt_id}` (nova publicada com conteúdo do alvo + reflete no rascunho), `GET /workspaces/{id}/agentes/uso/dashboard` (totais tokens/custo via `ai_model_pricing`/conversas/handoff/score + série diária; filtros agente/canal/modelo/período). Validado E2E em scratch (publicar/histórico+diff/reverter/dashboard — 10/10).
+- **PENDENTE Fase 4:** front (UsoDashboard + PromptEditor publicar/reverter); feedback de conversa (tabela `agente_conversa_feedback` — migration, agrupar c/ pgvector); few-shot dinâmico (`agente_exemplos_feedback` vector — depende de pgvector).
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos
