@@ -50,10 +50,11 @@ from app.services import helena_chat as helena_service
 from app.services.canal_labels import canal_provider, canal_provider_label
 from app.services.waha_normalizer import adapt_waha_to_evolution
 from app.services.redis_pub import publish_whatsapp_event
-from app.services.whatsapp_crm_persistence import process_evolution_message
+from app.services.whatsapp_crm_persistence import process_evolution_message, process_evolution_connection_event
 from app.services.whatsapp_event_queue import enqueue_evolution_event
 from app.services.whatsapp_media import StoredMedia, enqueue_inbound_media_download, register_media_record, store_media_bytes
 from app.services.whatsapp_normalizer import (
+    CONNECTION_EVENT_TYPES,
     normalize_connection_event,
     normalize_event_type as normalize_whatsapp_event_type,
     normalize_media_payload,
@@ -287,7 +288,7 @@ def _configurar_webhook_evolution(canal: CanalEntrada, db: Session, *, forcar: b
     webhook_base = _webhook_base_url()
     webhook_url = f"{webhook_base}/webhook/evolution/{canal.webhook_token}"
     try:
-        return evo_service.configurar_webhook(
+        resultado = evo_service.configurar_webhook(
             instance_name,
             webhook_url,
             instance_id=instance_id,
@@ -295,6 +296,13 @@ def _configurar_webhook_evolution(canal: CanalEntrada, db: Session, *, forcar: b
             subscribe=["ALL"],
             immediate=True,
         )
+        # Observabilidade: confirma o que a evolution-go respondeu à config do webhook
+        # (diagnóstico de por que CONNECTION_UPDATE pode não estar chegando).
+        logger.info(
+            "[canais] webhook Evolution configurado canal=%s url=%s -> %s",
+            canal.nome, webhook_url, str(resultado)[:200],
+        )
+        return resultado
     except evo_service.EvolutionError as exc:
         logger.error("[canais] falha ao configurar webhook Evolution: %s", exc)
         return None
@@ -1222,7 +1230,8 @@ def _status_waha(canal: CanalEntrada, db: Session) -> dict:
                 )
                 db.commit()
         elif conn_status == "connecting":
-            if canal.connection_status != "connecting":
+            # Não rebaixa um 'connected' já confirmado por um 'connecting' transitório.
+            if canal.connection_status not in ("connecting", "connected"):
                 canal.connection_status = "connecting"
                 db.commit()
         else:
@@ -1725,8 +1734,10 @@ def _status_evolution_core(c: CanalEntrada, db: Session, *, publico: bool = Fals
             except evo_service.EvolutionError as exc:
                 logger.error("[canais] falha ao reconfigurar webhook Evolution: %s", exc)
         elif conn_state == "connecting":
-            # Regra de ouro (público): não ressuscita um canal que caiu ('disconnected').
-            if not publico or c.connection_status != "disconnected":
+            # Nunca rebaixa um 'connected' já confirmado por um 'connecting' transitório (oscilação
+            # da Evolution logo após parear) — só 'close' (queda real) rebaixa connected.
+            # Regra de ouro (público): também não ressuscita um canal que caiu ('disconnected').
+            if c.connection_status != "connected" and not (publico and c.connection_status == "disconnected"):
                 c.connection_status = "connecting"
                 db.commit()
         elif conn_state == "close":
@@ -1736,7 +1747,9 @@ def _status_evolution_core(c: CanalEntrada, db: Session, *, publico: bool = Fals
             c.connection_status = "disconnected"
             db.commit()
 
-        if conn_state != "open":
+        # Só busca QR se o canal não está conectado (nem ao vivo nem no DB) — evita devolver
+        # QR junto de um connected já confirmado pelo webhook.
+        if conn_state != "open" and c.connection_status != "connected":
             try:
                 qr_data = evo_service.obter_qr_code(instance_name, instance_id=instance_id, instance_token=instance_token, retries=1)
                 qr_code = _extrair_qr_code_evolution(qr_data)
@@ -3479,6 +3492,14 @@ async def receber_webhook_evolution(
 
     logger.info("[webhook-evolution] canal=%s event=%s normalized=%s", canal.nome, event, event_norm)
 
+    # Eventos de CONEXÃO: processar INLINE (push) — não esperar o worker (poll de 5s) para marcar
+    # connected/disconnected. Mensagens seguem só enfileiradas (volume alto).
+    if event_norm in CONNECTION_EVENT_TYPES:
+        try:
+            process_evolution_connection_event(db, canal, payload, event=event)
+        except Exception:
+            logger.exception("[webhook-evolution] falha no processamento inline de conexão canal=%s", canal.nome)
+
     try:
         queued = enqueue_evolution_event(db, canal, event, payload)
         db.commit()
@@ -3563,6 +3584,13 @@ async def receber_webhook_waha(
     _resolve_lid_in_adapted(adapted, canal)
 
     logger.info("[webhook-waha] canal=%s event=%s", canal.nome, event)
+
+    # Eventos de CONEXÃO: processar INLINE (push) — não esperar o worker (poll de 5s).
+    if _normalizar_evento_evolution(event) in CONNECTION_EVENT_TYPES:
+        try:
+            process_evolution_connection_event(db, canal, adapted, event=event)
+        except Exception:
+            logger.exception("[webhook-waha] falha no processamento inline de conexão canal=%s", canal.nome)
 
     try:
         queued = enqueue_evolution_event(db, canal, event, adapted)
