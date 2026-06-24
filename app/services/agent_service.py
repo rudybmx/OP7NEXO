@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, time, timezone
 
@@ -267,30 +268,67 @@ def _carregar_contexto(db: Session, conversa, limite: int = 12) -> tuple[list[di
     return historico, ultima
 
 
+def _waha_chat_id(remote_jid: str) -> str:
+    """Espelha canais._waha_chat_id: mantém o @ se houver, senão dígitos + @c.us."""
+    jid = (remote_jid or "").strip()
+    if "@" in jid:
+        return jid
+    digits = re.sub(r"\D", "", jid)
+    return f"{digits}@c.us" if digits else jid
+
+
 def _enviar_resposta(conversa, canal, texto: str) -> bool:
-    """Envia o texto pelo canal. Suporta Evolution nesta fase; demais providers → False
-    (cai em handoff). Reusa o serviço de baixo nível evolution.enviar_mensagem_texto."""
+    """Envia o texto pelo canal, dispatch por `canal.tipo`. Suporta WhatsApp Evolution,
+    WAHA e Cloud API (whatsapp_oficial). Instagram/Facebook/webhook → False (handoff).
+    Reusa os serviços de baixo nível; qualquer erro → False (cai em handoff)."""
     if canal is None or not texto:
         return False
+    tipo = (canal.tipo or "").strip()
     config = canal.config if isinstance(canal.config, dict) else {}
+    jid = conversa.remote_jid or ""
     ev = config.get("evolution") if isinstance(config.get("evolution"), dict) else None
-    if ev and conversa.instance and conversa.remote_jid:
-        try:
+    try:
+        if tipo == "whatsapp_evolution" or ev is not None:
+            ev = ev or {}
+            if not conversa.instance or not jid:
+                return False
             from app.services import evolution as evo_service
 
             evo_service.enviar_mensagem_texto(
-                conversa.instance,
-                conversa.remote_jid,
-                texto,
-                instance_id=ev.get("instance_id"),
-                instance_token=ev.get("instance_token"),
+                conversa.instance, jid, texto,
+                instance_id=ev.get("instance_id"), instance_token=ev.get("instance_token"),
             )
             return True
-        except Exception as exc:  # noqa: BLE001
-            log.warning("[agente] envio evolution falhou conversa=%s: %s", conversa.id, exc)
-            return False
-    # waha/meta/instagram: envio não suportado nesta fase → handoff humano.
-    log.info("[agente] envio não suportado p/ conversa=%s (provider não-evolution) → handoff", conversa.id)
+
+        if tipo == "whatsapp_waha":
+            waha_cfg = config.get("waha") if isinstance(config.get("waha"), dict) else {}
+            session = waha_cfg.get("session") or canal.nome or "default"
+            chat_id = _waha_chat_id(jid)
+            if not chat_id:
+                return False
+            from app.services import waha_service
+
+            waha_service.enviar_mensagem_texto(session, waha_cfg, chat_id, texto)
+            return True
+
+        if tipo == "whatsapp_oficial":
+            phone_number_id = config.get("phone_number_id") or ""
+            access_token = config.get("access_token") or ""
+            to = jid.replace("@s.whatsapp.net", "").replace("@c.us", "")
+            if not (phone_number_id and access_token and to):
+                return False
+            from app.services import meta_cloud
+
+            meta_cloud.enviar_mensagem_texto(
+                phone_number_id=phone_number_id, access_token=access_token, to=to, text=texto
+            )
+            return True
+    except Exception as exc:  # noqa: BLE001 — falha de envio → handoff humano
+        log.warning("[agente] envio %s falhou conversa=%s: %s", tipo, conversa.id, exc)
+        return False
+
+    # instagram/facebook/webhook/desconhecido: envio não suportado → handoff.
+    log.info("[agente] envio não suportado p/ conversa=%s tipo=%s → handoff", conversa.id, tipo)
     return False
 
 
