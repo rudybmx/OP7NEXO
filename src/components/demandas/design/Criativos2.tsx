@@ -8,6 +8,8 @@ import {
 import { useWorkspace } from '@/lib/workspace-context'
 import { usePersistedState } from '@/hooks/use-estado-persistido'
 import api from '@/lib/api-client'
+import { PaletaStudio } from './PaletaStudio'
+import { coresDeSpec, type PaletaT } from '@/lib/cor-harmonia'
 
 // Tela Criativos 2.0 — carrossel newsjacking. Fluxo passo-a-passo (contínuo, mesma página):
 // origem -> roteiro -> estilo visual (modelo reverso) -> edição por slide (melhorar-IA em
@@ -22,8 +24,8 @@ type SlideRoteiro = {
   objeto?: { descricao?: string } | null  // objeto POR SLIDE (descrição; foto vai no estado objetosSlide)
 }
 type Roteiro = {
-  molde?: string; tensao?: string; payload?: string; gatilhos?: string[]; estilo?: string; estilo_referencia?: string
-  paleta?: { tensao?: string; resolucao?: string; pivo?: string }
+  molde?: string; angulo?: string; tensao?: string; payload?: string; gatilhos?: string[]; estilo?: string; estilo_referencia?: string
+  paleta?: PaletaT
   slides?: SlideRoteiro[]; ctas?: { engajamento?: string; conversao?: string }; legenda?: string
 }
 type SlideEstado = { slide_index: number; status: string; base_image_url?: string | null; error_code?: string | null; error_message?: string | null }
@@ -55,29 +57,7 @@ const MOLDES: Record<string, string> = {
   B: 'Feature/Tutorial: fato → "isso mudou tudo" → tutorial passo a passo → antes/depois → CTA. Bom p/ ensinar um método ou ferramenta.',
   C: 'Tese ("X NÃO É Y"): 3 capas repetindo a fórmula → lista do "que é de verdade" → síntese → clímax + prova social. Bom p/ quebrar um mito / reposicionar uma ideia.',
 }
-const NOMES_HEX: Record<string, string> = { vermelho: '#cc0000', verde: '#1ca84c', amarelo: '#ffd400', azul: '#1450a0', preto: '#111111', branco: '#ffffff', laranja: '#ff6a00', roxo: '#7a5af8', rosa: '#ff5c8d', cinza: '#888888' }
-const toHex = (c?: string) => { if (!c) return '#cccccc'; const s = c.trim().toLowerCase(); return s.startsWith('#') ? s.slice(0, 7) : (NOMES_HEX[s] || '#cccccc') }
-
-// ── Paleta: derivar análogas/complementares de uma cor-base (regra 60/30/10) ──
-function hexToHsl(hex: string): [number, number, number] {
-  const h = hex.replace('#', ''); const r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b); let hh = 0, ss = 0; const ll = (mx + mn) / 2
-  if (mx !== mn) { const d = mx - mn; ss = ll > 0.5 ? d / (2 - mx - mn) : d / (mx + mn); hh = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; hh *= 60 }
-  return [hh, ss, ll]
-}
-function hslToHex(h: number, s: number, l: number): string {
-  h = ((h % 360) + 360) % 360; const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2
-  let r = 0, g = 0, b = 0
-  if (h < 60) [r, g, b] = [c, x, 0]; else if (h < 120) [r, g, b] = [x, c, 0]; else if (h < 180) [r, g, b] = [0, c, x]
-  else if (h < 240) [r, g, b] = [0, x, c]; else if (h < 300) [r, g, b] = [x, 0, c]; else [r, g, b] = [c, 0, x]
-  const to = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, '0')
-  return `#${to(r)}${to(g)}${to(b)}`
-}
-function derivar(base: string, modo: 'analogas' | 'complementares'): { tensao: string; resolucao: string; pivo: string } {
-  const [h, s, l] = hexToHsl(base)
-  if (modo === 'complementares') return { tensao: base, resolucao: hslToHex(h + 180, s, Math.min(0.92, l + 0.12)), pivo: hslToHex(h + 180, Math.min(1, s + 0.1), l) }
-  return { tensao: base, resolucao: hslToHex(h + 30, s, l), pivo: hslToHex(h - 30, Math.min(1, s + 0.05), Math.min(0.9, l + 0.05)) }
-}
+// Helpers de cor movidos para @/lib/cor-harmonia (toHex, hexToHsl, hslToHex, harmonias).
 
 function errMsg(e: unknown): string | undefined {
   if (e instanceof Error) return e.message
@@ -186,7 +166,7 @@ export function Criativos2() {
         workspace_id: workspaceAtual,
         campo: mapaCampo[campo] || 'headline',
         texto_atual: valorAtual || undefined,
-        product: `${tema || ''} | molde ${roteiro.molde || ''} | ângulo: ${roteiro.tensao || ''}${ctxModelo}`.trim(),
+        product: `${tema || ''} | molde ${roteiro.molde || ''} | ângulo: ${roteiro.angulo ?? roteiro.tensao ?? ''}${ctxModelo}`.trim(),
         objective: 'carrossel newsjacking de negócios (Instagram), parar o polegar',
         existentes: outros.slice(0, 8),
       })
@@ -200,7 +180,17 @@ export function Criativos2() {
   // ───── Modelo reverso (analisar-modelo): estilo + paleta a partir da imagem ─────
   const aplicarPaletaSpec = (spec?: CreativeSpec) => {
     const cores = (spec?.paleta_de_cores || []).filter(Boolean)
-    if (cores.length) setRoteiro(prev => prev ? { ...prev, paleta: { tensao: cores[0], resolucao: cores[1] || prev.paleta?.resolucao, pivo: cores[2] || prev.paleta?.pivo } } : prev)
+    if (cores.length) setRoteiro(prev => prev ? { ...prev, paleta: { ...(prev.paleta || {}), cores: coresDeSpec(cores), modo: 'custom' } } : prev)
+  }
+  const [extraindoPaleta, setExtraindoPaleta] = useState(false)
+  const extrairPaletaDaImagem = async (dataUrl: string) => {
+    if (!workspaceAtual) return
+    setExtraindoPaleta(true); setErro(null)
+    try {
+      const r = await api.post<{ creative_spec: CreativeSpec }>('/design/analisar-modelo', { workspace_id: workspaceAtual, referencia_base64: dataUrl })
+      aplicarPaletaSpec(r.creative_spec || {})
+    } catch (e) { setErro(errMsg(e) || 'Falha ao extrair a paleta da imagem.') }
+    finally { setExtraindoPaleta(false) }
   }
   const analisarModelo = useCallback(async (dataUrl: string, alvo: number | 'geral') => {
     if (!workspaceAtual) return
@@ -599,26 +589,13 @@ export function Criativos2() {
                   {modeloGeral?.spec?.descricao && <span className="ds-help flex-1 line-clamp-2">{modeloGeral.spec.descricao}</span>}
                 </div>
               )}
-              {/* Paleta 60/30/10 */}
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="flex flex-col gap-1">
-                  <span className="ds-label">Paleta 60 / 30 / 10 (dominante · apoio · destaque)</span>
-                  <div className="flex gap-2 items-center">
-                    {(['tensao', 'resolucao', 'pivo'] as const).map((k, n) => (
-                      <div key={k} className="flex flex-col items-center gap-0.5">
-                        <input type="color" value={toHex((roteiro.paleta || {})[k])} title={['60% dominante', '30% apoio', '10% destaque'][n]}
-                          onChange={e => setRoteiro(r => r ? { ...r, paleta: { ...(r.paleta || {}), [k]: e.target.value } } : r)}
-                          className="w-9 h-9 rounded cursor-pointer border border-[var(--ws-glass-border)] bg-transparent" />
-                        <span className="ds-micro text-[var(--ws-text-3)]">{['60', '30', '10'][n]}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setRoteiro(r => r ? { ...r, paleta: derivar(toHex(r.paleta?.tensao), 'analogas') } : r)} className="ds-help h-8 px-2 rounded border border-[var(--ws-glass-border)] hover:border-[var(--ws-blue)]">Análogas</button>
-                  <button onClick={() => setRoteiro(r => r ? { ...r, paleta: derivar(toHex(r.paleta?.tensao), 'complementares') } : r)} className="ds-help h-8 px-2 rounded border border-[var(--ws-glass-border)] hover:border-[var(--ws-blue)]">Complementares</button>
-                </div>
-              </div>
+              {/* Paleta — Estúdio de cores (harmonias, hex, proporção 60/30/10) */}
+              <PaletaStudio
+                paleta={roteiro.paleta}
+                onChange={p => setRoteiro(r => r ? { ...r, paleta: { ...(r.paleta || {}), ...p } } : r)}
+                onImagem={extrairPaletaDaImagem}
+                analisandoImagem={extraindoPaleta}
+              />
             </div>
           )}
 
@@ -635,7 +612,7 @@ export function Criativos2() {
                   {carregando ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Reescrever roteiro
                 </button>
                 <label className="flex flex-col gap-1 flex-1 min-w-[220px]"><span className="ds-label">Ângulo / tensão (o gancho, em texto)</span>
-                  <input value={roteiro.tensao || ''} onChange={e => setRoteiro(r => r ? { ...r, tensao: e.target.value } : r)} placeholder="ex.: clínicas perdem pacientes por um erro invisível" className={inputCls} /></label>
+                  <input value={roteiro.angulo ?? roteiro.tensao ?? ''} onChange={e => setRoteiro(r => r ? { ...r, angulo: e.target.value } : r)} placeholder="ex.: clínicas perdem pacientes por um erro invisível" className={inputCls} /></label>
               </div>
               <p className="ds-help">3 · Ajuste cada slide. Tudo tem <Sparkles size={11} className="inline" /> melhorar com IA (contextual, custo zero). Selecione quais personagens/objetos entram em cada slide.</p>
               {(roteiro.slides || []).map(s => (
