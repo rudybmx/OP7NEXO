@@ -217,6 +217,12 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### 🧩 Code-complete, INERTE (2026-06-24) — CRM Atendimento: filtros server-side V2 (`FILTROS_V2`)
+- **Route handler** `GET /api/whatsapp/conversations`: sob `?v2=1`, repassa `canal_id/escopo/acompanhamento/tipo/arquivadas/nao_lidas/responsavel_id` ao FastAPI `GET /conversas` e **pula o filtro-em-memória pós-limit** (corrige bug de paginação). Caminho legado (sem `v2`) inalterado.
+- `use-conversas.ts`: 6º arg opcional `V2Filtros` → caminho v2 com paginação real por **offset** (UI "carregar mais" é follow-up — `loadMore`/`hasMore` ainda não consumidos na página).
+- `filtros-atendimento-v2.tsx` (novo) + `painel-inbox.tsx` (render condicional) + `pagina-atendimento.tsx` (flag `FILTROS_V2=false` + `usePersistedState`).
+- **Default OFF** → zero regressão. Ao ligar: `EQUIPE` muda de equipe_id-based p/ "não é minha" (responsável-based). Backend exige o par `agent/crm-filtros-v2` (API). Spec: `docs/specs/crm-filtros-server-side` (na branch da API).
+
 ### ✅ Implementado (2026-06-13) — Insights de IA: badge de plataforma
 - `InsightsIaTabela.tsx` ganhou coluna/badge **Plataforma (Meta/Google)** a partir do campo `modulo` que `/ai/insights` já retorna. Agora os insights de IA do Google também aparecem (gerados 3x/dia no worker, sem precisar abrir tela).
 
