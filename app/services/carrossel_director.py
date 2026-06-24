@@ -6,7 +6,7 @@ validado por schema Pydantic com **repair** (1 retry). NÃO gera imagem — só 
 roteiro (custo zero de imagem). O texto será QUEIMADO pelo modelo de imagem na
 geração (PoC 2026-06-23).
 
-Modelo de texto: `get_ai_config("copy")` (configurável via ai_settings). O system
+Modelo de texto: `get_ai_config("carrossel")` (configurável via ai_settings). O system
 prompt do diretor vive na constante `_SYSTEM_DIRETOR` por enquanto.
 TODO(config-db): mover o prompt para uma tabela de config para iterar a linha
 criativa sem deploy (seam em `_system_prompt`).
@@ -19,7 +19,7 @@ from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
-from app.core.ai_config import get_ai_config
+from app.core.ai_config import chat_kwargs, get_ai_config
 from app.services.copy_assist import _sem_travessao
 from app.services.image_gen import _client_for
 
@@ -50,6 +50,7 @@ class SlideRoteiro(BaseModel):
     objetos_idx: list[int] | None = None
     estilo_referencia: str | None = None
     objeto: dict | None = None  # objeto POR SLIDE: {"descricao": "..."} (foto vai in-memory no /gerar)
+    tipo: str | None = None  # tipo de imagem (variedade): rosto-emocao|objeto-heroi|screenshot-ui|foto-time|montagem|tipografia|lista-icones|cena-conceitual
 
 
 class Paleta(BaseModel):
@@ -106,14 +107,17 @@ GATILHOS (use ≥2 e liste em "gatilhos"): curiosity gap, viés de negatividade 
 
 CURVA DE INTENSIDADE (não é platô): capa ALTO → fato MÉDIO → desenvolvimento ALTO/MÉDIO → respiro BAIXO (lista/tipografia) → síntese MÉDIO-ALTO → clímax ALTO + prova social → CTA. Cada slide: 1 ideia, frases ≤12 palavras, termina com micro-gancho. SEMPRE 2 CTAs: engajamento no penúltimo ("salva esse post"), conversão no último. Cada slide tem cta_continuacao (seta "Como se preparar? →").
 
-DIREÇÃO DE IMAGEM (campo direcao_imagem, escolha o TIPO pela função): celebridade recortada (empréstimo de atenção); objeto-herói (produto sem rosto, render dramático); screenshot de UI (tutorial/prova); foto real do time (prova social/clímax); montagem de 2 mundos (choque); tipografia pura (respiro); lista com ícones (didático); meme/cultura pop (reforço). Rosto SEMPRE em emoção extrema. Descreva: tipo + sujeito + emoção/ângulo. SEM citar texto a desenhar (o texto vem da copy).
+DIREÇÃO DE IMAGEM — VARIEDADE OBRIGATÓRIA (campos `tipo` + `direcao_imagem` por slide): o carrossel segue "o MESMO CAMINHO, não a MESMA imagem" — mantenha a MESMA linha visual (paleta, tipografia, clima) mas COMPOSIÇÃO e SUJEITO DIFERENTES a cada slide. NUNCA repita o mesmo enquadramento/retrato em slides seguidos.
+TIPOS (1 por slide, escolha pela FUNÇÃO e VARIE): rosto-emocao (rosto humano em emoção extrema), objeto-heroi (produto/elemento sem rosto, render dramático), screenshot-ui (print de tela/dado), foto-time (pessoas reais, prova social), montagem (2 mundos colididos, choque), tipografia (só número/palavra gigante, respiro), lista-icones (itens com ícones, didático), cena-conceitual (metáfora visual do insight).
+DISTRIBUIÇÃO (obrigatória, é o que evita slides iguais): no MÁXIMO 2 slides "rosto-emocao" no carrossel inteiro (tipicamente só CAPA e CLÍMAX); os demais SEM rosto chocado. Inclua pelo menos 1 "tipografia" (respiro), 1 "lista-icones" (didático) e 1 entre objeto-heroi/screenshot-ui/montagem; cada tipo aparece no máximo 2x. (No molde C, as 3 capas da tríade repetem a FÓRMULA com sujeito visual DIFERENTE em cada.)
+`direcao_imagem`: RICA e ESPECÍFICA — tipo + sujeito concreto + ângulo/enquadramento + emoção/tom + por que essa imagem ENSINA e avança o insight (didática). Rosto em emoção extrema SÓ nos slides "rosto-emocao". SEM citar o texto a desenhar (o texto vem da copy).
 
 ÂNGULO vs COR (campos DISTINTOS, não confunda!): "angulo" = o gancho/conflito central do carrossel em TEXTO (a tensão narrativa, ex.: "clínicas perdem pacientes por um erro invisível") — NUNCA uma cor. "paleta" = SEMENTE de cores em nomes de cor (ex.: vermelho, verde, amarelo): dominante (fundo/capa), apoio (listas / "o que inclui"), destaque (palavra-verbo central). É só ponto de partida; o usuário refina a paleta final na UI.
 
 GUARDRAILS: nunca prometa na capa o que o miolo não entrega; nunca invente números (dado citado tem que ser REAL); 1 ideia por slide; PT-BR impecável; NUNCA use travessão (—).
 
 SAÍDA: responda SOMENTE com um JSON válido neste formato (sem comentários):
-{"molde":"A|B|C","angulo":"...","payload":"...","gatilhos":["..."],"paleta":{"dominante":"...","apoio":"...","destaque":"..."},"slides":[{"index":1,"intensidade":"alto","copy":{"contexto":"...","palavra_bomba":"...","selo":"...","texto":"...","cta_continuacao":"..."},"direcao_imagem":"..."}],"ctas":{"engajamento":"...","conversao":"..."},"legenda":"..."}"""
+{"molde":"A|B|C","angulo":"...","payload":"...","gatilhos":["..."],"paleta":{"dominante":"...","apoio":"...","destaque":"..."},"slides":[{"index":1,"intensidade":"alto","tipo":"rosto-emocao","copy":{"contexto":"...","palavra_bomba":"...","selo":"...","texto":"...","cta_continuacao":"..."},"direcao_imagem":"..."}],"ctas":{"engajamento":"...","conversao":"..."},"legenda":"..."}"""
 
 
 def _system_prompt(db=None) -> str:
@@ -191,8 +195,8 @@ def gerar_roteiro(
     Levanta RoteiroInvalidoError se nem o repair produzir JSON válido com o número
     de slides pedido. Retorna (roteiro, usage_acumulado).
     """
-    client = _client_for("copy")
-    model = get_ai_config("copy").model
+    client = _client_for("carrossel")
+    model = get_ai_config("carrossel").model
     sistema = _system_prompt(db)
     user = _user_prompt(tema, n_slides, master_format, origem, referencia_desc, molde)
 
@@ -213,8 +217,7 @@ def gerar_roteiro(
             model=model,
             response_format={"type": "json_object"},
             messages=msgs,
-            max_tokens=2000,
-            temperature=0.85,
+            **chat_kwargs(model, 2500, temperature=0.85, reasoning_effort="medium"),
         )
         _merge_usage(usage_total, resp.usage.model_dump() if getattr(resp, "usage", None) else {})
         raw = resp.choices[0].message.content or "{}"
@@ -237,9 +240,11 @@ _SYSTEM_AJUSTE = (
     _SYSTEM_DIRETOR
     + "\n\nMODO AJUSTE: voce recebe um roteiro JA montado e devolve a MELHOR versao dele. "
     "NAO mude o ASSUNTO/tema, NAO mude o molde e NAO mude o numero de slides. Melhore a copy "
-    "(palavra-bomba, contexto, selo, texto, CTA), a direcao de imagem, o angulo (gancho/conflito "
-    "em texto, nunca cor), a paleta (cores semente) e o encadeamento dos slides para o maximo "
-    "impacto. Responda SOMENTE o JSON do schema."
+    "(palavra-bomba, contexto, selo, texto, CTA), o angulo (gancho/conflito em texto, nunca cor), "
+    "a paleta (cores semente) e o encadeamento. CRITICO: DIVERSIFIQUE as imagens — aplique a "
+    "DISTRIBUICAO de tipos (no maximo 2 'rosto-emocao'; garanta tipografia + lista-icones + um "
+    "objeto/screenshot/montagem) e reescreva `tipo` e `direcao_imagem` de cada slide para que "
+    "NENHUM fique visualmente igual ao outro, mantendo a mesma linha visual. Responda SOMENTE o JSON."
 )
 
 
@@ -256,13 +261,16 @@ def ajustar_roteiro(car, db=None) -> tuple[RoteiroCarrossel, dict]:
         "molde": molde, "angulo": dj.get("angulo") or dj.get("tensao"),
         "payload": dj.get("payload"), "paleta": dj.get("paleta"),
         "slides": [{"index": s.get("index"), "intensidade": s.get("intensidade"),
-                    "copy": s.get("copy"), "direcao_imagem": s.get("direcao_imagem")} for s in slides],
+                    "tipo": s.get("tipo"), "copy": s.get("copy"),
+                    "direcao_imagem": s.get("direcao_imagem")} for s in slides],
     }
-    client = _client_for("copy")
-    model = get_ai_config("copy").model
+    client = _client_for("carrossel")
+    model = get_ai_config("carrossel").model
     user = (
         f"ASSUNTO FIXO (NAO mudar): {tema}\nMOLDE FIXO: {molde}\nMANTENHA EXATAMENTE {n} slides (index 1..{n}).\n"
         f"Roteiro atual a melhorar (JSON):\n{json.dumps(atual, ensure_ascii=False)}\n\n"
+        "Analise o ASSUNTO a fundo e a sequencia de imagens: se houver slides visualmente repetidos "
+        "(ex.: varios rostos), CORRIJA diversificando tipo/direcao_imagem conforme a DISTRIBUICAO. "
         "Devolva a MELHOR versao em JSON do schema, mantendo assunto, molde e nº de slides."
     )
     usage_total: dict = {}
@@ -273,7 +281,7 @@ def ajustar_roteiro(car, db=None) -> tuple[RoteiroCarrossel, dict]:
             msgs.append({"role": "user", "content": f"Invalido: {last_err}. Corrija; SOMENTE JSON com {n} slides."})
         resp = client.chat.completions.create(
             model=model, response_format={"type": "json_object"},
-            messages=msgs, max_tokens=2000, temperature=0.7,
+            messages=msgs, **chat_kwargs(model, 2500, temperature=0.7, reasoning_effort="medium"),
         )
         _merge_usage(usage_total, resp.usage.model_dump() if getattr(resp, "usage", None) else {})
         raw = resp.choices[0].message.content or "{}"

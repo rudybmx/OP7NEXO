@@ -22,7 +22,7 @@ from app.core.config import settings
 
 log = logging.getLogger(__name__)
 
-FEATURES = ("insights", "image", "vision", "copy", "agent")
+FEATURES = ("insights", "image", "vision", "copy", "carrossel", "agent")
 
 _DEFAULT_BASE = "https://api.openai.com/v1"
 _CACHE_TTL = 60.0
@@ -58,6 +58,8 @@ def _env_defaults(feature: str) -> tuple[str, str, str]:
         return img_key, img_base, settings.openai_vision_model
     if feature == "copy":
         return img_key, img_base, settings.openai_copy_model
+    if feature == "carrossel":
+        return img_key, img_base, settings.openai_carrossel_model
     # agent — slot reservado; herda a chave/base de texto.
     return (
         settings.openai_api_key,
@@ -114,3 +116,33 @@ def invalidate_cache(feature: str | None = None) -> None:
             _cache.clear()
         else:
             _cache.pop(feature, None)
+
+
+_REASONING_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+
+
+def chat_kwargs(
+    model: str,
+    max_out: int,
+    *,
+    temperature: float | None = None,
+    reasoning_effort: str | None = None,
+) -> dict:
+    """Kwargs de `chat.completions.create` adaptados à família do modelo.
+
+    Modelos de RACIOCÍNIO (gpt-5*, o1/o3/o4*): usam `max_completion_tokens` com
+    headroom (o reasoning consome budget ANTES do output — budget curto → output
+    vazio), NÃO aceitam `temperature` custom (só o default) e aceitam
+    `reasoning_effort`. Os demais (gpt-4.1 etc.) usam `max_tokens` + `temperature`
+    como antes (comportamento idêntico ao anterior → zero regressão).
+    """
+    m = (model or "").lower()
+    if any(m.startswith(p) for p in _REASONING_PREFIXES):
+        kw: dict = {"max_completion_tokens": max(int(max_out), 256) + 4000}
+        if reasoning_effort:
+            kw["reasoning_effort"] = reasoning_effort
+        return kw
+    kw = {"max_tokens": int(max_out)}
+    if temperature is not None:
+        kw["temperature"] = temperature
+    return kw

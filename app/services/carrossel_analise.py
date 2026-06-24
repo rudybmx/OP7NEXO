@@ -13,7 +13,7 @@ import logging
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app.core.ai_config import get_ai_config
+from app.core.ai_config import chat_kwargs, get_ai_config
 from app.services.copy_assist import _sem_travessao
 from app.services.image_gen import _client_for
 
@@ -118,16 +118,16 @@ def analisar_carrossel(car, dj_override: dict | None = None) -> tuple[AnaliseCar
     """
     dj = dj_override if dj_override is not None else (car.director_json or {})
     contexto = _montar_contexto(car.tema, dj, car.molde)
-    client = _client_for("copy")
+    client = _client_for("carrossel")
+    model = get_ai_config("carrossel").model
     resp = client.chat.completions.create(
-        model=get_ai_config("copy").model,
+        model=model,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": _SYSTEM_ANALISE},
             {"role": "user", "content": contexto + "\n\nFaça a análise."},
         ],
-        max_tokens=1100,
-        temperature=0.4,
+        **chat_kwargs(model, 1100, temperature=0.4, reasoning_effort="low"),
     )
     usage = resp.usage.model_dump() if getattr(resp, "usage", None) else {}
     raw = resp.choices[0].message.content or "{}"
