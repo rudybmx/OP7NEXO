@@ -66,6 +66,51 @@ def _publish(carrossel_id, event: str, data: dict) -> None:
         log.debug("[carrossel_gen] publish falhou: %s", e)
 
 
+_PAPEL_FRASE = {
+    "dominante": "{c} como cor dominante (fundo)",
+    "apoio": "{c} para apoio/listas",
+    "destaque": "{c} como cor de destaque",
+}
+
+
+def _paleta_prompt(paleta: dict | None) -> str | None:
+    """Trecho de cor do prompt a partir da paleta FINAL (fonte única de cor).
+
+    Prioridade: `cores` (lista autorada na UI, em hex) > papéis nomeados
+    (dominante/apoio/destaque) > chaves antigas (tensao/resolucao/pivo). Nunca lê o
+    campo `angulo` (que é texto de conflito, não cor).
+    """
+    paleta = paleta or {}
+    partes: list[str] = []
+    cores = paleta.get("cores")
+    if isinstance(cores, list) and cores:
+        for item in cores:
+            if not isinstance(item, dict):
+                continue
+            c = (item.get("hex") or "").strip()
+            if not c:
+                continue
+            papel = (item.get("papel") or "livre").strip().lower()
+            frase = _PAPEL_FRASE.get(papel, "{c} como cor complementar").format(c=c)
+            peso = item.get("peso")
+            if isinstance(peso, (int, float)) and peso:
+                frase += f" (~{int(peso)}%)"
+            partes.append(frase)
+    else:
+        dom = (paleta.get("dominante") or paleta.get("tensao") or "").strip()
+        apo = (paleta.get("apoio") or paleta.get("resolucao") or "").strip()
+        des = (paleta.get("destaque") or paleta.get("pivo") or "").strip()
+        if dom:
+            partes.append(_PAPEL_FRASE["dominante"].format(c=dom))
+        if apo:
+            partes.append(_PAPEL_FRASE["apoio"].format(c=apo))
+        if des:
+            partes.append(_PAPEL_FRASE["destaque"].format(c=des))
+    if not partes:
+        return None
+    return "Paleta (use ESTAS cores na arte): " + "; ".join(partes) + "."
+
+
 def _montar_prompt_slide(
     car: CriativoCarrossel, slide: CriativoCarrosselSlide,
     pers_items: list[dict] | None = None, obj_items: list[dict] | None = None,
@@ -89,15 +134,9 @@ def _montar_prompt_slide(
     ]
     if slide.image_prompt:
         L.append(f"Direcao visual (SIGA EXATAMENTE — ela manda na composicao da imagem): {slide.image_prompt}.")
-    pal = []
-    if paleta.get("tensao"):
-        pal.append(f"fundo {paleta['tensao']} como cor dominante")
-    if paleta.get("resolucao"):
-        pal.append(f"{paleta['resolucao']} para resolucao/listas")
-    if paleta.get("pivo"):
-        pal.append(f"{paleta['pivo']} como cor-pivo de destaque")
-    if pal:
-        L.append("Paleta: " + "; ".join(pal) + ".")
+    pal_line = _paleta_prompt(paleta)  # cores[] (UI) > papéis > chaves antigas
+    if pal_line:
+        L.append(pal_line)
     L.append("Tipografia: sans condensada black, ALL CAPS na palavra-bomba.")
 
     dj0 = car.director_json or {}
