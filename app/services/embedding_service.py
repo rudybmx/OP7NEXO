@@ -11,7 +11,7 @@ import json
 import logging
 
 from openai import OpenAI
-from sqlalchemy import text
+from sqlalchemy import inspect as sa_inspect, text
 from sqlalchemy.orm import Session
 
 from app.core import llm_crypto
@@ -124,9 +124,34 @@ def indexar(db: Session, agente_id, tipo: str, titulo: str | None, conteudo: str
     return n
 
 
+_KB_TABLE_PRESENTE: bool | None = None
+
+
+def _kb_table_existe(db: Session) -> bool:
+    """Existe a tabela `agente_base_conhecimento`? (cacheado por processo).
+
+    CRÍTICO: enquanto a Fase 3 (tabela + pgvector) não estiver deployada, a tabela não
+    existe em produção. Sem este guard, a query de `retrieve` lança `UndefinedTable`, o
+    `except` engole o erro mas a **transação Postgres fica abortada** — e a chamada
+    seguinte (resolver provider/token em `llm_client_service`) estoura
+    `InFailedSqlTransaction`, derrubando TODA geração (sandbox 500 / worker em handoff).
+    A checagem no catálogo é limpa (não envenena a sessão); o cache reseta a cada restart
+    de container, então quando a Fase 3 subir o novo boot redetecta a tabela."""
+    global _KB_TABLE_PRESENTE
+    if _KB_TABLE_PRESENTE is None:
+        try:
+            _KB_TABLE_PRESENTE = sa_inspect(db.get_bind()).has_table("agente_base_conhecimento")
+        except Exception:  # noqa: BLE001 — na dúvida, trata como ausente (degrada p/ [])
+            _KB_TABLE_PRESENTE = False
+    return _KB_TABLE_PRESENTE
+
+
 def retrieve(db: Session, agente_id, consulta: str, k: int = 3) -> list[str]:
     """Top-K chunks por similaridade cosseno. Degrada para [] em qualquer falha
-    (sem pgvector, sem chave, sem KB)."""
+    (sem pgvector, sem chave, sem KB) — e NUNCA deixa a transação abortada (ver
+    `_kb_table_existe`: o RAG não pode derrubar a geração nem envenenar a sessão)."""
+    if not _kb_table_existe(db):
+        return []  # Fase 3/pgvector ainda não deployada — RAG é no-op, sem tocar no banco
     try:
         # guard: não embeddar se o agente não tem KB (evita custo por mensagem)
         tem_kb = db.execute(
@@ -149,4 +174,8 @@ def retrieve(db: Session, agente_id, consulta: str, k: int = 3) -> list[str]:
         return [r[0] for r in rows]
     except Exception as exc:  # noqa: BLE001 — RAG nunca derruba a geração
         log.info("[rag] retrieve falhou agente=%s: %s", agente_id, exc)
+        try:
+            db.rollback()  # libera a transação caso a query a tenha deixado abortada
+        except Exception:  # noqa: BLE001
+            pass
         return []
