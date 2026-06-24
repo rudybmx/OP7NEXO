@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Sparkles, Wand2, RefreshCw, Loader2, AlertCircle, ArrowRight, ArrowLeft, Download,
-  Image as ImageIcon, ScanSearch, History, LayoutGrid, Check, Trash2, ShieldCheck, X, Maximize2,
+  Image as ImageIcon, ScanSearch, History, LayoutGrid, Check, Trash2, ShieldCheck, X, Maximize2, Zap,
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { usePersistedState } from '@/hooks/use-estado-persistido'
@@ -19,6 +19,7 @@ type SlideCopy = { contexto?: string; palavra_bomba?: string; selo?: string; tex
 type SlideRoteiro = {
   index: number; intensidade?: string; copy?: SlideCopy; direcao_imagem?: string
   personagens_idx?: number[] | null; objetos_idx?: number[] | null; estilo_referencia?: string | null
+  objeto?: { descricao?: string } | null  // objeto POR SLIDE (descrição; foto vai no estado objetosSlide)
 }
 type Roteiro = {
   molde?: string; tensao?: string; payload?: string; gatilhos?: string[]; estilo?: string; estilo_referencia?: string
@@ -48,6 +49,12 @@ const ESTILOS = [
   { id: 'ilustracao', label: 'Ilustração', desc: 'Traços e texturas autorais, mais lúdico e único.' },
   { id: 'foto', label: 'Fotorrealista', desc: 'Foto editorial de alto contraste, realista.' },
 ]
+const MOLDES: Record<string, string> = {
+  '': 'A IA escolhe o melhor formato/estrutura pelo seu tema.',
+  A: 'Evento/Celebridade: capa com rosto/figura recortada + emoção extrema + headline-bomba; o resto desenvolve a lição por trás do evento. Bom p/ notícia quente ou figura conhecida.',
+  B: 'Feature/Tutorial: fato → "isso mudou tudo" → tutorial passo a passo → antes/depois → CTA. Bom p/ ensinar um método ou ferramenta.',
+  C: 'Tese ("X NÃO É Y"): 3 capas repetindo a fórmula → lista do "que é de verdade" → síntese → clímax + prova social. Bom p/ quebrar um mito / reposicionar uma ideia.',
+}
 const NOMES_HEX: Record<string, string> = { vermelho: '#cc0000', verde: '#1ca84c', amarelo: '#ffd400', azul: '#1450a0', preto: '#111111', branco: '#ffffff', laranja: '#ff6a00', roxo: '#7a5af8', rosa: '#ff5c8d', cinza: '#888888' }
 const toHex = (c?: string) => { if (!c) return '#cccccc'; const s = c.trim().toLowerCase(); return s.startsWith('#') ? s.slice(0, 7) : (NOMES_HEX[s] || '#cccccc') }
 
@@ -120,6 +127,8 @@ export function Criativos2() {
   const [showVer, setShowVer] = useState(false)
   const [melhorandoRef, setMelhorandoRef] = useState<string | null>(null)
   const [regenerando, setRegenerando] = useState<number | null>(null)
+  const [saldo, setSaldo] = useState<number | null>(null)
+  const [objetosSlide, setObjetosSlide] = useState<Record<number, string>>({})  // index -> foto base64 do objeto
   // Históricos
   const [historicos, setHistoricos] = useState<HistItem[] | null>(null)
   const [carregandoHist, setCarregandoHist] = useState(false)
@@ -163,7 +172,7 @@ export function Criativos2() {
     setRoteiro(prev => prev ? { ...prev, slides: (prev.slides || []).map(s => s.index === idx ? { ...s, copy: { ...(s.copy || {}), [campo]: valor } } : s) } : prev)
 
   // ───── Melhorar com IA (qualquer campo, contextual; custo ZERO) ─────
-  const melhorarCampo = useCallback(async (idx: number, campo: keyof SlideCopy | 'direcao_imagem', valorAtual: string) => {
+  const melhorarCampo = useCallback(async (idx: number, campo: keyof SlideCopy | 'direcao_imagem' | 'objeto', valorAtual: string) => {
     if (!workspaceAtual || !roteiro) return
     const chave = `${idx}:${campo}`; setMelhorando(chave); setErro(null)
     try {
@@ -171,7 +180,7 @@ export function Criativos2() {
       const copy = slide?.copy || {}
       const outros = [copy.palavra_bomba, copy.contexto, copy.selo, copy.texto, copy.cta_continuacao, campo !== 'direcao_imagem' ? slide?.direcao_imagem : undefined]
         .filter((x): x is string => !!x && x !== valorAtual)
-      const mapaCampo: Record<string, string> = { palavra_bomba: 'headline', contexto: 'subheadline', selo: 'selo', texto: 'copy_extra', cta_continuacao: 'cta', direcao_imagem: 'personagem' }
+      const mapaCampo: Record<string, string> = { palavra_bomba: 'headline', contexto: 'subheadline', selo: 'selo', texto: 'copy_extra', cta_continuacao: 'cta', direcao_imagem: 'personagem', objeto: 'objeto' }
       const ctxModelo = (modeloGeral?.spec?.descricao || modelosSlide[idx]?.spec?.descricao) ? ` | estilo do modelo: ${(modeloGeral?.spec?.descricao || modelosSlide[idx]?.spec?.descricao)!.slice(0, 200)}` : ''
       const r = await api.post<{ texto: string }>('/design/melhorar-copy', {
         workspace_id: workspaceAtual,
@@ -182,6 +191,7 @@ export function Criativos2() {
         existentes: outros.slice(0, 8),
       })
       if (campo === 'direcao_imagem') editarSlide(idx, { direcao_imagem: r.texto })
+      else if (campo === 'objeto') editarSlide(idx, { objeto: { descricao: r.texto } })
       else editarCopy(idx, campo, r.texto)
     } catch (e) { setErro(errMsg(e) ||'Falha ao melhorar com IA.') }
     finally { setMelhorando(null) }
@@ -242,6 +252,11 @@ export function Criativos2() {
     modelos_slide: usarModelo && modeloModo === 'porSlide'
       ? Object.fromEntries(Object.entries(modelosSlide).map(([k, v]) => [k, v.img]))
       : {},
+    objetos_slide: Object.fromEntries(
+      (roteiro?.slides || [])
+        .map(s => [s.index, { descricao: s.objeto?.descricao || '', imagem_base64: objetosSlide[s.index] }] as const)
+        .filter(([, v]) => v.descricao || v.imagem_base64),
+    ),
   })
 
   // ───── Polling do estado (recursão local em `tick` — sem self-ref no useCallback) ─────
@@ -273,6 +288,18 @@ export function Criativos2() {
     } catch (e) { setErro(errMsg(e) ||'Falha na análise por IA.') }
     finally { setAnalisando(false) }
   }, [carrosselId, roteiro, salvarRoteiro, personagens, objetos])
+
+  // ───── "Deixar a IA ajustar tudo": reescreve o roteiro na melhor versão (mesmo assunto) ─────
+  const ajustarTudo = useCallback(async () => {
+    if (!carrosselId || !roteiro) return
+    setAnalisando(true); setErro(null)
+    try {
+      await salvarRoteiro()
+      const r = await api.post<{ director_json: Roteiro }>(`/design/carrossel/${carrosselId}/ajustar`, {})
+      setRoteiro(r.director_json); setShowAnalise(false); setAnalise(null)
+    } catch (e) { setErro(errMsg(e) || 'Falha ao ajustar com IA.') }
+    finally { setAnalisando(false) }
+  }, [carrosselId, roteiro, salvarRoteiro])
 
   // ───── Gerar: salva roteiro e dispara a geração (resultado no fim da página) ─────
   const gerar = useCallback(async () => {
@@ -307,6 +334,11 @@ export function Criativos2() {
     setRoteiro(null); setEstado(null); setErro(null); setCarrosselId(null); setAnalise(null)
     setUsarModelo(false); setModeloGeral(null); setModelosSlide({})
   }
+  const limparTudo = () => {
+    reset()
+    setTema(''); setRefImg(null); setAssuntoNoticia(''); setPautas(null)
+    setPersonagens([]); setObjetos([]); setObjetosSlide({}); setMolde('')
+  }
 
   // ───── Históricos ─────
   const carregarHistoricos = useCallback(async () => {
@@ -318,6 +350,22 @@ export function Criativos2() {
     } catch (e) { setErro(errMsg(e) ||'Falha ao carregar históricos.') }
     finally { setCarregandoHist(false) }
   }, [workspaceAtual])
+
+  // ───── Saldo de tokens (cabeçalho) — best-effort, sem setState síncrono ─────
+  const carregarSaldo = useCallback(async () => {
+    if (!workspaceAtual) return
+    try {
+      const r = await api.get<{ saldo_tokens: number }>(`/estudio/saldo?workspace_id=${workspaceAtual}`)
+      setSaldo(r.saldo_tokens)
+    } catch { /* saldo é best-effort */ }
+  }, [workspaceAtual])
+  // mount + sempre que o status do carrossel muda (terminal = saldo debitado).
+  // defer com setTimeout p/ não chamar setState de forma síncrona dentro do efeito.
+  useEffect(() => {
+    if (!workspaceAtual) return
+    const t = setTimeout(() => carregarSaldo(), 0)
+    return () => clearTimeout(t)
+  }, [workspaceAtual, estado?.carrossel.status, carregarSaldo])
 
   const excluirHist = async (id: string) => {
     try { await api.delete(`/design/carrossel/${id}`); setHistoricos(prev => (prev || []).filter(h => h.id !== id)) }
@@ -378,7 +426,7 @@ export function Criativos2() {
   )
 
   // botão pequeno "melhorar com IA" para um campo
-  const botaoIA = (idx: number, campo: keyof SlideCopy | 'direcao_imagem', valor: string) => {
+  const botaoIA = (idx: number, campo: keyof SlideCopy | 'direcao_imagem' | 'objeto', valor: string) => {
     const chave = `${idx}:${campo}`
     return (
       <button type="button" onClick={() => melhorarCampo(idx, campo, valor)} disabled={!!melhorando} title="Melhorar com IA"
@@ -389,7 +437,6 @@ export function Criativos2() {
   }
 
   const poolP = personagens.filter(p => (p.descricao || '').trim() || p.imagem_base64)
-  const poolO = objetos.filter(o => (o.descricao || '').trim() || o.imagem_base64)
 
   return (
     <div className="flex flex-col h-full overflow-auto px-6 py-5 gap-4">
@@ -398,13 +445,24 @@ export function Criativos2() {
           <h1 className="ds-page-title flex items-center gap-2"><Sparkles size={18} className="text-[var(--ws-blue)]" /> Criativos 2.0</h1>
           <p className="ds-help">Carrossel editorial newsjacking · design completo, integrado por IA</p>
         </div>
-        <div className="flex items-center gap-1 p-1 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)]">
-          {([['criar', 'Criar', Wand2], ['historicos', 'Históricos', History], ['modelos', 'Modelos', LayoutGrid]] as const).map(([id, lbl, Icon]) => (
-            <button key={id} onClick={() => { setAba(id); if (id === 'historicos' && historicos === null) carregarHistoricos() }}
-              className={`h-8 px-3 inline-flex items-center gap-1.5 rounded-[var(--ws-radius-md,8px)] text-sm transition ${aba === id ? 'bg-[var(--ws-blue)] text-white' : 'text-[var(--ws-text-2)] hover:text-[var(--ws-text-1)]'}`}>
-              <Icon size={14} /> {lbl}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          {saldo !== null && (
+            <span className="inline-flex items-center gap-1 h-8 px-2.5 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] text-sm" title="Tokens do Estúdio disponíveis na conta">
+              <Zap size={13} className="text-[var(--ws-blue)]" /> {saldo} <span className="ds-help">tokens</span>
+            </span>
+          )}
+          <button onClick={limparTudo} title="Limpar tudo e recomeçar do zero"
+            className="inline-flex items-center gap-1 h-8 px-2.5 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] text-sm text-[var(--ws-text-2)] hover:text-[#a32d2d] hover:border-[#a32d2d]/50">
+            <Trash2 size={13} /> Limpar
+          </button>
+          <div className="flex items-center gap-1 p-1 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)]">
+            {([['criar', 'Criar', Wand2], ['historicos', 'Históricos', History], ['modelos', 'Modelos', LayoutGrid]] as const).map(([id, lbl, Icon]) => (
+              <button key={id} onClick={() => { setAba(id); if (id === 'historicos' && historicos === null) carregarHistoricos() }}
+                className={`h-8 px-3 inline-flex items-center gap-1.5 rounded-[var(--ws-radius-md,8px)] text-sm transition ${aba === id ? 'bg-[var(--ws-blue)] text-white' : 'text-[var(--ws-text-2)] hover:text-[var(--ws-text-1)]'}`}>
+                <Icon size={14} /> {lbl}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
@@ -503,7 +561,7 @@ export function Criativos2() {
                 <option value="B">B · Feature/Tutorial</option>
                 <option value="C">C · Tese (X NÃO É Y)</option>
               </select>
-              <span className="ds-help">Define a estrutura do carrossel; força a IA a montar nesse formato.</span>
+              <span className="ds-help">{MOLDES[molde] || MOLDES['']}</span>
             </label>
             {!roteiro && (
               <button onClick={gerarRoteiro} disabled={carregando || (origem === 'referencia' ? !refImg : !tema.trim())} className={botaoPrimario + ' self-start'}>
@@ -530,6 +588,7 @@ export function Criativos2() {
                   </div>
                 )}
               </div>
+              <span className="ds-help">O <b>modelo</b> é uma imagem de referência: a IA segue a linha visual dele (cores, composição, clima, tipografia) e encaixa o seu assunto. <b>1 modelo p/ tudo</b> = mesma cara em todos os slides · <b>1 por slide</b> = um modelo diferente em cada slide.</span>
               {usarModelo && modeloModo === 'geral' && (
                 <div className="flex items-center gap-3">
                   <label className="h-10 px-4 inline-flex items-center gap-2 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] text-sm cursor-pointer hover:border-[var(--ws-blue)]">
@@ -600,25 +659,23 @@ export function Criativos2() {
                       placeholder="Descreva a imagem deste slide e como encaixar personagens/objetos" className="flex-1 p-3 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] bg-transparent text-sm resize-none outline-none focus:border-[var(--ws-blue)]" />
                     {botaoIA(s.index, 'direcao_imagem', s.direcao_imagem || '')}
                   </div>
-                  {/* seleção por slide do pool */}
-                  {(poolP.length > 0 || poolO.length > 0) && (
-                    <div className="flex flex-col gap-1.5 pt-1">
-                      {poolP.length > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap"><span className="ds-micro text-[var(--ws-text-3)] mr-1">Personagens:</span>
-                          {poolP.map((p, i) => { const on = idxSel(s, 'personagens_idx', poolP.length).includes(i); return (
-                            <button key={i} onClick={() => toggleIdx(s.index, 'personagens_idx', i, poolP.length)}
-                              className={`h-6 px-2 rounded-full text-xs border ${on ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'border-[var(--ws-glass-border)] text-[var(--ws-text-2)]'}`}>{p.descricao?.slice(0, 18) || `#${i + 1}`}</button>) })}
-                        </div>
-                      )}
-                      {poolO.length > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap"><span className="ds-micro text-[var(--ws-text-3)] mr-1">Objetos:</span>
-                          {poolO.map((o, i) => { const on = idxSel(s, 'objetos_idx', poolO.length).includes(i); return (
-                            <button key={i} onClick={() => toggleIdx(s.index, 'objetos_idx', i, poolO.length)}
-                              className={`h-6 px-2 rounded-full text-xs border ${on ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'border-[var(--ws-glass-border)] text-[var(--ws-text-2)]'}`}>{o.descricao?.slice(0, 18) || `#${i + 1}`}</button>) })}
-                        </div>
-                      )}
+                  {/* personagens do pool (seleção por slide) + OBJETO inline deste slide */}
+                  {poolP.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1"><span className="ds-micro text-[var(--ws-text-3)] mr-1">Personagens:</span>
+                      {poolP.map((p, i) => { const on = idxSel(s, 'personagens_idx', poolP.length).includes(i); return (
+                        <button key={i} onClick={() => toggleIdx(s.index, 'personagens_idx', i, poolP.length)}
+                          className={`h-6 px-2 rounded-full text-xs border ${on ? 'bg-[var(--ws-blue)] text-white border-[var(--ws-blue)]' : 'border-[var(--ws-glass-border)] text-[var(--ws-text-2)]'}`}>{p.descricao?.slice(0, 18) || `#${i + 1}`}</button>) })}
                     </div>
                   )}
+                  <div className="flex items-center gap-2 pt-1">
+                    <label className="shrink-0 h-9 w-9 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] flex items-center justify-center cursor-pointer overflow-hidden hover:border-[var(--ws-blue)]" title="Objeto deste slide (opcional)">
+                      {objetosSlide[s.index] ? <img src={objetosSlide[s.index]} className="w-full h-full object-cover" alt="" /> : <ImageIcon size={14} />}
+                      <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) lerArquivo(f, url => setObjetosSlide(prev => ({ ...prev, [s.index]: url }))) }} />
+                    </label>
+                    <input value={s.objeto?.descricao || ''} onChange={e => editarSlide(s.index, { objeto: { descricao: e.target.value } })}
+                      placeholder="Objeto deste slide (produto/elemento) — opcional" className={inputCls} />
+                    {botaoIA(s.index, 'objeto', s.objeto?.descricao || '')}
+                  </div>
                   {usarModelo && modeloModo === 'porSlide' && (
                     <label className="self-start ds-help inline-flex items-center gap-1.5 cursor-pointer hover:text-[var(--ws-text-1)]">
                       {analisandoModelo === String(s.index) ? <Loader2 size={13} className="animate-spin" /> : <ScanSearch size={13} />} {modelosSlide[s.index] ? 'Trocar modelo' : 'Modelo deste slide'}
@@ -629,11 +686,10 @@ export function Criativos2() {
                 </div>
               ))}
 
-              {/* Pool de personagens & objetos */}
+              {/* Pool de personagens (o objeto é por slide, acima) */}
               <div className={`${card} p-4 flex flex-col gap-3`}>
-                <span className="ds-label">Personagens & objetos (pool — selecione por slide acima)</span>
-                {renderRefs('personagens', personagens, setPersonagens, 'Personagens (até 5, rosto fiel). Recomendado até 3 por slide.')}
-                {renderRefs('objetos', objetos, setObjetos, 'Objetos / produtos (até 5)')}
+                <span className="ds-label">Personagens (pool — selecione por slide acima)</span>
+                {renderRefs('personagens', personagens, setPersonagens, 'Personagens (até 5, rosto fiel). Pessoas que se repetem entre os slides.')}
                 <p className="ds-help">⚠️ Evite fotos de celebridades / figuras públicas — a OpenAI costuma bloquear a geração. Use fotos próprias, de clientes ou de modelos.</p>
               </div>
 
@@ -778,8 +834,12 @@ export function Criativos2() {
               <div className="flex flex-col gap-1"><span className="ds-label">Sugestões</span>
                 <ul className="list-disc pl-5 text-sm text-[var(--ws-text-2)] flex flex-col gap-0.5">{analise.sugestoes!.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
             )}
-            <div className="flex justify-end gap-2 pt-1">
-              <button onClick={() => setShowAnalise(false)} className="h-9 px-4 rounded-[var(--ws-radius-lg)] text-sm border border-[var(--ws-glass-border)] hover:border-[var(--ws-blue)]">Ajustar</button>
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <button onClick={() => setShowAnalise(false)} className="h-9 px-4 rounded-[var(--ws-radius-lg)] text-sm border border-[var(--ws-glass-border)] hover:border-[var(--ws-blue)]">Ajusto eu</button>
+              <button onClick={ajustarTudo} disabled={analisando} title="A IA reescreve tudo na melhor versão, mantendo o mesmo assunto"
+                className="inline-flex items-center gap-1.5 h-9 px-4 rounded-[var(--ws-radius-lg)] text-sm border border-[var(--ws-blue)]/50 text-[var(--ws-blue)] bg-[rgba(62,91,255,0.06)] hover:bg-[rgba(62,91,255,0.12)] disabled:opacity-50">
+                {analisando ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Deixar a IA ajustar tudo
+              </button>
               <button onClick={gerar} className={botaoPrimario + ' h-9'}>Gerar mesmo assim <ArrowRight size={15} /></button>
             </div>
           </div>
