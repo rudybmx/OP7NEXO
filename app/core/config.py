@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     openai_vision_model: str = "gpt-4.1"
     # Modelo de TEXTO para o assistente de copy (gera/melhora textos com gatilhos mentais).
     openai_copy_model: str = "gpt-4.1-mini"
+    # Modelo de TEXTO do Carrossel 2.0 (diretor/ajuste/análise) — mais inteligente, escopado só ao carrossel.
+    openai_carrossel_model: str = "gpt-5"
     # Firecrawl — busca de notícias para o buscador de pautas (Origin A do Criativos 2.0).
     firecrawl_api_key: str = ""
     firecrawl_api_url: str = "https://api.firecrawl.dev"
