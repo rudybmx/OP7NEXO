@@ -112,6 +112,8 @@ export function Criativos2() {
   // Históricos
   const [historicos, setHistoricos] = useState<HistItem[] | null>(null)
   const [carregandoHist, setCarregandoHist] = useState(false)
+  const [galeria, setGaleria] = useState<HistItem | null>(null)  // modal: vê todos os slides do carrossel salvo
+  const [baixandoTodas, setBaixandoTodas] = useState(false)
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const resultRef = useRef<HTMLDivElement | null>(null)
 
@@ -383,6 +385,15 @@ export function Criativos2() {
       a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove()
       setTimeout(() => URL.revokeObjectURL(u), 1000)
     } catch { window.open(url, '_blank') }
+  }
+  // Baixa todas as imagens do carrossel aberto na galeria (sequencial p/ não disparar N cliques juntos).
+  const baixarTodas = async () => {
+    if (!galeria) return
+    setBaixandoTodas(true)
+    try {
+      const nome = (galeria.tema || 'carrossel').slice(0, 30)
+      for (const [i, u] of (galeria.thumbs || []).entries()) await baixar(u, `${nome}-slide-${i + 1}.png`)
+    } finally { setBaixandoTodas(false) }
   }
 
   // ───── UI: pool de personagens/objetos (upload + descrição) ─────
@@ -759,7 +770,7 @@ export function Criativos2() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {(historicos || []).map(h => (
               <div key={h.id} className={`${card} overflow-hidden flex flex-col`}>
-                <div onClick={() => abrirHistorico(h)} title="Abrir" className={`relative cursor-pointer ${h.master_format === '4x3' ? 'aspect-[4/3]' : 'aspect-[9/16]'} bg-[var(--ws-glass-border)]`}>
+                <div onClick={() => setGaleria(h)} title="Ver todas as imagens" className={`relative cursor-pointer ${h.master_format === '4x3' ? 'aspect-[4/3]' : 'aspect-[9/16]'} bg-[var(--ws-glass-border)]`}>
                   {h.capa ? <img src={h.capa} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><ImageIcon size={20} className="text-[var(--ws-text-3)]" /></div>}
                   {!!h.n_prontos && <span className="absolute top-1.5 right-1.5 px-1.5 h-5 rounded-full bg-black/60 text-white text-[11px] flex items-center justify-center">{h.n_prontos}</span>}
                 </div>
@@ -837,6 +848,53 @@ export function Criativos2() {
                 {analisando ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Deixar a IA ajustar tudo
               </button>
               <button onClick={gerar} className={botaoPrimario + ' h-9'}>Gerar mesmo assim <ArrowRight size={15} /></button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════ MODAL GALERIA (todas as imagens do carrossel salvo) ══════════════════ */}
+      {galeria && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setGaleria(null)}>
+          <div className={`${card} max-w-3xl w-full max-h-[88vh] flex flex-col`} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 p-4 pb-3 border-b border-[var(--ws-glass-border)]">
+              <ImageIcon size={18} className="text-[var(--ws-blue)]" />
+              <span className="ds-section-title line-clamp-1" title={galeria.tema || ''}>{galeria.tema || 'Carrossel'}</span>
+              <button onClick={() => setGaleria(null)} className="ml-auto ds-help hover:text-[var(--ws-text-1)]" title="Fechar"><X size={16} /></button>
+            </div>
+            <div className="overflow-y-auto p-4">
+              {(galeria.thumbs || []).length === 0 ? (
+                <p className="ds-help">Nenhuma imagem gerada ainda.</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {(galeria.thumbs || []).map((url, i) => (
+                    <div key={i} className={`${card} overflow-hidden flex flex-col`}>
+                      <div className={`relative ${galeria.master_format === '4x3' ? 'aspect-[4/3]' : 'aspect-[9/16]'} bg-[var(--ws-glass-border)]`}>
+                        <img src={url} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
+                        <span className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-[11px] flex items-center justify-center">{i + 1}</span>
+                      </div>
+                      <div className="flex items-center justify-end p-2">
+                        <button onClick={() => baixar(url, `${(galeria.tema || 'carrossel').slice(0, 30)}-slide-${i + 1}.png`)} className="ds-help hover:text-[var(--ws-text-1)]" title="Baixar imagem"><Download size={13} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 p-4 pt-3 border-t border-[var(--ws-glass-border)]">
+              {!!(galeria.thumbs || []).length && (
+                <button onClick={baixarTodas} disabled={baixandoTodas}
+                  className="inline-flex items-center gap-1.5 h-9 px-4 rounded-[var(--ws-radius-lg)] text-sm border border-[var(--ws-glass-border)] hover:border-[var(--ws-blue)] disabled:opacity-50">
+                  {baixandoTodas ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Baixar todas
+                </button>
+              )}
+              <button onClick={() => { usarComoModelo(galeria); setGaleria(null) }}
+                className="inline-flex items-center gap-1.5 h-9 px-4 rounded-[var(--ws-radius-lg)] text-sm border border-[var(--ws-glass-border)] hover:border-[var(--ws-blue)]">
+                <LayoutGrid size={14} /> Usar como modelo
+              </button>
+              <button onClick={() => { abrirHistorico(galeria); setGaleria(null) }} className={botaoPrimario + ' h-9'}>
+                <FolderOpen size={15} /> Abrir / editar
+              </button>
             </div>
           </div>
         </div>
