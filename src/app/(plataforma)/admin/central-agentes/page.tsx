@@ -11,6 +11,7 @@ import api from '@/lib/api-client'
 import { type AgenteInput, type HorarioItem, useAgentes } from '@/hooks/use-agentes'
 import { type LlmProvider, useLlmProviders } from '@/hooks/use-llm-providers'
 import { BaseConhecimentoManager } from '@/components/admin/central-agentes/BaseConhecimentoManager'
+import { UsoDashboard } from '@/components/admin/central-agentes/UsoDashboard'
 
 type Aba = 'agentes' | 'providers' | 'uso'
 type CanalLite = { id: string; nome: string; tipo?: string | null }
@@ -64,6 +65,7 @@ export default function CentralAgentesPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState<AgenteInput>(emptyForm())
   const [salvando, setSalvando] = useState(false)
+  const [publicando, setPublicando] = useState(false)
 
   useEffect(() => { carregarProviders() }, [carregarProviders])
   useEffect(() => { carregar() }, [carregar])
@@ -103,6 +105,20 @@ export default function CentralAgentesPage() {
     } catch (e: any) {
       toast.error(e?.message || 'Erro ao carregar agente')
       setDrawer(false)
+    }
+  }
+
+  async function publicarPrompt() {
+    if (!ws || !editId) return
+    setPublicando(true)
+    try {
+      await atualizar(editId, { prompt: form.prompt })
+      await api.post(`/workspaces/${ws}/agentes/${editId}/publicar`)
+      toast.success('Prompt publicado')
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao publicar')
+    } finally {
+      setPublicando(false)
     }
   }
 
@@ -212,11 +228,7 @@ export default function CentralAgentesPage() {
         />
       )}
       {aba === 'providers' && <ProvidersTab hook={providersHook} />}
-      {aba === 'uso' && (
-        <div className="text-sm p-6 rounded-xl" style={{ color: 'var(--ws-text-2)', background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}>
-          Dashboard de uso & consumo chega na Fase 4 (tokens, custo, taxa de handoff, score médio).
-        </div>
-      )}
+      {aba === 'uso' && <UsoDashboard workspaceId={ws} />}
 
       {/* Drawer de criação/edição de agente */}
       <Sheet open={drawer} onOpenChange={(o) => !o && setDrawer(false)}>
@@ -286,7 +298,16 @@ export default function CentralAgentesPage() {
 
             <Section titulo="Prompt do sistema (rascunho)">
               <textarea className={inputCls} style={{ ...inputStyle, minHeight: 120, resize: 'vertical' }} value={form.prompt ?? ''} onChange={(e) => setF('prompt', e.target.value)} placeholder="Você é o assistente de atendimento da empresa…" />
-              <p className="text-xs mt-1" style={{ color: 'var(--ws-text-2)' }}>Publicação versionada chega na Fase 4.</p>
+              {editId ? (
+                <div className="flex items-center gap-2 mt-2">
+                  <button onClick={publicarPrompt} disabled={publicando} className="px-3 py-1.5 text-xs font-medium rounded-lg border" style={{ borderColor: 'var(--ws-glass-border)', color: 'var(--ws-text-1)' }}>
+                    {publicando ? 'Publicando…' : 'Publicar versão'}
+                  </button>
+                  <span className="text-xs" style={{ color: 'var(--ws-text-2)' }}>salva o rascunho e cria uma versão publicada</span>
+                </div>
+              ) : (
+                <p className="text-xs mt-1" style={{ color: 'var(--ws-text-2)' }}>Salve o agente para publicar versões do prompt.</p>
+              )}
             </Section>
 
             <Section titulo="Base de conhecimento (RAG)">
