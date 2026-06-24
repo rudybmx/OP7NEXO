@@ -121,13 +121,25 @@ interface UseConversasReturn {
   hasMore: boolean
 }
 
+/** Filtros V2 (server-side). Quando passado, a query usa o caminho v2 do proxy
+ *  (`v2=1`) com paginação real por offset. Ausente => caminho legado intacto. */
+export interface V2Filtros {
+  escopo?: string          // todas|novas|minhas|equipe
+  acompanhamento?: string  // em_atendimento|sem_resposta
+  tipo?: string            // todos|grupos|diretas
+  arquivadas?: boolean
+  naoLidas?: boolean
+  responsavelId?: string | null
+}
+
 export function useConversas(
   filtro?: string,
   equipeId?: string,
   workspaceId?: string,
   enabled = true,
   canalId?: string,
-  etiquetaIds?: string[]
+  etiquetaIds?: string[],
+  v2?: V2Filtros | null
 ): UseConversasReturn {
   // Chave estável para usar nas deps do useCallback (array muda de referência a cada render)
   const etiquetaKey = etiquetaIds?.join(',') ?? ''
@@ -137,6 +149,16 @@ export function useConversas(
   const [error, setError] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(true)
   const abortRef = useRef<AbortController | null>(null)
+  const loadedCountRef = useRef(0) // offset acumulado (paginação real no caminho V2)
+
+  // Primitivos derivados de `v2` => deps estáveis no useCallback (sem re-render loop).
+  const v2Ativo = !!v2
+  const v2Escopo = v2?.escopo
+  const v2Acompanhamento = v2?.acompanhamento
+  const v2Tipo = v2?.tipo
+  const v2Arquivadas = v2?.arquivadas
+  const v2NaoLidas = v2?.naoLidas
+  const v2Responsavel = v2?.responsavelId
 
   const fetchConversas = useCallback(async (append = false) => {
     if (!enabled) return
@@ -161,11 +183,23 @@ export function useConversas(
 
       const params = new URLSearchParams()
       params.set('limit', '80')
-      if (filtro) params.set('filtro', filtro)
-      if (equipeId) params.set('equipe_id', equipeId)
       if (workspaceId) params.set('workspace_id', workspaceId)
+      if (equipeId) params.set('equipe_id', equipeId)
       if (canalId) params.set('canal_id', canalId)
       etiquetaIds?.forEach(id => params.append('etiqueta_ids', id))
+      if (v2Ativo) {
+        // Caminho V2: backend filtra tudo antes do limit + paginação real por offset.
+        params.set('v2', '1')
+        params.set('offset', String(append ? loadedCountRef.current : 0))
+        if (v2Escopo) params.set('escopo', v2Escopo)
+        if (v2Acompanhamento) params.set('acompanhamento', v2Acompanhamento)
+        if (v2Tipo) params.set('tipo', v2Tipo)
+        if (v2Responsavel) params.set('responsavel_id', v2Responsavel)
+        params.set('arquivadas', v2Arquivadas ? 'true' : 'false')
+        if (v2NaoLidas) params.set('nao_lidas', 'true')
+      } else if (filtro) {
+        params.set('filtro', filtro)
+      }
 
       const res = await fetch(`/api/whatsapp/conversations?${params.toString()}`, {
         signal: controller.signal,
@@ -176,6 +210,8 @@ export function useConversas(
       const data = await res.json()
       if (controller.signal.aborted) return
       const novas = data.conversations ?? []
+      // avança o offset pelo tamanho da página retornada (dedup abaixo é só rede de segurança)
+      loadedCountRef.current = (append ? loadedCountRef.current : 0) + novas.length
 
       if (append) {
         setConversas(prev => {
@@ -197,7 +233,7 @@ export function useConversas(
       setIsLoading(false)
       setIsLoadingMore(false)
     }
-  }, [enabled, filtro, equipeId, workspaceId, canalId, etiquetaKey])
+  }, [enabled, filtro, equipeId, workspaceId, canalId, etiquetaKey, v2Ativo, v2Escopo, v2Acompanhamento, v2Tipo, v2Arquivadas, v2NaoLidas, v2Responsavel])
 
   useEffect(() => {
     let cancelled = false

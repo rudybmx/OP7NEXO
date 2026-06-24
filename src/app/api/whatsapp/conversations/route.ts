@@ -141,6 +141,14 @@ export async function GET(request: NextRequest) {
     const canalIdParam = url.searchParams.get('canal_id')
     const equipeIdParam = url.searchParams.get('equipe_id')
     const etiquetaIds = url.searchParams.getAll('etiqueta_ids')
+    // --- filtros V2 (server-side): só ativos quando o front sinaliza v2=1 ---
+    const isV2 = url.searchParams.get('v2') === '1'
+    const escopoParam = url.searchParams.get('escopo')
+    const acompanhamentoParam = url.searchParams.get('acompanhamento')
+    const tipoParam = url.searchParams.get('tipo')
+    const arquivadasParam = url.searchParams.get('arquivadas') // 'true' | 'false' | null
+    const naoLidasParam = url.searchParams.get('nao_lidas')     // 'true' | null
+    const responsavelIdParam = url.searchParams.get('responsavel_id')
 
     if (!workspaceIdParam) {
       return NextResponse.json(
@@ -160,13 +168,27 @@ export async function GET(request: NextRequest) {
     backendUrl.searchParams.set('limit', String(limit))
     backendUrl.searchParams.set('workspace_id', workspaceIdParam)
     if (instance) backendUrl.searchParams.set('instance', instance)
-    if (filtro === 'novas') backendUrl.searchParams.set('status', 'nova')
-    else if (filtro === 'resgate') backendUrl.searchParams.set('status', 'resgate')
-    else if (filtro === 'resolvidas') backendUrl.searchParams.set('status', 'resolvido')
-    else if (filtro === 'minhas') backendUrl.searchParams.set('responsavel_id', access.user.id)
-    else if (filtro && !['todas', 'grupos', 'equipe'].includes(filtro)) backendUrl.searchParams.set('status', filtro)
-    if (equipeIdParam) backendUrl.searchParams.set('equipe_id', equipeIdParam)
+    // etiqueta_ids é ortogonal ao modo => repassado nos dois caminhos.
     etiquetaIds.forEach(id => backendUrl.searchParams.append('etiqueta_ids', id))
+    if (isV2) {
+      // V2: o backend filtra tudo (antes do limit) => paginação correta. Repasse direto.
+      if (canalIdParam) backendUrl.searchParams.set('canal_id', canalIdParam)
+      if (equipeIdParam) backendUrl.searchParams.set('equipe_id', equipeIdParam)
+      if (responsavelIdParam) backendUrl.searchParams.set('responsavel_id', responsavelIdParam)
+      if (escopoParam) backendUrl.searchParams.set('escopo', escopoParam)
+      if (acompanhamentoParam) backendUrl.searchParams.set('acompanhamento', acompanhamentoParam)
+      if (tipoParam) backendUrl.searchParams.set('tipo', tipoParam)
+      // arquivadas é tri-state: V2 sempre envia (false=exclui resolvidas; true=só arquivadas)
+      backendUrl.searchParams.set('arquivadas', arquivadasParam === 'true' ? 'true' : 'false')
+      if (naoLidasParam === 'true') backendUrl.searchParams.set('nao_lidas', 'true')
+    } else {
+      if (filtro === 'novas') backendUrl.searchParams.set('status', 'nova')
+      else if (filtro === 'resgate') backendUrl.searchParams.set('status', 'resgate')
+      else if (filtro === 'resolvidas') backendUrl.searchParams.set('status', 'resolvido')
+      else if (filtro === 'minhas') backendUrl.searchParams.set('responsavel_id', access.user.id)
+      else if (filtro && !['todas', 'grupos', 'equipe'].includes(filtro)) backendUrl.searchParams.set('status', filtro)
+      if (equipeIdParam) backendUrl.searchParams.set('equipe_id', equipeIdParam)
+    }
 
     const response = await fetch(backendUrl.toString(), {
       headers: { Authorization: access.tokenToForward },
@@ -185,8 +207,9 @@ export async function GET(request: NextRequest) {
     const backendConversas: BackendConversaRow[] = Array.isArray(data) ? data : []
 
       // Transforma resposta do backend para formato do frontend
+    // V2: backend já filtrou (antes do limit) => usa direto, sem refiltrar pós-página.
     const isResolvidas = filtro === 'resolvidas'
-    const filteredRows = backendConversas.filter(row => {
+    const filteredRows = isV2 ? backendConversas : backendConversas.filter(row => {
       if (canalIdParam && row.canal_id !== canalIdParam) return false
       if (isResolvidas) {
         if (row.status !== 'resolvido') return false

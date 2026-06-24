@@ -4,7 +4,9 @@ import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { Search, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
+import type { AgenteApi } from '@/hooks/use-agentes-disponiveis'
 import type { WhatsappCanal } from '@/hooks/use-whatsapp-canais'
+import { FiltrosAtendimentoV2, type FiltrosV2State } from './filtros-atendimento-v2'
 import type { Etiqueta } from '@/hooks/use-etiquetas'
 import { FiltroEtiquetas } from './filtro-etiquetas'
 import { getCanalBadgeLabel, getCanalProviderLabel } from '@/lib/whatsapp-canal'
@@ -22,6 +24,9 @@ interface PainelInboxProps {
   aoVivo?: boolean
   canais?: WhatsappCanal[]
   canalSelecionadoId?: string
+  filtrosV2?: FiltrosV2State | null
+  onFiltrosV2Change?: (next: FiltrosV2State) => void
+  agentes?: AgenteApi[]
   novaConversaAberta?: boolean
   isCriandoConversa?: boolean
   erroIniciarConversa?: string | null
@@ -547,6 +552,9 @@ export function PainelInbox({
   aoVivo,
   canais = [],
   canalSelecionadoId = 'todos',
+  filtrosV2 = null,
+  onFiltrosV2Change,
+  agentes = [],
   novaConversaAberta = false,
   isCriandoConversa = false,
   erroIniciarConversa,
@@ -762,62 +770,76 @@ export function PainelInbox({
           />
         </div>
 
-        {onCanalChange && canais.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <select
-              value={canalSelecionadoId}
-              onChange={e => onCanalChange(e.target.value)}
-              style={selectStyle}
-            >
-              <option value="todos">Todos os números</option>
-              {canais.map(canal => (
-                <option key={canal.id} value={canal.id}>
-                  {canal.tipo === 'webhook'
-                    ? `${getCanalProviderLabel(canal)} · ${canal.nome}`
-                    : `${canal.nome}${canal.numero_telefone ? ` · ${canal.numero_telefone}` : ''}`}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        {filtrosV2 && onFiltrosV2Change ? (
+          <FiltrosAtendimentoV2
+            valor={filtrosV2}
+            onChange={onFiltrosV2Change}
+            canais={canais}
+            canalSelecionadoId={canalSelecionadoId}
+            onCanalChange={onCanalChange ?? (() => {})}
+            agentes={agentes}
+            isMobile={isMobile}
+          />
+        ) : (
+          <>
+            {onCanalChange && canais.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <select
+                  value={canalSelecionadoId}
+                  onChange={e => onCanalChange(e.target.value)}
+                  style={selectStyle}
+                >
+                  <option value="todos">Todos os números</option>
+                  {canais.map(canal => (
+                    <option key={canal.id} value={canal.id}>
+                      {canal.tipo === 'webhook'
+                        ? `${getCanalProviderLabel(canal)} · ${canal.nome}`
+                        : `${canal.nome}${canal.numero_telefone ? ` · ${canal.numero_telefone}` : ''}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-        {onEtiquetasChange && etiquetasWorkspace.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <FiltroEtiquetas
-              etiquetas={etiquetasWorkspace}
-              selecionadas={etiquetasSelecionadas}
-              onChange={onEtiquetasChange}
-              isMobile={isMobile}
-            />
-          </div>
-        )}
+            {onEtiquetasChange && etiquetasWorkspace.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <FiltroEtiquetas
+                  etiquetas={etiquetasWorkspace}
+                  selecionadas={etiquetasSelecionadas}
+                  onChange={onEtiquetasChange}
+                  isMobile={isMobile}
+                />
+              </div>
+            )}
 
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-          {filtros.map(filtro => {
-            const ativo = filtroAtivo === filtro.id
-            return (
-              <button
-                key={filtro.id}
-                type="button"
-                onClick={() => onFiltroChange(filtro.id)}
-                style={{
-                  padding: isMobile ? '9px 14px' : '6px 11px',
-                  minHeight: isMobile ? 36 : undefined,
-                  borderRadius: 999,
-                  fontSize: isMobile ? 13 : 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid rgba(15, 23, 42, 0.08)',
-                  background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'rgba(255, 255, 255, 0.88)',
-                  color: ativo ? '#1D9E75' : 'var(--ws-text-2)',
-                  boxShadow: ativo ? '0 4px 10px rgba(29, 158, 117, 0.10)' : 'none',
-                }}
-              >
-                {filtro.label}
-              </button>
-            )
-          })}
-        </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+              {filtros.map(filtro => {
+                const ativo = filtroAtivo === filtro.id
+                return (
+                  <button
+                    key={filtro.id}
+                    type="button"
+                    onClick={() => onFiltroChange(filtro.id)}
+                    style={{
+                      padding: isMobile ? '9px 14px' : '6px 11px',
+                      minHeight: isMobile ? 36 : undefined,
+                      borderRadius: 999,
+                      fontSize: isMobile ? 13 : 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid rgba(15, 23, 42, 0.08)',
+                      background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'rgba(255, 255, 255, 0.88)',
+                      color: ativo ? '#1D9E75' : 'var(--ws-text-2)',
+                      boxShadow: ativo ? '0 4px 10px rgba(29, 158, 117, 0.10)' : 'none',
+                    }}
+                  >
+                    {filtro.label}
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )}
 
         {novaConversaAberta && onCriarConversa && onToggleNovaConversa && (
           <PainelNovaConversaInline
