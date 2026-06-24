@@ -375,6 +375,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - **`app/api/agentes.py`** (usa tabelas existentes — `agente_prompts`, `agente_uso_tokens`, `ai_model_pricing`; **nenhuma migration** → deploy seguro no Postgres alpine atual). Endpoints platform_admin: `POST /agentes/{id}/publicar` (snapshot do rascunho → versão `publicado` com autor+timestamp), `GET /agentes/{id}/prompts` (histórico draft+publicadas, diff `difflib` entre publicadas adjacentes), `POST /agentes/{id}/reverter/{prompt_id}` (nova publicada com conteúdo do alvo + reflete no rascunho), `GET /workspaces/{id}/agentes/uso/dashboard` (totais tokens/custo via `ai_model_pricing`/conversas/handoff/score + série diária; filtros agente/canal/modelo/período). Validado E2E em scratch (publicar/histórico+diff/reverter/dashboard — 10/10).
 - **PENDENTE Fase 4:** front (UsoDashboard + PromptEditor publicar/reverter); feedback de conversa (tabela `agente_conversa_feedback` — migration, agrupar c/ pgvector); few-shot dinâmico (`agente_exemplos_feedback` vector — depende de pgvector).
 
+### ✅ Implementado (2026-06-24) — Central de Agentes: chave do agente por conversa (Switch)
+- **Migration 091**: `ai_ativo BOOLEAN NOT NULL DEFAULT false` em `crm_whatsapp_conversas` — liga/desliga do agente **por conversa**, inicia DESLIGADO em todas (opt-in; antes o agente respondia todo contato de um canal ativo). Gate autoritativo em `agent_service.processar_reply` (`if not conversa.ai_ativo: return` — silencioso, sem handoff = humano cuida); `enfileirar_agente_reply` pula o enfileiramento quando desligado. Serializado em `ConversaOut`/`_conversa_out`. Front: Switch (HeroUI v3) no compositor de `/crm/atendimento/conversas` acima do "+", grava via proxy Next `/conversations/{id}/atualizar` (`iaAtiva`→`ai_ativo`, SQL direto).
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos

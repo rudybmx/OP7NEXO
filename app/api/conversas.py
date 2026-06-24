@@ -74,6 +74,7 @@ class ConversaOut(BaseModel):
     atualizado_em: datetime
     favorita: bool = False
     fixada: bool = False
+    ai_ativo: bool = False
     etiquetas: list[EtiquetaOut] = []
 
 
@@ -266,6 +267,7 @@ def _conversa_out(c: Conversa) -> ConversaOut:
         atualizado_em=c.atualizado_em,
         favorita=getattr(c, "favorita", False) or False,
         fixada=getattr(c, "fixada", False) or False,
+        ai_ativo=getattr(c, "ai_ativo", False) or False,
         etiquetas=[
             EtiquetaOut(id=str(e.id), nome=e.nome, cor=e.cor)
             for e in (getattr(c, "etiquetas", None) or [])

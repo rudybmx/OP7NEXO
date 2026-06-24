@@ -120,6 +120,8 @@ class Conversa(Base):
         UUID(as_uuid=True), ForeignKey("agentes.id", ondelete="SET NULL"), nullable=True
     )
     ai_score_confianca: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Chave por conversa (Switch no atendimento): o agente só responde quando ligado.
+    ai_ativo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
 
     workspace: Mapped["Workspace"] = relationship(  # type: ignore[name-defined]
         foreign_keys=[workspace_id], lazy="select"

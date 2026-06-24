@@ -215,6 +215,13 @@ def enfileirar_agente_reply(db: Session, *, workspace_id, canal_id, conversa_id,
     agente = _agente_ativo_do_canal(db, canal_id)
     if agente is None:
         return  # sem agente ativo → não cria jobs à toa
+    # Chave por conversa desligada → não enfileira (gate autoritativo fica em processar_reply).
+    ativo = db.execute(
+        text("SELECT ai_ativo FROM crm_whatsapp_conversas WHERE id = CAST(:cid AS uuid)"),
+        {"cid": str(conversa_id)},
+    ).scalar()
+    if not ativo:
+        return
     deb = str(int(agente.debounce_segundos or 40))
     payload = json.dumps(
         {
@@ -387,6 +394,8 @@ def processar_reply(db: Session, payload: dict) -> None:
     conversa = db.get(Conversa, uuid.UUID(str(conversa_id)))
     if conversa is None or conversa.deleted_at is not None:
         return
+    if not conversa.ai_ativo:
+        return  # chave do agente desligada nesta conversa → humano cuida (sem handoff)
     agente = _agente_ativo_do_canal(db, conversa.canal_id)
     if agente is None:
         return
