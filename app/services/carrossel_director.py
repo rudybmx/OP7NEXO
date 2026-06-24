@@ -102,12 +102,20 @@ def _system_prompt(db=None) -> str:
     return _SYSTEM_DIRETOR
 
 
+_MOLDE_DESC = {
+    "A": "newsjacking de evento/celebridade: capa com rosto/figura recortada + emocao extrema + headline-bomba; o resto desenvolve a licao por tras do evento",
+    "B": "feature/tutorial: fato -> 'isso mudou tudo' -> tutorial acionavel passo a passo -> antes/depois -> CTA",
+    "C": "tese conceitual 'X NAO E Y': 3 capas repetindo a formula -> lista do 'que e de verdade' -> sintese -> climax + prova social",
+}
+
+
 def _user_prompt(
     tema: str,
     n_slides: int,
     master_format: str,
     origem: str,
     referencia_desc: str | None,
+    molde: str | None = None,
 ) -> str:
     L = [
         f'Assunto/tema do carrossel: "{(tema or "").strip()}".',
@@ -116,8 +124,14 @@ def _user_prompt(
     ]
     if origem == "referencia" and referencia_desc:
         L.append(f"Baseie o estilo visual nesta referência extraída: {referencia_desc}.")
+    m = (molde or "").strip().upper()
+    if m in _MOLDE_DESC:
+        L.append(
+            f"USE OBRIGATORIAMENTE o molde {m} ({_MOLDE_DESC[m]}). Monte os slides EXATAMENTE "
+            f"nessa estrutura e devolva molde='{m}' no JSON."
+        )
     L.append(
-        "Capa no molde escolhido; respeite a curva de intensidade e a regra dos 2 CTAs "
+        "Capa no molde; respeite a curva de intensidade e a regra dos 2 CTAs "
         "(engajamento no penúltimo, conversão no último)."
     )
     L.append("Responda SOMENTE com o JSON do schema, sem comentários.")
@@ -151,6 +165,7 @@ def gerar_roteiro(
     origem: str = "manual",
     referencia_desc: str | None = None,
     db=None,
+    molde: str | None = None,
 ) -> tuple[RoteiroCarrossel, dict]:
     """Tema → roteiro validado. Faz 1 repair se a 1ª resposta for inválida.
 
@@ -160,7 +175,7 @@ def gerar_roteiro(
     client = _client_for("copy")
     model = get_ai_config("copy").model
     sistema = _system_prompt(db)
-    user = _user_prompt(tema, n_slides, master_format, origem, referencia_desc)
+    user = _user_prompt(tema, n_slides, master_format, origem, referencia_desc, molde)
 
     usage_total: dict = {}
     last_err: str | None = None

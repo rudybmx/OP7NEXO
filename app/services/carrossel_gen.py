@@ -69,6 +69,7 @@ def _publish(carrossel_id, event: str, data: dict) -> None:
 def _montar_prompt_slide(
     car: CriativoCarrossel, slide: CriativoCarrosselSlide,
     pers_items: list[dict] | None = None, obj_items: list[dict] | None = None,
+    tem_modelo_img: bool = False,
 ) -> str:
     """Prompt newsjacking INTEGRADO (texto queimado) a partir da copy + direção.
 
@@ -87,7 +88,7 @@ def _montar_prompt_slide(
         f"alto contraste, proporcao {orient}.",
     ]
     if slide.image_prompt:
-        L.append(f"Direcao visual: {slide.image_prompt}.")
+        L.append(f"Direcao visual (SIGA EXATAMENTE — ela manda na composicao da imagem): {slide.image_prompt}.")
     pal = []
     if paleta.get("tensao"):
         pal.append(f"fundo {paleta['tensao']} como cor dominante")
@@ -119,6 +120,12 @@ def _montar_prompt_slide(
             + estilo_ref[:600]
             + ". Integre de forma artistica, com profundidade e textura, evitando aparencia chapada."
         )
+    if tem_modelo_img:
+        L.append(
+            "MODELO DE REFERENCIA: ha uma imagem-modelo ANEXADA (referencia.png). Siga-a FIELMENTE "
+            "como guia de estilo, composicao, cores, clima e tipografia; adapte o conteudo deste "
+            "slide a esse modelo, mantendo a mesma linha visual."
+        )
 
     textos = []
     if copy.get("palavra_bomba"):
@@ -132,7 +139,7 @@ def _montar_prompt_slide(
     if copy.get("cta_continuacao"):
         textos.append(f'- seta/CTA de continuacao no rodape: "{copy["cta_continuacao"]}"')
     if textos:
-        L.append("Renderize, em portugues, integrados na arte e com GRAFIA CORRETA:")
+        L.append("Renderize EXATAMENTE estes textos, palavra por palavra (NAO troque, traduza, abrevie nem parafraseie; grafia identica), integrados na arte:")
         L.extend(textos)
 
     # Personagens/objetos: cada FOTO é uma pessoa/objeto DISTINTO (mapeamento foto->item).
@@ -216,6 +223,8 @@ def gerar_slide(
     db: Session, car: CriativoCarrossel, slide: CriativoCarrosselSlide, quality: str,
     personagens_bytes: dict[int, bytes] | None = None,
     objetos_bytes: dict[int, bytes] | None = None,
+    modelo_geral_bytes: bytes | None = None,
+    modelos_slide_bytes: dict[int, bytes] | None = None,
 ) -> CriativoGeracao:
     """Gera UM slide: cria a criativo_geracoes (prompt newsjacking), gera e linka.
 
@@ -224,7 +233,8 @@ def gerar_slide(
     """
     pers_items, pers_blist, obj_items, obj_blist = _resolver_refs_slide(
         car, slide, personagens_bytes, objetos_bytes)
-    prompt = _montar_prompt_slide(car, slide, pers_items, obj_items)
+    modelo_img = (modelos_slide_bytes or {}).get(slide.slide_index) or modelo_geral_bytes
+    prompt = _montar_prompt_slide(car, slide, pers_items, obj_items, tem_modelo_img=bool(modelo_img))
     ger = CriativoGeracao(
         workspace_id=car.workspace_id,
         user_id=car.user_id,
@@ -251,7 +261,8 @@ def gerar_slide(
     for tentativa in range(1, 4):
         image_gen.executar_geracao_integrada(
             db, ger, personagem_bytes=pers_blist or None, objeto_bytes=obj_blist or None,
-        )  # ger.prompt_final + fotos (personagens e objetos com rótulos distintos)
+            referencia_bytes=modelo_img,
+        )  # ger.prompt_final + fotos + modelo (referencia.png)
         if ger.status == "done" or ger.error_code not in _TRANSITORIOS or tentativa == 3:
             break
         log.info("[carrossel_gen] slide %s retry %s (transitório: %s)",
@@ -269,7 +280,9 @@ def gerar_slide(
 
 def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium",
                     personagens_bytes: dict[int, bytes] | None = None,
-                    objetos_bytes: dict[int, bytes] | None = None) -> None:
+                    objetos_bytes: dict[int, bytes] | None = None,
+                    modelo_geral_bytes: bytes | None = None,
+                    modelos_slide_bytes: dict[int, bytes] | None = None) -> None:
     """Gera todos os slides do carrossel (formato mestre). Idempotente por status.
 
     Pré-cheque de saldo do carrossel inteiro; débito SÓ por slide concluído.
@@ -310,7 +323,8 @@ def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium"
         db.commit()
         _publish(car.id, "carrossel.slide.start", {"index": slide.slide_index, "total": total})
 
-        ger = gerar_slide(db, car, slide, quality, personagens_bytes, objetos_bytes)
+        ger = gerar_slide(db, car, slide, quality, personagens_bytes, objetos_bytes,
+                          modelo_geral_bytes, modelos_slide_bytes)
 
         if ger.status == "done":
             estudio_wallet.debitar(
@@ -336,7 +350,9 @@ def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium"
 
 def regenerar_slide(db: Session, car: CriativoCarrossel, slide_index: int, quality: str = "medium",
                     personagens_bytes: dict[int, bytes] | None = None,
-                    objetos_bytes: dict[int, bytes] | None = None) -> CriativoGeracao:
+                    objetos_bytes: dict[int, bytes] | None = None,
+                    modelo_geral_bytes: bytes | None = None,
+                    modelos_slide_bytes: dict[int, bytes] | None = None) -> CriativoGeracao:
     """Regenera UM slide isolado (não refaz o carrossel). Débito só no sucesso."""
     slide = (
         db.query(CriativoCarrosselSlide)
@@ -366,7 +382,8 @@ def regenerar_slide(db: Session, car: CriativoCarrossel, slide_index: int, quali
 
     slide.status = "running"
     db.commit()
-    ger = gerar_slide(db, car, slide, quality, personagens_bytes, objetos_bytes)
+    ger = gerar_slide(db, car, slide, quality, personagens_bytes, objetos_bytes,
+                      modelo_geral_bytes, modelos_slide_bytes)
     if ger.status == "done":
         estudio_wallet.debitar(
             db, car.workspace_id, custo, "Regeneracao de slide (carrossel)",

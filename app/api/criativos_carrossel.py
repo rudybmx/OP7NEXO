@@ -83,6 +83,7 @@ class DiretorIn(BaseModel):
     referencia_desc: Optional[str] = Field(default=None, max_length=4000)
     referencia_base64: Optional[str] = None  # Origin B: imagem de referência de estilo
     estilo: Optional[str] = None  # integrado | chapado | ilustracao | foto
+    molde: Optional[str] = None   # A | B | C (força a estrutura); None = IA escolhe
     n_slides: int = Field(default=5, ge=2, le=10)
     master_format: str = "9x16"
 
@@ -130,6 +131,7 @@ def diretor(
             origem=payload.origem,
             referencia_desc=referencia_desc,
             db=db,
+            molde=payload.molde,
         )
     except carrossel_director.RoteiroInvalidoError as e:
         raise HTTPException(
@@ -236,6 +238,8 @@ class GerarIn(BaseModel):
     quality: str = "medium"
     personagens: list[ItemRefIn] = Field(default_factory=list)
     objetos: list[ItemRefIn] = Field(default_factory=list)
+    modelo_base64: Optional[str] = None                          # modelo de referência GERAL (imagem)
+    modelos_slide: dict[str, str] = Field(default_factory=dict)  # index(str) -> base64 (1 modelo por slide)
 
 
 def _coletar_refs(itens: list[ItemRefIn]) -> tuple[list[dict], dict[int, bytes]]:
@@ -255,6 +259,31 @@ def _coletar_refs(itens: list[ItemRefIn]) -> tuple[list[dict], dict[int, bytes]]
             except Exception:  # noqa: BLE001
                 pass
     return descs, bmap
+
+
+def _decode_modelo(b64: Optional[str]) -> Optional[bytes]:
+    if not b64:
+        return None
+    try:
+        raw = base64.b64decode(b64.split(",")[-1])
+        img, *_ = validar_e_normalizar_imagem(raw, error_code="invalid_reference")
+        return img
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _coletar_modelos(payload: "GerarIn") -> tuple[Optional[bytes], dict[int, bytes]]:
+    """Modelo de referência (imagem) p/ images.edit: geral + por-slide (index->bytes)."""
+    geral = _decode_modelo(payload.modelo_base64)
+    porslide: dict[int, bytes] = {}
+    for k, v in (payload.modelos_slide or {}).items():
+        img = _decode_modelo(v)
+        if img is not None:
+            try:
+                porslide[int(k)] = img
+            except (ValueError, TypeError):
+                pass
+    return geral, porslide
 
 
 def _criar_slides(db: Session, car: CriativoCarrossel) -> int:
@@ -321,12 +350,13 @@ def gerar(
 
     cid = car.id
     pgen, ogen = (pers_bytes or None), (obj_bytes or None)
+    mgen, msgen = _coletar_modelos(payload)
 
     def _run() -> None:
         with SessionLocal() as bdb:
             c = bdb.get(CriativoCarrossel, cid)
             if c is not None:
-                carrossel_gen.gerar_carrossel(bdb, c, quality, pgen, ogen)
+                carrossel_gen.gerar_carrossel(bdb, c, quality, pgen, ogen, mgen, msgen or None)
 
     threading.Thread(target=_run, daemon=True).start()
     return {"carrossel_id": str(car.id), "total": total, "custo_tokens": custo, "status": "queued"}
@@ -354,8 +384,9 @@ def regenerar_slide(
         car.director_json = dj
         db.commit()
         pgen, ogen = (pers_bytes or None), (obj_bytes or None)
+    mgen, msgen = _coletar_modelos(payload)
     try:
-        ger = carrossel_gen.regenerar_slide(db, car, slide_index, quality, pgen, ogen)
+        ger = carrossel_gen.regenerar_slide(db, car, slide_index, quality, pgen, ogen, mgen, msgen or None)
     except PermissionError:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, detail={"error_code": "saldo_insuficiente"})
     except ValueError as e:
