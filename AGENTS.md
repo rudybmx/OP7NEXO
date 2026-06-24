@@ -48,6 +48,9 @@ cd /root/op7nexo-front && graphify update .
 # 4. Ler o relatório do grafo
 cat /root/op7nexo-api/graphify-out/GRAPH_REPORT.md
 cat /root/op7nexo-front/graphify-out/GRAPH_REPORT.md
+
+# 5. Design system — OBRIGATÓRIO antes de criar/editar qualquer UI
+cat /root/op7nexo-front/docs/design-system.md
 ```
 
 ## SPEC-FIRST FLOW (OBRIGATÓRIO)
@@ -290,81 +293,16 @@ Referência completa das 10 heurísticas: https://www.nngroup.com/articles/ten-u
 
 ## Padrão Visual de Componentes
 
-### Tipografia (padrão — refator 2026-06; ver `docs/specs/tipografia/`)
-- Fonte: **Inter** (`--font-sans-base`). Base **14px** (`text-sm`) — tamanho majoritário do conteúdo.
-- Pesos: **400** corpo/células · **500** cabeçalho de tabela, botão, nav, label, valor de KPI · **600** título de seção/página · **700** restrito (H1/ênfase forte).
-- Tier compacto **11–12px** só para metadado denso, badge, timestamp e label de KPI. Tamanhos = defaults do Tailwind (`text-xs`=12 … `text-3xl`=30); 11px = `text-micro` / `.ds-micro`.
-- Classes semânticas (globals.css): `.ds-table-th` (14/500 sentence-case) · `.ds-table-td` (14/400) · `.ds-table-num` (tabular-nums) · `.ds-label` · `.ds-help` · `.ds-kpi-label` · `.ds-kpi-value` · `.ds-page-title` · `.ds-section-title`. Tabelas inline: `wsTableHeadStyle`/`wsTableCellStyle` (`ui/ws-table.tsx`).
-- ❌ NÃO usar `style={{ fontSize }}` inline nem `text-[Npx]` arbitrário em código novo. ❌ Cabeçalho de tabela NÃO é uppercase (uppercase só em label de KPI).
+> **Fonte única de verdade visual: [`docs/design-system.md`](docs/design-system.md).** Leia ANTES de criar/editar qualquer UI.
 
-### Cards KPI
-- Background: var(--card)
-- Border light: 0.5px solid rgba(15,39,68,0.10)
-- Border dark:  0.5px solid rgba(255,255,255,0.08)
-- Border-radius: 6px
-- Padding: 12px 14px
-- Label: **12px / peso 500** uppercase letter-spacing 0.06em color muted (`.ds-kpi-label`)
-- Value: **20px / peso 500** (`.ds-kpi-value`)
-- Delta: 11–12px — green #3b6d11 / red #a32d2d / neutral muted
-
-### Tabelas
-- Cabeçalho (th): **14px / peso 500 / sentence-case** (`.ds-table-th` ou `wsTableHeadStyle`). NÃO uppercase.
-- Célula (td): **14px / peso 400** (`.ds-table-td` ou `wsTableCellStyle`); colunas numéricas com `.ds-table-num` (tabular-nums).
-- Outer border light: 0.5px solid rgba(15,39,68,0.10)
-- Row border light:   0.5px solid rgba(15,39,68,0.08)
-- Header bg light:    rgba(15,39,68,0.04)
-- L0 hover light:     rgba(15,39,68,0.04)
-- L1 base light:      rgba(15,39,68,0.02)
-- L2 base light:      rgba(15,39,68,0.035)
-- Dark equivalents:   rgba(255,255,255,0.05/0.03/0.06)
-
-### Gráficos (Recharts)
-- Card wrapper: bg var(--card), border rgba(15,39,68,0.10) light / rgba(255,255,255,0.08) dark
-- Grid lines:   rgba(15,39,68,0.06) light / rgba(255,255,255,0.06) dark
-- Tooltip bg:   #0f2744 light / #1a1a1a dark
-- Tooltip text: #ffffff
-- Primary color:   #0f2744 (navy)
-- Secondary color: #c9a84c (gold)
-- Success: #3b6d11 | Warning: #854f0b | Danger: #a32d2d
-
-### Aba ativa
-- Color: #c9a84c
-- Border-bottom: 2px solid #c9a84c
-
-### Destaques numéricos
-- Leads/valores positivos em destaque: #c9a84c
-- CPL alto (ruim): #a32d2d
-- CPL bom (≤1): #3b6d11
-
-### Botões de filtro ativos
-- Background: rgba(201,168,76,0.12)
-- Color: #c9a84c
-- Border: 0.5px solid #c9a84c
-
----
-
-## Design System v2.0 — Glassmorphism
-
-### Tokens principais
-- Navy base:     #0E142A (`--ws-navy`)
-- Electric Blue: #3E5BFF (`--ws-blue`)
-- Cyan Neon:     #00F5FF dark / #00b8c8 light (`--ws-cyan-dark`)
-- Royal Purple:  #7A5AF8 (`--ws-purple`)
-- Hot Coral:     #FF5C8D (`--ws-coral`)
-- Green:         #0fa856 (`--ws-green`)
-
-### Glass card padrão
-```css
-background: var(--ws-glass-bg);
-border: 1px solid var(--ws-glass-border);
-border-radius: 14px;
-backdrop-filter: blur(16px);
-box-shadow: var(--ws-glass-shadow);
-```
-
-### Página de referência visual
-→ Acesse `/design-system` para ver todos os componentes em ação
-→ Guia detalhado: `src/components/design-system/ds-agentes.md`
+Resumo (tokens e detalhes completos no doc):
+- Estética **flat shadcn** + **Inter** 14px base. **shadcn/ui (Radix) + lucide-react** exclusivamente.
+- Paleta de marca: **primary = azul `#006EFF`** (sólido); navy `#00214d` (sidebar/estrutura); destructive `#c80010`. Gradientes (`--brand-gradient-primary/secondary`) **só** em sidebar/logo, login, badge urgente e notificação.
+- Superfícies **flat**: `bg-card` + `border` + `shadow-sm`. ❌ Sem glassmorphism / `backdrop-filter` em código novo.
+- Cores via **tokens semânticos** (`bg-card`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-primary`, `text-destructive`) — nunca hex fixo.
+- Tipografia via classes `.ds-*` (`globals.css`); ❌ sem `style={{ fontSize }}` nem `text-[Npx]` arbitrário. Ver `docs/specs/tipografia/`.
+- ❌ **NUNCA** HeroUI (`@heroui/*`) nem `react-icons` — ambos em remoção (Fase 1). ⚠️ Tokens `--ws-*` estão **deprecados** (repontados p/ a brand; saem na Fase 2).
+- Vitrine de componentes: `src/components/design-system/ds-agentes.md`.
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,

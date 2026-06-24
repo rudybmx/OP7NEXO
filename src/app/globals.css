@@ -63,26 +63,26 @@
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--text);
-  --color-card: var(--ws-glass-bg);
+  --color-card: var(--card);
   --color-card-foreground: var(--ws-text-1);
   --color-popover: var(--bg);
   --color-popover-foreground: var(--text);
   --color-primary: var(--gold);
-  --color-primary-foreground: var(--navy);
+  --color-primary-foreground: #ffffff;
   --color-secondary: var(--bg2);
   --color-secondary-foreground: var(--text);
   --color-muted: var(--bg2);
   --color-muted-foreground: var(--text2);
   --color-accent: var(--bg2);
   --color-accent-foreground: var(--text);
-  --color-destructive: #d94e4e;
+  --color-destructive: #c80010;
   --color-border: var(--border);
   --color-input: var(--border2);
   --color-ring: var(--gold);
   --color-sidebar: var(--navy);
   --color-sidebar-foreground: #ffffff;
   --color-sidebar-primary: var(--gold);
-  --color-sidebar-primary-foreground: var(--navy);
+  --color-sidebar-primary-foreground: #ffffff;
   --color-sidebar-accent: rgba(255, 255, 255, 0.07);
   --color-sidebar-accent-foreground: #ffffff;
   --color-sidebar-border: rgba(255, 255, 255, 0.08);
@@ -133,15 +133,25 @@
 }
 
 :root {
-  --bg: #f4f4f5;
+  --bg: #f5f5f5;
   --bg2: #ffffff;
-  --text: #37352f;
+  --text: #3d3d3d;
   --text2: #9b9a97;
   --border: #e9e9e7;
   --border2: #e2e1de;
-  --gold: #F26522;
-  --gold-light: #ff7b3d;
-  --navy: #004A8C;
+  --gold: #006EFF;            /* PRIMARY (azul brand). Nome legado --gold mantido p/ compat; renomear na Fase 2. */
+  --gold-light: #3b82f6;
+  --navy: #00214d;            /* navy da brand — sidebar e superfícies escuras */
+
+  /* ===== BRAND OP7NEXO — flat shadcn + acentos de marca ===== */
+  --brand-blue:               #006EFF;
+  --brand-navy:               #00214d;
+  --brand-navy-deep:          #000533;
+  --brand-red:                #c80010;
+  --brand-orange:             #ff6332;
+  --brand-gray:               #3d3d3d;
+  --brand-gradient-primary:   linear-gradient(135deg, #006EFF 0%, #000533 100%);
+  --brand-gradient-secondary: linear-gradient(135deg, #c80010 0%, #ff6332 100%);
   --sidebar-width: 240px;
   --header-height: 40px;
   --transition: 150ms ease;
@@ -149,20 +159,20 @@
   --radius-item: 4px;
   --background: var(--bg);
   --foreground: var(--text);
-  --card: var(--ws-glass-bg);
+  --card: #ffffff;
   --card-border: rgba(15,39,68,0.10);
   --card-foreground: var(--ws-text-1);
   --popover: var(--bg);
   --popover-foreground: var(--text);
   --primary: var(--gold);
-  --primary-foreground: var(--navy);
+  --primary-foreground: #ffffff;
   --secondary: var(--bg2);
   --secondary-foreground: var(--text);
   --muted: var(--bg2);
   --muted-foreground: var(--text2);
   --accent: var(--bg2);
   --accent-foreground: var(--text);
-  --destructive: #d94e4e;
+  --destructive: #c80010;
   --border-color: var(--border);
   --input: var(--border2);
   --ring: var(--gold);
@@ -170,7 +180,7 @@
   --sidebar: var(--navy);
   --sidebar-foreground: #ffffff;
   --sidebar-primary: var(--gold);
-  --sidebar-primary-foreground: var(--navy);
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: rgba(255, 255, 255, 0.07);
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: rgba(255, 255, 255, 0.08);
@@ -178,15 +188,15 @@
 }
 
 .dark {
-  --bg: #1e1e1e;
-  --bg2: #252525;
-  --text: #e3e3e0;
+  --bg: #000533;
+  --bg2: #00214d;
+  --text: #f5f5f5;
   --text2: #6b6b6b;
   --border: #2d2d2d;
   --border2: #2a2a2a;
   --background: var(--bg);
   --foreground: var(--text);
-  --card: var(--ws-glass-bg);
+  --card: #00214d;
   --card-border: rgba(255,255,255,0.08);
   --card-foreground: var(--ws-text-1);
   --popover: var(--bg);
@@ -253,9 +263,9 @@ button {
   --ws-coral-soft:    rgba(255, 92, 141, 0.12);
   --ws-green:         #0fa856;
   --ws-green-soft:    rgba(15, 168, 86, 0.12);
-  --ws-gold:          #F26522;
-  --ws-gold-soft:     rgba(242, 101, 34, 0.12);
-  --ws-gold-border:   rgba(242, 101, 34, 0.30);
+  --ws-gold:          #006EFF;  /* deprecated → usa PRIMARY (azul brand); remover na Fase 2 */
+  --ws-gold-soft:     rgba(0, 110, 255, 0.12);
+  --ws-gold-border:   rgba(0, 110, 255, 0.30);
 
   /* CLEAN CARDS LIGHT (ex-glass) */
   --ws-glass-bg:            #ffffff;
@@ -365,9 +375,9 @@ button {
   --ws-cyan-dark:     #00F5FF;
 
   /* GOLD — same in dark */
-  --ws-gold:          #c9a84c;
-  --ws-gold-soft:     rgba(201, 168, 76, 0.12);
-  --ws-gold-border:   rgba(201, 168, 76, 0.30);
+  --ws-gold:          #006EFF;  /* deprecated → azul brand; remover na Fase 2 */
+  --ws-gold-soft:     rgba(0, 110, 255, 0.12);
+  --ws-gold-border:   rgba(0, 110, 255, 0.30);
 }
 
 .react-flow {

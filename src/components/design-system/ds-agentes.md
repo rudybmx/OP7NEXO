@@ -1,5 +1,7 @@
 # Op7 Nexo — Guia para Agentes de IA
 
+> ⚠️ **Guia legado (estética glass v1 — em migração).** A fonte de verdade visual atual é [`../../../docs/design-system.md`](../../../docs/design-system.md): estética **flat shadcn**, sem glassmorphism. O "glass card" abaixo está **deprecado** — use `Card` de `@/components/ui/card`. Mantido só como referência de componentes até a consolidação (Fase 2).
+
 ## Stack
 Next.js 16 App Router · TypeScript · Tailwind CSS v4 · **Inter** (tipografia) · shadcn/ui · Recharts · lucide-react
 
