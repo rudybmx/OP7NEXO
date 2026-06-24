@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
@@ -281,6 +281,13 @@ def listar_conversas(
     responsavel_id: uuid.UUID | None = Query(None),
     busca: str | None = Query(None),
     workspace_id: uuid.UUID | None = Query(None),
+    # --- filtros V2 (todos opcionais; ausência => comportamento legado) ---
+    canal_id: uuid.UUID | None = Query(None),
+    escopo: str | None = Query(None, description="todas|novas|minhas|equipe"),
+    acompanhamento: str | None = Query(None, description="em_atendimento|sem_resposta"),
+    tipo: str | None = Query(None, description="todos|grupos|diretas"),
+    arquivadas: bool | None = Query(None, description="None=legado; true=só resolvidas; false=exclui resolvidas"),
+    nao_lidas: bool | None = Query(None),
     limit: int = Query(80, ge=1, le=200),
     offset: int = Query(0, ge=0),
     usuario: User = Depends(get_usuario_atual),
@@ -307,8 +314,7 @@ def listar_conversas(
     q = q.filter(Conversa.workspace_id == workspace_target)
     q = q.filter(visible_whatsapp_jid_clause(Conversa.remote_jid))
 
-    if status:
-        q = q.filter(Conversa.status == status)
+    # --- filtros diretos (legado + V2; todos antes de offset/limit => paginação correta) ---
     if equipe_id:
         q = q.filter(Conversa.equipe_id == equipe_id)
     if responsavel_id:
@@ -318,6 +324,58 @@ def listar_conversas(
             Conversa.ultima_mensagem.ilike(f"%{busca}%")
             | Conversa.remote_jid.ilike(f"%{busca}%")
         )
+    if canal_id:
+        q = q.filter(Conversa.canal_id == canal_id)
+    if tipo == "grupos":
+        q = q.filter(Conversa.is_group.is_(True))
+    elif tipo == "diretas":
+        q = q.filter(Conversa.is_group.is_(False))
+    if nao_lidas:
+        # Fase 1: contador GLOBAL. Read-state por usuário é a Fase 2 (débito declarado).
+        q = q.filter(Conversa.nao_lidas > 0)
+
+    # --- dimensão STATUS (precedência: status explícito > arquivadas > acompanhamento) ---
+    # `arquivadas` é tri-state: None=legado (sem filtro); True=só resolvidas; False=exclui resolvidas.
+    arquivada_view = arquivadas is True and not status
+    if status:
+        q = q.filter(Conversa.status == status)
+    elif arquivada_view:
+        q = q.filter(Conversa.status == "resolvido")
+    elif arquivadas is False:
+        q = q.filter(Conversa.status != "resolvido")
+
+    if not status and not arquivada_view:
+        if acompanhamento == "em_atendimento":
+            q = q.filter(Conversa.status == "em_atendimento")
+        elif acompanhamento == "sem_resposta":
+            # Espelha o job `leads_sem_resposta` (scheduler.py): mesma verdade de
+            # tempo/direção/piso. NÃO embute is_group — `tipo` controla grupos x
+            # diretas de forma ortogonal. Import lazy (scheduler já está carregado
+            # no boot; BackgroundScheduler só instancia, não inicia thread no import).
+            from app.services.scheduler import ATIVACAO_LEADS_SEM_RESPOSTA
+
+            corte = datetime.now(timezone.utc) - timedelta(hours=2)
+            q = q.filter(
+                Conversa.ultima_direcao == "saida",
+                Conversa.last_outbound_at.isnot(None),
+                Conversa.last_outbound_at < corte,
+                Conversa.last_outbound_at >= ATIVACAO_LEADS_SEM_RESPOSTA,
+                Conversa.status != "resolvido",
+            )
+
+    # --- dimensão ESCOPO (responsável); ortogonal ao status (exceto 'novas') ---
+    if escopo == "novas":
+        q = q.filter(Conversa.responsavel_id.is_(None))
+        if not status and not arquivada_view:
+            q = q.filter(Conversa.status == "nova")
+    elif escopo == "minhas":
+        q = q.filter(Conversa.responsavel_id == usuario.id)
+    elif escopo == "equipe":
+        q = q.filter(
+            Conversa.responsavel_id.isnot(None),
+            Conversa.responsavel_id != usuario.id,
+        )
+    # escopo "todas"/None => sem restrição de responsável
 
     q = q.order_by(Conversa.fixada.desc(), Conversa.ultima_msg_at.desc().nullslast())
     total = q.offset(offset).limit(limit).all()
