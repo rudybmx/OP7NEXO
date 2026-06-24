@@ -362,6 +362,11 @@ def processar_reply(db: Session, payload: dict) -> None:
         log.warning("[agente] config LLM inválida agente=%s: %s", agente.id, exc)
         _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="config")
         return
+    except Exception as exc:  # noqa: BLE001 — qualquer falha (token/rede/LLM) → handoff, nunca retry-loop
+        log.warning("[agente] falha ao gerar resposta agente=%s: %s", agente.id, exc)
+        db.rollback()
+        _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="erro_llm")
+        return
 
     score = res["score_confianca"]
     ti, to = res["tokens_input"], res["tokens_output"]
