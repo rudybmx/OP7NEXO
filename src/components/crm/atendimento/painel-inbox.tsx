@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Search, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
@@ -1104,7 +1105,7 @@ export function PainelInbox({
         })}
       </div>
 
-      {menuContexto && (
+      {menuContexto && createPortal(
         <MenuContextoConversa
           conversa={menuContexto.conversa}
           x={menuContexto.x}
@@ -1117,7 +1118,8 @@ export function PainelInbox({
           onAplicarEtiqueta={onAplicarEtiqueta}
           onRemoverEtiqueta={onRemoverEtiqueta}
           onResolverConversa={onResolverConversa}
-        />
+        />,
+        document.body,
       )}
     </div>
   )
