@@ -80,38 +80,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 4. Verificar permissao: usuario precisa ser admin da equipe da conversa
-    if (oldEquipeId) {
-      const membro = await db`
-        SELECT perfil
-        FROM public.crm_whatsapp_equipe_membros
-        WHERE equipe_id = ${oldEquipeId}::uuid
-          AND user_id = ${access.user.id}::uuid
-          AND perfil = 'admin'
-        LIMIT 1
-      `
-
-      if (membro.length === 0) {
-        return NextResponse.json(
-          { error: 'Permissao negada: apenas administradores da equipe podem transferir conversas' },
-          { status: 403 }
-        )
-      }
-    } else {
-      // Se a conversa nao tem equipe, verificar se o usuario e admin de pelo menos uma equipe
-      const algumAdmin = await db`
-        SELECT 1
-        FROM public.crm_whatsapp_equipe_membros
-        WHERE user_id = ${access.user.id}::uuid
-          AND perfil = 'admin'
-        LIMIT 1
-      `
-      if (algumAdmin.length === 0) {
-        return NextResponse.json(
-          { error: 'Permissao negada: apenas administradores de equipe podem transferir conversas' },
-          { status: 403 }
-        )
-      }
+    // 4. Permissao (Fase 1): atendente (company_agent) só transfere as DELE;
+    //    todos os outros papéis transferem qualquer uma. Substitui o gating antigo
+    //    por admin-de-equipe, que travava TODOS (há 0 equipes cadastradas).
+    if (access.user.role === 'company_agent' && oldResponsavelId !== access.user.id) {
+      return NextResponse.json(
+        { error: 'Sem permissao para transferir esta conversa' },
+        { status: 403 }
+      )
     }
 
     // 5. Montar entrada do historico
@@ -132,6 +108,7 @@ export async function POST(req: NextRequest) {
           UPDATE public.crm_whatsapp_conversas
           SET
             responsavel_id = ${novoResponsavelId}::uuid,
+            ai_ativo = false,
             equipe_id = ${novaEquipeId}::uuid,
             historico_transferencias = historico_transferencias || ${jsonTransferencia}::jsonb,
             updated_at = NOW()
@@ -147,6 +124,7 @@ export async function POST(req: NextRequest) {
           UPDATE public.crm_whatsapp_conversas
           SET
             responsavel_id = ${novoResponsavelId}::uuid,
+            ai_ativo = false,
             historico_transferencias = historico_transferencias || ${jsonTransferencia}::jsonb,
             updated_at = NOW()
           WHERE id = ${conversaId}::uuid

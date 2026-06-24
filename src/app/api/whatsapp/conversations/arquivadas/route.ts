@@ -23,6 +23,11 @@ export async function GET(request: NextRequest) {
 
     const db = getSql()
 
+    // Teto (Fase 1): company_agent só vê arquivadas onde é responsável; demais veem todas.
+    const tetoFilter = access.user.role === 'company_agent'
+      ? db`AND c.responsavel_id = ${access.user.id}::uuid`
+      : db``
+
     const rows = await db`
       SELECT
         c.id,
@@ -58,6 +63,7 @@ export async function GET(request: NextRequest) {
       JOIN public.crm_whatsapp_contatos ct ON ct.id = c.contato_id
       WHERE c.status = 'resolvido'
         AND c.workspace_id = ${workspaceIdParam}::uuid
+        ${tetoFilter}
       ORDER BY c.updated_at DESC
     `
 
