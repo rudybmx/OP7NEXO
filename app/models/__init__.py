@@ -48,6 +48,7 @@ from app.models.criativo import (
 from app.models.estudio import EstudioTokenSaldo, EstudioTokenTransacao
 from app.models.agente import (
     Agente,
+    AgenteBaseConhecimento,
     AgenteCanal,
     AgenteHabilidade,
     AgenteHorario,
@@ -109,6 +110,7 @@ __all__ = [
     "EstudioTokenSaldo",
     "EstudioTokenTransacao",
     "Agente",
+    "AgenteBaseConhecimento",
     "AgenteCanal",
     "AgenteHabilidade",
     "AgenteHorario",

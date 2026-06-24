@@ -46,7 +46,7 @@ def _prompt_efetivo(db: Session, agente: Agente) -> str:
     return draft.prompt_texto if draft else ""
 
 
-def _montar_system(agente: Agente, prompt: str) -> str:
+def _montar_system(agente: Agente, prompt: str, rag_chunks: list[str] | None = None) -> str:
     partes = [prompt.strip() or "Você é um assistente de atendimento prestativo e objetivo."]
     if agente.tom:
         partes.append(f"Tom de voz: {agente.tom}.")
@@ -57,6 +57,12 @@ def _montar_system(agente: Agente, prompt: str) -> str:
             "NUNCA responda sobre estes temas (recuse educadamente e ofereça atendimento humano): "
             + ", ".join(agente.blacklist_topicos)
             + "."
+        )
+    if rag_chunks:
+        bloco = "\n".join(f"- {c}" for c in rag_chunks)
+        partes.append(
+            "Use as informações abaixo, da base de conhecimento, para responder quando relevantes "
+            f"(se não cobrirem a pergunta, diga que vai verificar):\n{bloco}"
         )
     partes.append(
         'Responda SEMPRE em JSON válido com as chaves exatas: '
@@ -89,8 +95,11 @@ def gerar_resposta(db: Session, agente: Agente, mensagem: str, historico: list |
     JSON malformado do LLM → score 0 (sinaliza handoff). RAG/few-shot entram nas fases 3-4.
     """
     prompt = _prompt_efetivo(db, agente)
+    from app.services import embedding_service
+
+    rag_chunks = embedding_service.retrieve(db, agente.id, mensagem)
     content, usage = llm_client_service.chamar_json(
-        db, agente, _montar_system(agente, prompt), _montar_user(mensagem, historico)
+        db, agente, _montar_system(agente, prompt, rag_chunks), _montar_user(mensagem, historico)
     )
     tokens_input = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
     tokens_output = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
@@ -110,6 +119,7 @@ def gerar_resposta(db: Session, agente: Agente, mensagem: str, historico: list |
         "intent": intent,
         "tokens_input": tokens_input,
         "tokens_output": tokens_output,
+        "rag_chunks_usados": rag_chunks,
         "modelo": agente.modelo,
     }
 

@@ -113,6 +113,27 @@ class SandboxOut(BaseModel):
     tokens_estimados: int
 
 
+class BaseConhecimentoIn(BaseModel):
+    tipo: Literal["documento", "url", "faq"] = "faq"
+    titulo: str | None = Field(default=None, max_length=255)
+    conteudo: str | None = None  # texto (faq/documento) — obrigatório se não for url
+    url: str | None = None  # obrigatório quando tipo='url'
+
+
+class BaseConhecimentoOut(BaseModel):
+    id: str
+    tipo: str
+    titulo: str | None
+    preview: str
+    criado_em: str | None
+
+
+class BaseConhecimentoIngestOut(BaseModel):
+    titulo: str | None
+    tipo: str
+    chunks: int
+
+
 class AgenteListItemOut(BaseModel):
     id: str
     nome: str

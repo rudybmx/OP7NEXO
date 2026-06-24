@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.core.deps import exigir_platform_admin
 from app.models.agente import (
     Agente,
+    AgenteBaseConhecimento,
     AgenteCanal,
     AgenteHabilidade,
     AgenteHorario,
@@ -34,13 +35,16 @@ from app.schemas.agente import (
     CanalVinculadoOut,
     HabilidadeIn,
     HabilidadeOut,
+    BaseConhecimentoIn,
+    BaseConhecimentoIngestOut,
+    BaseConhecimentoOut,
     HorarioIn,
     HorarioOut,
     SandboxIn,
     SandboxOut,
     ToggleIn,
 )
-from app.services import agent_service, llm_client_service
+from app.services import agent_service, embedding_service, llm_client_service
 
 router = APIRouter(tags=["agentes"])
 
@@ -433,9 +437,112 @@ def testar_agente(
         resposta=res["resposta"],
         score_confianca=res["score_confianca"],
         intent=res["intent"],
-        rag_chunks_usados=[],
+        rag_chunks_usados=res.get("rag_chunks_usados", []),
         tokens_estimados=res["tokens_input"] + res["tokens_output"],
     )
+
+
+def _fetch_url_texto(url: str) -> str:
+    import re as _re
+
+    import httpx
+
+    try:
+        resp = httpx.get(url, timeout=20, follow_redirects=True)
+        resp.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Falha ao buscar URL: {exc}")
+    html = _re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", resp.text, flags=_re.S | _re.I)
+    texto = _re.sub(r"<[^>]+>", " ", html)
+    return _re.sub(r"\s+", " ", texto).strip()
+
+
+@router.post(
+    "/workspaces/{workspace_id}/agentes/{agente_id}/base-conhecimento",
+    response_model=BaseConhecimentoIngestOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def adicionar_base_conhecimento(
+    workspace_id: uuid.UUID,
+    agente_id: uuid.UUID,
+    payload: BaseConhecimentoIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Indexa um item na base de conhecimento (chunk + embedding). tipo=url busca o texto
+    da página. PDF não é suportado nesta fase (envie o texto como 'documento')."""
+    _get_workspace_or_404(workspace_id, db)
+    agente = _get_agente_or_404(workspace_id, agente_id, db)
+    if payload.tipo == "url":
+        if not payload.url:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="url obrigatória para tipo=url")
+        conteudo = _fetch_url_texto(payload.url)
+        titulo = payload.titulo or payload.url
+    else:
+        if not payload.conteudo or not payload.conteudo.strip():
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="conteudo obrigatório")
+        conteudo, titulo = payload.conteudo, payload.titulo
+    try:
+        n = embedding_service.indexar(db, agente.id, payload.tipo, titulo, conteudo)
+    except embedding_service.EmbeddingError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if n == 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Conteúdo vazio após processamento")
+    return BaseConhecimentoIngestOut(titulo=titulo, tipo=payload.tipo, chunks=n)
+
+
+@router.get(
+    "/workspaces/{workspace_id}/agentes/{agente_id}/base-conhecimento",
+    response_model=list[BaseConhecimentoOut],
+)
+def listar_base_conhecimento(
+    workspace_id: uuid.UUID,
+    agente_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    _get_workspace_or_404(workspace_id, db)
+    _get_agente_or_404(workspace_id, agente_id, db)
+    rows = (
+        db.query(AgenteBaseConhecimento)
+        .filter(AgenteBaseConhecimento.agente_id == agente_id)
+        .order_by(AgenteBaseConhecimento.criado_em.desc())
+        .all()
+    )
+    return [
+        BaseConhecimentoOut(
+            id=str(r.id),
+            tipo=r.tipo,
+            titulo=r.titulo,
+            preview=(r.conteudo[:160] + ("…" if len(r.conteudo) > 160 else "")),
+            criado_em=r.criado_em.isoformat() if r.criado_em else None,
+        )
+        for r in rows
+    ]
+
+
+@router.delete(
+    "/workspaces/{workspace_id}/agentes/{agente_id}/base-conhecimento/{kb_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remover_base_conhecimento(
+    workspace_id: uuid.UUID,
+    agente_id: uuid.UUID,
+    kb_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    _get_workspace_or_404(workspace_id, db)
+    _get_agente_or_404(workspace_id, agente_id, db)
+    row = (
+        db.query(AgenteBaseConhecimento)
+        .filter(AgenteBaseConhecimento.id == kb_id, AgenteBaseConhecimento.agente_id == agente_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item não encontrado")
+    db.delete(row)
+    db.commit()
 
 
 @router.delete("/workspaces/{workspace_id}/agentes/{agente_id}", status_code=status.HTTP_204_NO_CONTENT)

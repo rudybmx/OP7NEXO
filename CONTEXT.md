@@ -345,6 +345,12 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - **Robustez:** `processar_reply` faz handoff em **qualquer** falha de geração (não só `LLMConfigError`) — evita retry-loop/dead_letter.
 - **PENDENTE:** envio Instagram/Facebook (hoje → handoff); seed de preço em `ai_model_pricing` (sem isso, custo no dashboard = 'sem_preco'); msg de saída persiste via echo fromMe do provider. **Deploy do worker exige `deploy.sh worker`** (não entra no `both`); migration deve subir junto do código (deploy.sh NÃO roda alembic).
 
+### ✅ Implementado (2026-06-24) — Central de Agentes: Fase 3 (RAG + pgvector) [backend]
+- **Migrations 087/088**: **087** `CREATE EXTENSION IF NOT EXISTS vector` (gate — falha se a imagem do Postgres não for `pgvector/pgvector:pg16`); **088** `agente_base_conhecimento` (chunks: `tipo` documento/url/faq, `titulo`, `conteudo`, `embedding vector(1536)`, índice **hnsw** `vector_cosine_ops`). Model `app/models/agente/agente_base_conhecimento.py` (coluna `embedding` NÃO mapeada — manipulada via SQL cru, sem pgvector-python).
+- **`app/services/embedding_service.py`**: `embed` (OpenAI `text-embedding-3-small` 1536d; chave do provider OpenAI no banco, fallback `.env`; cache Redis best-effort), `chunk_text` (800/overlap 120), `indexar` (chunk+embed+INSERT `CAST(:v AS vector)`), `retrieve` (top-K `embedding <=> CAST(:q AS vector)`, guard "sem KB→[]", degrada a [] em qualquer falha). `agent_service.gerar_resposta` injeta os chunks no system prompt e retorna `rag_chunks_usados` (sandbox `/testar` agora mostra).
+- **Endpoints** (`app/api/agentes.py`): `POST/GET/DELETE /workspaces/{id}/agentes/{id}/base-conhecimento` (POST: faq/documento por texto, url via fetch+strip HTML; **PDF não suportado** — enviar texto). Validado E2E em **pgvector isolado** (migrations 084..088; indexar/retrieve/injeção/endpoints — 10/10).
+- ⚠️ **DEPLOY:** 087/088 exigem pgvector. **Antes do swap da imagem, migrar só até `086`** (`alembic upgrade 086`), NÃO `head` — senão 087 falha. Front (BaseConhecimentoManager) e Fase 4 pendentes.
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos
