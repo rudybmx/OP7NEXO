@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { MessageCircle } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
-import { useConversas } from '@/hooks/use-conversas'
+import { useConversas, type V2Filtros } from '@/hooks/use-conversas'
 import { useMensagens } from '@/hooks/use-mensagens'
 import { useEnviarMensagem } from '@/hooks/use-enviar-mensagem'
 import { useAssumirConversa } from '@/hooks/use-assumir-conversa'
@@ -18,6 +18,8 @@ import { useAtualizarConversa } from '@/hooks/use-atualizar-conversa'
 import { useEtiquetas } from '@/hooks/use-etiquetas'
 import { useBreakpoint } from '@/hooks/use-mobile'
 import { PainelInbox } from './painel-inbox'
+import { FILTROS_V2_PADRAO, type FiltrosV2State } from './filtros-atendimento-v2'
+import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { PainelChat } from './painel-chat'
 import { PainelContato } from './painel-contato'
 import { ModalAssumir } from './modal-assumir'
@@ -42,6 +44,9 @@ export function PaginaAtendimento() {
   const [textoMensagem, setTextoMensagem] = useState('')
   const [aoVivo, setAoVivo] = useState(false)
   const [canalSelecionadoId, setCanalSelecionadoId] = useState<string>('todos')
+  // Flag de rollout da barra de filtros V2 (server-side). Flip p/ true + deploy do front p/ ativar.
+  const FILTROS_V2 = false
+  const [filtrosV2, setFiltrosV2] = usePersistedState<FiltrosV2State>('crm-atd-filtros-v2', FILTROS_V2_PADRAO)
 
   // Breakpoint compartilhado (hook único; repassado por prop aos painéis).
   const { isMobile, isTablet, isDesktop } = useBreakpoint()
@@ -54,12 +59,23 @@ export function PaginaAtendimento() {
 
   const { canais } = useWhatsappCanais(workspaceAtual, workspaceResolvido)
 
+  const v2Filtros: V2Filtros | null = FILTROS_V2
+    ? {
+        escopo: filtrosV2.escopo === 'todas' ? undefined : filtrosV2.escopo,
+        acompanhamento: filtrosV2.acompanhamento || undefined,
+        tipo: filtrosV2.tipo === 'todos' ? undefined : filtrosV2.tipo,
+        arquivadas: filtrosV2.arquivadas,
+        naoLidas: filtrosV2.naoLidas,
+        responsavelId: filtrosV2.responsavelId || undefined,
+      }
+    : null
   const { conversas, isLoading, error, refetch } = useConversas(
     filtroAtivo === 'todas' ? undefined : filtroAtivo,
     undefined,
     workspaceAtual ?? undefined,
     workspaceResolvido,
-    canalSelecionadoId === 'todos' ? undefined : canalSelecionadoId
+    canalSelecionadoId === 'todos' ? undefined : canalSelecionadoId,
+    v2Filtros,
   )
   const { equipes } = useEquipes(workspaceAtual ?? undefined, workspaceResolvido)
   const { agentes } = useAgentesDisponiveis(workspaceAtual ?? undefined, workspaceResolvido)
@@ -424,6 +440,9 @@ export function PaginaAtendimento() {
           canais={canais}
           canalSelecionadoId={canalSelecionadoId}
           onCanalChange={setCanalSelecionadoId}
+          filtrosV2={FILTROS_V2 ? filtrosV2 : null}
+          onFiltrosV2Change={setFiltrosV2}
+          agentes={agentes}
           etiquetasWorkspace={etiquetas}
           onMarcarNaoLido={handleMarcarNaoLido}
           onToggleFavorita={handleToggleFavorita}
