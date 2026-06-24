@@ -584,10 +584,11 @@ export function PainelInbox({
     y: number
   } | null>(null)
 
-  const handleContextMenu = useCallback((e: React.MouseEvent, conversa: ConversaApi) => {
+  const handleAbrirMenu = useCallback((e: React.MouseEvent, conversa: ConversaApi) => {
     e.preventDefault()
-    e.stopPropagation()
-    setMenuContexto({ conversa, x: e.clientX, y: e.clientY })
+    e.stopPropagation() // não selecionar/abrir a conversa
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setMenuContexto({ conversa, x: rect.right, y: rect.bottom + 4 })
   }, [])
 
   const filtros = [
@@ -890,7 +891,6 @@ export function PainelInbox({
             <div
               key={conversa.id}
               onClick={() => onSelectConversa(conversa.id)}
-              onContextMenu={e => handleContextMenu(e, conversa)}
               style={{
                 cursor: 'pointer',
                 position: 'relative',
@@ -1045,7 +1045,7 @@ export function PainelInbox({
                   </div>
                 </div>
 
-                <div style={{ minWidth: 34, display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ minWidth: 34, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', alignSelf: 'stretch', gap: 6 }}>
                   {conversa.naoLidas > 0 && (
                     <span style={{
                       minWidth: 22,
@@ -1064,6 +1064,39 @@ export function PainelInbox({
                       {unreadCount}
                     </span>
                   )}
+                  <button
+                    type="button"
+                    aria-label="Mais ações"
+                    title="Mais ações"
+                    onClick={e => handleAbrirMenu(e, conversa)}
+                    style={{
+                      marginTop: 'auto',
+                      width: 26,
+                      height: 26,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 7,
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--ws-text-3)',
+                      opacity: 0.6,
+                      cursor: 'pointer',
+                      transition: 'opacity 0.15s, background 0.15s',
+                    }}
+                    onMouseEnter={e => {
+                      const el = e.currentTarget as HTMLElement
+                      el.style.opacity = '1'
+                      el.style.background = 'rgba(15,23,42,0.06)'
+                    }}
+                    onMouseLeave={e => {
+                      const el = e.currentTarget as HTMLElement
+                      el.style.opacity = '0.6'
+                      el.style.background = 'transparent'
+                    }}
+                  >
+                    <MoreVertical size={16} />
+                  </button>
                 </div>
               </div>
             </div>
