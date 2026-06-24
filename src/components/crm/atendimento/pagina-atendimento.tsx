@@ -218,8 +218,8 @@ export function PaginaAtendimento() {
     }
     const conversa = conversas.find(c => c.id === id)
     setConversaAtivaId(id)
-    // Marcar como lida ao abrir (fire and forget)
-    if (conversa && conversa.naoLidas > 0) {
+    // Marcar como lida ao abrir (fire and forget) — limpa contador e marcação manual
+    if (conversa && (conversa.naoLidas > 0 || conversa.marcadaNaoLida)) {
       marcarLido(id)
     }
     // Mantido atrás de flag local para reativação futura.

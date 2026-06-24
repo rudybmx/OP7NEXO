@@ -987,9 +987,9 @@ export function PainelInbox({
                     alignItems: 'center',
                     gap: 6,
                     minWidth: 0,
-                    color: conversa.naoLidas > 0 ? 'var(--ws-text-1)' : 'var(--ws-text-3)',
+                    color: (conversa.naoLidas > 0 || conversa.marcadaNaoLida) ? 'var(--ws-text-1)' : 'var(--ws-text-3)',
                     fontSize: 12,
-                    fontWeight: conversa.naoLidas > 0 ? 600 : 400,
+                    fontWeight: (conversa.naoLidas > 0 || conversa.marcadaNaoLida) ? 600 : 400,
                   }}>
                     {conversa.badges?.mentioned && <AtSign size={11} style={{ flexShrink: 0, color: '#c9a84c' }} />}
                     {conversa.badges?.hasMedia && <Paperclip size={11} style={{ flexShrink: 0 }} />}
@@ -1004,6 +1004,18 @@ export function PainelInbox({
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                    {/* Marcada manualmente como não lida */}
+                    {conversa.marcadaNaoLida && (
+                      <span style={{
+                        ...chipBaseStyle,
+                        background: 'rgba(163, 45, 45, 0.12)',
+                        color: '#a32d2d',
+                        border: '1px solid rgba(163, 45, 45, 0.30)',
+                        fontWeight: 600,
+                      }}>
+                        Não lido
+                      </span>
+                    )}
                     {/* Canal: channelLabel se disponível, senão providerLabel */}
                     <span
                       title={channelLabel || providerLabel}

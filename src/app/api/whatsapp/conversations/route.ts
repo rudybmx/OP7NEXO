@@ -16,6 +16,7 @@ interface BackendConversaRow {
   remote_jid: string
   status: string
   nao_lidas?: number | null
+  marcada_nao_lida?: boolean | null
   ultima_mensagem?: string | null
   ultima_msg_at?: string | null
   agente?: string | null
@@ -251,6 +252,7 @@ export async function GET(request: NextRequest) {
       status: row.status,
       iaAtiva: row.ai_ativo ?? false,
       naoLidas: row.nao_lidas || 0,
+      marcadaNaoLida: row.marcada_nao_lida ?? false,
       ultimaMensagem: row.ultima_mensagem || '',
       ultimaMensagemAt: iso(row.ultima_msg_at),
       agente: row.agente || 'Op7 Nexo',

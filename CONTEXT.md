@@ -220,6 +220,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 ### ✅ Implementado (2026-06-24) — Central de Agentes: chave do agente por conversa (Switch)
 - Switch (HeroUI v3) no compositor de `/crm/atendimento/conversas` (`src/components/crm/atendimento/input-mensagem.tsx`), acima do "+": liga/desliga o agente IA **por conversa** (estado `conversa.iaAtiva`, otimista + reverte em falha). Grava via `useAtualizarConversa` → proxy `PATCH /api/whatsapp/conversations/{id}/atualizar` (campo `iaAtiva` → coluna `ai_ativo`, SQL direto). O proxy GET (`conversations/route.ts`) agora mapeia `iaAtiva` da coluna real `ai_ativo` (antes hardcoded `true`). Backend: migration 091 + gate em `processar_reply` (default OFF). Desligado = humano cuida; ligado = agente responde só naquela conversa.
 
+### ✅ Implementado (2026-06-24) — CRM Atendimento: menu kebab + selo "Não lido" manual
+- Botão de três pontinhos em cada item do inbox (`painel-inbox.tsx`) abre o `MenuContextoConversa` (favoritar/fixar/marcar não-lido/etiquetar/resolver); menu renderizado via **portal** (`createPortal(document.body)`) para escapar do `backdrop-filter`+`overflow:hidden` da coluna `.atd-col-bg`.
+- **Marcar como não lido** grava `marcada_nao_lida` (backend migration 092) via proxy SQL `PATCH /conversations/{id}/marcar-nao-lido` (não mexe em `nao_lidas`); item mostra **selo vermelho "Não lido"** e fica em destaque, distinto do badge verde de mensagens reais. Entrar na conversa → `marcar-lido` limpa `nao_lidas` + `marcada_nao_lida`. GET (`conversations/route.ts`) mapeia `marcadaNaoLida`.
+
 ### 🧩 Code-complete, INERTE (2026-06-24) — CRM Atendimento: filtros server-side V2 (`FILTROS_V2`)
 - **Route handler** `GET /api/whatsapp/conversations`: sob `?v2=1`, repassa `canal_id/escopo/acompanhamento/tipo/arquivadas/nao_lidas/responsavel_id` ao FastAPI `GET /conversas` e **pula o filtro-em-memória pós-limit** (corrige bug de paginação). Caminho legado (sem `v2`) inalterado.
 - `use-conversas.ts`: 6º arg opcional `V2Filtros` → caminho v2 com paginação real por **offset** (UI "carregar mais" é follow-up — `loadMore`/`hasMore` ainda não consumidos na página).

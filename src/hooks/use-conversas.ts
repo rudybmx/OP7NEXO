@@ -81,6 +81,7 @@ export interface ConversaApi {
   status: StatusConversa
   iaAtiva: boolean
   naoLidas: number
+  marcadaNaoLida?: boolean
   ultimaMensagem: string
   ultimaMensagemAt: string | null
   agente: string
