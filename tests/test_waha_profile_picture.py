@@ -575,6 +575,74 @@ def test_process_group_enrichment_marca_fetched_at_mesmo_sem_foto(monkeypatch):
     assert db.conversation_row["group_avatar_fetched_at"] is not None
 
 
+def test_process_group_enrichment_evolution_fallback_user_avatar(monkeypatch):
+    """Evolution: /group/info devolve nome mas pictureUrl=None; o job faz fallback
+    para buscar_foto_perfil (/user/avatar aceita @g.us) e re-hospeda a foto do grupo."""
+    workspace_id = str(uuid.uuid4())
+    canal_id = str(uuid.uuid4())
+    conversa_id = str(uuid.uuid4())
+    db = _AvatarDb(
+        canal_row={
+            "id": canal_id,
+            "workspace_id": workspace_id,
+            "tipo": "whatsapp_evolution",
+            "evolution_instance_id": "op7-evo",
+            "config": {"evolution": {"instance_token": "tok"}},
+        },
+        contact_row={"id": str(uuid.uuid4()), "workspace_id": workspace_id},
+        conversation_row={
+            "id": conversa_id,
+            "workspace_id": workspace_id,
+            "group_name": None,
+            "group_avatar_url": None,
+            "group_avatar_fetched_at": None,
+        },
+    )
+
+    # /group/info: nome ok, SEM pictureUrl (o caso real do evolution-go 0.7.x)
+    monkeypatch.setattr(
+        "app.services.evolution.buscar_grupo",
+        lambda instance, group_jid, token=None: {"subject": "OP7 | 010 CH5", "pictureUrl": None},
+    )
+    # /user/avatar com @g.us: devolve a foto real do grupo
+    fb_calls: list[str] = []
+
+    def fake_foto(instance, jid, token=None, raise_on_transient=False):
+        fb_calls.append(jid)
+        assert raise_on_transient is True
+        return {"url": "https://pps.whatsapp.net/grupo-010.jpg", "mime_type": "image/jpeg"}
+
+    monkeypatch.setattr("app.services.evolution.buscar_foto_perfil", fake_foto)
+    monkeypatch.setattr(
+        contact_avatar_enrichment,
+        "download_and_put",
+        lambda bucket, object_name, source_url, content_type="application/octet-stream": (
+            f"https://api.op7.test/meta/storage/{bucket}/{object_name}"
+        ),
+    )
+
+    result = contact_avatar_enrichment.process_group_enrichment_job(
+        db,
+        {
+            "workspace_id": workspace_id,
+            "job_payload": {
+                "conversa_id": conversa_id,
+                "group_jid": "120363404411371476@g.us",
+                "instance": "op7-evo",
+                "canal_id": canal_id,
+            },
+        },
+    )
+
+    assert result["status"] == "done"
+    assert result["has_avatar"] is True
+    assert fb_calls == ["120363404411371476@g.us"]  # fallback chamado com o JID do grupo
+    assert db.conversation_row["group_avatar_url"] == (
+        "https://api.op7.test/meta/storage/whatsapp-avatars/groups/120363404411371476_g_us.jpg"
+    )
+    assert db.conversation_row["group_avatar_fetched_at"] is not None
+
+
 def test_worker_processa_job_contact_avatar_enrichment_e_pubblica_refresh(monkeypatch):
     workspace_id = str(uuid.uuid4())
     job_id = str(uuid.uuid4())

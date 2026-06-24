@@ -109,7 +109,7 @@ def backfill_contatos(db, *, workspace: str | None, limit: int, where_extra: str
     return {"candidatos": len(rows), "enfileirados": enqueued}
 
 
-def backfill_grupos(db, *, workspace: str | None, limit: int, apply: bool) -> dict[str, int]:
+def backfill_grupos(db, *, workspace: str | None, limit: int, apply: bool, where_extra: str = "conv.group_avatar_url LIKE :pps") -> dict[str, int]:
     rows = db.execute(
         text(f"""
             SELECT conv.id::text AS conversa_id, conv.remote_jid AS group_jid,
@@ -117,7 +117,8 @@ def backfill_grupos(db, *, workspace: str | None, limit: int, apply: bool) -> di
                    ce.evolution_instance_id, ce.config
             FROM public.crm_whatsapp_conversas conv
             JOIN public.canais_entrada ce ON ce.id = conv.canal_id
-            WHERE conv.group_avatar_url LIKE :pps
+            WHERE conv.is_group = true AND conv.ativo = true
+              AND {where_extra}
               AND (:ws IS NULL OR conv.workspace_id = CAST(:ws AS uuid))
             {_limit_sql(limit)}
         """),
@@ -183,6 +184,14 @@ def main(argv: list[str] | None = None) -> int:
                 apply=apply,
             )
             print(f"  null-tried:     candidatos={null_tried['candidatos']} enfileirados={null_tried['enfileirados']}")
+
+            # 4) Grupos sem foto que já foram marcados (fetched_at setado) — re-tentar com
+            #    o novo fallback /user/avatar (a foto do grupo passa a ser recuperável).
+            grupos_null = backfill_grupos(
+                db, workspace=args.workspace, limit=args.limit, apply=apply,
+                where_extra="conv.group_avatar_url IS NULL AND conv.group_avatar_fetched_at IS NOT NULL",
+            )
+            print(f"  grupos null:    candidatos={grupos_null['candidatos']} enfileirados={grupos_null['enfileirados']}")
 
         if not apply:
             print("  (dry-run: nada foi alterado — rode com --apply para aplicar)")
