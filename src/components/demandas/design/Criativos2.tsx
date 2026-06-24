@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Sparkles, Wand2, RefreshCw, Loader2, AlertCircle, ArrowRight, ArrowLeft, Download,
-  Image as ImageIcon, ScanSearch, History, LayoutGrid, Check, Trash2, ShieldCheck, X, Maximize2, Zap,
+  Image as ImageIcon, ScanSearch, History, LayoutGrid, Check, Trash2, ShieldCheck, X, Maximize2, Zap, FolderOpen,
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { usePersistedState } from '@/hooks/use-estado-persistido'
@@ -366,6 +366,24 @@ export function Criativos2() {
     if (h.tema) setTema(h.tema)
     if (h.director_json?.estilo) setEstilo(h.director_json.estilo)
   }
+  // Reabrir um carrossel salvo: restaura roteiro + carrega os slides/imagens no box.
+  const abrirHistorico = (h: HistItem) => {
+    reset(); setAba('criar')
+    if (h.tema) setTema(h.tema)
+    if (h.director_json) setRoteiro(h.director_json)
+    if (h.director_json?.estilo) setEstilo(h.director_json.estilo)
+    setCarrosselId(h.id)
+    carregarEstado(h.id)
+  }
+  // Download de verdade (o atributo `download` é ignorado em URL cross-origin).
+  const baixar = async (url: string, nome: string) => {
+    try {
+      const r = await fetch(url); const b = await r.blob()
+      const u = URL.createObjectURL(b); const a = document.createElement('a')
+      a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(u), 1000)
+    } catch { window.open(url, '_blank') }
+  }
 
   // ───── UI: pool de personagens/objetos (upload + descrição) ─────
   // Melhorar com IA a descrição de um personagem/objeto do pool, integrando o contexto
@@ -447,7 +465,7 @@ export function Criativos2() {
           </button>
           <div className="flex items-center gap-1 p-1 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)]">
             {([['criar', 'Criar', Wand2], ['historicos', 'Históricos', History], ['modelos', 'Modelos', LayoutGrid]] as const).map(([id, lbl, Icon]) => (
-              <button key={id} onClick={() => { setAba(id); if (id === 'historicos' && historicos === null) carregarHistoricos() }}
+              <button key={id} onClick={() => { setAba(id); if (id === 'historicos') carregarHistoricos() }}
                 className={`h-8 px-3 inline-flex items-center gap-1.5 rounded-[var(--ws-radius-md,8px)] text-sm transition ${aba === id ? 'bg-[var(--ws-blue)] text-white' : 'text-[var(--ws-text-2)] hover:text-[var(--ws-text-1)]'}`}>
                 <Icon size={14} /> {lbl}
               </button>
@@ -721,7 +739,7 @@ export function Criativos2() {
                       <button onClick={() => regenerarSlide(s.slide_index)} disabled={regenerando !== null} title="Regenerar" className="ds-help inline-flex items-center gap-1 hover:text-[var(--ws-text-1)] disabled:opacity-50">
                         {regenerando === s.slide_index ? <><Loader2 size={12} className="animate-spin" /> Regenerando…</> : <><RefreshCw size={12} /> Regenerar</>}
                       </button>
-                      {s.base_image_url && <a href={s.base_image_url} target="_blank" rel="noreferrer" download title="Baixar" className="ds-help hover:text-[var(--ws-text-1)]"><Download size={13} /></a>}
+                      {s.base_image_url && <button onClick={() => baixar(s.base_image_url!, `slide-${s.slide_index}.png`)} title="Baixar" className="ds-help hover:text-[var(--ws-text-1)]"><Download size={13} /></button>}
                     </div>
                   </div>
                 ))}
@@ -741,7 +759,7 @@ export function Criativos2() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {(historicos || []).map(h => (
               <div key={h.id} className={`${card} overflow-hidden flex flex-col`}>
-                <div className={`relative ${h.master_format === '4x3' ? 'aspect-[4/3]' : 'aspect-[9/16]'} bg-[var(--ws-glass-border)]`}>
+                <div onClick={() => abrirHistorico(h)} title="Abrir" className={`relative cursor-pointer ${h.master_format === '4x3' ? 'aspect-[4/3]' : 'aspect-[9/16]'} bg-[var(--ws-glass-border)]`}>
                   {h.capa ? <img src={h.capa} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><ImageIcon size={20} className="text-[var(--ws-text-3)]" /></div>}
                   {!!h.n_prontos && <span className="absolute top-1.5 right-1.5 px-1.5 h-5 rounded-full bg-black/60 text-white text-[11px] flex items-center justify-center">{h.n_prontos}</span>}
                 </div>
@@ -749,8 +767,9 @@ export function Criativos2() {
                   <span className="text-sm text-[var(--ws-text-1)] line-clamp-2" title={h.tema || ''}>{h.tema || 'Sem tema'}</span>
                   <span className="ds-micro text-[var(--ws-text-3)]">{h.criado_em ? new Date(h.criado_em).toLocaleDateString('pt-BR') : ''} · {h.status}</span>
                   <div className="flex items-center gap-2 pt-1">
-                    {h.capa && <a href={h.capa} target="_blank" rel="noreferrer" download className="ds-help hover:text-[var(--ws-text-1)]" title="Baixar capa"><Download size={13} /></a>}
-                    <button onClick={() => usarComoModelo(h)} className="ds-help hover:text-[var(--ws-text-1)]" title="Usar como modelo"><LayoutGrid size={13} /></button>
+                    <button onClick={() => abrirHistorico(h)} className="ds-help hover:text-[var(--ws-text-1)]" title="Abrir (ver, baixar, regerar)"><FolderOpen size={13} /></button>
+                    {h.capa && <button onClick={() => baixar(h.capa!, `${(h.tema || 'carrossel').slice(0, 30)}-capa.png`)} className="ds-help hover:text-[var(--ws-text-1)]" title="Baixar capa"><Download size={13} /></button>}
+                    <button onClick={() => usarComoModelo(h)} className="ds-help hover:text-[var(--ws-text-1)]" title="Usar como modelo (novo a partir deste)"><LayoutGrid size={13} /></button>
                     <button onClick={() => excluirHist(h.id)} className="ds-help ml-auto hover:text-[#a32d2d]" title="Excluir"><Trash2 size={13} /></button>
                   </div>
                 </div>
