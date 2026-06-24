@@ -49,8 +49,8 @@ export function PaginaAtendimento() {
     'op7-nexo-atendimento-filtro-etiquetas',
     []
   )
-  // Flag de rollout da barra de filtros V2 (server-side). Flip p/ true + deploy do front p/ ativar.
-  const FILTROS_V2 = false
+  // Flag de rollout da barra de filtros V2 (server-side). ATIVA em prod (2026-06-24).
+  const FILTROS_V2 = true
   const [filtrosV2, setFiltrosV2] = usePersistedState<FiltrosV2State>('crm-atd-filtros-v2', FILTROS_V2_PADRAO)
 
   // Breakpoint compartilhado (hook único; repassado por prop aos painéis).
