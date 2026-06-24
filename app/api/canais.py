@@ -3396,6 +3396,16 @@ async def receber_webhook_waha(
     except Exception:
         raw = {}
 
+    # TEMP DEBUG (waha-quoted): logar raw quando indicar reply/menção, p/ confirmar a
+    # estrutura do contextInfo no WAHA. REMOVER após validação.
+    try:
+        import json as _json_dbg
+        _raw_dbg = _json_dbg.dumps(raw, default=str)
+        if any(k in _raw_dbg.lower() for k in ('"quotedmessage"', '"contextinfo"', '"replyto"', '"mentionedjid"')):
+            logger.warning("[waha-quoted-debug] %s", _raw_dbg[:4000])
+    except Exception:
+        pass
+
     canal = db.query(CanalEntrada).filter(
         CanalEntrada.webhook_token == token,
         CanalEntrada.tipo == "whatsapp_waha",
