@@ -16,6 +16,7 @@ from app.core.deps import exigir_platform_admin
 from app.models.agente import LlmProvider, LlmProviderModelo, LlmProviderToken
 from app.models.user import User
 from app.schemas.llm_provider import (
+    CarregarModelosOut,
     ModeloIn,
     ModeloOut,
     ProviderIn,
@@ -168,6 +169,71 @@ def salvar_token(
         configurado=True,
         token_mask=tok.token_mask,
         ativo=tok.ativo,
+    )
+
+
+@router.post("/llm-providers/{provider_id}/carregar-modelos", response_model=CarregarModelosOut)
+def carregar_modelos(
+    provider_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Lista os modelos do provider (`GET {base_url}/models`, openai-compatible) usando o token
+    salvo e faz **upsert** em `llm_provider_modelos` (não apaga os existentes). Serve OpenAI,
+    OpenRouter, DeepSeek e opencode (todos openai-compatible)."""
+    import httpx
+
+    p = _get_provider_or_404(provider_id, db)
+    tok = p.token
+    if not (tok and tok.token_encrypted and tok.ativo):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provider sem token configurado")
+    try:
+        api_key = llm_crypto.decrypt(tok.token_encrypted)
+    except llm_crypto.LLMTokenCryptoError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+
+    url = p.base_url.rstrip("/") + "/models"
+    try:
+        resp = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"}, timeout=20.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Provider retornou HTTP {exc.response.status_code} ao listar modelos (verifique token/base_url)",
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Falha ao consultar /models: {exc}")
+
+    itens = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(itens, list):
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Resposta de /models inesperada (sem 'data')")
+
+    # Filtro leve: descarta ids óbvios não-chat (relevante p/ OpenAI; OpenRouter/opencode não casam).
+    _NAO_CHAT = ("embedding", "whisper", "tts", "dall-e", "dalle", "moderation",
+                 "image", "audio", "realtime", "transcribe", "speech", "rerank")
+    existentes = {m.nome_modelo for m in p.modelos}
+    inseridos = 0
+    for it in itens:
+        if not isinstance(it, dict):
+            continue
+        mid = it.get("id")
+        if not isinstance(mid, str) or not mid:
+            continue
+        if any(k in mid.lower() for k in _NAO_CHAT):
+            continue
+        if mid in existentes:
+            continue
+        label = it.get("name") if isinstance(it.get("name"), str) else None
+        db.add(LlmProviderModelo(provider_id=p.id, nome_modelo=mid, label_display=label, ativo=True))
+        existentes.add(mid)
+        inseridos += 1
+    db.commit()
+    db.refresh(p)
+    return CarregarModelosOut(
+        inseridos=inseridos,
+        total=sum(1 for m in p.modelos if m.ativo),
+        modelos=[_modelo_out(m) for m in sorted(p.modelos, key=lambda x: x.nome_modelo)],
     )
 
 

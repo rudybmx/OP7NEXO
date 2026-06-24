@@ -24,6 +24,14 @@ class ModeloOut(BaseModel):
     ativo: bool
 
 
+class CarregarModelosOut(BaseModel):
+    """Resultado de carregar modelos do provider via `GET {base_url}/models`."""
+
+    inseridos: int
+    total: int
+    modelos: list[ModeloOut]
+
+
 class ProviderIn(BaseModel):
     nome: str = Field(min_length=1, max_length=80)
     base_url: str = Field(min_length=1, max_length=255)
