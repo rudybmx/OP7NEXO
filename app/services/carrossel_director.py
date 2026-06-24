@@ -49,6 +49,7 @@ class SlideRoteiro(BaseModel):
     personagens_idx: list[int] | None = None
     objetos_idx: list[int] | None = None
     estilo_referencia: str | None = None
+    objeto: dict | None = None  # objeto POR SLIDE: {"descricao": "..."} (foto vai in-memory no /gerar)
 
 
 class Paleta(BaseModel):
@@ -212,3 +213,60 @@ def gerar_roteiro(
             log.warning("[diretor] tentativa %s inválida: %s", tentativa, last_err)
 
     raise RoteiroInvalidoError(f"roteiro inválido após repair: {last_err}")
+
+
+_SYSTEM_AJUSTE = (
+    _SYSTEM_DIRETOR
+    + "\n\nMODO AJUSTE: voce recebe um roteiro JA montado e devolve a MELHOR versao dele. "
+    "NAO mude o ASSUNTO/tema, NAO mude o molde e NAO mude o numero de slides. Melhore a copy "
+    "(palavra-bomba, contexto, selo, texto, CTA), a direcao de imagem, o angulo/tensao, a paleta "
+    "e o encadeamento dos slides para o maximo impacto. Responda SOMENTE o JSON do schema."
+)
+
+
+def ajustar_roteiro(car, db=None) -> tuple[RoteiroCarrossel, dict]:
+    """Recebe o roteiro atual e devolve a MELHOR versao (mesmo assunto, molde e nº de slides)."""
+    dj = car.director_json or {}
+    slides = dj.get("slides") or []
+    n = len(slides)
+    if n == 0:
+        raise RoteiroInvalidoError("carrossel sem slides para ajustar")
+    tema = car.tema or dj.get("tema") or ""
+    molde = dj.get("molde") or getattr(car, "molde", None) or "A"
+    atual = {
+        "molde": molde, "tensao": dj.get("tensao") or dj.get("angulo"),
+        "payload": dj.get("payload"), "paleta": dj.get("paleta"),
+        "slides": [{"index": s.get("index"), "intensidade": s.get("intensidade"),
+                    "copy": s.get("copy"), "direcao_imagem": s.get("direcao_imagem")} for s in slides],
+    }
+    client = _client_for("copy")
+    model = get_ai_config("copy").model
+    user = (
+        f"ASSUNTO FIXO (NAO mudar): {tema}\nMOLDE FIXO: {molde}\nMANTENHA EXATAMENTE {n} slides (index 1..{n}).\n"
+        f"Roteiro atual a melhorar (JSON):\n{json.dumps(atual, ensure_ascii=False)}\n\n"
+        "Devolva a MELHOR versao em JSON do schema, mantendo assunto, molde e nº de slides."
+    )
+    usage_total: dict = {}
+    last_err: str | None = None
+    for tentativa in (1, 2):
+        msgs = [{"role": "system", "content": _SYSTEM_AJUSTE}, {"role": "user", "content": user}]
+        if last_err:
+            msgs.append({"role": "user", "content": f"Invalido: {last_err}. Corrija; SOMENTE JSON com {n} slides."})
+        resp = client.chat.completions.create(
+            model=model, response_format={"type": "json_object"},
+            messages=msgs, max_tokens=2000, temperature=0.7,
+        )
+        _merge_usage(usage_total, resp.usage.model_dump() if getattr(resp, "usage", None) else {})
+        raw = resp.choices[0].message.content or "{}"
+        try:
+            roteiro = RoteiroCarrossel.model_validate(json.loads(raw))
+            if len(roteiro.slides) != n:
+                raise ValueError(f"esperado {n} slides, veio {len(roteiro.slides)}")
+            roteiro = _scrub(roteiro)
+            log.info("[diretor] ajuste OK molde=%s slides=%s tokens=%s",
+                     roteiro.molde, n, usage_total.get("total_tokens"))
+            return roteiro, usage_total
+        except (json.JSONDecodeError, ValidationError, ValueError) as e:
+            last_err = str(e)[:300]
+            log.warning("[diretor] ajuste tentativa %s inválida: %s", tentativa, last_err)
+    raise RoteiroInvalidoError(f"ajuste inválido após repair: {last_err}")

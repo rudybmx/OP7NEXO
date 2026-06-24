@@ -181,9 +181,10 @@ def _montar_prompt_slide(
 def _resolver_refs_slide(
     car: CriativoCarrossel, slide: CriativoCarrosselSlide,
     personagens_bytes: dict[int, bytes] | None = None,
-    objetos_bytes: dict[int, bytes] | None = None,
+    objetos_slide_bytes: dict[int, bytes] | None = None,
 ) -> tuple[list[dict], list[bytes], list[dict], list[bytes]]:
-    """Resolve as refs DESTE slide a partir do pool (director_json) + seleção por slide.
+    """Resolve as refs DESTE slide: PERSONAGENS do pool (+ seleção por slide) e OBJETO
+    POR SLIDE (director_json.slides[i].objeto + bytes do slide).
 
     Seleção em `director_json.slides[i].personagens_idx/objetos_idx` (índices no pool);
     ausente => usa TODO o pool (compat. Fase 1, front ainda global). Devolve, alinhados:
@@ -215,14 +216,23 @@ def _resolver_refs_slide(
         return items, blist
 
     pers_items, pers_blist = _resolve("personagens", "personagens_idx", personagens_bytes, "personagem")
-    obj_items, obj_blist = _resolve("objetos", "objetos_idx", objetos_bytes, "objeto")
+    # Objeto POR SLIDE (não vem mais do pool): slides[i].objeto + bytes deste slide.
+    obj_items: list[dict] = []
+    obj_blist: list[bytes] = []
+    odesc = ((sd.get("objeto") or {}).get("descricao") or "").strip()
+    obyte = (objetos_slide_bytes or {}).get(slide.slide_index)
+    if obyte is not None:
+        obj_items.append({"descricao": odesc, "foto": "objeto_1"})
+        obj_blist.append(obyte)
+    elif odesc:
+        obj_items.append({"descricao": odesc, "foto": None})
     return pers_items, pers_blist, obj_items, obj_blist
 
 
 def gerar_slide(
     db: Session, car: CriativoCarrossel, slide: CriativoCarrosselSlide, quality: str,
     personagens_bytes: dict[int, bytes] | None = None,
-    objetos_bytes: dict[int, bytes] | None = None,
+    objetos_slide_bytes: dict[int, bytes] | None = None,
     modelo_geral_bytes: bytes | None = None,
     modelos_slide_bytes: dict[int, bytes] | None = None,
 ) -> CriativoGeracao:
@@ -232,7 +242,7 @@ def gerar_slide(
     (resolvidas do pool), com rótulo foto->item para preservar cada rosto fiel.
     """
     pers_items, pers_blist, obj_items, obj_blist = _resolver_refs_slide(
-        car, slide, personagens_bytes, objetos_bytes)
+        car, slide, personagens_bytes, objetos_slide_bytes)
     modelo_img = (modelos_slide_bytes or {}).get(slide.slide_index) or modelo_geral_bytes
     prompt = _montar_prompt_slide(car, slide, pers_items, obj_items, tem_modelo_img=bool(modelo_img))
     ger = CriativoGeracao(
@@ -280,7 +290,7 @@ def gerar_slide(
 
 def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium",
                     personagens_bytes: dict[int, bytes] | None = None,
-                    objetos_bytes: dict[int, bytes] | None = None,
+                    objetos_slide_bytes: dict[int, bytes] | None = None,
                     modelo_geral_bytes: bytes | None = None,
                     modelos_slide_bytes: dict[int, bytes] | None = None) -> None:
     """Gera todos os slides do carrossel (formato mestre). Idempotente por status.
@@ -323,7 +333,7 @@ def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium"
         db.commit()
         _publish(car.id, "carrossel.slide.start", {"index": slide.slide_index, "total": total})
 
-        ger = gerar_slide(db, car, slide, quality, personagens_bytes, objetos_bytes,
+        ger = gerar_slide(db, car, slide, quality, personagens_bytes, objetos_slide_bytes,
                           modelo_geral_bytes, modelos_slide_bytes)
 
         if ger.status == "done":
@@ -350,7 +360,7 @@ def gerar_carrossel(db: Session, car: CriativoCarrossel, quality: str = "medium"
 
 def regenerar_slide(db: Session, car: CriativoCarrossel, slide_index: int, quality: str = "medium",
                     personagens_bytes: dict[int, bytes] | None = None,
-                    objetos_bytes: dict[int, bytes] | None = None,
+                    objetos_slide_bytes: dict[int, bytes] | None = None,
                     modelo_geral_bytes: bytes | None = None,
                     modelos_slide_bytes: dict[int, bytes] | None = None) -> CriativoGeracao:
     """Regenera UM slide isolado (não refaz o carrossel). Débito só no sucesso."""
@@ -382,7 +392,7 @@ def regenerar_slide(db: Session, car: CriativoCarrossel, slide_index: int, quali
 
     slide.status = "running"
     db.commit()
-    ger = gerar_slide(db, car, slide, quality, personagens_bytes, objetos_bytes,
+    ger = gerar_slide(db, car, slide, quality, personagens_bytes, objetos_slide_bytes,
                       modelo_geral_bytes, modelos_slide_bytes)
     if ger.status == "done":
         estudio_wallet.debitar(

@@ -240,6 +240,7 @@ class GerarIn(BaseModel):
     objetos: list[ItemRefIn] = Field(default_factory=list)
     modelo_base64: Optional[str] = None                          # modelo de referência GERAL (imagem)
     modelos_slide: dict[str, str] = Field(default_factory=dict)  # index(str) -> base64 (1 modelo por slide)
+    objetos_slide: dict[str, ItemRefIn] = Field(default_factory=dict)  # index(str) -> {descricao,imagem_base64} (1 objeto/slide)
 
 
 def _coletar_refs(itens: list[ItemRefIn]) -> tuple[list[dict], dict[int, bytes]]:
@@ -284,6 +285,23 @@ def _coletar_modelos(payload: "GerarIn") -> tuple[Optional[bytes], dict[int, byt
             except (ValueError, TypeError):
                 pass
     return geral, porslide
+
+
+def _coletar_objetos_slide(payload: "GerarIn", dj: dict) -> dict[int, bytes]:
+    """Objeto POR SLIDE: grava a descrição em dj.slides[i].objeto e devolve bytes {index: bytes}."""
+    slides = {int(s["index"]): s for s in (dj.get("slides") or []) if s.get("index") is not None}
+    bmap: dict[int, bytes] = {}
+    for k, it in (payload.objetos_slide or {}).items():
+        try:
+            idx = int(k)
+        except (ValueError, TypeError):
+            continue
+        if idx in slides:
+            slides[idx]["objeto"] = {"descricao": (it.descricao or "").strip()}
+        img = _decode_modelo(it.imagem_base64)
+        if img is not None:
+            bmap[idx] = img
+    return bmap
 
 
 def _criar_slides(db: Session, car: CriativoCarrossel) -> int:
@@ -335,10 +353,9 @@ def gerar(
     # images.edit), indexadas pelo pool; descrições ficam no director_json (persistidas,
     # entram no prompt de cada slide). Cada slide usa só as refs que seleciona.
     pers_descs, pers_bytes = _coletar_refs(payload.personagens)
-    obj_descs, obj_bytes = _coletar_refs(payload.objetos)
     dj = dict(car.director_json or {})
     dj["personagens"] = pers_descs
-    dj["objetos"] = obj_descs
+    osbytes = _coletar_objetos_slide(payload, dj)  # grava dj.slides[i].objeto + bytes do objeto/slide
     car.director_json = dj
 
     total = _criar_slides(db, car)
@@ -349,14 +366,14 @@ def gerar(
     custo = carrossel_gen.custo_carrossel(total, quality)
 
     cid = car.id
-    pgen, ogen = (pers_bytes or None), (obj_bytes or None)
+    pgen, osgen = (pers_bytes or None), (osbytes or None)
     mgen, msgen = _coletar_modelos(payload)
 
     def _run() -> None:
         with SessionLocal() as bdb:
             c = bdb.get(CriativoCarrossel, cid)
             if c is not None:
-                carrossel_gen.gerar_carrossel(bdb, c, quality, pgen, ogen, mgen, msgen or None)
+                carrossel_gen.gerar_carrossel(bdb, c, quality, pgen, osgen, mgen, msgen or None)
 
     threading.Thread(target=_run, daemon=True).start()
     return {"carrossel_id": str(car.id), "total": total, "custo_tokens": custo, "status": "queued"}
@@ -373,20 +390,17 @@ def regenerar_slide(
     """Regenera UM slide (síncrono, ~20s). Débito só no sucesso."""
     car = _get_car(db, carrossel_id, usuario)
     quality = payload.quality if payload.quality in _QUALITIES else "medium"
-    # Refresh do pool + fotos (rosto/objeto fiel também na regeneração isolada).
-    pgen = ogen = None
-    if payload.personagens or payload.objetos:
-        pers_descs, pers_bytes = _coletar_refs(payload.personagens)
-        obj_descs, obj_bytes = _coletar_refs(payload.objetos)
-        dj = dict(car.director_json or {})
+    # Refresh dos refs (personagem do pool + objeto do slide) — fiel na regeneração isolada.
+    pers_descs, pers_bytes = _coletar_refs(payload.personagens)
+    dj = dict(car.director_json or {})
+    if payload.personagens:
         dj["personagens"] = pers_descs
-        dj["objetos"] = obj_descs
-        car.director_json = dj
-        db.commit()
-        pgen, ogen = (pers_bytes or None), (obj_bytes or None)
+    osbytes = _coletar_objetos_slide(payload, dj)
+    car.director_json = dj
+    db.commit()
     mgen, msgen = _coletar_modelos(payload)
     try:
-        ger = carrossel_gen.regenerar_slide(db, car, slide_index, quality, pgen, ogen, mgen, msgen or None)
+        ger = carrossel_gen.regenerar_slide(db, car, slide_index, quality, pers_bytes or None, osbytes or None, mgen, msgen or None)
     except PermissionError:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, detail={"error_code": "saldo_insuficiente"})
     except ValueError as e:
@@ -457,6 +471,41 @@ def analise(
     registrar_uso(feature="copy", workspace_id=car.workspace_id,
                   model=get_ai_config("copy").model, kind="text", usage=usage)
     return resultado.model_dump()
+
+
+@router.post("/{carrossel_id}/ajustar")
+def ajustar(
+    carrossel_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """A IA reescreve o roteiro na MELHOR versão (mesmo assunto/molde/nº de slides). Custo ZERO."""
+    car = _get_car(db, carrossel_id, usuario)
+    try:
+        roteiro, usage = carrossel_director.ajustar_roteiro(car, db=db)
+    except carrossel_director.RoteiroInvalidoError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            detail={"error_code": "ajuste_invalido", "error_message": str(e)[:300]})
+    # Preserva as refs por slide (personagens_idx/objeto/estilo_referencia) e os pools globais.
+    novo = roteiro.model_dump()
+    old_slides = {int(s.get("index")): s for s in ((car.director_json or {}).get("slides") or [])
+                  if s.get("index") is not None}
+    for s in (novo.get("slides") or []):
+        old = old_slides.get(int(s.get("index", -1)))
+        if old:
+            for k in ("personagens_idx", "objetos_idx", "objeto", "estilo_referencia"):
+                if old.get(k) is not None:
+                    s[k] = old[k]
+    for k in ("estilo", "estilo_referencia", "personagens", "objetos"):
+        v = (car.director_json or {}).get(k)
+        if v is not None:
+            novo[k] = v
+    car.director_json = novo
+    car.molde = roteiro.molde
+    db.commit()
+    registrar_uso(feature="copy", workspace_id=car.workspace_id,
+                  model=get_ai_config("copy").model, kind="text", usage=usage)
+    return {"director_json": car.director_json}
 
 
 # ─────────────────────────────── Históricos ─────────────────────────────────
