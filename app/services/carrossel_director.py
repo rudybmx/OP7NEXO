@@ -217,7 +217,7 @@ def gerar_roteiro(
             model=model,
             response_format={"type": "json_object"},
             messages=msgs,
-            **chat_kwargs(model, 2500, temperature=0.85, reasoning_effort="medium"),
+            **chat_kwargs(model, 2500, temperature=0.85, reasoning_effort="minimal"),
         )
         _merge_usage(usage_total, resp.usage.model_dump() if getattr(resp, "usage", None) else {})
         raw = resp.choices[0].message.content or "{}"
@@ -281,7 +281,7 @@ def ajustar_roteiro(car, db=None) -> tuple[RoteiroCarrossel, dict]:
             msgs.append({"role": "user", "content": f"Invalido: {last_err}. Corrija; SOMENTE JSON com {n} slides."})
         resp = client.chat.completions.create(
             model=model, response_format={"type": "json_object"},
-            messages=msgs, **chat_kwargs(model, 2500, temperature=0.7, reasoning_effort="medium"),
+            messages=msgs, **chat_kwargs(model, 2500, temperature=0.7, reasoning_effort="minimal"),
         )
         _merge_usage(usage_total, resp.usage.model_dump() if getattr(resp, "usage", None) else {})
         raw = resp.choices[0].message.content or "{}"
