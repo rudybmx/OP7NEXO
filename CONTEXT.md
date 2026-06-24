@@ -1,7 +1,16 @@
 # OP7NEXO — Context de Arquitetura e Negócio
 
-> Atualizado: 2026-05-15
+> Atualizado: 2026-06-24
 > Mantenha este arquivo atualizado conforme o sistema evolui.
+
+> **Link público de conexão (2026-06):** o admin gera `POST /canais/{id}/link-conexao` e envia
+> ao cliente; endpoints públicos sem auth `/public/conectar/{token}` (info/iniciar/status/parear)
+> conectam canais Evolution/WAHA via QR ou pareamento por número. Tabela `canal_connect_tokens`
+> (migration 090, índice parcial = 1 token ativo/canal). Núcleo `_conectar_evolution` /
+> `_status_evolution_core(publico=)` extraído em `app/api/canais.py` (admin idêntico; regra de ouro
+> só no modo público — não toca status administrativo, não ressuscita 'disconnected'). Consumo
+> anti-hijack no webhook `process_evolution_connection_event`. Front: `/conectar/[token]`.
+> Spec: `docs/specs/link-conexao-publico/`.
 
 ## O QUE É O SISTEMA
 
