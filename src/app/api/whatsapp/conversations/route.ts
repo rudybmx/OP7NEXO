@@ -140,6 +140,7 @@ export async function GET(request: NextRequest) {
     const filtro = url.searchParams.get('filtro')
     const canalIdParam = url.searchParams.get('canal_id')
     const equipeIdParam = url.searchParams.get('equipe_id')
+    const etiquetaIds = url.searchParams.getAll('etiqueta_ids')
 
     if (!workspaceIdParam) {
       return NextResponse.json(
@@ -165,6 +166,7 @@ export async function GET(request: NextRequest) {
     else if (filtro === 'minhas') backendUrl.searchParams.set('responsavel_id', access.user.id)
     else if (filtro && !['todas', 'grupos', 'equipe'].includes(filtro)) backendUrl.searchParams.set('status', filtro)
     if (equipeIdParam) backendUrl.searchParams.set('equipe_id', equipeIdParam)
+    etiquetaIds.forEach(id => backendUrl.searchParams.append('etiqueta_ids', id))
 
     const response = await fetch(backendUrl.toString(), {
       headers: { Authorization: access.tokenToForward },

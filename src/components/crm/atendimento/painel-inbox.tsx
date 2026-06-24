@@ -6,6 +6,7 @@ import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import type { WhatsappCanal } from '@/hooks/use-whatsapp-canais'
 import type { Etiqueta } from '@/hooks/use-etiquetas'
+import { FiltroEtiquetas } from './filtro-etiquetas'
 import { getCanalBadgeLabel, getCanalProviderLabel } from '@/lib/whatsapp-canal'
 import { formatarTelefoneBR } from '@/lib/formatar'
 import { resolveAvatarSrc } from '@/lib/avatar-src'
@@ -25,6 +26,8 @@ interface PainelInboxProps {
   isCriandoConversa?: boolean
   erroIniciarConversa?: string | null
   etiquetasWorkspace?: Etiqueta[]
+  etiquetasSelecionadas?: string[]
+  onEtiquetasChange?: (ids: string[]) => void
   onSelectConversa: (id: string) => void
   onFiltroChange: (filtro: string) => void
   onCanalChange?: (canalId: string) => void
@@ -548,6 +551,8 @@ export function PainelInbox({
   isCriandoConversa = false,
   erroIniciarConversa,
   etiquetasWorkspace = [],
+  etiquetasSelecionadas = [],
+  onEtiquetasChange,
   onSelectConversa,
   onFiltroChange,
   onCanalChange,
@@ -773,6 +778,17 @@ export function PainelInbox({
                 </option>
               ))}
             </select>
+          </div>
+        )}
+
+        {onEtiquetasChange && etiquetasWorkspace.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <FiltroEtiquetas
+              etiquetas={etiquetasWorkspace}
+              selecionadas={etiquetasSelecionadas}
+              onChange={onEtiquetasChange}
+              isMobile={isMobile}
+            />
           </div>
         )}
 

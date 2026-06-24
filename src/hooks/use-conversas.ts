@@ -126,8 +126,11 @@ export function useConversas(
   equipeId?: string,
   workspaceId?: string,
   enabled = true,
-  canalId?: string
+  canalId?: string,
+  etiquetaIds?: string[]
 ): UseConversasReturn {
+  // Chave estável para usar nas deps do useCallback (array muda de referência a cada render)
+  const etiquetaKey = etiquetaIds?.join(',') ?? ''
   const [conversas, setConversas] = useState<ConversaApi[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -162,6 +165,7 @@ export function useConversas(
       if (equipeId) params.set('equipe_id', equipeId)
       if (workspaceId) params.set('workspace_id', workspaceId)
       if (canalId) params.set('canal_id', canalId)
+      etiquetaIds?.forEach(id => params.append('etiqueta_ids', id))
 
       const res = await fetch(`/api/whatsapp/conversations?${params.toString()}`, {
         signal: controller.signal,
@@ -193,7 +197,7 @@ export function useConversas(
       setIsLoading(false)
       setIsLoadingMore(false)
     }
-  }, [enabled, filtro, equipeId, workspaceId, canalId])
+  }, [enabled, filtro, equipeId, workspaceId, canalId, etiquetaKey])
 
   useEffect(() => {
     let cancelled = false

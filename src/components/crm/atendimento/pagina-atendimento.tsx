@@ -16,6 +16,7 @@ import { useWhatsappCanais } from '@/hooks/use-whatsapp-canais'
 import { useMarcarLido } from '@/hooks/use-marcar-lido'
 import { useAtualizarConversa } from '@/hooks/use-atualizar-conversa'
 import { useEtiquetas } from '@/hooks/use-etiquetas'
+import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { useBreakpoint } from '@/hooks/use-mobile'
 import { PainelInbox } from './painel-inbox'
 import { PainelChat } from './painel-chat'
@@ -42,6 +43,11 @@ export function PaginaAtendimento() {
   const [textoMensagem, setTextoMensagem] = useState('')
   const [aoVivo, setAoVivo] = useState(false)
   const [canalSelecionadoId, setCanalSelecionadoId] = useState<string>('todos')
+  // Filtro de conversas por etiqueta (multi-select, lógica OR). Persiste em F5 (Nielsen #6).
+  const [etiquetasFiltro, setEtiquetasFiltro] = usePersistedState<string[]>(
+    'op7-nexo-atendimento-filtro-etiquetas',
+    []
+  )
 
   // Breakpoint compartilhado (hook único; repassado por prop aos painéis).
   const { isMobile, isTablet, isDesktop } = useBreakpoint()
@@ -59,7 +65,8 @@ export function PaginaAtendimento() {
     undefined,
     workspaceAtual ?? undefined,
     workspaceResolvido,
-    canalSelecionadoId === 'todos' ? undefined : canalSelecionadoId
+    canalSelecionadoId === 'todos' ? undefined : canalSelecionadoId,
+    etiquetasFiltro.length > 0 ? etiquetasFiltro : undefined
   )
   const { equipes } = useEquipes(workspaceAtual ?? undefined, workspaceResolvido)
   const { agentes } = useAgentesDisponiveis(workspaceAtual ?? undefined, workspaceResolvido)
@@ -425,6 +432,8 @@ export function PaginaAtendimento() {
           canalSelecionadoId={canalSelecionadoId}
           onCanalChange={setCanalSelecionadoId}
           etiquetasWorkspace={etiquetas}
+          etiquetasSelecionadas={etiquetasFiltro}
+          onEtiquetasChange={setEtiquetasFiltro}
           onMarcarNaoLido={handleMarcarNaoLido}
           onToggleFavorita={handleToggleFavorita}
           onToggleFixada={handleToggleFixada}
