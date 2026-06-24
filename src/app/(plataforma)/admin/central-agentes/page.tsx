@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { KeyRound, Loader2, Pencil, Plus, Power, Trash2, X } from 'lucide-react'
+import { Download, KeyRound, Loader2, Pencil, Plus, Power, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { WSTable, WSTableActions, WSTableShell, wsTableCellStyle, wsTableHeadStyle } from '@/components/ui/ws-table'
@@ -445,9 +445,10 @@ function AgentesTab(props: {
 }
 
 function ProvidersTab({ hook }: { hook: ReturnType<typeof useLlmProviders> }) {
-  const { providers, carregar, salvarToken, adicionarModelo, removerModelo } = hook
+  const { providers, carregar, salvarToken, adicionarModelo, removerModelo, carregarModelos } = hook
   const [tokenInputs, setTokenInputs] = useState<Record<string, string>>({})
   const [modeloInputs, setModeloInputs] = useState<Record<string, string>>({})
+  const [carregandoModelos, setCarregandoModelos] = useState<Record<string, boolean>>({})
 
   async function onSalvarToken(p: LlmProvider) {
     const t = (tokenInputs[p.id] || '').trim()
@@ -459,6 +460,20 @@ function ProvidersTab({ hook }: { hook: ReturnType<typeof useLlmProviders> }) {
       carregar()
     } catch (e: any) {
       toast.error(e?.message || 'Erro ao salvar token')
+    }
+  }
+
+  async function onCarregarModelos(p: LlmProvider) {
+    if (!p.token_configurado) { toast.error(`Salve o token de ${p.nome} primeiro`); return }
+    setCarregandoModelos((s) => ({ ...s, [p.id]: true }))
+    try {
+      const res = await carregarModelos(p.id)
+      toast.success(`${res.inseridos} novo(s) modelo(s) — ${res.total} no total em ${p.nome}`)
+      carregar()
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao carregar modelos do provider')
+    } finally {
+      setCarregandoModelos((s) => ({ ...s, [p.id]: false }))
     }
   }
 
@@ -507,6 +522,16 @@ function ProvidersTab({ hook }: { hook: ReturnType<typeof useLlmProviders> }) {
               onChange={(e) => setTokenInputs((s) => ({ ...s, [p.id]: e.target.value }))}
             />
             <button onClick={() => onSalvarToken(p)} className="px-3 py-2 text-sm rounded-lg font-medium border" style={{ borderColor: 'var(--ws-glass-border)', color: 'var(--ws-text-1)' }}>Salvar token</button>
+            <button
+              onClick={() => onCarregarModelos(p)}
+              disabled={!p.token_configurado || !!carregandoModelos[p.id]}
+              title="Busca os modelos disponíveis no provider usando o token salvo"
+              className="px-3 py-2 text-sm rounded-lg font-medium border inline-flex items-center gap-1.5 disabled:opacity-50"
+              style={{ borderColor: 'var(--ws-blue)', color: 'var(--ws-blue)' }}
+            >
+              {carregandoModelos[p.id] ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              Carregar modelos
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

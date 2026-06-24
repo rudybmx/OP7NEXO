@@ -81,5 +81,11 @@ export function useLlmProviders() {
     [],
   )
 
-  return { providers, carregando, erro, carregar, criar, atualizar, salvarToken, adicionarModelo, removerModelo }
+  const carregarModelos = useCallback(
+    (id: string) =>
+      api.post<{ inseridos: number; total: number; modelos: LlmModelo[] }>(`/llm-providers/${id}/carregar-modelos`),
+    [],
+  )
+
+  return { providers, carregando, erro, carregar, criar, atualizar, salvarToken, adicionarModelo, removerModelo, carregarModelos }
 }
