@@ -66,7 +66,18 @@ def _montar_contexto(tema: str | None, dj: dict, molde_fallback: str | None = No
         linhas.append(f"LIÇÃO (payload): {dj.get('payload')}")
     pal = dj.get("paleta") or {}
     if pal:
-        linhas.append(f"PALETA: tensão={pal.get('tensao')} resolução={pal.get('resolucao')} pivô={pal.get('pivo')}")
+        cores = pal.get("cores")
+        if isinstance(cores, list) and cores:
+            cs = ", ".join(
+                f"{(c.get('hex') or '').strip()}[{c.get('papel') or 'livre'}~{c.get('peso')}]"
+                for c in cores if isinstance(c, dict) and (c.get("hex") or "").strip()
+            )
+            linhas.append(f"PALETA ({len(cores)} cores): {cs}")
+        else:
+            dom = pal.get("dominante") or pal.get("tensao")
+            apo = pal.get("apoio") or pal.get("resolucao")
+            des = pal.get("destaque") or pal.get("pivo")
+            linhas.append(f"PALETA: dominante={dom} apoio={apo} destaque={des}")
     est = (dj.get("estilo") or "").strip()
     est_ref = (dj.get("estilo_referencia") or "").strip()
     if est:

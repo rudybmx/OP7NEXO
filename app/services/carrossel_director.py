@@ -17,7 +17,7 @@ import json
 import logging
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
 from app.core.ai_config import get_ai_config
 from app.services.copy_assist import _sem_travessao
@@ -53,9 +53,24 @@ class SlideRoteiro(BaseModel):
 
 
 class Paleta(BaseModel):
-    tensao: str | None = None           # cor de tensão/tese
-    resolucao: str | None = None        # cor do "certo / o que inclui"
-    pivo: str | None = None             # cor-pivô (palavra-verbo central)
+    """Paleta de cores do carrossel.
+
+    `cores` (lista de N cores em hex, autorada pela UI) é a FONTE DE VERDADE quando
+    presente — é o que o usuário controla e o que o prompt de imagem lê. Os papéis
+    nomeados (dominante/apoio/destaque) são apenas a SEMENTE do Diretor e o caminho
+    de compat com roteiros antigos (chaves tensao/resolucao/pivo, via alias).
+    """
+
+    model_config = {"populate_by_name": True}
+
+    dominante: str | None = Field(
+        default=None, validation_alias=AliasChoices("dominante", "tensao"))
+    apoio: str | None = Field(
+        default=None, validation_alias=AliasChoices("apoio", "resolucao"))
+    destaque: str | None = Field(
+        default=None, validation_alias=AliasChoices("destaque", "pivo"))
+    cores: list[dict] = Field(default_factory=list)  # [{"hex","papel","peso"}]
+    modo: str | None = None  # analoga|mono|complementar|split|triade|tetrade|custom
 
 
 class CtaPar(BaseModel):
@@ -64,8 +79,11 @@ class CtaPar(BaseModel):
 
 
 class RoteiroCarrossel(BaseModel):
+    model_config = {"populate_by_name": True}
+
     molde: Literal["A", "B", "C"]
-    tensao: str
+    # ângulo/gancho do conflito em TEXTO (nunca cor). Compat: aceita 'tensao' antigo.
+    angulo: str = Field(validation_alias=AliasChoices("angulo", "tensao"))
     payload: str                        # a lição de negócio (o herói)
     gatilhos: list[str] = Field(default_factory=list)
     paleta: Paleta = Field(default_factory=Paleta)
@@ -90,12 +108,12 @@ CURVA DE INTENSIDADE (não é platô): capa ALTO → fato MÉDIO → desenvolvim
 
 DIREÇÃO DE IMAGEM (campo direcao_imagem, escolha o TIPO pela função): celebridade recortada (empréstimo de atenção); objeto-herói (produto sem rosto, render dramático); screenshot de UI (tutorial/prova); foto real do time (prova social/clímax); montagem de 2 mundos (choque); tipografia pura (respiro); lista com ícones (didático); meme/cultura pop (reforço). Rosto SEMPRE em emoção extrema. Descreva: tipo + sujeito + emoção/ângulo. SEM citar texto a desenhar (o texto vem da copy).
 
-COR SEMÂNTICA (paleta): tensao = cor de conflito/capa; resolucao = cor do "certo/o que inclui"; pivo = cor da palavra-verbo central. Use nomes de cor (ex.: vermelho, verde, amarelo).
+ÂNGULO vs COR (campos DISTINTOS, não confunda!): "angulo" = o gancho/conflito central do carrossel em TEXTO (a tensão narrativa, ex.: "clínicas perdem pacientes por um erro invisível") — NUNCA uma cor. "paleta" = SEMENTE de cores em nomes de cor (ex.: vermelho, verde, amarelo): dominante (fundo/capa), apoio (listas / "o que inclui"), destaque (palavra-verbo central). É só ponto de partida; o usuário refina a paleta final na UI.
 
 GUARDRAILS: nunca prometa na capa o que o miolo não entrega; nunca invente números (dado citado tem que ser REAL); 1 ideia por slide; PT-BR impecável; NUNCA use travessão (—).
 
 SAÍDA: responda SOMENTE com um JSON válido neste formato (sem comentários):
-{"molde":"A|B|C","tensao":"...","payload":"...","gatilhos":["..."],"paleta":{"tensao":"...","resolucao":"...","pivo":"..."},"slides":[{"index":1,"intensidade":"alto","copy":{"contexto":"...","palavra_bomba":"...","selo":"...","texto":"...","cta_continuacao":"..."},"direcao_imagem":"..."}],"ctas":{"engajamento":"...","conversao":"..."},"legenda":"..."}"""
+{"molde":"A|B|C","angulo":"...","payload":"...","gatilhos":["..."],"paleta":{"dominante":"...","apoio":"...","destaque":"..."},"slides":[{"index":1,"intensidade":"alto","copy":{"contexto":"...","palavra_bomba":"...","selo":"...","texto":"...","cta_continuacao":"..."},"direcao_imagem":"..."}],"ctas":{"engajamento":"...","conversao":"..."},"legenda":"..."}"""
 
 
 def _system_prompt(db=None) -> str:
@@ -219,8 +237,9 @@ _SYSTEM_AJUSTE = (
     _SYSTEM_DIRETOR
     + "\n\nMODO AJUSTE: voce recebe um roteiro JA montado e devolve a MELHOR versao dele. "
     "NAO mude o ASSUNTO/tema, NAO mude o molde e NAO mude o numero de slides. Melhore a copy "
-    "(palavra-bomba, contexto, selo, texto, CTA), a direcao de imagem, o angulo/tensao, a paleta "
-    "e o encadeamento dos slides para o maximo impacto. Responda SOMENTE o JSON do schema."
+    "(palavra-bomba, contexto, selo, texto, CTA), a direcao de imagem, o angulo (gancho/conflito "
+    "em texto, nunca cor), a paleta (cores semente) e o encadeamento dos slides para o maximo "
+    "impacto. Responda SOMENTE o JSON do schema."
 )
 
 
@@ -234,7 +253,7 @@ def ajustar_roteiro(car, db=None) -> tuple[RoteiroCarrossel, dict]:
     tema = car.tema or dj.get("tema") or ""
     molde = dj.get("molde") or getattr(car, "molde", None) or "A"
     atual = {
-        "molde": molde, "tensao": dj.get("tensao") or dj.get("angulo"),
+        "molde": molde, "angulo": dj.get("angulo") or dj.get("tensao"),
         "payload": dj.get("payload"), "paleta": dj.get("paleta"),
         "slides": [{"index": s.get("index"), "intensidade": s.get("intensidade"),
                     "copy": s.get("copy"), "direcao_imagem": s.get("direcao_imagem")} for s in slides],
