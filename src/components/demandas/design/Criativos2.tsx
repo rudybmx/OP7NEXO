@@ -93,6 +93,7 @@ export function Criativos2() {
   const [master, setMaster] = usePersistedState<string>('op7-c2-master', '9x16')
   const [quality, setQuality] = usePersistedState<string>('op7-c2-quality', 'low')
   const [estilo, setEstilo] = usePersistedState<string>('op7-c2-estilo', 'integrado')
+  const [molde, setMolde] = usePersistedState<string>('op7-c2-molde', '')  // '' = Auto (IA escolhe)
   const [origem, setOrigem] = usePersistedState<'manual' | 'referencia' | 'noticia'>('op7-c2-origem', 'manual')
   const [refImg, setRefImg] = useState<string | null>(null)
   const [assuntoNoticia, setAssuntoNoticia] = useState('')
@@ -146,7 +147,7 @@ export function Criativos2() {
     setCarregando(true); setErro(null); setEstado(null)
     try {
       const r = await api.post<{ carrossel_id: string; director_json: Roteiro }>('/design/carrossel/diretor', {
-        workspace_id: workspaceAtual, origem, estilo,
+        workspace_id: workspaceAtual, origem, estilo, molde: molde || undefined,
         tema: origem === 'referencia' ? undefined : tema.trim(),
         referencia_base64: origem === 'referencia' ? refImg : undefined,
         n_slides: nSlides, master_format: master,
@@ -154,7 +155,7 @@ export function Criativos2() {
       setCarrosselId(r.carrossel_id); setRoteiro(r.director_json); setAnalise(null)
     } catch (e) { setErro(errMsg(e) ||'Falha ao gerar o roteiro.') }
     finally { setCarregando(false) }
-  }, [workspaceAtual, origem, estilo, tema, refImg, nSlides, master, setCarrosselId])
+  }, [workspaceAtual, origem, estilo, molde, tema, refImg, nSlides, master, setCarrosselId])
 
   const editarSlide = (idx: number, patch: Partial<SlideRoteiro>) =>
     setRoteiro(prev => prev ? { ...prev, slides: (prev.slides || []).map(s => s.index === idx ? { ...s, ...patch } : s) } : prev)
@@ -237,6 +238,10 @@ export function Criativos2() {
   const refsPayload = () => ({
     personagens: personagens.filter(p => (p.descricao || '').trim() || p.imagem_base64).map(p => ({ descricao: p.descricao, imagem_base64: p.imagem_base64 })),
     objetos: objetos.filter(o => (o.descricao || '').trim() || o.imagem_base64).map(o => ({ descricao: o.descricao, imagem_base64: o.imagem_base64 })),
+    modelo_base64: usarModelo && modeloModo === 'geral' ? (modeloGeral?.img || undefined) : undefined,
+    modelos_slide: usarModelo && modeloModo === 'porSlide'
+      ? Object.fromEntries(Object.entries(modelosSlide).map(([k, v]) => [k, v.img]))
+      : {},
   })
 
   // ───── Polling do estado (recursão local em `tick` — sem self-ref no useCallback) ─────
@@ -490,6 +495,16 @@ export function Criativos2() {
                 ))}
               </div>
             </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="ds-label">Molde / estrutura</span>
+              <select value={molde} onChange={e => setMolde(e.target.value)} className={inputCls + ' h-10'}>
+                <option value="">Automático (a IA escolhe pelo tema)</option>
+                <option value="A">A · Evento/Celebridade</option>
+                <option value="B">B · Feature/Tutorial</option>
+                <option value="C">C · Tese (X NÃO É Y)</option>
+              </select>
+              <span className="ds-help">Define a estrutura do carrossel; força a IA a montar nesse formato.</span>
+            </label>
             {!roteiro && (
               <button onClick={gerarRoteiro} disabled={carregando || (origem === 'referencia' ? !refImg : !tema.trim())} className={botaoPrimario + ' self-start'}>
                 {carregando ? <><Loader2 size={16} className="animate-spin" /> Gerando roteiro…</> : <><Wand2 size={16} /> Gerar roteiro</>}
@@ -553,9 +568,13 @@ export function Criativos2() {
             <div className="flex flex-col gap-3">
               <div className={`${card} p-4 flex flex-wrap items-end gap-4`}>
                 <label className="flex flex-col gap-1"><span className="ds-label">Molde (estrutura)</span>
-                  <select value={roteiro.molde || 'A'} onChange={e => setRoteiro(r => r ? { ...r, molde: e.target.value } : r)} className={inputCls + ' h-9'}>
+                  <select value={roteiro.molde || 'A'} onChange={e => { const v = e.target.value; setRoteiro(r => r ? { ...r, molde: v } : r); setMolde(v) }} className={inputCls + ' h-9'}>
                     <option value="A">A · evento/celebridade</option><option value="B">B · feature/tutorial</option><option value="C">C · tese (X NÃO É Y)</option>
                   </select></label>
+                <button onClick={() => gerarRoteiro()} disabled={carregando} title="Reescrever o roteiro inteiro nesta estrutura (a IA remonta os slides)"
+                  className="ds-help inline-flex items-center gap-1 h-9 px-2.5 rounded-[var(--ws-radius-lg)] border border-[var(--ws-glass-border)] hover:border-[var(--ws-blue)] disabled:opacity-50">
+                  {carregando ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Reescrever roteiro
+                </button>
                 <label className="flex flex-col gap-1 flex-1 min-w-[220px]"><span className="ds-label">Ângulo / tensão (o gancho, em texto)</span>
                   <input value={roteiro.tensao || ''} onChange={e => setRoteiro(r => r ? { ...r, tensao: e.target.value } : r)} placeholder="ex.: clínicas perdem pacientes por um erro invisível" className={inputCls} /></label>
               </div>
