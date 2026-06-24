@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
 from app.models.canal_entrada import CanalEntrada
-from app.models.crm import Contato, Conversa
+from app.models.crm import Contato, Conversa, CrmEtiqueta
 from app.models.user import RoleUsuario, User
 from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
 from app.services.whatsapp_crm_persistence import record_assignment_event
@@ -280,6 +280,7 @@ def listar_conversas(
     equipe_id: uuid.UUID | None = Query(None),
     responsavel_id: uuid.UUID | None = Query(None),
     busca: str | None = Query(None),
+    etiqueta_ids: list[uuid.UUID] | None = Query(None),
     workspace_id: uuid.UUID | None = Query(None),
     limit: int = Query(80, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -317,6 +318,14 @@ def listar_conversas(
         q = q.filter(
             Conversa.ultima_mensagem.ilike(f"%{busca}%")
             | Conversa.remote_jid.ilike(f"%{busca}%")
+        )
+    if etiqueta_ids:
+        # OR: conversas com pelo menos uma das etiquetas selecionadas.
+        # distinct evita duplicar conversa que casa em mais de uma etiqueta.
+        q = (
+            q.join(Conversa.etiquetas)
+            .filter(CrmEtiqueta.id.in_(etiqueta_ids))
+            .distinct()
         )
 
     q = q.order_by(Conversa.fixada.desc(), Conversa.ultima_msg_at.desc().nullslast())
