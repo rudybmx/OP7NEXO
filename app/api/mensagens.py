@@ -7,10 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
-from app.models.crm import Mensagem
+from app.models.crm import Conversa, Mensagem
 from app.models.user import User
 from app.services.whatsapp_media import infer_media_type
 from app.services.whatsapp_normalizer import _extract_mentions, payload_message, payload_root
+from app.services.crm_escopo import pode_ver_conversa
 
 router = APIRouter(prefix="/mensagens", tags=["mensagens"])
 
@@ -299,6 +300,11 @@ def listar_mensagens(
 
     verificar_acesso_workspace(usuario, workspace_target, db)
     q = q.filter(Mensagem.workspace_id == workspace_target)
+
+    # Teto (Fase 1): só lê mensagens de conversa que o usuário enxerga.
+    conversa = db.query(Conversa).filter(Conversa.id == conversa_id).first()
+    if conversa is not None and not pode_ver_conversa(usuario, conversa):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
 
     q = q.order_by(Mensagem.criado_em.desc())
     total = q.offset(offset).limit(limit).all()

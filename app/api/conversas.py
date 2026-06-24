@@ -14,6 +14,7 @@ from app.models.crm import Contato, Conversa, CrmEtiqueta
 from app.models.user import RoleUsuario, User
 from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
 from app.services.whatsapp_crm_persistence import record_assignment_event
+from app.services.crm_escopo import aplicar_teto_conversas, eh_supervisor, pode_transferir, pode_ver_conversa
 
 router = APIRouter(prefix="/conversas", tags=["conversas"])
 
@@ -139,6 +140,8 @@ class IniciarConversaOut(BaseModel):
     conversa: ConversaOut
     contato: IniciarContatoOut
     existente: bool
+    conflito_responsavel: bool = False
+    responsavel_nome: str | None = None
 
 
 def _digits(value: str | None) -> str:
@@ -322,6 +325,10 @@ def listar_conversas(
     verificar_acesso_workspace(usuario, workspace_target, db)
     q = q.filter(Conversa.workspace_id == workspace_target)
     q = q.filter(visible_whatsapp_jid_clause(Conversa.remote_jid))
+
+    # Teto de visibilidade (Fase 1): company_agent só vê as dele; demais veem todas.
+    # ANTES dos filtros de UI — o usuário estreita dentro do teto, nunca amplia.
+    q = aplicar_teto_conversas(q, usuario)
 
     # --- filtros diretos (legado + V2; todos antes de offset/limit => paginação correta) ---
     if equipe_id:
@@ -585,6 +592,35 @@ def iniciar_conversa(
     else:
         conversa.instance = instance
 
+    # Auto-atribuição (Fase 1): conversa nova/sem dono/reaberta vira de quem iniciou
+    # + desliga IA. Se já é de OUTRO humano => conflito (UI confirma via assumir).
+    conflito = False
+    responsavel_nome = None
+    if conversa.responsavel_id is None or conversa.responsavel_id == usuario.id:
+        old_resp = conversa.responsavel_id
+        conversa.responsavel_id = usuario.id
+        conversa.status = "em_atendimento"
+        conversa.ai_ativo = False
+        if conversa.assigned_at is None:
+            conversa.assigned_at = datetime.utcnow()
+        if old_resp != usuario.id:
+            record_assignment_event(
+                db,
+                workspace_id=conversa.workspace_id,
+                canal_id=conversa.canal_id,
+                conversa_id=conversa.id,
+                contato_id=conversa.contato_id,
+                action="assign",
+                from_responsavel_id=old_resp,
+                to_responsavel_id=usuario.id,
+                actor_user_id=usuario.id,
+                payload={"source": "conversa.iniciar"},
+            )
+    else:
+        conflito = True
+        _outro = db.query(User).filter(User.id == conversa.responsavel_id).first()
+        responsavel_nome = _outro.nome if _outro else None
+
     db.commit()
     db.refresh(conversa)
     db.refresh(contato)
@@ -600,6 +636,8 @@ def iniciar_conversa(
             push_name=contato.push_name,
         ),
         existente=existente,
+        conflito_responsavel=conflito,
+        responsavel_nome=responsavel_nome,
     )
 
 
@@ -612,6 +650,9 @@ def detalhar_conversa(
 ):
     c = _get_conversa_or_404(conversa_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
+    # Teto: fora do escopo do usuário => 404 (não vazar existência).
+    if not pode_ver_conversa(usuario, c):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
     return _conversa_out(c)
 
 
@@ -811,11 +852,15 @@ def assumir_conversa(
 ):
     c = _get_conversa_or_404(conversa_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
+    # Atendente só age na própria/sem-dono; supervisor em qualquer.
+    if not eh_supervisor(usuario) and c.responsavel_id not in (None, usuario.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para esta conversa")
 
     old_responsavel_id = c.responsavel_id
     old_equipe_id = c.equipe_id
     c.responsavel_id = data.responsavel_id
     c.status = "em_atendimento"
+    c.ai_ativo = False  # handoff: humano assume => IA para de responder
     if c.assigned_at is None:
         c.assigned_at = datetime.utcnow()
     if data.responsavel_id != old_responsavel_id:
@@ -847,11 +892,25 @@ def resolver_conversa(
 ):
     c = _get_conversa_or_404(conversa_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
+    if not eh_supervisor(usuario) and c.responsavel_id not in (None, usuario.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para esta conversa")
 
     c.status = "resolvido"
     c.closed_at = datetime.utcnow()
     if c.first_response_at:
         c.resolution_time = int((c.closed_at - c.first_response_at).total_seconds())
+    record_assignment_event(
+        db,
+        workspace_id=c.workspace_id,
+        canal_id=c.canal_id,
+        conversa_id=c.id,
+        contato_id=c.contato_id,
+        action="resolved",
+        from_responsavel_id=c.responsavel_id,
+        to_responsavel_id=c.responsavel_id,
+        actor_user_id=usuario.id,
+        payload={"source": "conversa.resolver"},
+    )
     db.commit()
     db.refresh(c)
     return _conversa_out(c)
@@ -867,16 +926,33 @@ def transferir_conversa(
 ):
     c = _get_conversa_or_404(conversa_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
+    # Atendente transfere só as dele; supervisor qualquer uma.
+    if not pode_transferir(usuario, c):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para transferir esta conversa")
 
     old_responsavel_id = c.responsavel_id
     old_equipe_id = c.equipe_id
     if data.responsavel_id is not None:
         c.responsavel_id = data.responsavel_id
+        c.ai_ativo = False  # handoff p/ humano => IA off (transferir só-equipe NÃO toca IA)
     if data.equipe_id is not None:
         c.equipe_id = data.equipe_id
-    if (data.responsavel_id is not None and data.responsavel_id != old_responsavel_id) or (
+    mudou = (data.responsavel_id is not None and data.responsavel_id != old_responsavel_id) or (
         data.equipe_id is not None and data.equipe_id != old_equipe_id
-    ):
+    )
+    if mudou:
+        hist = list(c.historico_transferencias or [])
+        hist.append(
+            {
+                "de": str(old_responsavel_id) if old_responsavel_id else None,
+                "para": str(c.responsavel_id) if c.responsavel_id else None,
+                "de_equipe": str(old_equipe_id) if old_equipe_id else None,
+                "para_equipe": str(c.equipe_id) if c.equipe_id else None,
+                "quando": datetime.utcnow().isoformat(),
+                "transferido_por": str(usuario.id),
+            }
+        )
+        c.historico_transferencias = hist
         record_assignment_event(
             db,
             workspace_id=c.workspace_id,
@@ -890,6 +966,82 @@ def transferir_conversa(
             to_equipe_id=c.equipe_id,
             actor_user_id=usuario.id,
             payload={"source": "conversa.transferir"},
+        )
+    db.commit()
+    db.refresh(c)
+    return _conversa_out(c)
+
+
+@router.post("/{conversa_id}/reabrir", response_model=ConversaOut)
+def reabrir_conversa(
+    conversa_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    c = _get_conversa_or_404(conversa_id, db, workspace_filter)
+    verificar_acesso_workspace(usuario, c.workspace_id, db)
+    if not eh_supervisor(usuario) and c.responsavel_id not in (None, usuario.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para esta conversa")
+    if c.status != "resolvido":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Conversa não está resolvida")
+
+    c.status = "nova"
+    c.closed_at = None
+    c.resolution_time = None
+    record_assignment_event(
+        db,
+        workspace_id=c.workspace_id,
+        canal_id=c.canal_id,
+        conversa_id=c.id,
+        contato_id=c.contato_id,
+        action="reopened",
+        from_responsavel_id=c.responsavel_id,
+        to_responsavel_id=c.responsavel_id,
+        actor_user_id=usuario.id,
+        payload={"source": "conversa.reabrir"},
+    )
+    db.commit()
+    db.refresh(c)
+    return _conversa_out(c)
+
+
+@router.post("/{conversa_id}/remover-atribuicao", response_model=ConversaOut)
+def remover_atribuicao_conversa(
+    conversa_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    c = _get_conversa_or_404(conversa_id, db, workspace_filter)
+    verificar_acesso_workspace(usuario, c.workspace_id, db)
+    if not pode_transferir(usuario, c):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para esta conversa")
+
+    old_responsavel_id = c.responsavel_id
+    old_equipe_id = c.equipe_id
+    c.responsavel_id = None
+    c.equipe_id = None
+    # Devolve à fila: religa a IA SÓ se o canal tem agente ativo (op7nexo é opt-in;
+    # não liga IA onde nunca houve agente).
+    from app.services.agent_service import _agente_ativo_do_canal
+
+    if _agente_ativo_do_canal(db, c.canal_id) is not None:
+        c.ai_ativo = True
+    if old_responsavel_id is not None or old_equipe_id is not None:
+        record_assignment_event(
+            db,
+            workspace_id=c.workspace_id,
+            canal_id=c.canal_id,
+            conversa_id=c.id,
+            contato_id=c.contato_id,
+            action="transfer",
+            from_responsavel_id=old_responsavel_id,
+            to_responsavel_id=None,
+            from_equipe_id=old_equipe_id,
+            to_equipe_id=None,
+            actor_user_id=usuario.id,
+            payload={"source": "conversa.remover-atribuicao"},
         )
     db.commit()
     db.refresh(c)
