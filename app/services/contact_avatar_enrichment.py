@@ -609,6 +609,16 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
             if isinstance(info, dict):
                 nome = info.get("subject") or info.get("name") or None
                 avatar_url = info.get("pictureUrl") or None
+                # O /group/info do evolution-go 0.7.x não devolve pictureUrl, mas a foto do
+                # grupo É recuperável por JID via /user/avatar (buscar_foto_perfil aceita
+                # @g.us). Fallback quando pictureUrl vier vazio. raise_on_transient → retry
+                # sem envenenar; 404 (sem foto) → None.
+                if not avatar_url:
+                    foto_info = evo_service.buscar_foto_perfil(
+                        evolution_instance, group_jid,
+                        token=evolution_instance_token or None, raise_on_transient=True,
+                    )
+                    avatar_url = foto_info or None  # dict {"url":...} ou str; rehost trata ambos
                 # Aproveitar participantes para resolver @lid → telefone
                 participants = info.get("participants") or []
                 if participants:

@@ -110,6 +110,7 @@ criativo_carrossel_slides   -- slides do carrossel; cada um referencia criativo_
 - Avatar é **fonte única** no worker job (`app/services/contact_avatar_enrichment.py`): re-hospeda a URL crua do CDN (pps/fbcdn, que expira) no MinIO (`whatsapp-avatars` → `/meta/storage/...`); falha transitória re-tenta sem gravar `*_fetched_at` (não envenena o TTL de 7d); "sem foto" zera URL efêmera legada → front cai nas iniciais
 - Contato: `crm_whatsapp_contatos.avatar_url`/`avatar_fetched_at`. Grupo: `crm_whatsapp_conversas.group_avatar_url`/`group_avatar_fetched_at` (TTL, não mais guard por presença — evita busy-loop quando o provider devolve nome sem foto)
 - `_enriquecer_contato_background` (canais.py) é **só nome** (nunca avatar); enriquecimento dispara por mensagem inbound (persistence enfileira job) + backfill de TODOS contatos/grupos na transição `connected` (`_disparar_backfill_avatares`) + endpoint `POST /canais/{id}/enriquecer-todos`
+- **Foto de grupo Evolution**: o `/group/info` do evolution-go 0.7.x devolve `pictureUrl=None`; a foto é recuperável por JID via `/user/avatar` (aceita `@g.us`). `process_group_enrichment_job` faz fallback p/ `buscar_foto_perfil(group_jid)` quando pictureUrl vem vazio
 - Reset/backfill manual: `python -m scripts.backfill_avatares --dry-run|--apply [--include-null-tried]` (limpa pps + des-envenena + re-enfileira)
 
 ---
