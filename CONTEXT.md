@@ -217,6 +217,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### 🔒 Implementado (2026-06-24) — Atendimento: teto de visibilidade + handoff de IA (Fase 1)
+- **Teto por papel**: `company_agent` só vê/atende/transfere conversas onde é responsável; demais papéis veem TODAS. Enforçado na FastAPI (`GET /conversas`, `/conversas/{id}`→404, `/mensagens`→404). Lista e mensagens do chat já proxiam a FastAPI → teto cobre o front. Rotas BFF Postgres-direto restantes ganharam a cláusula: `conversations/arquivadas` (teto), `whatsapp/transfer` (atendente só as dele + `ai_ativo=false`), `conversations/[id]/assumir` (`ai_ativo=false` + não rouba de outro humano).
+- **Handoff de IA**: assumir/transferir/iniciar desligam `ai_ativo` (humano assume → IA cala). O `transfer` antigo exigia admin-de-equipe (travava com 0 equipes) — substituído pela regra de papel. Backend: `app/services/crm_escopo.py` + `/reabrir` e `/remover-atribuicao` novos.
+
 ### ✅ Implementado (2026-06-24) — Central de Agentes: chave do agente por conversa (Switch)
 - Switch (HeroUI v3) no compositor de `/crm/atendimento/conversas` (`src/components/crm/atendimento/input-mensagem.tsx`), acima do "+": liga/desliga o agente IA **por conversa** (estado `conversa.iaAtiva`, otimista + reverte em falha). Grava via `useAtualizarConversa` → proxy `PATCH /api/whatsapp/conversations/{id}/atualizar` (campo `iaAtiva` → coluna `ai_ativo`, SQL direto). O proxy GET (`conversations/route.ts`) agora mapeia `iaAtiva` da coluna real `ai_ativo` (antes hardcoded `true`). Backend: migration 091 + gate em `processar_reply` (default OFF). Desligado = humano cuida; ligado = agente responde só naquela conversa.
 
