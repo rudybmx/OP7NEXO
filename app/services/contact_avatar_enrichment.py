@@ -111,7 +111,9 @@ def enqueue_contact_avatar_enrichment(
     - avatar_fetched_at já está dentro do TTL (7 dias), OU
     - já existe job pending/running para este contato.
     """
-    if not (workspace_id and canal_id and contact_id and jid and instance):
+    # instance é apenas fallback legado no payload — o job deriva session/instance do
+    # canal_id. Não exigir instance permite o backfill (que passa instance="").
+    if not (workspace_id and canal_id and contact_id and jid):
         return False
 
     try:
@@ -228,6 +230,48 @@ def backfill_contact_avatar_enrichment(
     return enqueued
 
 
+def backfill_group_enrichment(
+    db: Session,
+    *,
+    workspace_id: str,
+    limit: int = 200,
+) -> int:
+    """Enfileira jobs de enriquecimento (nome+avatar) para grupos sem
+    group_avatar_fetched_at (backfill). Retorna o número de jobs enfileirados."""
+    rows = db.execute(
+        text("""
+            SELECT id, remote_jid, canal_id
+            FROM public.crm_whatsapp_conversas
+            WHERE workspace_id = CAST(:ws AS uuid)
+              AND ativo = true
+              AND is_group = true
+              AND group_avatar_fetched_at IS NULL
+            LIMIT :limit
+        """),
+        {"ws": workspace_id, "limit": limit},
+    ).fetchall()
+
+    enqueued = 0
+    for row in rows:
+        conversa_id = str(row[0])
+        group_jid = str(row[1])
+        canal_id = str(row[2])
+        try:
+            ok = enqueue_group_enrichment(
+                db,
+                workspace_id=workspace_id,
+                canal_id=canal_id,
+                conversa_id=conversa_id,
+                group_jid=group_jid,
+                instance="",
+            )
+            if ok:
+                enqueued += 1
+        except Exception:
+            logger.exception("[group-backfill] erro ao enfileirar conversa_id=%s", conversa_id)
+    return enqueued
+
+
 def enqueue_group_enrichment(
     db: Session,
     *,
@@ -237,15 +281,23 @@ def enqueue_group_enrichment(
     group_jid: str,
     instance: str,
 ) -> bool:
-    """Enfileira busca de nome e avatar de grupo, com dedup e verificação de preenchimento."""
-    if not (workspace_id and canal_id and conversa_id and group_jid and instance):
+    """Enfileira busca de nome e avatar de grupo, com dedup e verificação de TTL.
+
+    Usa TTL (group_avatar_fetched_at) em vez de presença de URL: quando o provider
+    devolve o nome do grupo mas NÃO a foto (pictureUrl=None), o guard antigo
+    (group_name AND group_avatar_url) nunca era satisfeito → re-enfileirava a cada
+    mensagem para sempre (busy-loop). Com TTL, re-tenta no máximo a cada 7 dias e
+    permite re-hospedar URLs pps cruas que expiram.
+    """
+    # instance é só fallback legado — o job deriva session/instance do canal_id.
+    if not (workspace_id and canal_id and conversa_id and group_jid):
         return False
 
     try:
-        # Não inserir job se group_name e group_avatar_url já estão preenchidos
+        # Não inserir job se o avatar do grupo foi buscado dentro do TTL (7 dias)
         row = db.execute(
             text("""
-                SELECT group_name, group_avatar_url
+                SELECT group_avatar_fetched_at
                 FROM public.crm_whatsapp_conversas
                 WHERE id = CAST(:conv_id AS uuid)
                   AND workspace_id = CAST(:ws AS uuid)
@@ -253,8 +305,12 @@ def enqueue_group_enrichment(
             {"conv_id": conversa_id, "ws": workspace_id},
         ).mappings().first()
 
-        if row and row["group_name"] and row["group_avatar_url"]:
-            return False  # Já enriquecido
+        if row and row["group_avatar_fetched_at"] is not None:
+            fetched = row["group_avatar_fetched_at"]
+            if fetched.tzinfo is None:
+                fetched = fetched.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - fetched) < timedelta(days=AVATAR_TTL_DAYS):
+                return False  # Já buscado recentemente
 
         # Dedup: job pending/running recente para esta conversa
         existing = db.execute(
@@ -497,17 +553,23 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
     if not (workspace_id and conversa_id and group_jid and canal_id):
         raise RuntimeError("Job group_enrichment incompleto")
 
-    # Verificar se já está enriquecido
+    # Verificar TTL: se o avatar do grupo foi buscado recentemente, skip.
+    # (Antes era por presença de group_avatar_url, o que causava busy-loop quando
+    # o provider devolvia nome mas não a foto — ver enqueue_group_enrichment.)
     row = db.execute(
         text("""
-            SELECT group_name, group_avatar_url FROM public.crm_whatsapp_conversas
+            SELECT group_avatar_fetched_at FROM public.crm_whatsapp_conversas
             WHERE id = CAST(:conv_id AS uuid) AND workspace_id = CAST(:ws AS uuid)
         """),
         {"conv_id": conversa_id, "ws": workspace_id},
     ).mappings().first()
 
-    if row and row["group_name"] and row["group_avatar_url"]:
-        return {"status": "skipped"}
+    if row and row["group_avatar_fetched_at"] is not None:
+        fetched = row["group_avatar_fetched_at"]
+        if fetched.tzinfo is None:
+            fetched = fetched.replace(tzinfo=timezone.utc)
+        if (datetime.now(timezone.utc) - fetched) < timedelta(days=AVATAR_TTL_DAYS):
+            return {"status": "skipped"}
 
     cfg = _load_canal_cfg(db, workspace_id=workspace_id, canal_id=canal_id)
     if cfg is None:
@@ -582,6 +644,10 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
     if avatar_url:
         avatar_url = rehost_avatar(group_jid, avatar_url, key_prefix="groups")
 
+    # Marca group_avatar_fetched_at (TTL) para não re-buscar a cada mensagem — vale
+    # tanto quando achou foto quanto quando o provider não devolve pictureUrl.
+    # Falha transitória já levantou exceção acima (não chega aqui), então o job
+    # re-tenta sem envenenar o TTL.
     db.execute(
         text("""
             UPDATE public.crm_whatsapp_conversas
@@ -593,6 +659,7 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
                       OR group_avatar_url LIKE '%fbsbx%' THEN NULL
                     ELSE group_avatar_url
                 END,
+                group_avatar_fetched_at = NOW(),
                 updated_at = NOW()
             WHERE id = CAST(:conv_id AS uuid) AND workspace_id = CAST(:ws AS uuid)
         """),

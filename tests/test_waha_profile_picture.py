@@ -65,6 +65,9 @@ class _AvatarDb:
         if "select group_name, group_avatar_url" in sql_lower and "from public.crm_whatsapp_conversas" in sql_lower:
             return _Result(mapping=self.conversation_row)
 
+        if "select group_avatar_fetched_at" in sql_lower and "from public.crm_whatsapp_conversas" in sql_lower:
+            return _Result(mapping=self.conversation_row)
+
         if "select telefone" in sql_lower and "from public.crm_whatsapp_contatos" in sql_lower:
             return _Result(mapping=self.contact_row)
 
@@ -97,6 +100,8 @@ class _AvatarDb:
                     self.conversation_row["group_avatar_url"] = None
             if params and params.get("nome") is not None:
                 self.conversation_row["group_name"] = params["nome"]
+            if "group_avatar_fetched_at = now()" in sql_lower:
+                self.conversation_row["group_avatar_fetched_at"] = datetime.now(timezone.utc)
             self.conversation_row["updated_at"] = datetime.now(timezone.utc)
             return _Result()
 
@@ -290,6 +295,7 @@ def test_enqueue_group_enrichment_inserts_job_with_casts():
             "workspace_id": workspace_id,
             "group_name": None,
             "group_avatar_url": None,
+            "group_avatar_fetched_at": None,
         },
     )
 
@@ -436,6 +442,7 @@ def test_process_group_enrichment_job_updates_group_avatar_url(monkeypatch):
             "workspace_id": workspace_id,
             "group_name": None,
             "group_avatar_url": None,
+            "group_avatar_fetched_at": None,
         },
     )
 
@@ -478,7 +485,94 @@ def test_process_group_enrichment_job_updates_group_avatar_url(monkeypatch):
         "https://api.op7.test/meta/storage/whatsapp-avatars/groups/120363123456789_g_us.jpg"
     )
     assert rehost_calls == [("groups/120363123456789_g_us.jpg", "https://cdn.example.test/group.jpg")]
+    assert db.conversation_row["group_avatar_fetched_at"] is not None
     assert any("cast(:conv_id as uuid)" in sql.lower() for sql, _ in db.calls)
+
+
+def test_enqueue_group_enrichment_skips_when_avatar_recent():
+    """Regressão do busy-loop: com group_avatar_fetched_at recente, não re-enfileira."""
+    workspace_id = str(uuid.uuid4())
+    canal_id = str(uuid.uuid4())
+    conversa_id = str(uuid.uuid4())
+    db = _AvatarDb(
+        canal_row={"id": canal_id, "workspace_id": workspace_id, "config": {"waha": {"session": "op7-waha"}}},
+        contact_row={"id": str(uuid.uuid4()), "workspace_id": workspace_id},
+        conversation_row={
+            "id": conversa_id,
+            "workspace_id": workspace_id,
+            # Nome preenchido, foto ausente, MAS buscado há 1 dia → dentro do TTL (7d).
+            "group_name": "Recepção",
+            "group_avatar_url": None,
+            "group_avatar_fetched_at": datetime.now(timezone.utc) - timedelta(days=1),
+        },
+    )
+
+    ok = contact_avatar_enrichment.enqueue_group_enrichment(
+        db,
+        workspace_id=workspace_id,
+        canal_id=canal_id,
+        conversa_id=conversa_id,
+        group_jid="120363123456789@g.us",
+        instance="op7-waha",
+    )
+
+    assert ok is False
+    assert db.inserted_jobs == []
+
+
+def test_process_group_enrichment_marca_fetched_at_mesmo_sem_foto(monkeypatch):
+    """Provider devolve nome mas não a foto (pictureUrl=None): o job grava
+    group_avatar_fetched_at para NÃO re-processar a cada mensagem (busy-loop)."""
+    workspace_id = str(uuid.uuid4())
+    canal_id = str(uuid.uuid4())
+    conversa_id = str(uuid.uuid4())
+    db = _AvatarDb(
+        canal_row={
+            "id": canal_id,
+            "workspace_id": workspace_id,
+            "tipo": "whatsapp_waha",
+            "evolution_instance_id": None,
+            "config": {"waha": {"session": "op7-waha", "api_base_url": "http://waha:3000", "api_key_ref": "WAHA_API_KEY"}},
+        },
+        contact_row={"id": str(uuid.uuid4()), "workspace_id": workspace_id},
+        conversation_row={
+            "id": conversa_id,
+            "workspace_id": workspace_id,
+            "group_name": None,
+            "group_avatar_url": None,
+            "group_avatar_fetched_at": None,
+        },
+    )
+
+    monkeypatch.setattr(
+        contact_avatar_enrichment.waha_service,
+        "buscar_nome_grupo",
+        lambda session, group_jid, cfg, timeout=5.0: "Recepção",
+    )
+    monkeypatch.setattr(
+        contact_avatar_enrichment.waha_service,
+        "buscar_avatar_chat",
+        lambda session, jid, cfg, timeout=5.0: None,  # sem foto
+    )
+
+    result = contact_avatar_enrichment.process_group_enrichment_job(
+        db,
+        {
+            "workspace_id": workspace_id,
+            "job_payload": {
+                "conversa_id": conversa_id,
+                "group_jid": "120363123456789@g.us",
+                "instance": "op7-waha",
+                "canal_id": canal_id,
+            },
+        },
+    )
+
+    assert result["status"] == "done"
+    assert result["has_avatar"] is False
+    assert db.conversation_row["group_name"] == "Recepção"
+    # O essencial: fetched_at marcado → enqueue futuro será pulado pelo TTL.
+    assert db.conversation_row["group_avatar_fetched_at"] is not None
 
 
 def test_worker_processa_job_contact_avatar_enrichment_e_pubblica_refresh(monkeypatch):
@@ -796,6 +890,7 @@ def test_process_group_enrichment_job_sem_foto_limpa_pps_legado(monkeypatch):
             "workspace_id": workspace_id,
             "group_name": None,
             "group_avatar_url": "https://pps.whatsapp.net/grupo-legado.jpg",
+            "group_avatar_fetched_at": None,
         },
     )
     monkeypatch.setattr(

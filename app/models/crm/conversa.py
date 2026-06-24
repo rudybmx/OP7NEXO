@@ -51,6 +51,9 @@ class Conversa(Base):
     is_group: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     group_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     group_avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    group_avatar_fetched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     status: Mapped[str] = mapped_column(
         String(20), default="nova", nullable=False
     )

@@ -131,7 +131,7 @@ def backfill_grupos(db, *, workspace: str | None, limit: int, apply: bool) -> di
         db.execute(
             text("""
                 UPDATE public.crm_whatsapp_conversas
-                SET group_avatar_url = NULL, updated_at = NOW()
+                SET group_avatar_url = NULL, group_avatar_fetched_at = NULL, updated_at = NOW()
                 WHERE id = CAST(:id AS uuid)
             """),
             {"id": row["conversa_id"]},

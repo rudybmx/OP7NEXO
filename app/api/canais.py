@@ -736,6 +736,28 @@ def _evolution_text_and_mentions(payload: dict | None, canal: CanalEntrada) -> t
 
 # ── CRUD ─────────────────────────────────────────────────────────────
 
+def _disparar_backfill_avatares(db: Session, *, workspace_id: str, canal_id: str) -> None:
+    """Enfileira jobs de avatar para TODOS os contatos e grupos já existentes do
+    workspace (backfill). Chamado quando um número (re)conecta — garante que as
+    conversas que já chegaram peguem foto, não só quem mandar mensagem nova.
+
+    Best-effort: faz apenas enqueue (inserts em crm_message_jobs); o caller commita.
+    """
+    try:
+        from app.services.contact_avatar_enrichment import (
+            backfill_contact_avatar_enrichment,
+            backfill_group_enrichment,
+        )
+        nc = backfill_contact_avatar_enrichment(db, workspace_id=workspace_id, limit=1000)
+        ng = backfill_group_enrichment(db, workspace_id=workspace_id, limit=1000)
+        logger.info(
+            "[avatar-backfill] on-connect canal=%s contatos=%d grupos=%d",
+            str(canal_id)[:8], nc, ng,
+        )
+    except Exception:
+        logger.exception("[avatar-backfill] on-connect falhou canal=%s", str(canal_id)[:8])
+
+
 def _reconciliar_waha_status(canais: list[CanalEntrada], db: Session) -> None:
     """Valida o connection_status dos canais WAHA contra o estado real no WAHA.
 
@@ -757,6 +779,7 @@ def _reconciliar_waha_status(canais: list[CanalEntrada], db: Session) -> None:
         grupos.setdefault(chave, (cfg, []))[1].append((c, session))
 
     mudou = False
+    recem_conectados: list[tuple[str, str]] = []
     for cfg, items in grupos.values():
         try:
             sessoes = waha_service.listar_sessoes(cfg, timeout=4.0)
@@ -793,10 +816,16 @@ def _reconciliar_waha_status(canais: list[CanalEntrada], db: Session) -> None:
                 jid = me.get("id") if isinstance(me, dict) else None
                 if jid:
                     c.numero_telefone = str(jid).split("@")[0]
+                recem_conectados.append((str(c.workspace_id), str(c.id)))
             # Em failed/disconnected/connecting: só reflete o status, sem apagar numero/conectado_em
             mudou = True
 
-    if mudou:
+    # Ao (re)conectar, enfileira backfill de avatar de TODOS os contatos/grupos
+    # já existentes (não só quem mandar mensagem nova).
+    for ws_id, canal_id in recem_conectados:
+        _disparar_backfill_avatares(db, workspace_id=ws_id, canal_id=canal_id)
+
+    if mudou or recem_conectados:
         db.commit()
 
 
@@ -1175,6 +1204,7 @@ def _status_waha(canal: CanalEntrada, db: Session) -> dict:
                 pass
 
         if conn_status == "connected":
+            era_conectado = canal.connection_status == "connected"
             canal.connection_status = "connected"
             canal.status = "ativo"
             if not canal.conectado_em:
@@ -1184,6 +1214,12 @@ def _status_waha(canal: CanalEntrada, db: Session) -> dict:
             if jid:
                 canal.numero_telefone = jid.split("@")[0]
             db.commit()
+            # Só na transição (número acabou de vincular) — não a cada poll
+            if not era_conectado:
+                _disparar_backfill_avatares(
+                    db, workspace_id=str(canal.workspace_id), canal_id=str(canal.id)
+                )
+                db.commit()
         elif conn_status == "connecting":
             if canal.connection_status != "connecting":
                 canal.connection_status = "connecting"
@@ -3041,61 +3077,50 @@ def enriquecer_todos_contatos(
     workspace_filter=Depends(get_workspace_atual),
 ):
     """Dispara enriquecimento de todos os contatos e grupos sem avatar/nome.
-    Processa em background — não bloqueia a requisição."""
+
+    Avatar (contato + grupo) é enfileirado como job no worker (rehost + retry
+    corretos). Nome amigável de contatos sem nome roda em BackgroundTasks."""
     canal = _get_canal_or_404(canal_id, db)
     verificar_acesso_workspace(usuario, canal.workspace_id, db)
 
     instance = canal.evolution_instance_id or _nome_instancia_evo(canal)
     ws_id = str(canal.workspace_id)
 
-    # Contatos sem avatar_url OU avatar_fetched_at IS NULL
-    contatos = db.execute(
+    from app.services.contact_avatar_enrichment import (
+        backfill_contact_avatar_enrichment,
+        backfill_group_enrichment,
+    )
+
+    # Avatar: enfileira jobs no worker (não envenena, re-hospeda no MinIO)
+    avatar_jobs_contatos = backfill_contact_avatar_enrichment(db, workspace_id=ws_id, limit=500)
+    avatar_jobs_grupos = backfill_group_enrichment(db, workspace_id=ws_id, limit=500)
+    db.commit()
+
+    # Nome amigável: só para contatos individuais ainda sem nome (Evolution)
+    contatos_sem_nome = db.execute(
         text("""
             SELECT jid FROM public.crm_whatsapp_contatos
             WHERE workspace_id = :ws AND ativo = true
-              AND (avatar_url IS NULL OR avatar_fetched_at IS NULL)
+              AND NULLIF(nome, '') IS NULL AND NULLIF(push_name, '') IS NULL
+              AND jid LIKE '%@s.whatsapp.net'
             LIMIT 200
         """),
         {"ws": ws_id},
     ).fetchall()
 
-    # Grupos sem group_avatar_url
-    grupos = db.execute(
-        text("""
-            SELECT remote_jid FROM public.crm_whatsapp_conversas
-            WHERE workspace_id = :ws AND ativo = true
-              AND is_group = true
-              AND (group_avatar_url IS NULL OR group_name IS NULL)
-            LIMIT 50
-        """),
-        {"ws": ws_id},
-    ).fetchall()
-
-    total_contatos = len(contatos)
-    total_grupos = len(grupos)
-
-    for row in contatos:
-        jid = row[0]
+    for row in contatos_sem_nome:
         background_tasks.add_task(
             _enriquecer_contato_background,
             instance=instance,
-            jid=jid,
-            workspace_id=ws_id,
-        )
-
-    for row in grupos:
-        group_jid = row[0]
-        background_tasks.add_task(
-            _enriquecer_grupo_background,
-            instance=instance,
-            group_jid=group_jid,
+            jid=row[0],
             workspace_id=ws_id,
         )
 
     return {
         "status": "processando",
-        "contatos_agendados": total_contatos,
-        "grupos_agendados": total_grupos,
+        "avatar_jobs_contatos": avatar_jobs_contatos,
+        "avatar_jobs_grupos": avatar_jobs_grupos,
+        "nomes_agendados": len(contatos_sem_nome),
         "instance": instance,
     }
 
@@ -3501,6 +3526,10 @@ def _processar_evento_evolution(
                 instance_name = canal.evolution_instance_id or "opcl"
                 ws_id = resultado.get("workspace_id", "")
                 sender_jid = resultado.get("participant_jid") or resultado.get("remote_jid", "")
+                # Avatar de contato e grupo (+ nome do grupo) são enfileirados como
+                # jobs no worker por whatsapp_crm_persistence (rehost + retry corretos).
+                # Aqui só disparamos o enriquecimento de NOME amigável do contato
+                # (buscar_contato via Evolution), que o job não cobre.
                 if sender_jid and ws_id:
                     if media_mode == "background" and background_tasks is not None:
                         background_tasks.add_task(
@@ -3513,20 +3542,6 @@ def _processar_evento_evolution(
                         _enriquecer_contato_background(
                             instance=instance_name,
                             jid=sender_jid,
-                            workspace_id=ws_id,
-                        )
-                if resultado.get("is_group") and resultado.get("remote_jid") and ws_id:
-                    if media_mode == "background" and background_tasks is not None:
-                        background_tasks.add_task(
-                            _enriquecer_grupo_background,
-                            instance=instance_name,
-                            group_jid=resultado.get("remote_jid"),
-                            workspace_id=ws_id,
-                        )
-                    else:
-                        _enriquecer_grupo_background(
-                            instance=instance_name,
-                            group_jid=resultado.get("remote_jid"),
                             workspace_id=ws_id,
                         )
         except Exception:
@@ -4508,17 +4523,25 @@ def _enriquecer_contato_background(
     jid: str,
     workspace_id: str,
 ) -> None:
-    """Busca foto de perfil e nome amigável do contato na Evolution API.
-    Roda em BackgroundTasks — não bloqueia o webhook."""
+    """Busca o NOME amigável do contato na Evolution API e atualiza nome/push_name.
+
+    O AVATAR NÃO é tratado aqui: é responsabilidade exclusiva do worker job
+    (contact_avatar_enrichment), que re-hospeda no MinIO e re-tenta em falha
+    transitória sem envenenar `avatar_fetched_at`. O caminho legado gravava
+    `avatar_fetched_at = NOW()` mesmo quando a busca falhava por timeout do
+    evolution-go → bloqueava o retry do job por 7 dias (contatos ficavam sem foto).
+
+    Só busca o nome quando o contato ainda não tem nome nem push_name — evita
+    martelar a Evolution a cada mensagem inbound. Roda em BackgroundTasks."""
     from app.core.config import settings
     engine = create_engine(settings.DATABASE_URL)
 
     try:
-        # 1. Verifica se já foi enriquecido nas últimas 24h
+        # 1. Só enriquecer nome se o contato ainda não tem nome amigável
         with engine.begin() as conn:
             row = conn.execute(
                 text("""
-                    SELECT avatar_url, avatar_fetched_at, nome, push_name
+                    SELECT nome, push_name
                     FROM public.crm_whatsapp_contatos
                     WHERE workspace_id = :ws AND jid = :jid AND ativo = true
                     LIMIT 1
@@ -4530,57 +4553,11 @@ def _enriquecer_contato_background(
             logger.info("[enrich-contato] contato não encontrado: jid=%s", jid)
             return
 
-        avatar_url, fetched_at, current_nome, current_push = row
-        if fetched_at and (datetime.now(timezone.utc) - fetched_at).total_seconds() < 86400:
-            logger.info("[enrich-contato] skip (cooldown 24h): jid=%s", jid)
-            return
+        current_nome, current_push = row
+        if (current_nome or "").strip() or (current_push or "").strip():
+            return  # já tem nome — nada a fazer
 
-        # 2. Busca foto de perfil
-        foto_info = evo_service.buscar_foto_perfil(instance, jid)
-        minio_avatar_url = None
-        if foto_info:
-            safe_jid = jid.replace("@", "_").replace(".", "_")
-            if isinstance(foto_info, dict):
-                avatar_url = foto_info.get("url")
-                avatar_b64 = foto_info.get("base64")
-                avatar_mime = foto_info.get("mime_type") or foto_info.get("mimetype") or "image/jpeg"
-                if avatar_b64:
-                    try:
-                        raw_b64 = avatar_b64.split(",", 1)[1] if isinstance(avatar_b64, str) and avatar_b64.startswith("data:") and "," in avatar_b64 else avatar_b64
-                        avatar_bytes = base64.b64decode(raw_b64)
-                        ext = mimetypes.guess_extension(avatar_mime) or ".jpg"
-                        object_key = f"contacts/{safe_jid}{ext}"
-                        put_bytes("whatsapp-avatars", object_key, avatar_bytes, avatar_mime)
-                        minio_avatar_url = public_url("whatsapp-avatars", object_key)
-                    except Exception:
-                        logger.exception("[enrich-contato] falha ao salvar avatar base64: jid=%s", jid)
-                elif avatar_url:
-                    minio_avatar_url = download_and_put(
-                        "whatsapp-avatars",
-                        f"contacts/{safe_jid}.jpg",
-                        avatar_url,
-                        avatar_mime,
-                    )
-            elif isinstance(foto_info, str):
-                if foto_info.startswith("http"):
-                    minio_avatar_url = download_and_put(
-                        "whatsapp-avatars",
-                        f"contacts/{safe_jid}.jpg",
-                        foto_info,
-                        "image/jpeg",
-                    )
-                else:
-                    try:
-                        avatar_bytes = base64.b64decode(foto_info.split(",", 1)[1] if foto_info.startswith("data:") and "," in foto_info else foto_info)
-                        object_key = f"contacts/{safe_jid}.jpg"
-                        put_bytes("whatsapp-avatars", object_key, avatar_bytes, "image/jpeg")
-                        minio_avatar_url = public_url("whatsapp-avatars", object_key)
-                    except Exception:
-                        logger.exception("[enrich-contato] falha ao salvar avatar em string base64: jid=%s", jid)
-            if minio_avatar_url:
-                logger.info("[enrich-contato] avatar salvo no MinIO: %s", minio_avatar_url)
-
-        # 3. Busca nome amigável
+        # 2. Busca nome amigável
         contatos = evo_service.buscar_contato(instance, jid)
         best_name = None
         best_push = None
@@ -4589,130 +4566,24 @@ def _enriquecer_contato_background(
             best_name = c.get("name") or c.get("verifiedName")
             best_push = c.get("pushName") or c.get("notify")
 
-        # 4. Atualiza banco
+        if not (best_name or best_push):
+            return
+
+        # 3. Atualiza só nome/push_name (nunca avatar)
         with engine.begin() as conn:
             conn.execute(
                 text("""
                     UPDATE public.crm_whatsapp_contatos
-                    SET avatar_url = COALESCE(:avatar, avatar_url),
-                        avatar_fetched_at = NOW(),
-                        nome = COALESCE(NULLIF(:nome, ''), nome),
+                    SET nome = COALESCE(NULLIF(:nome, ''), nome),
                         push_name = COALESCE(NULLIF(:push, ''), push_name),
                         updated_at = NOW()
                     WHERE workspace_id = :ws AND jid = :jid
                 """),
-                {
-                    "avatar": minio_avatar_url,
-                    "nome": best_name,
-                    "push": best_push,
-                    "ws": workspace_id,
-                    "jid": jid,
-                },
+                {"nome": best_name, "push": best_push, "ws": workspace_id, "jid": jid},
             )
 
         logger.info(
-            "[enrich-contato] OK jid=%s avatar=%s nome=%s push=%s",
-            jid, bool(minio_avatar_url), best_name, best_push,
+            "[enrich-contato] nome OK jid=%s nome=%s push=%s", jid, best_name, best_push,
         )
     except Exception as exc:
         logger.exception("[enrich-contato] ERRO jid=%s: %s", jid, exc)
-
-
-def _enriquecer_grupo_background(
-    instance: str,
-    group_jid: str,
-    workspace_id: str,
-) -> None:
-    """Busca nome, foto e participantes do grupo na Evolution API.
-    Roda em BackgroundTasks — não bloqueia o webhook."""
-    from app.core.config import settings
-    engine = create_engine(settings.DATABASE_URL)
-
-    try:
-        # 1. Busca info do grupo
-        info = evo_service.buscar_grupo(instance, group_jid)
-        if not info:
-            logger.info("[enrich-grupo] grupo não encontrado na Evolution: %s", group_jid)
-            return
-
-        group_name = info.get("subject") or info.get("id", "").split("@")[0]
-        picture_url = info.get("pictureUrl")
-
-        # 2. Baixa foto do grupo para MinIO
-        minio_group_avatar = None
-        if picture_url:
-            safe_gid = group_jid.replace("@", "_").replace(".", "_")
-            minio_group_avatar = download_and_put(
-                "whatsapp-avatars",
-                f"groups/{safe_gid}.jpg",
-                picture_url,
-                "image/jpeg",
-            )
-
-        # 3. Atualiza conversa
-        with engine.begin() as conn:
-            conn.execute(
-                text("""
-                    UPDATE public.crm_whatsapp_conversas
-                    SET group_name = COALESCE(NULLIF(:gname, ''), group_name),
-                        group_avatar_url = COALESCE(:gavatar, group_avatar_url),
-                        updated_at = NOW()
-                    WHERE workspace_id = :ws AND remote_jid = :jid AND ativo = true
-                """),
-                {
-                    "gname": group_name,
-                    "gavatar": minio_group_avatar,
-                    "ws": workspace_id,
-                    "jid": group_jid,
-                },
-            )
-
-        # 4. Upsert participantes como contatos (reutiliza avatar existente)
-        participants = info.get("participants", []) or evo_service.listar_participantes_grupo(instance, group_jid)
-        if participants:
-            for p in participants:
-                p_jid = p.get("id", "")
-                if not p_jid:
-                    continue
-                p_tel = p_jid.split("@")[0] if "@" in p_jid else p_jid
-
-                with engine.begin() as conn:
-                    # Tenta reutilizar avatar de contato existente
-                    existing = conn.execute(
-                        text("""
-                            SELECT avatar_url FROM public.crm_whatsapp_contatos
-                            WHERE workspace_id = :ws AND jid = :jid AND ativo = true
-                            LIMIT 1
-                        """),
-                        {"ws": workspace_id, "jid": p_jid},
-                    ).fetchone()
-                    existing_avatar = existing[0] if existing else None
-
-                    conn.execute(
-                        text("""
-                            INSERT INTO public.crm_whatsapp_contatos
-                            (workspace_id, jid, telefone, numero_evo, nome, push_name, origem, avatar_url, created_at, updated_at)
-                            VALUES (:ws, :jid, :tel, :evo, :nome, :push, 'grupo', :avatar, NOW(), NOW())
-                            ON CONFLICT (workspace_id, jid) DO UPDATE SET
-                                nome = COALESCE(NULLIF(EXCLUDED.nome, ''), public.crm_whatsapp_contatos.nome),
-                                push_name = COALESCE(NULLIF(EXCLUDED.push_name, ''), public.crm_whatsapp_contatos.push_name),
-                                avatar_url = COALESCE(public.crm_whatsapp_contatos.avatar_url, EXCLUDED.avatar_url),
-                                updated_at = NOW()
-                        """),
-                        {
-                            "ws": workspace_id,
-                            "jid": p_jid,
-                            "tel": p_tel,
-                            "evo": p_jid,
-                            "nome": p_tel,
-                            "push": None,
-                            "avatar": existing_avatar,
-                        },
-                    )
-
-        logger.info(
-            "[enrich-grupo] OK gid=%s nome=%s avatar=%s participants=%s",
-            group_jid, group_name, bool(minio_group_avatar), len(participants),
-        )
-    except Exception as exc:
-        logger.exception("[enrich-grupo] ERRO gid=%s: %s", group_jid, exc)
