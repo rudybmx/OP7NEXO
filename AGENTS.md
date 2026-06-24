@@ -132,7 +132,7 @@ Se a implementação mudou comportamento, adicionou módulo, endpoint ou modelo 
 # Auth
 TOKEN=$(curl -s -X POST https://api.op7franquia.com.br/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@op7nexo.com","senha":"admin123"}' \
+  -d '{"email":"admin@op7nexo.com","senha":"aDMIN@123**"}' \
   | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
 
 # Deploy (USAR SEMPRE SOB lock-deploy — nunca docker compose up direto)
