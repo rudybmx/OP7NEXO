@@ -75,6 +75,7 @@ criativo_carrossel_slides   -- slides do carrossel; cada um referencia criativo_
 - Localização: `/root/op7nexo-api/alembic/versions/` (NÃO existe `migrations/` — ver constituição 2.5)
 - Sempre rodar após criar: `bash /root/deploy.sh api` + testar endpoint
 - Migration 089: `group_avatar_fetched_at` em `crm_whatsapp_conversas` (TTL de re-fetch de avatar de grupo; encadeada em 086 — 087/088 reservados p/ pgvector adiado)
+- Migration 092: `marcada_nao_lida` (bool) em `crm_whatsapp_conversas` — marcação manual "não lida" (selo vermelho no Atendimento), distinta do contador `nao_lidas`; `marcar-nao-lido` seta, `marcar-lido` limpa; encadeada em 091
 
 ### Avatares de contatos/grupos (foto de perfil na tela de conversas)
 - Avatar é **fonte única** no worker job (`app/services/contact_avatar_enrichment.py`): re-hospeda a URL crua do CDN (pps/fbcdn, que expira) no MinIO (`whatsapp-avatars` → `/meta/storage/...`); falha transitória re-tenta sem gravar `*_fetched_at` (não envenena o TTL de 7d); "sem foto" zera URL efêmera legada → front cai nas iniciais

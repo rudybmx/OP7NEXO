@@ -36,6 +36,7 @@ class ConversaOut(BaseModel):
     remote_jid: str | None
     status: str
     nao_lidas: int
+    marcada_nao_lida: bool = False
     ultima_mensagem: str | None
     ultima_direcao: str | None
     ultima_msg_at: datetime | None
@@ -229,6 +230,7 @@ def _conversa_out(c: Conversa) -> ConversaOut:
         remote_jid=c.remote_jid,
         status=c.status,
         nao_lidas=c.nao_lidas,
+        marcada_nao_lida=getattr(c, "marcada_nao_lida", False),
         ultima_mensagem=c.ultima_mensagem,
         ultima_direcao=c.ultima_direcao,
         ultima_msg_at=c.ultima_msg_at,
@@ -717,6 +719,7 @@ def marcar_conversa_lida(
     c = _get_conversa_or_404(conversa_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
     c.nao_lidas = 0
+    c.marcada_nao_lida = False
     db.commit()
     db.refresh(c)
     return _conversa_out(c)
@@ -731,8 +734,7 @@ def marcar_conversa_nao_lida(
 ):
     c = _get_conversa_or_404(conversa_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
-    if c.nao_lidas == 0:
-        c.nao_lidas = 1
+    c.marcada_nao_lida = True
     db.commit()
     db.refresh(c)
     return _conversa_out(c)

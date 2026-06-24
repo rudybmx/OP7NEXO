@@ -113,6 +113,7 @@ class Conversa(Base):
     )
     favorita: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     fixada: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    marcada_nao_lida: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     # Central de Agentes (Fase 2): resposta automática + handoff por confiança.
     ai_respondido: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     ai_escalado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
