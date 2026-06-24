@@ -332,6 +332,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - **Refinamentos Estúdio (2026-06-11)** migration **066** `criativo_paletas` (esquemas de cores 60/30/10 por workspace, máx 10). `GET/POST/DELETE /design/paletas` (POST bloqueia em 10; DELETE cross-tenant → 403) e `GET /design/historico` (gerações done do workspace + `?desde` p/ box diário; estrutura de params_json). **Tenant validado com 2 workspaces** (dado de A não vaza p/ B). Spec atualizada em `docs/specs/gerador-criativos-modelos/`.
 - **Próximo**: persistir brand-kit/logos por workspace; templates reais (DB) com áreas seguras; partials progressivos; (opcional) Playwright WYSIWYG no worker. F5.2 ingestão Ad Library pública. Billing/vídeo em specs separados.
 
+### ✅ Implementado (2026-06-24) — Central de Agentes: Fase 1 (schema + CRUD)
+- **Migrations 084/085** (`down_revision` 083). **084**: `llm_providers`/`llm_provider_tokens`/`llm_provider_modelos` (seed OpenAI/OpenRouter/DeepSeek + modelos; token cifrado com **Fernet**, nunca devolvido inteiro — só máscara). **085**: `agentes` (provider_id+modelo, status, tom, idiomas[], blacklist_topicos[], threshold_confianca, `debounce_segundos`=40, limites/alerta), `agente_canais` (índice parcial `uq_agente_canal_ativo` = **1 agente ativo por canal**), `agente_prompts` (draft/publicado), `agente_horarios`, `agente_habilidades`. Models em `app/models/agente/`.
+- **Routers platform_admin**: `app/api/llm_providers.py` (`/llm-providers/*` + token cifra/máscara) e `app/api/agentes.py` (`/workspaces/{id}/agentes/*` CRUD + `/toggle`; conflito de canal ativo → **409**; soft delete libera o canal). Cifra em `app/core/llm_crypto.py` (env `LLM_TOKEN_ENC_KEY`; `cryptography==49.0.0` pinado). Validado E2E (TestClient + clone de schema em DB scratch; 84/85 aplicam, head único). Worker/RAG/dashboard/feedback = fases 2-4. Spec `docs/specs/central-agentes-fase1.md`; plano `PLANO_CENTRAL_AGENTES.md`.
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos

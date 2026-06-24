@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     frontend_url: str = "https://nexo.op7franquia.com.br"
 
+    # Central de Agentes — chave Fernet (base64 url-safe de 32 bytes) que cifra os
+    # tokens de provider de LLM em repouso (llm_provider_tokens.token_encrypted).
+    # Gerar: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    LLM_TOKEN_ENC_KEY: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
