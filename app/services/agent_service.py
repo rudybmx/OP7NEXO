@@ -720,7 +720,7 @@ def _postar_msg_sistema(db: Session, conversa, agente: Agente, motivo: str) -> N
              direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type,
              status, recebida_em, created_at, updated_at)
             VALUES (:ws, :canal, :cid, :ct, :inst, :jid,
-                    'sistema', false, 'sistema', 'Sistema', :msg, 'sistema',
+                    'saida', false, 'sistema', 'Sistema', :msg, 'sistema',
                     'enviada', NOW(), NOW(), NOW())
         """),
         {
