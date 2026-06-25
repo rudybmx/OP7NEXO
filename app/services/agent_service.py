@@ -16,7 +16,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
@@ -46,8 +46,30 @@ def _prompt_efetivo(db: Session, agente: Agente) -> str:
     return draft.prompt_texto if draft else ""
 
 
+def _data_hora_br() -> str:
+    """Data e hora atuais no horário de Brasília (UTC-3 fixo — sem dependência de tzdata),
+    em português, para injetar no system prompt. O Brasil não tem horário de verão desde 2019."""
+    agora = datetime.now(timezone(timedelta(hours=-3)))
+    dias = (
+        "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
+        "sexta-feira", "sábado", "domingo",
+    )
+    meses = (
+        "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+        "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+    )
+    return (
+        f"{dias[agora.weekday()]}, {agora.day} de {meses[agora.month - 1]} "
+        f"de {agora.year}, {agora:%H:%M}"
+    )
+
+
 def _montar_system(agente: Agente, prompt: str, rag_chunks: list[str] | None = None) -> str:
     partes = [prompt.strip() or "Você é um assistente de atendimento prestativo e objetivo."]
+    partes.append(
+        f"Data e hora atuais (horário de Brasília): {_data_hora_br()}. "
+        "Use esta informação quando perguntarem o dia, a data ou a hora de hoje."
+    )
     if agente.tom:
         partes.append(f"Tom de voz: {agente.tom}.")
     if agente.idiomas:

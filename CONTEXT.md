@@ -218,6 +218,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-25) — Central de Agentes: data/hora no prompt + tuning
+- `agent_service._montar_system` injeta **data/hora atual (horário de Brasília, UTC-3 fixo, sem tzdata)** no system prompt via novo `_data_hora_br()` → o agente sabe o dia de hoje **sem tool** (vale p/ `/testar` e p/ o worker). Resolve "que dia é hoje?".
+- Tuning de config (sem deploy): threshold de confiança do agente "Teste" baixado p/ 0.5 e prompt publicado mais rico que **orienta o `score_confianca`** (nota alta p/ resposta útil) — o auto-score do `deepseek-v4-flash` é ruidoso (0.3~1.0 p/ a mesma resposta) e escalava à toa (`baixa_confianca`).
+
 ### ✅ Implementado (2026-06-13) — Auto-refresh de Insights de IA (Meta + Google)
 - Insights de IA gerados automaticamente no `op7nexo-worker` para todos os workspaces com dados nos últimos 7 dias — antes só sob demanda. `scheduler._gerar_insights_ia()` (best-effort, sessão por workspace). **Spec 002**: agora em cron próprio (`meta_insights_ia` 06/12/18h+40min), pós-enfileiramento, não mais acoplado ao job de sync.
 - `ia_insights.py`: KPIs+geração extraídos do endpoint para `gerar_insights_meta()` (reusado pelo endpoint `/meta/insights/ia` E pelo scheduler) e novo `gerar_insights_google()` (KPIs de `google_dados_diarios`: custo→spend, conversoes→leads; prompt `PROMPT_GESTOR_GOOGLE` sem reach/frequência). `gerar_e_salvar_insights`/`deve_regenerar`/`buscar_*` agora filtram por `modulo` (meta_ads|google_ads) p/ não colidirem no cache.
