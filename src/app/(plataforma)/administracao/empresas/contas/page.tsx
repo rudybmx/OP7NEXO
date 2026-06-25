@@ -203,7 +203,7 @@ export default function ClientesPage() {
                       {(c.modulos || []).length === 0 ? (
                         <span style={{ fontSize: 12, color: 'var(--ws-text-3)' }}>—</span>
                       ) : (c.modulos || []).map(m => (
-                        <Badge key={m} variant="secondary">
+                        <Badge key={m} variant="secondary" style={{ background: 'rgba(107,114,128,0.16)', color: 'var(--ws-text-2)', border: 'none' }}>
                           {MODULOS.find(x => x.id === m)?.label || m}
                         </Badge>
                       ))}

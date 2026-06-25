@@ -399,7 +399,7 @@ export function PaginaArquivado() {
                     </td>
                     <td className="ds-table-td" style={tdStyle}>
                       {c.lead_status ? (
-                        <Badge variant="secondary">{c.lead_status}</Badge>
+                        <Badge variant="secondary" style={{ background: 'rgba(107,114,128,0.16)', color: 'var(--ws-text-2)', border: 'none' }}>{c.lead_status}</Badge>
                       ) : (
                         <span style={{ color: 'var(--ws-text-3)', fontSize: 12 }}>—</span>
                       )}
