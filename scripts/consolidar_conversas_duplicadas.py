@@ -75,11 +75,15 @@ def _recency_key(m: dict) -> tuple:
 
 
 def _tables_with_contato_and_conversa(db: Session) -> list[str]:
-    """Tabelas-filhas que têm AMBOS conversa_id e contato_id (p/ reapontar contato escopado)."""
+    """Tabelas-filhas BASE TABLE (não views) com AMBOS conversa_id e contato_id."""
     rows = db.execute(text("""
-        SELECT table_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND column_name = 'contato_id'
-          AND table_name IN (
+        SELECT c.table_name
+        FROM information_schema.columns c
+        JOIN information_schema.tables t
+          ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+        WHERE c.table_schema = 'public' AND c.column_name = 'contato_id'
+          AND t.table_type = 'BASE TABLE'   -- exclui VIEWS (ex.: vw_crm_whatsapp_vector_documents)
+          AND c.table_name IN (
               SELECT table_name FROM information_schema.columns
               WHERE table_schema = 'public' AND column_name = 'conversa_id'
           )
