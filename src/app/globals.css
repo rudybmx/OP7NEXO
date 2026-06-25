@@ -12,51 +12,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import 'reactflow/dist/style.css';
-@import "@heroui/styles/components/button.css" layer(components);
-@import "@heroui/styles/components/chip.css" layer(components);
-@import "@heroui/styles/components/table.css" layer(components);
-/* HeroUI v2 design-system extended components */
-@import "@heroui/styles/components/input.css" layer(components);
-@import "@heroui/styles/components/textarea.css" layer(components);
-@import "@heroui/styles/components/textfield.css" layer(components);
-@import "@heroui/styles/components/select.css" layer(components);
-@import "@heroui/styles/components/checkbox.css" layer(components);
-@import "@heroui/styles/components/checkbox-group.css" layer(components);
-@import "@heroui/styles/components/radio.css" layer(components);
-@import "@heroui/styles/components/radio-group.css" layer(components);
-@import "@heroui/styles/components/switch.css" layer(components);
-@import "@heroui/styles/components/slider.css" layer(components);
-@import "@heroui/styles/components/avatar.css" layer(components);
-@import "@heroui/styles/components/badge.css" layer(components);
-@import "@heroui/styles/components/card.css" layer(components);
-@import "@heroui/styles/components/modal.css" layer(components);
-@import "@heroui/styles/components/drawer.css" layer(components);
-@import "@heroui/styles/components/dropdown.css" layer(components);
-@import "@heroui/styles/components/tabs.css" layer(components);
-@import "@heroui/styles/components/pagination.css" layer(components);
-@import "@heroui/styles/components/tooltip.css" layer(components);
-@import "@heroui/styles/components/popover.css" layer(components);
-@import "@heroui/styles/components/progress-bar.css" layer(components);
-@import "@heroui/styles/components/progress-circle.css" layer(components);
-@import "@heroui/styles/components/spinner.css" layer(components);
-@import "@heroui/styles/components/skeleton.css" layer(components);
-@import "@heroui/styles/components/autocomplete.css" layer(components);
-@import "@heroui/styles/components/date-picker.css" layer(components);
-@import "@heroui/styles/components/date-field.css" layer(components);
-@import "@heroui/styles/components/accordion.css" layer(components);
-@import "@heroui/styles/components/alert.css" layer(components);
-@import "@heroui/styles/components/alert-dialog.css" layer(components);
-@import "@heroui/styles/components/breadcrumbs.css" layer(components);
-@import "@heroui/styles/components/separator.css" layer(components);
-@import "@heroui/styles/components/label.css" layer(components);
-@import "@heroui/styles/components/close-button.css" layer(components);
-@import "@heroui/styles/components/link.css" layer(components);
-@import "@heroui/styles/components/kbd.css" layer(components);
-@import "@heroui/styles/components/scroll-shadow.css" layer(components);
-@import "@heroui/styles/components/typography.css" layer(components);
-@import "@heroui/styles/themes/default/index.css" layer(theme);
-@import "@heroui/styles/utilities";
-@import "@heroui/styles/variants";
+/* HeroUI removido na Fase 1 (componentes/imports/deps). A camada de tokens
+   HeroUI-derivada (2º @theme inline + bloco :root abaixo) sai na Fase 2. */
 
 @custom-variant dark (&:is(.dark *));
 
