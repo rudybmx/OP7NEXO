@@ -240,6 +240,16 @@ def _job_process_whatsapp_events() -> None:
         log.exception("Erro ao processar fila WhatsApp: %s", exc)
 
 
+def _job_channel_health() -> None:
+    """Health-check dos canais WhatsApp: reconcilia estado real + alerta caídos."""
+    from app.services.channel_health import run_channel_health_check  # import tardio (evita circular)
+    with SessionLocal() as db:
+        try:
+            run_channel_health_check(db)
+        except Exception:
+            logging.getLogger(__name__).exception("[scheduler] channel_health falhou")
+
+
 def iniciar_scheduler() -> None:
     # Sync LEVE (só insights recentes): enfileira jobs às 06h, 12h, 18h (Brasília).
     scheduler.add_job(
@@ -307,6 +317,16 @@ def iniciar_scheduler() -> None:
         "interval",
         minutes=5,
         id="followup_etiqueta",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
+    )
+    scheduler.add_job(
+        _job_channel_health,
+        "interval",
+        minutes=max(1, int(settings.HEALTH_CHECK_INTERVAL_MIN)),
+        id="channel_health",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

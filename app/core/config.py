@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     firecrawl_api_url: str = "https://api.firecrawl.dev"
     EVOLUTION_API_URL: str = "https://evo.op7franquia.com.br"
     EVOLUTION_API_KEY: str = ""
+    # Health-check de canais (worker): alerta WhatsApp de canal caído.
+    HEALTH_ALERT_TO: str = ""            # número admin que recebe o alerta (vazio = desabilitado)
+    HEALTH_ALERT_FROM_CANAL: str = ""    # id do canal CONNECTED que envia o alerta (explícito, sem auto-pick)
+    HEALTH_CHECK_INTERVAL_MIN: int = 15
     SERVER_URL: str = "https://api.op7franquia.com.br"
     MINIO_ENDPOINT: str = "minio.op7franquia.com.br"
     MINIO_PORT: int = 443
