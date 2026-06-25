@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
-from app.models.crm import Conversa, Mensagem
+from app.models.crm import Contato, Conversa, Mensagem
 from app.models.user import User
 from app.services.whatsapp_media import infer_media_type
 from app.services.whatsapp_normalizer import _extract_mentions, payload_message, payload_root
@@ -52,6 +52,9 @@ class MensagemOut(BaseModel):
     participant_name: str | None
     is_mentioned: bool
     mentioned_jids: list[str] = []
+    # Mapa { "<dígitos do @lid/número>": "<nome do contato>" } p/ o front trocar
+    # @<número> pelo nome em grupos. Só inclui quem tem nome real (fallback no front).
+    mentioned_names: dict[str, str] = {}
     quoted_message_id: str | None = None
     quoted_remote_jid: str | None = None
     quoted_message_type: str | None = None
@@ -110,6 +113,31 @@ def _derive_mentioned_jids(m: Mensagem) -> list[str]:
         return _extract_mentions(payload_message(payload), payload_root(payload))
     except Exception:
         return []
+
+
+def _resolver_nomes_mencoes(
+    db: Session, workspace_id: uuid.UUID, jids: list[str]
+) -> dict[str, str]:
+    """Resolve os JIDs mencionados → nome do contato (escopo do workspace).
+
+    Em grupos a menção vem como `<LID>@lid` (a maioria dos contatos guarda esse
+    jid) ou `<telefone>@s.whatsapp.net`. Retorna mapa {jid: nome} só para quem
+    tem nome real (push_name/nome ≠ do próprio número), 1 query batch.
+    """
+    unicos = [j for j in dict.fromkeys(jids) if j]
+    if not unicos:
+        return {}
+    rows = (
+        db.query(Contato.jid, Contato.nome, Contato.push_name)
+        .filter(Contato.workspace_id == workspace_id, Contato.jid.in_(unicos))
+        .all()
+    )
+    out: dict[str, str] = {}
+    for jid, nome, push_name in rows:
+        nome_final = (nome or "").strip() or (push_name or "").strip()
+        if nome_final and nome_final != jid.split("@", 1)[0] and jid not in out:
+            out[jid] = nome_final
+    return out
 
 
 def _derive_media_fields(m: Mensagem) -> dict:
@@ -222,8 +250,16 @@ def _dedup_midias(midias: list) -> list[dict]:
     return [{k: v for k, v in m.items() if k != "_created_at"} for m in seen.values()]
 
 
-def _mensagem_out(m: Mensagem) -> MensagemOut:
+def _mensagem_out(m: Mensagem, name_by_jid: dict[str, str] | None = None) -> MensagemOut:
     mf = _derive_media_fields(m)
+    jids = _derive_mentioned_jids(m)
+    mentioned_names: dict[str, str] = {}
+    if name_by_jid and jids:
+        for j in jids:
+            nome = name_by_jid.get(j)
+            if nome:
+                # chave = parte antes do @ (o que aparece como @<dígitos> no texto)
+                mentioned_names[j.split("@", 1)[0]] = nome
     return MensagemOut(
         id=str(m.id),
         workspace_id=str(m.workspace_id),
@@ -257,7 +293,8 @@ def _mensagem_out(m: Mensagem) -> MensagemOut:
         participant_jid=m.participant_jid,
         participant_name=m.participant_name,
         is_mentioned=m.is_mentioned,
-        mentioned_jids=_derive_mentioned_jids(m),
+        mentioned_jids=jids,
+        mentioned_names=mentioned_names,
         quoted_message_id=getattr(m, "quoted_message_id", None),
         quoted_remote_jid=getattr(m, "quoted_remote_jid", None),
         quoted_message_type=getattr(m, "quoted_message_type", None),
@@ -308,7 +345,10 @@ def listar_mensagens(
 
     q = q.order_by(Mensagem.criado_em.desc())
     total = q.offset(offset).limit(limit).all()
-    return [_mensagem_out(m) for m in total]
+    # Resolve nomes das menções (@<LID/número>) em 1 query batch, escopo do ws.
+    todos_jids = [j for m in total for j in _derive_mentioned_jids(m)]
+    name_by_jid = _resolver_nomes_mencoes(db, workspace_target, todos_jids)
+    return [_mensagem_out(m, name_by_jid) for m in total]
 
 
 @router.post("", response_model=MensagemOut, status_code=status.HTTP_201_CREATED)

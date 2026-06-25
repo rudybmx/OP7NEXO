@@ -258,6 +258,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-26) — Atendimento: menção em grupo resolve nome do contato
+- `GET /mensagens` agora retorna `mentioned_names: {"<dígitos>": "<nome>"}` por mensagem (`MensagemOut`). Em grupos a menção vem como `@<LID>` (ex. `@187385212055639`); o endpoint resolve via `_resolver_nomes_mencoes()` — 1 query batch em `crm_whatsapp_contatos` (`jid IN` dos `_derive_mentioned_jids`, **escopo do workspace**, `COALESCE(nome, push_name)`, ignora "nome" == próprio número). `_mensagem_out(m, name_by_jid)` monta o mapa por mensagem (chave = parte antes do `@`). Front troca `@<número>` por `@Nome` (fallback ao número). A maioria dos contatos guarda `jid = <LID>@lid`.
+
 ### ✅ Implementado (2026-06-25) — Inteligência de IA: followup automático (Fase 3)
 - Campo `agentes.tempo_followup_min` (migration **098**): min sem resposta do lead → etiqueta automática (vazio = desligado). Job novo `scheduler._job_followup_etiqueta` (5min) → `followup_automacao.aplicar_followup_etiquetas` aplica a **etiqueta 'followup'** (= **fonte única** do estado; **NÃO toca `lead_status`**, que é lifecycle) nas conversas de canal com agente cujo lead parou de responder > `tempo_followup_min`; **idempotente** (pula quem já tem) + `find_or_create_etiqueta`. **Pausa sozinho** (lead responde → `ultima_direcao='entrada'` deixa de casar). Endpoints `GET /crm/followups/leads` + `/metricas` (montam `FollowupLead` de conversa+contato+`contexto_ia` da Fase 1; `status_followup` derivado de timing) + `PATCH /crm/followups/conversa/{id}/fechamento` (coluna nova `crm_whatsapp_conversas.followup_fechamento`). Front: página `/crm/followup` ligada ao real (mock→hook real), campo `tempo_followup` no cadastro. Fechamento (ganho/perda) persiste; temperatura read-only; pausar/override "em breve".
 
