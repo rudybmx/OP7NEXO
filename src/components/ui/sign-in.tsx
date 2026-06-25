@@ -13,7 +13,7 @@ interface SignInPageProps {
 }
 
 const GlassInputWrapper = ({ children }: { children: React.ReactNode }) => (
-  <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm transition-colors focus-within:border-[#3E5BFF]/50 focus-within:bg-[#3E5BFF]/5">
+  <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm transition-colors focus-within:border-[#006EFF]/50 focus-within:bg-[#006EFF]/5">
     {children}
   </div>
 )
@@ -39,7 +39,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({
   return (
     <div className="h-[100dvh] flex flex-col md:flex-row w-[100dvw] overflow-hidden">
       {/* Coluna esquerda — formulário */}
-      <section className="flex-1 flex items-center justify-center p-8 bg-[#0E142A]">
+      <section className="flex-1 flex items-center justify-center p-8 bg-[#000533]">
         <div className="w-full max-w-md">
           <div className="flex flex-col gap-6">
             {/* Logo / título */}
@@ -117,7 +117,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({
 
               {/* Erro */}
               {error && (
-                <div className="text-xs text-[#FF5C8D] text-center px-3 py-2 rounded-lg bg-[#FF5C8D]/8 border border-[#FF5C8D]/20 animate-element">
+                <div className="text-xs text-[#c80010] text-center px-3 py-2 rounded-lg bg-[#c80010]/8 border border-[#c80010]/20 animate-element">
                   {error}
                 </div>
               )}
@@ -129,14 +129,14 @@ export const SignInPage: React.FC<SignInPageProps> = ({
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded border-white/20 bg-white/5 accent-[#F26522] cursor-pointer"
+                    className="w-4 h-4 rounded border-white/20 bg-white/5 accent-[#006EFF] cursor-pointer"
                   />
                   <span className="text-white/70 text-xs">Manter logado</span>
                 </label>
                 <button
                   type="button"
                   onClick={onResetPassword}
-                  className="text-xs text-[#F26522] hover:text-[#ff7b3d] transition-colors hover:underline"
+                  className="text-xs text-[#006EFF] hover:text-[#2f7dff] transition-colors hover:underline"
                 >
                   Esqueci minha senha
                 </button>
@@ -146,7 +146,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="animate-element animate-delay-600 w-full rounded-xl bg-[#F26522] py-4 text-sm font-semibold text-white hover:bg-[#ff7b3d] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-[#F26522]/20"
+                className="animate-element animate-delay-600 w-full rounded-xl bg-[#006EFF] py-4 text-sm font-semibold text-white hover:bg-[#2f7dff] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-[#006EFF]/20"
               >
                 {loading ? 'Entrando...' : 'Entrar na plataforma'}
               </button>
@@ -158,7 +158,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({
               <button
                 type="button"
                 onClick={onRequestAccess}
-                className="text-[#F26522] hover:text-[#ff7b3d] hover:underline transition-colors"
+                className="text-[#006EFF] hover:text-[#2f7dff] hover:underline transition-colors"
               >
                 Solicitar acesso
               </button>
@@ -174,13 +174,13 @@ export const SignInPage: React.FC<SignInPageProps> = ({
 
       {/* Coluna direita — imagem hero */}
       {heroImageSrc && (
-        <section className="hidden md:block flex-1 relative p-4 bg-[#0E142A]">
+        <section className="hidden md:block flex-1 relative p-4 bg-[#000533]">
           <div
             className="absolute inset-4 rounded-3xl bg-cover bg-center animate-slide-right animate-delay-300"
             style={{ backgroundImage: `url(${heroImageSrc})` }}
           />
           {/* Overlay sutil com gradiente do sistema */}
-          <div className="absolute inset-4 rounded-3xl bg-gradient-to-br from-[#004A8C]/30 via-transparent to-[#F26522]/10 pointer-events-none" />
+          <div className="absolute inset-4 rounded-3xl bg-gradient-to-br from-[#006EFF]/30 via-transparent to-[#006EFF]/10 pointer-events-none" />
         </section>
       )}
     </div>

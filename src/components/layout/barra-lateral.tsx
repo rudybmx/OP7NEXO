@@ -72,9 +72,9 @@ const W70 = "rgba(255,255,255,0.70)"
 const W75 = "rgba(255,255,255,0.75)"
 const W80 = "rgba(255,255,255,0.80)"
 const W85 = "rgba(255,255,255,0.85)"
-const BRAND_PRIMARY = "#3E5BFF"
-const BRAND_SECONDARY = "#7A5AF8"
-const CORAL = "#FF5C8D"
+const BRAND_PRIMARY = "#006EFF"
+const BRAND_SECONDARY = "#0047cc"
+const CORAL = "#ff6332"
 
 const mapaIcones: Record<string, any> = {
   Activity,
@@ -128,7 +128,7 @@ const SubItem = ({
         transition: "all 150ms ease",
         color: isActive ? "#ffffff" : isHovered ? W75 : W45,
         fontWeight: isActive ? 500 : 400,
-        background: isActive ? "rgba(62,91,255,0.08)" : isHovered ? W04 : "transparent",
+        background: isActive ? "rgba(0,110,255,0.08)" : isHovered ? W04 : "transparent",
       }}
     >
       <div
@@ -139,7 +139,7 @@ const SubItem = ({
           transform: "translateY(-50%)",
           width: 8,
           height: 1,
-          background: isActive ? "rgba(62,91,255,0.60)" : W10,
+          background: isActive ? "rgba(0,110,255,0.60)" : W10,
         }}
       />
       {isActive && (
@@ -149,7 +149,7 @@ const SubItem = ({
             height: 5,
             borderRadius: "50%",
             background: BRAND_PRIMARY,
-            boxShadow: "0 0 6px rgba(62,91,255,0.8)",
+            boxShadow: "0 0 6px rgba(0,110,255,0.8)",
             flexShrink: 0,
           }}
         />
@@ -186,7 +186,7 @@ const NavItem = ({
 }: any) => {
   const [isHovered, setIsHovered] = useState(false)
   
-  const activeBg = "linear-gradient(135deg, rgba(62,91,255,0.18) 0%, rgba(122,90,248,0.10) 100%)"
+  const activeBg = "linear-gradient(135deg, rgba(0,110,255,0.18) 0%, rgba(0,110,255,0.10) 100%)"
   const expandedBg = "rgba(255,255,255,0.06)"
   const hoverBg = "rgba(255,255,255,0.06)"
 
@@ -213,7 +213,7 @@ const NavItem = ({
           cursor: "pointer",
           transition: "all 150ms ease",
           background: isActive || isHovered ? (isActive ? activeBg : hoverBg) : "transparent",
-          border: `1px solid ${isActive ? "rgba(62,91,255,0.25)" : isHovered ? "rgba(255,255,255,0.08)" : "transparent"}`,
+          border: `1px solid ${isActive ? "rgba(0,110,255,0.25)" : isHovered ? "rgba(255,255,255,0.08)" : "transparent"}`,
           marginTop: 0,
           marginRight: "auto",
           marginBottom: 4,
@@ -237,7 +237,7 @@ const NavItem = ({
               top: 0,
               zIndex: 50,
               minWidth: 180,
-              background: "rgba(20, 28, 56, 0.97)",
+              background: "rgba(0, 33, 77, 0.97)",
               border: "1px solid rgba(255,255,255,0.12)",
               borderRadius: 10,
               padding: 8,
@@ -296,7 +296,7 @@ const NavItem = ({
         transition: "all 150ms ease",
         cursor: "pointer",
         background: isActive ? activeBg : isExpanded ? expandedBg : isHovered ? hoverBg : "transparent",
-        border: `1px solid ${isActive ? "rgba(62,91,255,0.25)" : isExpanded || isHovered ? "rgba(255,255,255,0.08)" : "transparent"}`,
+        border: `1px solid ${isActive ? "rgba(0,110,255,0.25)" : isExpanded || isHovered ? "rgba(255,255,255,0.08)" : "transparent"}`,
         color: isActive || isExpanded || isHovered ? "#ffffff" : "rgba(255,255,255,0.60)",
         fontWeight: isActive || isExpanded ? 500 : 400,
         marginBottom: 2
@@ -315,7 +315,7 @@ const NavItem = ({
       {badge && (
         <span
           style={{
-            background: "#FF5C8D",
+            background: "#ff6332",
             color: "#ffffff",
             fontSize: 9,
             fontWeight: 700,
@@ -463,7 +463,7 @@ export function BarraLateral() {
               padding: '0 16px',
             }}>
               <div style={{
-                background: 'rgba(20,28,56,0.97)',
+                background: 'rgba(0,33,77,0.97)',
                 border: '1px solid rgba(255,255,255,0.12)',
                 borderRadius: 16,
                 padding: 12,
@@ -495,7 +495,7 @@ export function BarraLateral() {
                         borderRadius: 10,
                         fontSize: 13,
                         color: pathname === item.rota ? '#ffffff' : 'rgba(255,255,255,0.60)',
-                        background: pathname === item.rota ? 'rgba(62,91,255,0.12)' : 'transparent',
+                        background: pathname === item.rota ? 'rgba(0,110,255,0.12)' : 'transparent',
                         fontWeight: pathname === item.rota ? 500 : 400,
                         display: 'flex', alignItems: 'center', gap: 8,
                         transition: 'all 150ms ease',
@@ -503,8 +503,8 @@ export function BarraLateral() {
                         {pathname === item.rota && (
                           <div style={{
                             width: 6, height: 6, borderRadius: '50%',
-                            background: '#3E5BFF',
-                            boxShadow: '0 0 6px rgba(62,91,255,0.8)',
+                            background: '#006EFF',
+                            boxShadow: '0 0 6px rgba(0,110,255,0.8)',
                             flexShrink: 0,
                           }} />
                         )}
@@ -529,7 +529,7 @@ export function BarraLateral() {
           height: 'calc(64px + env(safe-area-inset-bottom))',
           paddingBottom: 'env(safe-area-inset-bottom)',
           boxSizing: 'border-box',
-          background: 'linear-gradient(160deg, rgba(30,40,80,0.97) 0%, rgba(14,20,42,0.99) 100%)',
+          background: 'linear-gradient(160deg, #00214d 0%, #000533 100%)',
           borderTop: '1px solid rgba(255,255,255,0.08)',
           display: 'flex',
           alignItems: 'center',
@@ -571,9 +571,9 @@ export function BarraLateral() {
                     borderRadius: 10,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     background: grupoAtivo
-                      ? 'linear-gradient(135deg, rgba(62,91,255,0.22), rgba(122,90,248,0.14))'
+                      ? 'linear-gradient(135deg, rgba(0,110,255,0.22), rgba(0,110,255,0.14))'
                       : isItemHovered ? 'rgba(255,255,255,0.06)' : 'transparent',
-                    border: `1px solid ${grupoAtivo ? 'rgba(62,91,255,0.30)' : 'transparent'}`,
+                    border: `1px solid ${grupoAtivo ? 'rgba(0,110,255,0.30)' : 'transparent'}`,
                     transition: 'all 150ms ease',
                   }}>
                     <Icone size={18} style={{ color: grupoAtivo ? '#ffffff' : 'rgba(255,255,255,0.50)' }} />
@@ -652,8 +652,8 @@ export function BarraLateral() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: hoveredBottomItem === '__user__'
                     ? 'rgba(255,255,255,0.06)'
-                    : 'linear-gradient(135deg, rgba(62,91,255,0.14), rgba(122,90,248,0.10))',
-                  border: '1px solid rgba(62,91,255,0.18)',
+                    : 'linear-gradient(135deg, rgba(0,110,255,0.14), rgba(0,110,255,0.10))',
+                  border: '1px solid rgba(0,110,255,0.18)',
                   transition: 'all 150ms ease',
                   fontSize: 11, fontWeight: 600, color: '#fff',
                 }}>
@@ -716,7 +716,7 @@ export function BarraLateral() {
           flexDirection: "column",
           // Cor anterior antes da volta ao CRM navy:
           // linear-gradient(160deg, rgba(10, 10, 10, 0.98) 0%, rgba(5, 5, 5, 0.995) 46%, rgba(18, 18, 18, 1) 100%)
-          background: "linear-gradient(160deg, rgba(30, 40, 80, 0.97) 0%, rgba(14, 20, 42, 0.99) 45%, rgba(10, 15, 35, 1.0) 100%)",
+          background: "linear-gradient(160deg, #00214d 0%, #001a3d 45%, #000533 100%)",
           borderRight: `1px solid ${W08}`,
           boxShadow: `inset -1px 0 0 ${W04}, 4px 0 24px rgba(0,0,0,0.25)`,
           padding: isCollapsed ? "0 0 16px" : "0 12px 16px",
@@ -749,7 +749,7 @@ export function BarraLateral() {
           width: 28,
           height: 28,
           borderRadius: 8,
-          background: "rgba(20, 28, 56, 0.95)",
+          background: "rgba(0, 33, 77, 0.95)",
           border: `1px solid ${W14}`,
           boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
           display: "flex",
@@ -928,7 +928,7 @@ export function BarraLateral() {
                   width: "100%",
                   padding: "7px 10px",
                   borderRadius: 8,
-                  background: "rgba(20,28,56,0.80)",
+                  background: "rgba(0,33,77,0.80)",
                   border: `1px solid ${W08}`,
                   color: W80,
                   fontSize: 12,
@@ -972,8 +972,8 @@ export function BarraLateral() {
                   width: 30,
                   height: 30,
                   borderRadius: 8,
-                  background: "linear-gradient(135deg, rgba(62,91,255,0.22), rgba(122,90,248,0.14))",
-                  border: `1px solid rgba(62,91,255,0.20)`,
+                  background: "linear-gradient(135deg, rgba(0,110,255,0.22), rgba(0,110,255,0.14))",
+                  border: `1px solid rgba(0,110,255,0.20)`,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -1012,7 +1012,7 @@ export function BarraLateral() {
             transition: "all 150ms ease",
           }}
         >
-          <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg, #7A5AF8, #3E5BFF)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}>
+          <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg, #0047cc, #006EFF)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}>
             <MessageCircle size={15} color="#ffffff" />
           </div>
           {!isCollapsed && (
