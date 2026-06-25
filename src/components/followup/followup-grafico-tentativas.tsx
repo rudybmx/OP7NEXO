@@ -58,8 +58,8 @@ export function FollowupGraficoTentativas({ leads }: FollowupGraficoTentativasPr
         left: 0, 
         right: 0, 
         height: 1,
-        background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.8),transparent)',
-        pointerEvents: 'none' 
+        background: 'linear-gradient(90deg,transparent,var(--ws-glass-border),transparent)',
+        pointerEvents: 'none'
       }} />
 
       <div className="flex justify-between items-center mb-6">
@@ -78,13 +78,13 @@ export function FollowupGraficoTentativas({ leads }: FollowupGraficoTentativasPr
           </p>
         </div>
         <div style={{
-          background: 'rgba(255,255,255,0.05)',
+          background: 'var(--ws-surface-2)',
           padding: '4px 10px',
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: 600,
           color: 'var(--ws-text-2)',
-          border: '1px solid rgba(255,255,255,0.1)'
+          border: '1px solid var(--ws-glass-border)'
         }}>
           {totalAtivos} Leads
         </div>
@@ -94,7 +94,7 @@ export function FollowupGraficoTentativas({ leads }: FollowupGraficoTentativasPr
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 20, right: 0, left: -25, bottom: 0 }}>
             <CartesianGrid 
-              stroke="rgba(14,20,42,0.06)" 
+              stroke="var(--ws-divider)"
               strokeDasharray="3 3" 
               vertical={false} 
             />
@@ -111,7 +111,7 @@ export function FollowupGraficoTentativas({ leads }: FollowupGraficoTentativasPr
               tick={{ fill: 'var(--ws-text-3)', fontSize: 11 }}
             />
             <Tooltip 
-              cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+              cursor={{ fill: 'var(--ws-surface-2)' }}
               contentStyle={{
                 background: 'var(--ws-navy)',
                 border: '1px solid var(--ws-glass-border)',

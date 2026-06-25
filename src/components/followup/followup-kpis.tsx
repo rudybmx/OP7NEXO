@@ -66,7 +66,7 @@ export function FollowupKpis({ metricas }: FollowupKpisProps) {
             {/* Linha de brilho no topo — OBRIGATÓRIA */}
             <div style={{
               position: 'absolute', top: 0, left: 0, right: 0, height: 1,
-              background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.8),transparent)',
+              background: 'linear-gradient(90deg,transparent,var(--ws-glass-border),transparent)',
               pointerEvents: 'none',
             }} />
 

@@ -95,7 +95,7 @@ const TentativaDots = ({ current, max }: { current: number, max: number }) => {
   
   const getColor = (i: number) => {
     const pos = i + 1
-    if (pos > current) return 'rgba(14,20,42,0.1)'
+    if (pos > current) return 'var(--ws-glass-border)'
     if (pos <= 3) return 'var(--ws-blue)'
     if (pos <= 6) return 'var(--ws-gold)'
     return 'var(--ws-coral)'
@@ -139,7 +139,7 @@ const StatusBadge = ({ status }: { status: LeadStatusFollowup }) => {
       label: 'Respondeu' 
     },
     encerrado: { 
-      bg: 'rgba(14,20,42,0.06)', 
+      bg: 'var(--ws-surface-2)', 
       dot: '#64748b', 
       label: 'Encerrado' 
     },
@@ -336,10 +336,10 @@ export function FollowupTabela({
     const [dropdownAberto, setDropdownAberto] = useState(false)
     
     const configs = {
-      em_aberto: { label: 'Em aberto', color: 'var(--ws-text-3)', bg: 'rgba(14,20,42,0.06)' },
+      em_aberto: { label: 'Em aberto', color: 'var(--ws-text-3)', bg: 'var(--ws-surface-2)' },
       ganho:     { label: 'Ganho',     color: 'var(--ws-green)',  bg: 'rgba(15,168,86,0.12)' },
       perca:     { label: 'Perca',     color: 'var(--ws-coral)',  bg: 'rgba(255,92,141,0.12)' },
-      perdido:   { label: 'Perdido',   color: 'var(--ws-text-3)', bg: 'rgba(14,20,42,0.04)' },
+      perdido:   { label: 'Perdido',   color: 'var(--ws-text-3)', bg: 'var(--ws-surface-2)' },
       reagendado:{ label: 'Reagendado',color: 'var(--ws-gold)',          bg: 'rgba(201,168,76,0.12)' },
     }
 
@@ -437,13 +437,13 @@ export function FollowupTabela({
     >
       {/* Glow line */}
       <div style={{ position:'absolute',top:0,left:0,right:0,height:1,
-        background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.8),transparent)',
+        background:'linear-gradient(90deg,transparent,var(--ws-glass-border),transparent)',
         pointerEvents:'none', zIndex: 10 }} />
 
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left min-w-[1000px]">
           <thead>
-            <tr style={{ background: 'rgba(14,20,42,0.04)' }}>
+            <tr style={{ background: 'var(--ws-surface-2)' }}>
               <th className="px-5 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)]">Lead</th>
               <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)]">Origem</th>
               <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)] text-center">Tentativa</th>

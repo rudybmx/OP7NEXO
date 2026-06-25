@@ -103,12 +103,12 @@ export default function FollowupPage() {
   }, [leads, filtroProximos])
 
   const getUrgenciaColor = (dateStr?: string) => {
-    if (!dateStr) return 'rgba(14,20,42,0.15)'
+    if (!dateStr) return 'var(--ws-text-3)'
     const data = parseISO(dateStr)
     if (isPast(data) && !isToday(data)) return 'var(--ws-coral)'
     if (isToday(data)) return 'var(--ws-green)'
     if (isTomorrow(data)) return 'var(--ws-gold)'
-    return 'rgba(14,20,42,0.15)'
+    return 'var(--ws-text-3)'
   }
 
   const handleLeadClick = (lead: FollowupLead) => {
@@ -140,7 +140,7 @@ export default function FollowupPage() {
             color: '#fff',
             border: 'none',
             borderRadius: 'var(--ws-radius-md)',
-            boxShadow: '0 4px 16px rgba(62,91,255,0.35)'
+            boxShadow: '0 4px 16px rgba(0,110,255,0.35)'
           }}
           className="gap-2"
         >
@@ -172,7 +172,7 @@ export default function FollowupPage() {
           height: '320px'
         }}>
           <div style={{ position:'absolute',top:0,left:0,right:0,height:1,
-            background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.8),transparent)',
+            background:'linear-gradient(90deg,transparent,var(--ws-glass-border),transparent)',
             pointerEvents:'none' }} />
 
           <div className="flex justify-between items-center mb-4">
@@ -191,13 +191,13 @@ export default function FollowupPage() {
               </p>
             </div>
             <div style={{
-              background: 'rgba(255,255,255,0.05)',
+              background: 'var(--ws-surface-2)',
               padding: '2px 8px',
               borderRadius: '99px',
               fontSize: '10px',
               fontWeight: 600,
               color: 'var(--ws-text-2)',
-              border: '1px solid rgba(255,255,255,0.1)'
+              border: '1px solid var(--ws-glass-border)'
             }}>
               {proximosDisparos.length} total
             </div>
@@ -232,7 +232,7 @@ export default function FollowupPage() {
                 onClick={() => handleLeadClick(lead)}
                 style={{
                   padding: '10px 12px',
-                  background: 'rgba(255,255,255,0.03)',
+                  background: 'var(--ws-surface-2)',
                   borderRadius: '8px',
                   borderLeft: `3px solid ${getUrgenciaColor(lead.proximo_envio)}`,
                   display: 'flex',
@@ -265,7 +265,7 @@ export default function FollowupPage() {
                   fontSize: '10px', 
                   fontWeight: 600, 
                   color: 'var(--ws-text-2)',
-                  background: 'rgba(255,255,255,0.05)',
+                  background: 'var(--ws-surface-2)',
                   padding: '2px 6px',
                   borderRadius: '4px'
                 }}>
@@ -309,7 +309,7 @@ export default function FollowupPage() {
         className="p-4"
       >
         <div style={{ position:'absolute',top:0,left:0,right:0,height:1,
-          background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.8),transparent)',
+          background:'linear-gradient(90deg,transparent,var(--ws-glass-border),transparent)',
           pointerEvents:'none' }} />
 
         <div style={{
@@ -327,7 +327,7 @@ export default function FollowupPage() {
         }}>
           {/* Linha de brilho no topo */}
           <div style={{ position:'absolute',top:0,left:0,right:0,height:1,
-            background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.8),transparent)',
+            background:'linear-gradient(90deg,transparent,var(--ws-glass-border),transparent)',
             pointerEvents:'none' }} />
 
           {/* Busca */}
@@ -345,7 +345,7 @@ export default function FollowupPage() {
                 width: '100%',
                 paddingLeft: 32, paddingRight: 12,
                 paddingTop: 7, paddingBottom: 7,
-                background: 'rgba(14,20,42,0.04)',
+                background: 'var(--ws-surface-2)',
                 border: '1px solid var(--ws-glass-border)',
                 borderRadius: 'var(--ws-radius-md)',
                 color: 'var(--ws-text-1)',
@@ -383,12 +383,12 @@ export default function FollowupPage() {
             ))}
           </div>
 
-          <Button variant="ghost" className="text-white gap-2 border border-white/10 bg-white/5 hover:bg-white/10 text-xs py-1 h-8">
+          <Button variant="ghost" className="text-[color:var(--ws-text-2)] gap-2 border border-[var(--ws-glass-border)] bg-[var(--ws-surface-2)] hover:bg-[var(--ws-glass-bg)] text-xs py-1 h-8">
             <Calendar size={14} />
             Período
           </Button>
 
-          <Button variant="ghost" className="text-white gap-2 border border-white/10 bg-white/5 hover:bg-white/10 text-xs py-1 h-8">
+          <Button variant="ghost" className="text-[color:var(--ws-text-2)] gap-2 border border-[var(--ws-glass-border)] bg-[var(--ws-surface-2)] hover:bg-[var(--ws-glass-bg)] text-xs py-1 h-8">
             <Filter size={14} />
             Mais Filtros
           </Button>
@@ -516,7 +516,7 @@ export default function FollowupPage() {
               className="mt-12 w-full gap-2"
               style={{ 
                 background: 'linear-gradient(135deg,var(--ws-blue),var(--ws-purple))',
-                boxShadow: '0 4px 16px rgba(62,91,255,0.2)'
+                boxShadow: '0 4px 16px rgba(0,110,255,0.2)'
               }}
             >
               <MessageCircle size={16} />
@@ -531,14 +531,14 @@ export default function FollowupPage() {
           width: 4px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-          background: rgba(255, 255, 255, 0.02);
+          background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.08);
+          background: var(--ws-glass-border);
           border-radius: 99px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.15);
+          background: var(--ws-text-3);
         }
       `}</style>
     </div>
