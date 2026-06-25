@@ -6,7 +6,9 @@ import type { ConversaApi } from '@/hooks/use-conversas'
 import { TermometroLead } from './termometro-lead'
 import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { useCrmFollowups } from '@/hooks/use-crm-followups'
+import { useAgendamentosContato } from '@/hooks/use-agendamentos-contato'
 import { formatarTelefoneBR } from '@/lib/formatar'
+import { STATUS_LABELS, STATUS_COLORS, type Agendamento } from '@/types/agenda'
 
 interface PainelContatoProps {
   conversa: ConversaApi
@@ -60,6 +62,10 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
     conversa.id,
     Boolean(workspaceId && conversa.id),
   )
+
+  // Agendamentos do contato (caixa acima da Análise IA). Hidden p/ grupos (sem telefone único).
+  const telefoneContato = conversa.isGroup ? null : (conversa.contato.telefone || conversa.remoteJid || null)
+  const ag = useAgendamentosContato(workspaceId, telefoneContato, Boolean(workspaceId && telefoneContato))
 
   const proximoFollowup = followups.find(item => item.status === 'pendente' || item.status === 'adiado')
 
@@ -358,6 +364,42 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
           </div>
         )}
 
+        {/* Agendamentos do contato */}
+        {telefoneContato && (
+          <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--ws-divider)', marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ws-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>📅 Agendamentos</span>
+              {ag.resumo.total > 0 && (
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--ws-blue)', background: 'rgba(62,91,255,0.12)', borderRadius: 999, padding: '1px 7px' }}>{ag.resumo.total}</span>
+              )}
+            </div>
+            {ag.isLoading ? (
+              <div style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>Carregando…</div>
+            ) : ag.resumo.total === 0 ? (
+              <div style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>Nenhum agendamento para este contato.</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>
+                  Compareceu <b style={{ color: '#3b6d11' }}>{ag.resumo.compareceu}</b> · Faltou <b style={{ color: '#a32d2d' }}>{ag.resumo.falta}</b>
+                  {ag.resumo.compareceu + ag.resumo.falta > 0 && <> · taxa <b>{ag.resumo.taxa_comparecimento}%</b></>}
+                </div>
+                {ag.proximos.length > 0 && (
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--ws-text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 2 }}>Próximos</div>
+                )}
+                {ag.proximos.slice(0, 3).map((a) => (
+                  <CardAgendamento key={a.id} a={a} />
+                ))}
+                {ag.historico.length > 0 && (
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--ws-text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 2 }}>Histórico</div>
+                )}
+                {ag.historico.slice(0, 3).map((a) => (
+                  <CardAgendamento key={a.id} a={a} passado />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Análise IA */}
         <div>
           <div
@@ -415,6 +457,22 @@ function AnaliseCampo({ titulo, texto }: { titulo: string; texto: string }) {
     <div>
       <div style={{ fontSize: 10, fontWeight: 600, color: '#3E5BFF', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{titulo}</div>
       <p style={{ fontSize: 11, color: 'var(--ws-text-2)', lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap' }}>{texto}</p>
+    </div>
+  )
+}
+
+function CardAgendamento({ a, passado }: { a: Agendamento; passado?: boolean }) {
+  const cor = STATUS_COLORS[a.status] || 'var(--ws-text-3)'
+  const dt = new Date(a.data_hora_inicio).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return (
+    <div style={{ background: 'rgba(62,91,255,0.06)', border: '1px solid rgba(62,91,255,0.14)', borderRadius: 10, padding: '8px 10px', opacity: passado ? 0.72 : 1 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ws-text-1)' }}>{dt}</span>
+        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', color: cor, border: `1px solid ${cor}`, borderRadius: 999, padding: '1px 6px', whiteSpace: 'nowrap' }}>{STATUS_LABELS[a.status] || a.status}</span>
+      </div>
+      {(a.servico || a.observacoes) && (
+        <div style={{ fontSize: 10.5, color: 'var(--ws-text-3)', marginTop: 3, wordBreak: 'break-word' }}>{a.servico || a.observacoes}</div>
+      )}
     </div>
   )
 }
