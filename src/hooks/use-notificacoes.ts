@@ -30,14 +30,16 @@ export function useNotificacoes() {
   const [sseAtivo, setSseAtivo] = useState(false)
   const refreshInterval = sseAtivo ? POLL_SSE_MS : POLL_BASE_MS
 
+  // Conditional fetching: sem workspace ainda resolvido (boot), key=null → SWR não
+  // dispara. Evita o 400 da API (que exige workspace_id). Espelha o guard do SSE (L58).
   const { data: contador, mutate: mutateContador } = useSWR<{ nao_lidas: number }>(
-    `/notificacoes/contador${qs}`,
+    workspaceAtual ? `/notificacoes/contador${qs}` : null,
     (p: string) => api.get(p),
     { refreshInterval, revalidateOnFocus: true, shouldRetryOnError: false },
   )
 
   const { data: lista, isLoading, mutate: mutateLista } = useSWR<Notificacao[]>(
-    `/notificacoes${qs}`,
+    workspaceAtual ? `/notificacoes${qs}` : null,
     (p: string) => api.get(p),
     { refreshInterval, revalidateOnFocus: true, shouldRetryOnError: false },
   )

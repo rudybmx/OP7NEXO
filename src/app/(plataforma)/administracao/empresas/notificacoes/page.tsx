@@ -57,7 +57,7 @@ export default function NotificacoesPage() {
   const isAdmin = !!user && ROLES_ADMIN_UI.includes(String(user.role))
 
   const wsParam = workspaceAtual ? `workspace_id=${workspaceAtual}` : ''
-  const listaKey = `/notificacoes?${wsParam ? wsParam + '&' : ''}limit=100`
+  const listaKey = workspaceAtual ? `/notificacoes?${wsParam ? wsParam + '&' : ''}limit=100` : null
   const configKey = isAdmin ? `/notificacoes/config${workspaceAtual ? `?${wsParam}` : ''}` : null
   const qs = workspaceAtual ? `?${wsParam}` : ''
 

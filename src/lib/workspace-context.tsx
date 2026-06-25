@@ -41,7 +41,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false)
   const canSwitchByRole = user?.role === 'platform_admin' || user?.role === 'network_admin'
 
-  const { data: workspaces = [], isLoading, error } = useSWR<WorkspaceItem[]>(
+  const { data: workspaces = [], isLoading } = useSWR<WorkspaceItem[]>(
     user ? '/me/workspaces' : null,
     () => api.get<WorkspaceItem[]>('/me/workspaces'),
     { revalidateOnFocus: false },
@@ -59,18 +59,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     () => (canSwitchWorkspace ? workspacesAtivos : workspaceFixo ? [workspaceFixo] : []),
     [canSwitchWorkspace, workspacesAtivos, workspaceFixo],
   )
-
-  useEffect(() => {
-    if (!user) return
-    console.info('[workspace-context] /me/workspaces', {
-      email: user.email,
-      role: user.role,
-      loading: isLoading,
-      error: error ? String(error) : null,
-      total: workspacesVisiveis.length,
-      workspaces: workspacesVisiveis,
-    })
-  }, [user, isLoading, error, workspacesVisiveis])
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
