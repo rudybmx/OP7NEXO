@@ -11,6 +11,7 @@ import api from '@/lib/api-client'
 import { type AgenteInput, type HorarioItem, useAgentes } from '@/hooks/use-agentes'
 import { type LlmProvider, useLlmProviders } from '@/hooks/use-llm-providers'
 import { useDiretrizes } from '@/hooks/use-diretrizes'
+import { useAjustesResposta, type AjusteResposta } from '@/hooks/use-ajustes-resposta'
 import { BaseConhecimentoManager } from '@/components/admin/central-agentes/BaseConhecimentoManager'
 import { UsoDashboard } from '@/components/admin/central-agentes/UsoDashboard'
 
@@ -67,6 +68,8 @@ export default function CentralAgentesPage() {
   const [form, setForm] = useState<AgenteInput>(emptyForm())
   const [salvando, setSalvando] = useState(false)
   const [publicando, setPublicando] = useState(false)
+  const { listar: listarAjustes, remover: removerAjuste } = useAjustesResposta()
+  const [ajustes, setAjustes] = useState<AjusteResposta[]>([])
 
   useEffect(() => { carregarProviders() }, [carregarProviders])
   useEffect(() => { carregar() }, [carregar])
@@ -86,6 +89,7 @@ export default function CentralAgentesPage() {
   function abrirNovo() {
     setEditId(null)
     setForm(emptyForm())
+    setAjustes([])
     setDrawer(true)
   }
 
@@ -103,9 +107,23 @@ export default function CentralAgentesPage() {
         canais: a.canais.map((c) => c.canal_id), prompt: a.prompt_draft ?? '',
         horarios: a.horarios.map((h) => ({ dia_semana: h.dia_semana, hora_inicio: h.hora_inicio, hora_fim: h.hora_fim, ativo: h.ativo })),
       })
+      if (ws) {
+        try { setAjustes(await listarAjustes(ws, id)) } catch { setAjustes([]) }
+      }
     } catch (e: any) {
       toast.error(e?.message || 'Erro ao carregar agente')
       setDrawer(false)
+    }
+  }
+
+  async function onRemoverAjuste(id: string) {
+    if (!ws || !editId) return
+    try {
+      await removerAjuste(ws, editId, id)
+      setAjustes((l) => l.filter((a) => a.id !== id))
+      toast.success('Sugestão removida')
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao remover')
     }
   }
 
@@ -366,6 +384,35 @@ export default function CentralAgentesPage() {
                 placeholder="Ex.: Agendar uma consulta/avaliação para o lead. Guia a análise de interesse na tela de conversas."
               />
             </Section>
+
+            {editId && (
+              <Section titulo={`Ajustes de resposta salvos${ajustes.length ? ` (${ajustes.length})` : ''}`}>
+                {ajustes.length === 0 ? (
+                  <p className="text-sm" style={{ color: 'var(--ws-text-2)' }}>
+                    Nenhuma sugestão ainda. Use o ícone ✨ no rodapé das mensagens do agente, na tela de conversas.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {ajustes.map((a) => (
+                      <div key={a.id} style={{ border: '1px solid var(--ws-glass-border)', borderRadius: 8, padding: 8 }}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div style={{ minWidth: 0 }}>
+                            {a.categoria && <span className="text-xs font-medium" style={{ color: '#3E5BFF' }}>{a.categoria}</span>}
+                            <p className="text-sm" style={{ color: 'var(--ws-text-1)', margin: '2px 0 0', whiteSpace: 'pre-wrap' }}>{a.resposta_sugerida}</p>
+                            {a.resposta_original && (
+                              <p className="text-xs" style={{ color: 'var(--ws-text-3)', margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>Era: {a.resposta_original}</p>
+                            )}
+                          </div>
+                          <button type="button" onClick={() => onRemoverAjuste(a.id)} title="Remover" style={{ color: 'var(--ws-coral)', background: 'transparent', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 mt-6">
