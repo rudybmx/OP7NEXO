@@ -82,6 +82,11 @@ export interface ConversaApi {
   iaAtiva: boolean
   aiEscalado?: boolean
   aiHandoffMotivo?: string | null
+  resumoIa?: string | null
+  temperatura?: string | null
+  temperaturaScore?: number | null
+  interesse?: string | null
+  observacoes?: string | null
   naoLidas: number
   marcadaNaoLida?: boolean
   ultimaMensagem: string

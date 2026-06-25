@@ -49,6 +49,13 @@ interface BackendConversaRow {
   ai_ativo?: boolean | null
   ai_escalado?: boolean | null
   ai_handoff_motivo?: string | null
+  resumo_ia?: string | null
+  contexto_ia?: {
+    temperatura?: string | null
+    temperatura_score?: number | null
+    interesse?: string | null
+    observacoes?: string | null
+  } | null
   etiquetas?: Array<{ id: string; nome: string; cor: string }> | null
 }
 
@@ -255,6 +262,11 @@ export async function GET(request: NextRequest) {
       iaAtiva: row.ai_ativo ?? false,
       aiEscalado: row.ai_escalado ?? false,
       aiHandoffMotivo: row.ai_handoff_motivo ?? null,
+      resumoIa: row.resumo_ia ?? null,
+      temperatura: row.contexto_ia?.temperatura ?? null,
+      temperaturaScore: row.contexto_ia?.temperatura_score ?? null,
+      interesse: row.contexto_ia?.interesse ?? null,
+      observacoes: row.contexto_ia?.observacoes ?? null,
       naoLidas: row.nao_lidas || 0,
       marcadaNaoLida: row.marcada_nao_lida ?? false,
       ultimaMensagem: row.ultima_mensagem || '',

@@ -29,7 +29,7 @@ function emptyForm(): AgenteInput {
   return {
     nome: '', descricao: '', provider_id: null, modelo: null, status: 'inativo', tom: '',
     idiomas: [], blacklist_topicos: [], threshold_confianca: 0.7, debounce_segundos: 40,
-    limite_tokens_dia: null, alerta_threshold_pct: 80, mensagem_abertura: '', canais: [],
+    limite_tokens_dia: null, alerta_threshold_pct: 80, mensagem_abertura: '', objetivo: '', canais: [],
     horarios: [], prompt: '',
   }
 }
@@ -99,7 +99,7 @@ export default function CentralAgentesPage() {
         status: a.status === 'ativo' ? 'ativo' : 'inativo', tom: a.tom ?? '', idiomas: a.idiomas,
         blacklist_topicos: a.blacklist_topicos, threshold_confianca: a.threshold_confianca,
         debounce_segundos: a.debounce_segundos, limite_tokens_dia: a.limite_tokens_dia,
-        alerta_threshold_pct: a.alerta_threshold_pct, mensagem_abertura: a.mensagem_abertura ?? '',
+        alerta_threshold_pct: a.alerta_threshold_pct, mensagem_abertura: a.mensagem_abertura ?? '', objetivo: a.objetivo ?? '',
         canais: a.canais.map((c) => c.canal_id), prompt: a.prompt_draft ?? '',
         horarios: a.horarios.map((h) => ({ dia_semana: h.dia_semana, hora_inicio: h.hora_inicio, hora_fim: h.hora_fim, ativo: h.ativo })),
       })
@@ -128,7 +128,7 @@ export default function CentralAgentesPage() {
     if (!form.nome.trim()) { toast.error('Nome é obrigatório'); return }
     setSalvando(true)
     try {
-      const payload: AgenteInput = { ...form, descricao: form.descricao || null, tom: form.tom || null, mensagem_abertura: form.mensagem_abertura || null }
+      const payload: AgenteInput = { ...form, descricao: form.descricao || null, tom: form.tom || null, mensagem_abertura: form.mensagem_abertura || null, objetivo: form.objetivo || null }
       if (editId) await atualizar(editId, payload)
       else await criar(payload)
       toast.success(editId ? 'Agente atualizado' : 'Agente criado')
@@ -355,6 +355,16 @@ export default function CentralAgentesPage() {
 
             <Section titulo="Mensagem de abertura">
               <input className={inputCls} style={inputStyle} value={form.mensagem_abertura ?? ''} onChange={(e) => setF('mensagem_abertura', e.target.value)} />
+            </Section>
+
+            <Section titulo="Objetivo do agente">
+              <textarea
+                className={inputCls}
+                style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }}
+                value={form.objetivo ?? ''}
+                onChange={(e) => setF('objetivo', e.target.value)}
+                placeholder="Ex.: Agendar uma consulta/avaliação para o lead. Guia a análise de interesse na tela de conversas."
+              />
             </Section>
           </div>
 

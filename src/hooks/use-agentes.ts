@@ -41,6 +41,7 @@ export interface AgenteDetalhe extends AgenteListItem {
   limite_tokens_dia: number | null
   alerta_threshold_pct: number
   mensagem_abertura: string | null
+  objetivo: string | null
   horarios: (HorarioItem & { id: string })[]
   habilidades: unknown[]
   prompt_draft: string | null
@@ -64,6 +65,7 @@ export interface AgenteInput {
   limite_tokens_dia?: number | null
   alerta_threshold_pct?: number
   mensagem_abertura?: string | null
+  objetivo?: string | null
   canais?: string[]
   horarios?: HorarioItem[]
   prompt?: string | null
