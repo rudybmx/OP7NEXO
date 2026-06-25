@@ -74,6 +74,7 @@ function formatApiError(detail: unknown, fallback: string): string {
     const registro = detail as Record<string, unknown>
     const msg = formatApiError(registro.detail, fallback)
     if (msg !== fallback) return msg
+    if (typeof registro.error_message === 'string' && registro.error_message.trim()) return registro.error_message
     if (typeof registro.message === 'string' && registro.message.trim()) return registro.message
   }
 
