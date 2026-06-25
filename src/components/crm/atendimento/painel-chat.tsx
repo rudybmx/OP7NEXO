@@ -851,6 +851,27 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {grupo.mensagens.map(msg => {
+                // Mensagem interna do sistema (ex.: handoff/transferência da IA — Fase 4):
+                // nota centralizada, não é bolha de contato/agente.
+                if (msg.remetenteTipo === 'sistema') {
+                  return (
+                    <div key={msg.id} style={{ alignSelf: 'center', maxWidth: '88%', margin: '6px auto', display: 'flex', justifyContent: 'center' }}>
+                      <div style={{
+                        fontSize: 11,
+                        lineHeight: 1.5,
+                        color: '#475569',
+                        background: 'rgba(148, 163, 184, 0.14)',
+                        border: '1px solid rgba(148, 163, 184, 0.22)',
+                        borderRadius: 10,
+                        padding: '6px 12px',
+                        textAlign: 'center',
+                        whiteSpace: 'pre-wrap',
+                      }}>
+                        {msg.conteudo}
+                      </div>
+                    </div>
+                  )
+                }
                 const isEntrada = msg.direcao === 'entrada'
                 const isIA = AI_HANDOFF_ENABLED && msg.remetenteTipo === 'ia'
                 const participantLabel = msg.participantName || msg.remetenteNome || 'Contato'

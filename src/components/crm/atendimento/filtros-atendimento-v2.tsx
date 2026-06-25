@@ -112,7 +112,7 @@ export function FiltrosDropdownsV2({
               <ChevronDown size={9} />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-56">
+          <DropdownMenuContent align="start" className="w-auto min-w-56 max-w-[min(92vw,30rem)] whitespace-nowrap">
             <DropdownMenuLabel>Número</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={canalSelecionadoId} onValueChange={onCanalChange}>
               <DropdownMenuRadioItem value="todos">Todos os números</DropdownMenuRadioItem>
@@ -140,7 +140,7 @@ export function FiltrosDropdownsV2({
             <ChevronDown size={9} />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-56">
+        <DropdownMenuContent align="start" className="w-auto min-w-56 max-w-[min(92vw,30rem)] whitespace-nowrap">
           <DropdownMenuLabel>Responsável</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={valor.responsavelId} onValueChange={v => set({ responsavelId: v })}>
             <DropdownMenuRadioItem value="">Todos os responsáveis</DropdownMenuRadioItem>
@@ -163,7 +163,7 @@ export function FiltrosDropdownsV2({
             <ChevronDown size={9} />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-56">
+        <DropdownMenuContent align="start" className="w-auto min-w-56 max-w-[min(92vw,30rem)] whitespace-nowrap">
           <DropdownMenuLabel>Acompanhamento</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={valor.acompanhamento} onValueChange={v => set({ acompanhamento: v })}>
             {ACOMPANHAMENTOS.map(o => (

@@ -33,7 +33,7 @@ export function PaginaAtendimento() {
   const { workspaceAtual, workspaces, loading: workspaceLoading } = useWorkspace()
   const workspaceResolvido = !workspaceLoading && (workspaceAtual !== null || workspaces.length === 0)
   const [conversaAtivaId, setConversaAtivaId] = useState<string | null>(null)
-  const [painelAberto, setPainelAberto] = useState(true)
+  const [painelAberto, setPainelAberto] = useState(false)
   const [filtroAtivo, setFiltroAtivo] = useState<string>('todas')
   const [busca, setBusca] = useState('')
   const [mostrarModalAssumir, setMostrarModalAssumir] = useState(false)
@@ -56,10 +56,10 @@ export function PaginaAtendimento() {
   // Breakpoint compartilhado (hook único; repassado por prop aos painéis).
   const { isMobile, isTablet, isDesktop } = useBreakpoint()
 
-  // Painel de Contato: aberto por padrão só no desktop (coluna do grid).
-  // Fora do desktop vira overlay e deve iniciar fechado (não herdar o default true).
+  // Painel de Contato: inicia SEMPRE oculto (Nielsen #8 — minimalista); abre só pelo toggle
+  // do PainelChat. Fora do desktop (overlay) força fechado ao trocar de breakpoint; nunca auto-abre.
   useEffect(() => {
-    setPainelAberto(isDesktop)
+    if (!isDesktop) setPainelAberto(false)
   }, [isDesktop])
 
   const { canais } = useWhatsappCanais(workspaceAtual, workspaceResolvido)
@@ -381,8 +381,8 @@ export function PaginaAtendimento() {
         : isTablet
           ? 'minmax(300px, 360px) minmax(0, 1fr)'
           : (painelAberto && conversaAtiva)
-            ? 'minmax(320px, 360px) minmax(0, 1fr) minmax(0, 320px)'
-            : 'minmax(320px, 360px) minmax(0, 1fr) 0px',
+            ? 'minmax(380px, 400px) minmax(0, 1fr) minmax(0, 320px)'
+            : 'minmax(380px, 400px) minmax(0, 1fr) 0px',
       width: '100%',
       height: '100%',
       minHeight: 0,

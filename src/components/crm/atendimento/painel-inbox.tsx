@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, FilterX, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check, AlertTriangle } from 'lucide-react'
+import { Search, FilterX, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check, AlertTriangle, Bot, UserRound, Users } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import type { AgenteApi } from '@/hooks/use-agentes-disponiveis'
@@ -469,9 +469,10 @@ function getAvatarFallback(label: string) {
 }
 
 function formatChannelLabel(canal?: WhatsappCanal | null, conversa?: ConversaApi) {
-  const label = canal
-    ? [canal.nome, canal.numero_telefone].filter(Boolean).join(' · ')
-    : [conversa?.canalNome, conversa?.canalNumero].filter(Boolean).join(' · ')
+  const nome = canal ? canal.nome : conversa?.canalNome
+  const numeroRaw = canal ? canal.numero_telefone : conversa?.canalNumero
+  const numero = numeroRaw ? (formatarTelefoneBR(numeroRaw) ?? numeroRaw) : null
+  const label = [nome, numero].filter(Boolean).join(' · ')
   return label || null
 }
 
@@ -929,6 +930,9 @@ export function PainelInbox({
                 borderBottom: '1px solid rgba(0, 110, 255, 0.06)',
                 transition: 'background 0.2s ease, box-shadow 0.2s ease',
                 padding: '12px 14px',
+                height: 130,
+                boxSizing: 'border-box',
+                overflow: 'hidden',
               }}
             >
               {/* Indicadores de fixada e favorita */}
@@ -937,6 +941,8 @@ export function PainelInbox({
                 {conversa.favorita && <Star size={11} color="#c9a84c" fill="#c9a84c" style={{ opacity: 0.85 }} />}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '48px minmax(0, 1fr) auto', gap: 12, alignItems: 'start' }}>
+                {/* Coluna do avatar: foto → ícone IA(robô)/pessoa (P6) → ícone grupo (P9) */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
                 <div style={{
                   width: 48,
                   height: 48,
@@ -968,6 +974,32 @@ export function PainelInbox({
                     />
                   ) : null}
                 </div>
+                  {(conversa.iaAtiva || conversa.responsavelId) && (
+                    <span
+                      title={conversa.iaAtiva ? 'Agente IA respondendo' : 'Atendente responsável'}
+                      style={{
+                        width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        background: conversa.iaAtiva ? 'rgba(37, 211, 102, 0.16)' : 'rgba(15, 23, 42, 0.06)',
+                        color: conversa.iaAtiva ? '#1D9E75' : 'var(--ws-text-2)',
+                      }}
+                    >
+                      {conversa.iaAtiva ? <Bot size={13} /> : <UserRound size={13} />}
+                    </span>
+                  )}
+                  {conversa.isGroup && (
+                    <span
+                      title="Conversa em grupo"
+                      style={{
+                        width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        background: 'rgba(15, 23, 42, 0.06)', color: 'var(--ws-text-2)',
+                      }}
+                    >
+                      <Users size={13} />
+                    </span>
+                  )}
+                </div>
 
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
@@ -983,14 +1015,6 @@ export function PainelInbox({
                       }}>
                         {titulo}
                       </span>
-                      {conversa.isGroup && (
-                        <span style={{
-                          ...chipBaseStyle,
-                          ...getSoftChipStyle(),
-                        }}>
-                          Grupo
-                        </span>
-                      )}
                     </div>
                     <div style={{ display: 'grid', justifyItems: 'end', gap: 2, flexShrink: 0 }}>
                       <span style={{
@@ -1060,12 +1084,17 @@ export function PainelInbox({
                         Agente: {AGENTE_HANDOFF_LABEL[conversa.aiHandoffMotivo ?? ''] ?? 'escalou'}
                       </span>
                     )}
-                    {/* Canal: channelLabel se disponível, senão providerLabel */}
+                    {/* Canal de entrada: texto sutil (não etiqueta) — nome · número BR */}
                     <span
                       title={channelLabel || providerLabel}
                       style={{
-                        ...chipBaseStyle,
-                        ...(channelLabel ? getSoftChipStyle() : getProviderTone(canal?.tipo || conversa.canalTipo)),
+                        fontSize: 11,
+                        fontWeight: 400,
+                        color: 'var(--ws-text-3)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: '100%',
                       }}
                     >
                       {channelLabel || providerLabel}

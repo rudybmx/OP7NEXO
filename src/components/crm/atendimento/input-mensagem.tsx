@@ -139,7 +139,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
   }
 
   function openPicker(kind: AttachmentKind) {
-    if (isEnviando || isRecording) return
+    if (isEnviando || isRecording || agenteAtivo) return
     if (kind === 'document') documentInputRef.current?.click()
     if (kind === 'audio') audioInputRef.current?.click()
     if (kind === 'video') videoInputRef.current?.click()
@@ -278,7 +278,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
   }
 
   function handlePrimaryAction() {
-    if (isEnviando || isRecording) return
+    if (isEnviando || isRecording || agenteAtivo) return
     if (hasPrimaryContent) {
       handleSendTextOrAttachment()
       return
@@ -288,7 +288,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
   }
 
   function handleSendTextOrAttachment() {
-    if (isEnviando || isRecording) return
+    if (isEnviando || isRecording || agenteAtivo) return
     if (!hasPrimaryContent) return
 
     const tipo = attachment?.kind ?? undefined
@@ -543,7 +543,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                disabled={isEnviando}
+                disabled={isEnviando || agenteAtivo}
                 style={iconCircleButtonStyle}
                 title="Anexar"
                 aria-label="Anexar"
@@ -585,8 +585,8 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
                 }
               }}
               onPaste={handlePaste}
-              placeholder="Digite uma mensagem..."
-              disabled={isEnviando}
+              placeholder={agenteAtivo ? 'Agente IA respondendo — desligue o agente para digitar' : 'Digite uma mensagem...'}
+              disabled={isEnviando || agenteAtivo}
               rows={1}
               style={isMobile ? { ...textareaStyle, fontSize: 16 } : textareaStyle}
             />
@@ -595,10 +595,10 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
           <button
             type="button"
             onClick={handlePrimaryAction}
-            disabled={isEnviando}
+            disabled={isEnviando || agenteAtivo}
             style={{
               ...primaryActionButtonStyle,
-              opacity: isEnviando ? 0.72 : 1,
+              opacity: isEnviando || agenteAtivo ? 0.72 : 1,
             }}
             title={primaryAction === 'send' ? 'Enviar mensagem' : 'Gravar áudio'}
             aria-label={primaryAction === 'send' ? 'Enviar mensagem' : 'Gravar áudio'}
