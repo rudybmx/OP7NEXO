@@ -429,6 +429,21 @@ Para nova feature: `/speckit.specify [nome]` → cria `spec.md`, depois `/specki
 
 ---
 
+## Notificações (sino + central)
+
+- **Sino** `src/components/notificacoes/sino-notificacoes.tsx` — Popover/Badge (shadcn) + Bell
+  (lucide); badge `destructive` com contagem; abre feed, clica → marca lida + navega. Integrado
+  no `barra-lateral.tsx` ao lado do "Assistente AI" (variante `rodape` desktop / `mobile` bottom
+  nav). Trigger usa estilo inline (tokens W06/W08) p/ casar com o sidebar dark; popover em tokens
+  semânticos (`bg-card`/`text-foreground`).
+- **Hook** `src/hooks/use-notificacoes.ts` — SWR polling 45s (`/notificacoes` + `/contador`),
+  optimistic em marcar lida/todas; tolerante a 400 (platform_admin sem workspace → 0).
+- **Página** `src/app/(plataforma)/administracao/empresas/notificacoes/page.tsx` — feed (filtros
+  tipo/status/busca, marcar lida/todas) + bloco "Quem vê cada tipo" (audiência por papel,
+  Switch → `PUT /notificacoes/config/{tipo}`, só admin). Item de menu em `contexto-layout.tsx`.
+
+---
+
 ## COMO ATUALIZAR ESTE ARQUIVO
 
 Sempre que implementar uma feature:

@@ -53,6 +53,7 @@ import { usePersistedState } from "@/hooks/use-estado-persistido"
 import { useWorkspace } from "@/lib/workspace-context"
 import { ModalMeuPerfil } from "@/components/layout/modal-meu-perfil"
 import { ModalConfigEmpresa } from "@/components/layout/modal-config-empresa"
+import { SinoNotificacoes } from "@/components/notificacoes/sino-notificacoes"
 
 // Tokens de Design (Visual Parity with Design System)
 const W04 = "rgba(255,255,255,0.04)"
@@ -628,6 +629,9 @@ export function BarraLateral() {
             </span>
           </div>
 
+          {/* Sino de Notificações (mobile) */}
+          <SinoNotificacoes variante="mobile" />
+
           {/* Avatar / User */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -995,36 +999,41 @@ export function BarraLateral() {
             )}
           </div>
         )}
-        {/* AI Assistant */}
-        <div
-          onClick={() => setChatAberto(true)}
-          style={{
-            width: isCollapsed ? 40 : "100%",
-            height: isCollapsed ? 40 : "auto",
-            background: W06,
-            border: `1px solid ${W08}`,
-            borderRadius: 10,
-            padding: isCollapsed ? 0 : "8px 10px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: isCollapsed ? "center" : "flex-start",
-            gap: 8,
-            cursor: "pointer",
-            transition: "all 150ms ease",
-          }}
-        >
-          <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg, #0047cc, #006EFF)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}>
-            <MessageCircle size={15} color="#ffffff" />
+        {/* AI Assistant + Sino de Notificações (lado a lado quando expandido) */}
+        <div style={{ display: "flex", flexDirection: isCollapsed ? "column" : "row", alignItems: "center", gap: 8, width: "100%" }}>
+          <div
+            onClick={() => setChatAberto(true)}
+            style={{
+              flex: isCollapsed ? "0 0 auto" : 1,
+              minWidth: 0,
+              width: isCollapsed ? 40 : "auto",
+              height: isCollapsed ? 40 : "auto",
+              background: W06,
+              border: `1px solid ${W08}`,
+              borderRadius: 10,
+              padding: isCollapsed ? 0 : "8px 10px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: isCollapsed ? "center" : "flex-start",
+              gap: 8,
+              cursor: "pointer",
+              transition: "all 150ms ease",
+            }}
+          >
+            <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg, #0047cc, #006EFF)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}>
+              <MessageCircle size={15} color="#ffffff" />
+            </div>
+            {!isCollapsed && (
+              <>
+                <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: "#ffffff", lineHeight: 1.2 }}>Assistente AI</span>
+                  <span style={{ fontSize: 10, color: W40, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Pergunte qualquer coisa</span>
+                </div>
+                <Sparkles size={14} style={{ marginLeft: "auto", color: W30, flexShrink: 0 }} />
+              </>
+            )}
           </div>
-          {!isCollapsed && (
-            <>
-              <div style={{ display: "flex", flexDirection: "column" }}>
-                <span style={{ fontSize: 12, fontWeight: 500, color: "#ffffff", lineHeight: 1.2 }}>Assistente AI</span>
-                <span style={{ fontSize: 10, color: W40, lineHeight: 1.2 }}>Pergunte qualquer coisa</span>
-              </div>
-              <Sparkles size={14} style={{ marginLeft: "auto", color: W30 }} />
-            </>
-          )}
+          <SinoNotificacoes variante="rodape" />
         </div>
 
         {/* User Profile Dropdown with Theme Toggle */}

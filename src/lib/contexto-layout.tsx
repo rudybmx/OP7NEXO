@@ -173,6 +173,7 @@ export const secoesNavegacao: SecaoNavegacao[] = [
           { nome: "Planos" },
           { nome: "Financeiro" },
           { nome: "Avisos Personalizados" },
+          { nome: "Notificações", rota: "/administracao/empresas/notificacoes" },
           { nome: "Auditoria" },
           { nome: "Integrações" },
           { nome: "Relatórios Faturamento" },
