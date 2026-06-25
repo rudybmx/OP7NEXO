@@ -391,7 +391,7 @@ export function PaginaAtendimento() {
       overflow: 'hidden',
       // Flush no <main>: edge-to-edge, sem "card chrome" (radius/padding/sombra/borda).
       padding: 0,
-      background: 'radial-gradient(circle at top left, rgba(37, 211, 102, 0.10), transparent 28%), linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(238, 242, 247, 0.98) 100%)',
+      background: 'radial-gradient(circle at top left, rgba(37, 211, 102, 0.10), transparent 28%), var(--ws-page-bg)',
       boxSizing: 'border-box',
       border: 'none',
       borderRadius: 0,

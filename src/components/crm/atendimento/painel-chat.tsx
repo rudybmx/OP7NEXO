@@ -98,9 +98,9 @@ function getMessageStatusMeta(status?: string | null) {
       label: normalized === 'played' ? 'Visualizada' : 'Lida',
       icon: <CheckCheck size={11} />,
       style: {
-        background: 'rgba(62, 91, 255, 0.10)',
+        background: 'rgba(0, 110, 255, 0.10)',
         color: 'var(--ws-blue)',
-        border: '1px solid rgba(62, 91, 255, 0.16)',
+        border: '1px solid rgba(0, 110, 255, 0.16)',
       } satisfies CSSProperties,
     }
   }
@@ -169,9 +169,9 @@ function getStatusTone(status?: string | null): CSSProperties {
   }
   if (status === 'nova') {
     return {
-      background: 'rgba(62, 91, 255, 0.10)',
+      background: 'rgba(0, 110, 255, 0.10)',
       color: 'var(--ws-blue)',
-      border: '1px solid rgba(62, 91, 255, 0.18)',
+      border: '1px solid rgba(0, 110, 255, 0.18)',
     }
   }
   return {
@@ -246,8 +246,8 @@ function MediaImagem({
               style={{
                 width: 24,
                 height: 24,
-                border: '2.5px solid rgba(62,91,255,0.20)',
-                borderTopColor: 'rgba(62,91,255,0.80)',
+                border: '2.5px solid rgba(0,110,255,0.20)',
+                borderTopColor: 'rgba(0,110,255,0.80)',
                 borderRadius: '50%',
               }}
             />
@@ -288,7 +288,7 @@ function MediaImagem({
 }
 
 function renderMidiaPending(kind: string, filename: string | null | undefined, isEntrada: boolean, isIA: boolean, key: string) {
-  const mutedColor = isEntrada ? '#64748b' : (isIA ? 'rgba(255,255,255,0.55)' : 'rgba(15,32,58,0.50)')
+  const mutedColor = isEntrada ? 'var(--ws-text-2)' : (isIA ? 'rgba(255,255,255,0.55)' : 'rgba(15,32,58,0.50)')
   const skeletonBg = isEntrada ? 'rgba(15,23,42,0.08)' : (isIA ? 'rgba(255,255,255,0.10)' : 'rgba(15,32,58,0.08)')
 
   if (kind === 'image') {
@@ -434,7 +434,7 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpen
         }
 
         const captionText = caption(media)
-        const mutedColor = isEntrada ? '#64748b' : (isIA ? 'rgba(255,255,255,0.78)' : '#10203a')
+        const mutedColor = isEntrada ? 'var(--ws-text-2)' : (isIA ? 'rgba(255,255,255,0.78)' : 'var(--ws-text-1)')
 
         if (kind.includes('image') || kind.includes('imagem')) {
           return (
@@ -505,7 +505,7 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpen
               rel="noopener noreferrer"
               style={{
                 display: 'flex', alignItems: 'center', gap: 8,
-                color: isEntrada ? '#3E5BFF' : (isIA ? '#ffffff' : '#0f2744'),
+                color: isEntrada ? '#006EFF' : (isIA ? '#ffffff' : 'var(--ws-text-1)'),
                 textDecoration: 'none', fontSize: 12, fontWeight: 600,
               }}
             >
@@ -732,10 +732,10 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
               padding: isMobile ? 0 : '0 12px',
               borderRadius: 999,
               background: painelAberto
-                ? 'rgba(62, 91, 255, 0.10)'
-                : 'rgba(255, 255, 255, 0.90)',
+                ? 'rgba(0, 110, 255, 0.10)'
+                : 'var(--ws-surface)',
               border: painelAberto
-                ? '1px solid rgba(62, 91, 255, 0.18)'
+                ? '1px solid rgba(0, 110, 255, 0.18)'
                 : '1px solid rgba(15, 23, 42, 0.08)',
               color: painelAberto ? 'var(--ws-blue)' : 'var(--ws-text-2)',
               cursor: 'pointer',
@@ -744,7 +744,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
               justifyContent: 'center',
               gap: 6,
               boxShadow: painelAberto
-                ? '0 4px 12px rgba(62, 91, 255, 0.10)'
+                ? '0 4px 12px rgba(0, 110, 255, 0.10)'
                 : '0 1px 2px rgba(15, 23, 42, 0.05)',
               whiteSpace: 'nowrap',
             }}
@@ -769,7 +769,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
               width: isMobile ? 40 : 32,
               height: isMobile ? 40 : 32,
               borderRadius: 10,
-              background: 'rgba(255, 255, 255, 0.90)',
+              background: 'var(--ws-surface)',
               border: '1px solid rgba(15, 23, 42, 0.08)',
               color: 'var(--ws-text-3)',
               cursor: 'pointer',
@@ -830,7 +830,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
           display: 'flex',
           flexDirection: 'column',
           gap: 24,
-          background: 'linear-gradient(to bottom, transparent, rgba(62,91,255,0.02))',
+          background: 'linear-gradient(to bottom, transparent, rgba(0,110,255,0.02))',
           scrollbarWidth: 'thin',
         }}>
           <CardRastreamento
@@ -870,7 +870,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                   ? {
                       background: msg.isMentioned
                         ? 'linear-gradient(180deg, rgba(255, 248, 220, 0.98), rgba(255, 244, 197, 0.96))'
-                        : 'rgba(255, 255, 255, 0.96)',
+                        : 'var(--ws-surface)',
                       color: '#0f172a',
                       border: `1px solid ${msg.isMentioned ? 'rgba(201, 168, 76, 0.28)' : 'rgba(15, 23, 42, 0.08)'}`,
                       boxShadow: '0 8px 20px rgba(15, 23, 42, 0.06)',
@@ -884,14 +884,14 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                       }
                     : {
                         background: 'linear-gradient(180deg, #E9EEFD 0%, #DDE3FA 100%)',
-                        color: '#10203a',
-                        border: '1px solid rgba(62, 91, 255, 0.12)',
-                        boxShadow: '0 10px 22px rgba(62, 91, 255, 0.08)',
+                        color: 'var(--ws-text-1)',
+                        border: '1px solid rgba(0, 110, 255, 0.12)',
+                        boxShadow: '0 10px 22px rgba(0, 110, 255, 0.08)',
                       }
                 const footerColor = isEntrada
-                  ? '#64748b'
+                  ? 'var(--ws-text-2)'
                   : isIA
-                    ? 'rgba(255,255,255,0.72)'
+                    ? 'var(--ws-glass-bg)'
                     : 'rgba(16, 32, 58, 0.70)'
                 return (
                   <div

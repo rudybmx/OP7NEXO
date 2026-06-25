@@ -139,7 +139,7 @@ function MenuContextoConversa({
         top: posY,
         zIndex: 9999,
         minWidth: 210,
-        background: 'rgba(255, 255, 255, 0.97)',
+        background: 'var(--ws-surface)',
         border: '1px solid rgba(15, 23, 42, 0.10)',
         borderRadius: 10,
         boxShadow: '0 8px 32px rgba(15, 23, 42, 0.16)',
@@ -162,7 +162,7 @@ function MenuContextoConversa({
 
       {onToggleFixada && (
         <div
-          style={{ ...itemStyle, color: conversa.fixada ? '#3E5BFF' : 'var(--ws-text-1)' }}
+          style={{ ...itemStyle, color: conversa.fixada ? '#006EFF' : 'var(--ws-text-1)' }}
           onClick={() => handleItem(() => onToggleFixada(conversa.id))}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(15,23,42,0.05)' }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
@@ -317,7 +317,7 @@ function PainelNovaConversaInline({
             boxSizing: 'border-box',
             padding: isMobile ? '12px 12px 12px 28px' : '9px 12px 9px 28px',
             borderRadius: 8,
-            background: 'rgba(255, 255, 255, 0.92)',
+            background: 'var(--ws-surface)',
             border: erro ? '1px solid #ef4444' : '1px solid rgba(15, 23, 42, 0.10)',
             color: 'var(--ws-text-1)',
             fontSize: isMobile ? 16 : 14,
@@ -332,7 +332,7 @@ function PainelNovaConversaInline({
           marginBottom: 10,
           padding: '7px 10px',
           borderRadius: 8,
-          background: 'rgba(255,255,255,0.72)',
+          background: 'var(--ws-glass-bg)',
           border: '1px solid rgba(15,23,42,0.08)',
           display: 'flex',
           alignItems: 'center',
@@ -529,9 +529,9 @@ function getStatusChipStyle(status?: string | null): CSSProperties {
   }
   if (status === 'nova') {
     return {
-      background: 'rgba(62, 91, 255, 0.10)',
+      background: 'rgba(0, 110, 255, 0.10)',
       color: 'var(--ws-blue)',
-      border: '1px solid rgba(62, 91, 255, 0.18)',
+      border: '1px solid rgba(0, 110, 255, 0.18)',
     }
   }
   if (status === 'aguardando' || status === 'processando') {
@@ -839,7 +839,7 @@ export function PainelInbox({
                       fontWeight: 700,
                       cursor: 'pointer',
                       border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid rgba(15, 23, 42, 0.08)',
-                      background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'rgba(255, 255, 255, 0.88)',
+                      background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'var(--ws-surface)',
                       color: ativo ? '#1D9E75' : 'var(--ws-text-2)',
                       boxShadow: ativo ? '0 4px 10px rgba(29, 158, 117, 0.10)' : 'none',
                     }}
@@ -905,21 +905,21 @@ export function PainelInbox({
                 cursor: 'pointer',
                 position: 'relative',
                 background: conversaAtivaId === conversa.id
-                  ? 'linear-gradient(90deg, rgba(62, 91, 255, 0.16) 0%, rgba(37, 211, 102, 0.08) 100%)'
-                  : 'linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(243, 247, 255, 0.95) 100%)',
+                  ? 'linear-gradient(90deg, rgba(0, 110, 255, 0.16) 0%, rgba(37, 211, 102, 0.08) 100%)'
+                  : 'var(--ws-surface)',
                 boxShadow: conversaAtivaId === conversa.id
                   ? 'inset 3px 0 0 #25D366'
                   : conversa.fixada
-                    ? 'inset 3px 0 0 #3E5BFF'
+                    ? 'inset 3px 0 0 #006EFF'
                     : 'inset 3px 0 0 transparent',
-                borderBottom: '1px solid rgba(62, 91, 255, 0.06)',
+                borderBottom: '1px solid rgba(0, 110, 255, 0.06)',
                 transition: 'background 0.2s ease, box-shadow 0.2s ease',
                 padding: '12px 14px',
               }}
             >
               {/* Indicadores de fixada e favorita */}
               <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4 }}>
-                {conversa.fixada && <Pin size={11} color="#3E5BFF" style={{ opacity: 0.7 }} />}
+                {conversa.fixada && <Pin size={11} color="#006EFF" style={{ opacity: 0.7 }} />}
                 {conversa.favorita && <Star size={11} color="#c9a84c" fill="#c9a84c" style={{ opacity: 0.85 }} />}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '48px minmax(0, 1fr) auto', gap: 12, alignItems: 'start' }}>
