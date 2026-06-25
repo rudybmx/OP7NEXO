@@ -242,6 +242,20 @@ def enviar_mensagem_texto(session: str, cfg: dict, chat_id: str, texto: str) -> 
         raise WahaError(f"WAHA sendText: {exc}") from exc
 
 
+def definir_digitando(session: str, cfg: dict, chat_id: str, ligar: bool) -> None:
+    """Liga/desliga o indicador 'digitando' via WAHA (POST /api/startTyping | /api/stopTyping).
+    Best-effort no chamador; timeout curto p/ não atrasar a resposta do agente."""
+    base_url, headers = _headers(cfg)
+    endpoint = "startTyping" if ligar else "stopTyping"
+    resp = httpx.post(
+        f"{base_url}/api/{endpoint}",
+        headers=headers,
+        json={"session": session, "chatId": chat_id},
+        timeout=8.0,
+    )
+    resp.raise_for_status()
+
+
 def _waha_voice_needs_convert(mimetype: str | None) -> bool:
     normalized = str(mimetype or "").strip().lower()
     if not normalized:

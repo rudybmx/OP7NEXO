@@ -962,6 +962,31 @@ def enviar_mensagem_texto(
         return _json_or_text(resp)
 
 
+def enviar_presenca(
+    instance_name: str,
+    numero: str,
+    state: str = "composing",
+    *,
+    is_audio: bool = False,
+    instance_id: str | None = None,
+    instance_token: str | None = None,
+) -> dict[str, Any]:
+    """Define a presença no chat (indicador 'digitando'/'gravando') via Evolution Go.
+
+    `state`: 'composing' (digitando) | 'paused' (parar) | 'available' | 'unavailable'.
+    Timeout curto — é best-effort no chamador e não pode atrasar a resposta do agente.
+    """
+    body = {"number": numero, "state": state, "isAudio": is_audio}
+    with httpx.Client(timeout=8) as client:
+        resp = client.post(
+            f"{META}/message/presence",
+            headers=_send_headers(instance_id, instance_token),
+            json=body,
+        )
+        _handle_error(resp, "enviar_presenca")
+        return _json_or_text(resp)
+
+
 def enviar_mensagem_midia(
     instance_name: str,
     numero: str,

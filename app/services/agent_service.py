@@ -692,12 +692,14 @@ _HANDOFF_LABEL = {
     "config": "configuração do agente inválida",
     "erro_llm": "erro ao gerar a resposta",
     "envio_falhou": "falha ao enviar a resposta",
+    "transferencia": "transferência solicitada pelo agente",
 }
 
-# Motivos que roteiam p/ o responsável (Fase 4). SÓ os "o agente não consegue responder ISTO":
-# transferir desliga `ai_ativo` permanentemente, então os TRANSITÓRIOS (fora_horario, limite_tokens
-# — o agente voltaria a funcionar sozinho) NÃO entram, senão a 1ª msg fora de hora mata o agente.
-_ROTEAR_NO_HANDOFF = {"baixa_confianca", "erro_llm", "config", "envio_falhou"}
+# Motivos que roteiam p/ o responsável (Fase 4). Os "o agente não consegue responder ISTO" +
+# "transferencia" (deliberada via intent — também desliga `ai_ativo` em definitivo). Os TRANSITÓRIOS
+# (fora_horario, limite_tokens — o agente voltaria a funcionar sozinho) NÃO entram, senão a 1ª msg
+# fora de hora mataria um agente saudável.
+_ROTEAR_NO_HANDOFF = {"baixa_confianca", "erro_llm", "config", "envio_falhou", "transferencia"}
 
 
 def _nome_usuario(db: Session, user_id) -> str:
@@ -756,7 +758,52 @@ def _postar_msg_sistema(db: Session, conversa, agente: Agente, motivo: str) -> N
     )
 
 
-def _handoff(db: Session, conversa, agente: Agente, *, canal_id, score, tokens, motivo: str) -> None:
+def _set_digitando(conversa, canal, *, ativo: bool, wamid: str | None = None) -> None:
+    """Liga/desliga o indicador "digitando" no canal enquanto o agente pensa — deixa o atendimento
+    com cara de humano. **Best-effort/cosmético**: nunca propaga erro nem atrasa o reply (timeout
+    curto nas chamadas). Dispatch por `canal.tipo`, espelhando `_enviar_resposta`. Evolution/WAHA
+    ligam e desligam; Meta Cloud só LIGA (typing expira sozinho ~25s) e exige o wamid da msg recebida."""
+    if canal is None:
+        return
+    tipo = (canal.tipo or "").strip()
+    config = canal.config if isinstance(canal.config, dict) else {}
+    jid = conversa.remote_jid or ""
+    try:
+        ev = config.get("evolution") if isinstance(config.get("evolution"), dict) else None
+        if tipo == "whatsapp_evolution" or ev is not None:
+            ev = ev or {}
+            if conversa.instance and jid:
+                from app.services import evolution as evo_service
+
+                evo_service.enviar_presenca(
+                    conversa.instance, jid, "composing" if ativo else "paused",
+                    instance_id=ev.get("instance_id"), instance_token=ev.get("instance_token"),
+                )
+            return
+        if tipo == "whatsapp_waha":
+            waha_cfg = config.get("waha") if isinstance(config.get("waha"), dict) else {}
+            session = waha_cfg.get("session") or canal.nome or "default"
+            chat_id = _waha_chat_id(jid)
+            if chat_id:
+                from app.services import waha_service
+
+                waha_service.definir_digitando(session, waha_cfg, chat_id, ativo)
+            return
+        if tipo == "whatsapp_oficial" and ativo and wamid:
+            phone_number_id = config.get("phone_number_id") or ""
+            access_token = config.get("access_token") or ""
+            if phone_number_id and access_token:
+                from app.services import meta_cloud
+
+                meta_cloud.enviar_digitando(phone_number_id, access_token, wamid)
+            return
+    except Exception as exc:  # noqa: BLE001 — presença é cosmética, NUNCA derruba/atrasa o reply
+        log.info("[agente] presença(%s ativo=%s) falhou conversa=%s: %s", tipo, ativo, conversa.id, exc)
+
+
+def _handoff(db: Session, conversa, agente: Agente, *, canal_id, score, tokens, motivo: str, canal=None) -> None:
+    if canal is not None:
+        _set_digitando(conversa, canal, ativo=False)  # encerra o "digitando" se estava ligado
     conversa.ai_escalado = True
     conversa.ai_handoff_motivo = motivo
     conversa.ai_handoff_at = datetime.now(timezone.utc)
@@ -876,16 +923,31 @@ def processar_reply(db: Session, payload: dict) -> None:
         _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="limite_tokens")
         return
 
+    # "digitando…" enquanto o modelo pensa — o v4-flash é de raciocínio (~3-20s), então o indicador
+    # dá cara de atendente humano. Best-effort/cosmético: não atrasa nem derruba o reply. Meta exige
+    # o wamid da última mensagem recebida (Evolution/WAHA usam o jid da conversa).
+    wamid = None
+    if canal is not None and (canal.tipo or "").strip() == "whatsapp_oficial":
+        wamid = db.execute(
+            text(
+                "SELECT evolution_msg_id FROM public.crm_whatsapp_mensagens "
+                "WHERE conversa_id = :cid AND direcao = 'entrada' AND evolution_msg_id IS NOT NULL "
+                "ORDER BY created_at DESC LIMIT 1"
+            ),
+            {"cid": str(conversa.id)},
+        ).scalar()
+    _set_digitando(conversa, canal, ativo=True, wamid=wamid)
+
     try:
         res = gerar_resposta(db, agente, ultima_msg, historico, contato_nome=contato_nome)
     except llm_client_service.LLMConfigError as exc:
         log.warning("[agente] config LLM inválida agente=%s: %s", agente.id, exc)
-        _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="config")
+        _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="config", canal=canal)
         return
     except Exception as exc:  # noqa: BLE001 — qualquer falha (token/rede/LLM) → handoff, nunca retry-loop
         log.warning("[agente] falha ao gerar resposta agente=%s: %s", agente.id, exc)
         db.rollback()
-        _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="erro_llm")
+        _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="erro_llm", canal=canal)
         return
 
     score = res["score_confianca"]
@@ -898,20 +960,13 @@ def processar_reply(db: Session, payload: dict) -> None:
     # ANTES do score: numa transferência o agente costuma estar confiante (score alto).
     if intent == "transferir_humano" and res["resposta"]:
         if _enviar_e_persistir(db, conversa, canal, agente, texto=res["resposta"], score=score):
-            conversa.ai_escalado = True
-            conversa.ai_handoff_motivo = "transferencia"
-            conversa.ai_handoff_at = datetime.now(timezone.utc)
-            conversa.ai_ativo = False
-            db.commit()
-            registrar_uso(
-                db, agente, canal_id=canal_id, conversa_id=conversa.id,
-                tokens_input=ti, tokens_output=to, escalado=True, score=score,
-            )
+            conversa.ai_ativo = False  # transferência DELIBERADA → IA encerra a vez nesta conversa
             _publish(conversa, tipo="message.upsert", texto=res["resposta"], message_type="conversation")
-            _publish(conversa, tipo="conversation.refresh")
-            log.info("[agente] handoff-falante conversa=%s score=%s", conversa.id, score)
+            # _enviar_e_persistir deixou as mudanças pendentes; o _handoff marca ai_escalado, commita
+            # tudo junto, registra o uso e (Fase 4) roteia p/ o responsável do agente + posta o resumo.
+            _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="transferencia", canal=canal)
         else:
-            _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="envio_falhou")
+            _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="envio_falhou", canal=canal)
         return
 
     if score >= agente.threshold_confianca and res["resposta"]:
@@ -925,6 +980,6 @@ def processar_reply(db: Session, payload: dict) -> None:
             )
             _publish(conversa, tipo="message.upsert", texto=res["resposta"], message_type="conversation")
         else:
-            _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="envio_falhou")
+            _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="envio_falhou", canal=canal)
     else:
-        _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="baixa_confianca")
+        _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="baixa_confianca", canal=canal)

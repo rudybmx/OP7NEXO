@@ -171,6 +171,27 @@ def enviar_mensagem_texto(
         return resp.json()
 
 
+def enviar_digitando(phone_number_id: str, access_token: str, message_id: str) -> dict:
+    """Liga o indicador 'digitando' via Meta Cloud API. O typing_indicator é atrelado à última
+    mensagem recebida do cliente (`message_id` = wamid) e também a marca como lida; expira sozinho
+    (~25s) ou quando a resposta é enviada. Best-effort no chamador; timeout curto."""
+    url = f"{META_API_BASE}/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id,
+        "typing_indicator": {"type": "text"},
+    }
+    with httpx.Client(timeout=8) as client:
+        resp = client.post(url, headers=headers, json=body)
+        _handle_error(resp, "enviar_digitando")
+        return resp.json() if resp.content else {}
+
+
 def processar_webhook(payload: dict) -> dict:
     """Processa payload do webhook da Meta Cloud API.
     
