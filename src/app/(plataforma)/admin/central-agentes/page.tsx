@@ -10,10 +10,11 @@ import { useWorkspace } from '@/lib/workspace-context'
 import api from '@/lib/api-client'
 import { type AgenteInput, type HorarioItem, useAgentes } from '@/hooks/use-agentes'
 import { type LlmProvider, useLlmProviders } from '@/hooks/use-llm-providers'
+import { useDiretrizes } from '@/hooks/use-diretrizes'
 import { BaseConhecimentoManager } from '@/components/admin/central-agentes/BaseConhecimentoManager'
 import { UsoDashboard } from '@/components/admin/central-agentes/UsoDashboard'
 
-type Aba = 'agentes' | 'providers' | 'uso'
+type Aba = 'agentes' | 'providers' | 'uso' | 'diretrizes'
 type CanalLite = { id: string; nome: string; tipo?: string | null }
 
 const DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
@@ -200,7 +201,7 @@ export default function CentralAgentesPage() {
       </div>
 
       <div className="flex gap-1 mb-5" style={{ borderBottom: '1px solid var(--ws-glass-border)' }}>
-        {([['agentes', 'Agentes'], ['providers', 'Providers & Modelos'], ['uso', 'Uso & Consumo']] as [Aba, string][]).map(([id, label]) => (
+        {([['agentes', 'Agentes'], ['providers', 'Providers & Modelos'], ['diretrizes', 'Diretrizes'], ['uso', 'Uso & Consumo']] as [Aba, string][]).map(([id, label]) => (
           <button
             key={id}
             onClick={() => setAba(id)}
@@ -228,6 +229,7 @@ export default function CentralAgentesPage() {
         />
       )}
       {aba === 'providers' && <ProvidersTab hook={providersHook} />}
+      {aba === 'diretrizes' && <DiretrizesTab ws={ws} />}
       {aba === 'uso' && <UsoDashboard workspaceId={ws} />}
 
       {/* Drawer de criação/edição de agente */}
@@ -383,6 +385,75 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className={labelCls} style={labelStyle}>{label}</span>
       {children}
     </label>
+  )
+}
+
+const DIRETRIZES_MAX = 4000
+
+function DiretrizesTab({ ws }: { ws: string | null }) {
+  const { carregando, salvando, carregar, salvar } = useDiretrizes()
+  const [texto, setTexto] = useState('')
+  const [original, setOriginal] = useState('')
+
+  useEffect(() => {
+    if (!ws) return
+    let vivo = true
+    carregar(ws)
+      .then((d) => { if (vivo) { setTexto(d.diretrizes || ''); setOriginal(d.diretrizes || '') } })
+      .catch(() => { if (vivo) { setTexto(''); setOriginal('') } })
+    return () => { vivo = false }
+  }, [ws, carregar])
+
+  if (!ws) return <p className="text-sm" style={{ color: 'var(--ws-text-2)' }}>Selecione um workspace.</p>
+
+  const sujo = texto !== original
+
+  async function onSalvar() {
+    if (!ws) return
+    try {
+      const d = await salvar(ws, texto)
+      setOriginal(d.diretrizes || '')
+      setTexto(d.diretrizes || '')
+      toast.success('Diretrizes salvas')
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao salvar diretrizes')
+    }
+  }
+
+  return (
+    <div className="max-w-3xl">
+      <Section titulo="Diretrizes do workspace">
+        <p className="text-sm" style={{ color: 'var(--ws-text-2)' }}>
+          Regras que valem para <strong>todos os agentes deste workspace</strong> — injetadas no
+          início do prompt de cada resposta (identidade da marca, tom, o que pode e o que não pode,
+          assinatura…). A data e a hora atuais já são fornecidas automaticamente aos agentes.
+        </p>
+        <Field label="Diretrizes (até 4000 caracteres)">
+          <textarea
+            className={inputCls}
+            style={{ ...inputStyle, minHeight: 220, resize: 'vertical' }}
+            value={texto}
+            maxLength={DIRETRIZES_MAX}
+            disabled={carregando}
+            onChange={(e) => setTexto(e.target.value)}
+            placeholder={'Ex.: Você representa a Clínica X, especializada em estética.\n- Atenda com cordialidade e objetividade.\n- Nunca prometa preços ou descontos.\n- Encerre as mensagens com "Equipe Clínica X".'}
+          />
+        </Field>
+        <div className="flex items-center justify-between">
+          <span className="text-xs" style={{ color: sujo ? 'var(--ws-coral)' : 'var(--ws-text-2)' }}>
+            {carregando ? 'Carregando…' : sujo ? 'Alterações não salvas' : `${texto.length}/${DIRETRIZES_MAX}`}
+          </span>
+          <button
+            onClick={onSalvar}
+            disabled={salvando || carregando || !sujo}
+            className="px-3 py-2 text-sm rounded-lg font-medium inline-flex items-center gap-2"
+            style={{ background: '#c9a84c', color: '#1a1205', opacity: salvando || carregando || !sujo ? 0.6 : 1 }}
+          >
+            {salvando && <Loader2 size={15} className="animate-spin" />} Salvar diretrizes
+          </button>
+        </div>
+      </Section>
+    </div>
   )
 }
 
