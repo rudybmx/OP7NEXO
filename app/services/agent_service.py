@@ -225,8 +225,12 @@ def _montar_system(
     partes.append(
         'Responda SEMPRE em JSON válido com as chaves exatas: '
         '"resposta" (string, o texto a enviar ao cliente), '
-        '"score_confianca" (número de 0 a 1 = sua confiança na resposta) e '
-        '"intent" (string curta com a intenção detectada).'
+        '"score_confianca" (número de 0 a 1 = sua confiança na resposta), '
+        '"intent" (string curta com a intenção detectada) e '
+        '"nome_cliente" (string): se o cliente DECLAROU o próprio nome nesta conversa '
+        '(ex.: "meu nome é Ana", "sou o João", "aqui é a Maria"), coloque o nome informado; '
+        'caso contrário, ou se for nome de OUTRA pessoa (ex.: agendamento para um terceiro), '
+        'retorne "". NUNCA invente nem deduza o nome.'
     )
     return "\n\n".join(partes)
 
@@ -244,6 +248,42 @@ def _montar_user(mensagem: str, historico: list | None) -> str:
     bloco = "\n".join(linhas)
     prefixo = f"Histórico da conversa:\n{bloco}\n\n" if bloco else ""
     return f"{prefixo}Mensagem atual do cliente:\n{mensagem}"
+
+
+def _validar_nome_cliente(valor: str | None) -> str | None:
+    """Valida um nome declarado pelo cliente (capturado pela IA). Rejeita vazios, placeholders,
+    telefones/números e strings sem letra. Retorna o nome limpo ou None."""
+    nome = (valor or "").strip()
+    if len(nome) < 2 or len(nome) > 60:
+        return None
+    if nome.casefold() in (
+        "null", "none", "n/a", "na", "cliente", "contato", "desconhecido",
+        "nao informado", "não informado", "sem nome",
+    ):
+        return None
+    if "@" in nome or not re.search(r"[A-Za-zÀ-ÿ]", nome):
+        return None
+    return nome
+
+
+def _aplicar_nome_confirmado_ia(db: Session, contato_id, nome_candidato: str | None) -> bool:
+    """Grava `nome_confirmado` (nome_origem='ia') a partir de um nome captado pela IA. NUNCA
+    sobrescreve um nome confirmado por humano (nome_origem='humano'). Não commita — o caller decide.
+    Retorna True se atualizou alguma linha."""
+    nome = _validar_nome_cliente(nome_candidato)
+    if not nome or not contato_id:
+        return False
+    res = db.execute(
+        text("""
+            UPDATE public.crm_whatsapp_contatos
+            SET nome_confirmado = :nome, nome_origem = 'ia', updated_at = NOW()
+            WHERE id = CAST(:cid AS uuid)
+              AND COALESCE(nome_origem, '') <> 'humano'
+              AND COALESCE(nome_confirmado, '') <> :nome
+        """),
+        {"nome": nome, "cid": str(contato_id)},
+    )
+    return res.rowcount > 0
 
 
 def gerar_resposta(
@@ -280,12 +320,14 @@ def gerar_resposta(
     tokens_input = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
     tokens_output = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
 
+    nome_cliente = None
     try:
         data = json.loads(content)
         resposta = str(data.get("resposta") or "").strip()
         score = max(0.0, min(1.0, float(data.get("score_confianca"))))
         intent_raw = data.get("intent")
         intent = str(intent_raw) if intent_raw is not None else None
+        nome_cliente = _validar_nome_cliente(data.get("nome_cliente"))
     except (json.JSONDecodeError, TypeError, ValueError):
         resposta, score, intent = "", 0.0, "parse_error"
 
@@ -293,6 +335,7 @@ def gerar_resposta(
         "resposta": resposta,
         "score_confianca": score,
         "intent": intent,
+        "nome_cliente": nome_cliente,
         "tokens_input": tokens_input,
         "tokens_output": tokens_output,
         "rag_chunks_usados": rag_chunks,
@@ -436,7 +479,7 @@ def enfileirar_agente_reply(db: Session, *, workspace_id, canal_id, conversa_id,
 # ── análise de conversa (inteligência de IA — Fase 1) ─────────────────────────
 # Prompts de análise vivem AQUI (backend, versionados) — o "segredo" da qualidade,
 # fora do prompt editável do agente. Bump _ANALISE_PROMPT_VERSAO ao mudar o prompt.
-_ANALISE_PROMPT_VERSAO = "1"
+_ANALISE_PROMPT_VERSAO = "2"  # v2: extrai nome_cliente declarado pelo lead
 _ANALISE_DEBOUNCE_S = 20      # quiet-period após a última msg do lead
 _ANALISE_COOLDOWN_S = 180     # no máx. 1 análise / 3 min por conversa (custo)
 
@@ -454,7 +497,10 @@ _ANALISE_INSTRUCOES = (
     '(ex.: objetivo "agendar consulta"; lead diz que quer limpeza dental → "agendar limpeza dental"). '
     'Se o lead não expressou interesse claro, retorne "".\n'
     '- "observacoes": observações sobre o ANDAMENTO do atendimento (não repita o resumo): '
-    "pontos de atenção, próximos passos, riscos, inconsistências do atendente.\n\n"
+    "pontos de atenção, próximos passos, riscos, inconsistências do atendente.\n"
+    '- "nome_cliente": APENAS se o LEAD declarou EXPLICITAMENTE o próprio nome na conversa '
+    '(ex.: "meu nome é Ana", "sou o João"), retorne o nome informado; senão, ou se for o nome '
+    'de outra pessoa, retorne "". NUNCA invente nem deduza o nome a partir do contexto.\n\n'
     "Não invente informação que não esteja na conversa. Responda em português do Brasil."
 )
 
@@ -504,6 +550,7 @@ def analisar_conversa(db: Session, agente: Agente, conversa_id) -> dict | None:
             "temperatura_score": score,
             "interesse": str(data.get("interesse") or "").strip(),
             "observacoes": str(data.get("observacoes") or "").strip(),
+            "nome_cliente": _validar_nome_cliente(data.get("nome_cliente")),
         }
     except Exception as exc:  # noqa: BLE001 — análise nunca derruba nada
         log.info("[analise] falhou conversa=%s: %s", conversa_id, exc)
@@ -585,6 +632,15 @@ def processar_analise(db: Session, payload: dict) -> None:
         """),
         {"resumo": res["resumo"], "contexto": json.dumps(contexto), "cid": str(conversa_id)},
     )
+    # Fase 2: se a análise captou um nome DECLARADO pelo lead, confirma (origem 'ia'),
+    # nunca sobrescrevendo um nome confirmado por humano.
+    if res.get("nome_cliente"):
+        _cid = db.execute(
+            text("SELECT contato_id FROM public.crm_whatsapp_conversas WHERE id = CAST(:cid AS uuid)"),
+            {"cid": str(conversa_id)},
+        ).scalar()
+        if _cid:
+            _aplicar_nome_confirmado_ia(db, _cid, res["nome_cliente"])
     db.commit()
     log.info("[analise] conversa=%s temperatura=%s score=%s", conversa_id, res["temperatura"], res["temperatura_score"])
     try:
@@ -995,6 +1051,11 @@ def processar_reply(db: Session, payload: dict) -> None:
     score = res["score_confianca"]
     ti, to = res["tokens_input"], res["tokens_output"]
     intent = (res.get("intent") or "").strip().lower()
+
+    # Fase 2: nome declarado pelo cliente, captado pelo agente → confirma (origem 'ia'),
+    # nunca sobrescreve humano. Sem commit aqui — entra na transação do envio/handoff abaixo.
+    if res.get("nome_cliente") and conversa.contato_id:
+        _aplicar_nome_confirmado_ia(db, conversa.contato_id, res["nome_cliente"])
 
     # Transferência DELIBERADA (o agente sinalizou intent="transferir_humano"): envia o aviso ao
     # cliente E escala para humano, DESLIGANDO a IA nesta conversa. Sem desligar ai_ativo, a próxima
