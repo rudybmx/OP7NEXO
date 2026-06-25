@@ -12,8 +12,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import 'reactflow/dist/style.css';
-/* HeroUI removido na Fase 1 (componentes/imports/deps). A camada de tokens
-   HeroUI-derivada (2º @theme inline + bloco :root abaixo) sai na Fase 2. */
+/* HeroUI removido: componentes/imports/deps (F1) + camada de tokens HeroUI-derivada
+   (2º @theme inline + bloco :root) (F2). Resta a camada --ws-* (glass), deferida ao épico. */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -22,15 +22,15 @@
   --color-foreground: var(--text);
   --color-card: var(--card);
   --color-card-foreground: var(--ws-text-1);
-  --color-popover: var(--bg);
+  --color-popover: var(--card);
   --color-popover-foreground: var(--text);
   --color-primary: var(--gold);
   --color-primary-foreground: #ffffff;
-  --color-secondary: var(--bg2);
+  --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--text);
-  --color-muted: var(--bg2);
+  --color-muted: var(--ws-text-3);            /* deferido — #9ca3af; sai no épico --ws-* (não mexer: 22 usos bg-muted/30) */
   --color-muted-foreground: var(--text2);
-  --color-accent: var(--bg2);
+  --color-accent: var(--accent);
   --color-accent-foreground: var(--text);
   --color-destructive: #c80010;
   --color-border: var(--border);
@@ -58,35 +58,6 @@
   --radius-2xl: 10px;
   --radius-3xl: 12px;
   --radius-4xl: 16px;
-}
-
-/* HeroUI Tailwind theme tokens — apenas os não conflitantes */
-@theme inline {
-  --color-focus:                    var(--focus);
-  --color-default:                  var(--default);
-  --color-default-foreground:       var(--default-foreground);
-  --color-default-hover:            var(--default-hover);
-  --color-surface:                  var(--ws-surface);
-  --color-surface-secondary:        var(--surface-secondary);
-  --color-separator:                var(--separator);
-  --color-separator-tertiary:       var(--separator-tertiary);
-  --color-success:                  var(--success);
-  --color-success-foreground:       var(--success-foreground);
-  --color-success-soft:             var(--success-soft);
-  --color-success-soft-foreground:  var(--success-soft-foreground);
-  --color-danger:                   var(--danger);
-  --color-danger-foreground:        var(--danger-foreground);
-  --color-danger-soft:              var(--danger-soft);
-  --color-danger-soft-foreground:   var(--danger-soft-foreground);
-  --color-warning:                  var(--warning);
-  --color-warning-foreground:       var(--warning-foreground);
-  --color-warning-soft:             var(--warning-soft);
-  --color-warning-soft-foreground:  var(--warning-soft-foreground);
-  --color-accent:                   var(--accent);
-  --color-accent-foreground:        var(--accent-foreground);
-  --color-accent-soft:              var(--accent-soft);
-  --color-accent-soft-foreground:   var(--accent-soft-foreground);
-  --color-muted:                    var(--ws-text-3);
 }
 
 :root {
@@ -119,15 +90,15 @@
   --card: #ffffff;
   --card-border: rgba(15,39,68,0.10);
   --card-foreground: var(--ws-text-1);
-  --popover: var(--bg);
+  --popover: var(--card);
   --popover-foreground: var(--text);
   --primary: var(--gold);
   --primary-foreground: #ffffff;
-  --secondary: var(--bg2);
+  --secondary: #e8eaed;
   --secondary-foreground: var(--text);
   --muted: var(--bg2);
   --muted-foreground: var(--text2);
-  --accent: var(--bg2);
+  --accent: #eef1f5;
   --accent-foreground: var(--text);
   --destructive: #c80010;
   --border-color: var(--border);
@@ -156,13 +127,13 @@
   --card: #0d2e5a;  /* clareado p/ separar do bg #000533 no dark (era #00214d, contraste sutil). --bg2 fica #00214d → secondary/muted intactos */
   --card-border: rgba(255,255,255,0.08);
   --card-foreground: var(--ws-text-1);
-  --popover: var(--bg);
+  --popover: var(--card);
   --popover-foreground: var(--text);
   --secondary: var(--bg2);
   --secondary-foreground: var(--text);
   --muted: var(--bg2);
   --muted-foreground: var(--text2);
-  --accent: #282828;
+  --accent: rgba(255,255,255,0.06);
   --accent-foreground: var(--text);
   --border-color: var(--border);
   --input: var(--border2);
@@ -261,42 +232,6 @@ button {
   /* TRANSITIONS */
   --ws-transition:    all 0.18s ease;
   --ws-transition-slow: all 0.28s ease;
-
-  /* ── HeroUI component tokens (sem @theme, sem conflito) ── */
-  --disabled-opacity:         0.5;
-  --cursor-disabled:          not-allowed;
-  --cursor-interactive:       pointer;
-  --ease-out:                 cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-smooth:              cubic-bezier(0.4, 0, 0.2, 1);
-  --ring-offset-width:        2px;
-  --default:                  rgba(0, 0, 0, 0.05);
-  --default-hover:            rgba(0, 0, 0, 0.08);
-  --default-foreground:       var(--ws-text-1);
-  --default-soft:             rgba(0, 0, 0, 0.04);
-  --default-soft-foreground:  var(--ws-text-2);
-  --accent:                   var(--ws-blue);
-  --accent-foreground:        #ffffff;
-  --accent-hover:             #004a78;
-  --accent-soft:              var(--ws-blue-soft);
-  --accent-soft-foreground:   var(--ws-blue);
-  --danger:                   var(--ws-coral);
-  --danger-foreground:        #ffffff;
-  --danger-hover:             #e04a77;
-  --danger-soft:              var(--ws-coral-soft);
-  --danger-soft-foreground:   var(--ws-coral);
-  --danger-soft-hover:        rgba(255, 92, 141, 0.18);
-  --success:                  var(--ws-green);
-  --success-foreground:       #ffffff;
-  --success-soft:             var(--ws-green-soft);
-  --success-soft-foreground:  var(--ws-green);
-  --warning:                  #c9a84c;
-  --warning-foreground:       #ffffff;
-  --warning-soft:             rgba(201, 168, 76, 0.12);
-  --warning-soft-foreground:  #c9a84c;
-  --focus:                    var(--ws-blue);
-  --surface-secondary:        #ebebef;
-  --separator:                var(--ws-divider);
-  --separator-tertiary:       var(--ws-divider);
 }
 
 .dark {
@@ -323,7 +258,6 @@ button {
   /* SURFACES DARK */
   --ws-surface:       #1a2244;
   --ws-surface-2:     #141c38;
-  --surface-secondary: rgba(255, 255, 255, 0.08);
   --ws-card-active:   rgba(255, 255, 255, 0.10);
   --ws-card-hover:    rgba(255, 255, 255, 0.06);
   --ws-pill-alpha:    0.18;
