@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import useSWR from 'swr'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -18,33 +19,60 @@ export interface Notificacao {
   lida: boolean
 }
 
-// Polling no v1 (o backend já publica no Redis para um SSE futuro — ver redis_pub).
-const POLL_MS = 45_000
+// Com SSE ativo, o polling vira só um fallback lento; sem SSE, polling normal.
+const POLL_SSE_MS = 120_000
+const POLL_BASE_MS = 45_000
 
-/** Sino + feed. Tolerante a erro (platform_admin sem workspace → contador 0, sem retry). */
+/** Sino + feed. SSE (realtime) com fallback de polling; tolerante a 400. */
 export function useNotificacoes() {
   const { workspaceAtual } = useWorkspace()
   const qs = workspaceAtual ? `?workspace_id=${workspaceAtual}` : ''
+  const [sseAtivo, setSseAtivo] = useState(false)
+  const refreshInterval = sseAtivo ? POLL_SSE_MS : POLL_BASE_MS
 
   const { data: contador, mutate: mutateContador } = useSWR<{ nao_lidas: number }>(
     `/notificacoes/contador${qs}`,
     (p: string) => api.get(p),
-    { refreshInterval: POLL_MS, revalidateOnFocus: true, shouldRetryOnError: false },
+    { refreshInterval, revalidateOnFocus: true, shouldRetryOnError: false },
   )
 
   const { data: lista, isLoading, mutate: mutateLista } = useSWR<Notificacao[]>(
     `/notificacoes${qs}`,
     (p: string) => api.get(p),
-    { refreshInterval: POLL_MS, revalidateOnFocus: true, shouldRetryOnError: false },
+    { refreshInterval, revalidateOnFocus: true, shouldRetryOnError: false },
   )
+
+  // ref "latest" evita stale closure no listener do EventSource (criado 1x por workspace).
+  // Atualizada em effect (não no render) — respeita a regra react-hooks de refs.
+  const revalidarRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    revalidarRef.current = () => {
+      void mutateContador()
+      void mutateLista()
+    }
+  }, [mutateContador, mutateLista])
+
+  // SSE: re-busca ao receber sinal. O evento NÃO carrega contagem/audiência —
+  // o re-fetch passa pelos endpoints autenticados (audiência + leitura por usuário).
+  useEffect(() => {
+    if (!workspaceAtual || typeof window === 'undefined') return
+    const es = new EventSource(`/api/notificacoes/stream?workspace_id=${workspaceAtual}`)
+    es.addEventListener('ready', (e) => {
+      try {
+        const d = JSON.parse((e as MessageEvent).data)
+        setSseAtivo(d?.mode === 'sse')
+      } catch {}
+    })
+    es.addEventListener('notificacao.refresh', () => revalidarRef.current())
+    es.onerror = () => setSseAtivo(false) // cai para polling
+    return () => {
+      es.close()
+      setSseAtivo(false)
+    }
+  }, [workspaceAtual])
 
   const naoLidas = contador?.nao_lidas ?? 0
   const notificacoes = lista ?? []
-
-  function revalidar() {
-    void mutateContador()
-    void mutateLista()
-  }
 
   async function marcarLida(id: string) {
     void mutateLista((cur) => (cur ?? []).map((n) => (n.id === id ? { ...n, lida: true } : n)), false)
@@ -52,7 +80,7 @@ export function useNotificacoes() {
     try {
       await api.post(`/notificacoes/${id}/lida${qs}`)
     } finally {
-      revalidar()
+      revalidarRef.current()
     }
   }
 
@@ -62,9 +90,9 @@ export function useNotificacoes() {
     try {
       await api.post(`/notificacoes/marcar-todas-lidas${qs}`)
     } finally {
-      revalidar()
+      revalidarRef.current()
     }
   }
 
-  return { notificacoes, naoLidas, isLoading, marcarLida, marcarTodas, refetch: revalidar }
+  return { notificacoes, naoLidas, isLoading, sseAtivo, marcarLida, marcarTodas, refetch: () => revalidarRef.current() }
 }

@@ -6,6 +6,7 @@ import { ArrowLeft, Building2, Edit3, Loader2, Search, Star } from 'lucide-react
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import api from '@/lib/api-client'
 import {
   buildWorkspaceAccessDrafts,
@@ -28,6 +29,8 @@ interface UsuarioRow {
   workspace_id: string | null
   workspace_nome: string | null
   ativo: boolean
+  pode_atender_canais: boolean
+  pode_acessar_crm: boolean
 }
 
 interface EditUsuarioForm {
@@ -36,6 +39,8 @@ interface EditUsuarioForm {
   senha: string
   role: RoleUsuario
   ativo: boolean
+  pode_atender_canais: boolean
+  pode_acessar_crm: boolean
 }
 
 const ROLES: { id: RoleUsuario; label: string }[] = [
@@ -85,7 +90,7 @@ export function EditarUsuarioForm({ userId }: { userId: string }) {
   const router = useRouter()
   const [usuario, setUsuario] = useState<UsuarioRow | null>(null)
   const [carregando, setCarregando] = useState(true)
-  const [editForm, setEditForm] = useState<EditUsuarioForm>({ nome: '', email: '', senha: '', role: 'company_agent', ativo: true })
+  const [editForm, setEditForm] = useState<EditUsuarioForm>({ nome: '', email: '', senha: '', role: 'company_agent', ativo: true, pode_atender_canais: false, pode_acessar_crm: false })
   const [acessosWs, setAcessosWs] = useState<WorkspaceAccessDraft[]>([])
   const [acessosWsOriginais, setAcessosWsOriginais] = useState<WorkspaceAccessDraft[]>([])
   const [buscaWorkspaceAcesso, setBuscaWorkspaceAcesso] = useState('')
@@ -110,7 +115,7 @@ export function EditarUsuarioForm({ userId }: { userId: string }) {
           return
         }
         setUsuario(u)
-        setEditForm({ nome: u.nome, email: u.email, senha: '', role: u.role, ativo: u.ativo })
+        setEditForm({ nome: u.nome, email: u.email, senha: '', role: u.role, ativo: u.ativo, pode_atender_canais: u.pode_atender_canais, pode_acessar_crm: u.pode_acessar_crm })
         const drafts = buildWorkspaceAccessDrafts(workspaces, acessos)
         setAcessosWs(drafts)
         setAcessosWsOriginais(drafts)
@@ -154,7 +159,11 @@ export function EditarUsuarioForm({ userId }: { userId: string }) {
     const erroAcessos = validateWorkspaceAccessDrafts(acessosWs, editForm.role)
     if (erroAcessos) { toast.error(erroAcessos); return }
 
-    const payload: Record<string, unknown> = { nome, email, role: editForm.role, ativo: editForm.ativo }
+    const payload: Record<string, unknown> = {
+      nome, email, role: editForm.role, ativo: editForm.ativo,
+      pode_atender_canais: editForm.pode_atender_canais,
+      pode_acessar_crm: editForm.pode_acessar_crm,
+    }
     if (editForm.senha.trim()) payload.senha = editForm.senha.trim()
 
     const planoAcessos = buildWorkspaceAccessPlan(acessosWs)
@@ -216,7 +225,14 @@ export function EditarUsuarioForm({ userId }: { userId: string }) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <Tabs defaultValue="dados">
+        <TabsList aria-label="Seções do usuário">
+          <TabsTrigger value="dados">Dados Básicos</TabsTrigger>
+          <TabsTrigger value="acessos">Acessos</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="dados" style={{ paddingTop: 20 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div>
           <label style={labelStyle}>Nome<Req /></label>
           <input value={editForm.nome} onChange={e => setEditForm(p => ({ ...p, nome: e.target.value }))} placeholder="Nome completo" style={inputStyle} />
@@ -248,6 +264,46 @@ export function EditarUsuarioForm({ userId }: { userId: string }) {
           <label style={labelStyle}>Nova Senha <span style={{ fontWeight: 400 }}>(opcional — deixe vazio para manter)</span></label>
           <input type="password" value={editForm.senha} onChange={e => setEditForm(p => ({ ...p, senha: e.target.value }))} placeholder="Mínimo 6 caracteres" style={inputStyle} />
         </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="acessos" style={{ paddingTop: 20 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {/* Perfil de atendimento (derivado do role) */}
+            <div>
+              <label style={labelStyle}>Perfil de atendimento</label>
+              <div style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(15,23,42,0.12)', background: 'var(--card, #fff)', fontSize: 13, color: 'var(--ws-text-1)' }}>
+                <strong>{editForm.role === 'company_agent' ? 'Atendente' : 'Supervisor'}</strong>
+                {editForm.role === 'company_agent'
+                  ? ' — vê e atende apenas as conversas atribuídas a ele.'
+                  : ' — vê todas as conversas do workspace.'}
+                <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 4 }}>
+                  Definido pelo Cargo na aba “Dados Básicos”.
+                </div>
+              </div>
+            </div>
+
+            {/* Pode atender canais */}
+            <div>
+              <label style={labelStyle}>Pode atender canais</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44 }}>
+                <Switch checked={editForm.pode_atender_canais} onCheckedChange={checked => setEditForm(p => ({ ...p, pode_atender_canais: checked }))} />
+                <span style={{ fontSize: 13, color: 'var(--ws-text-2)' }}>
+                  Permite receber/atender conversas e ser escolhido como responsável (inclusive em transferências da IA).
+                </span>
+              </div>
+            </div>
+
+            {/* Pode acessar CRM */}
+            <div>
+              <label style={labelStyle}>Pode acessar o CRM / Atendimento</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44 }}>
+                <Switch checked={editForm.pode_acessar_crm} onCheckedChange={checked => setEditForm(p => ({ ...p, pode_acessar_crm: checked }))} />
+                <span style={{ fontSize: 13, color: 'var(--ws-text-2)' }}>
+                  Libera o acesso à área de Atendimento/CRM.
+                </span>
+              </div>
+            </div>
 
         {/* Workspace Access */}
         <div>
@@ -336,7 +392,9 @@ export function EditarUsuarioForm({ userId }: { userId: string }) {
             </div>
           )}
         </div>
-      </div>
+          </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Footer fixo */}
       <div style={{

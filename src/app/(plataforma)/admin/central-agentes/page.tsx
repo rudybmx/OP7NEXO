@@ -12,7 +12,7 @@ import { type AgenteInput, type HorarioItem, useAgentes } from '@/hooks/use-agen
 import { type LlmProvider, useLlmProviders } from '@/hooks/use-llm-providers'
 import { useDiretrizes } from '@/hooks/use-diretrizes'
 import { useAjustesResposta, type AjusteResposta } from '@/hooks/use-ajustes-resposta'
-import { useUsuarios } from '@/hooks/use-usuarios'
+import { useAgentesDisponiveis } from '@/hooks/use-agentes-disponiveis'
 import { BaseConhecimentoManager } from '@/components/admin/central-agentes/BaseConhecimentoManager'
 import { UsoDashboard } from '@/components/admin/central-agentes/UsoDashboard'
 
@@ -70,9 +70,8 @@ export default function CentralAgentesPage() {
   const [salvando, setSalvando] = useState(false)
   const [publicando, setPublicando] = useState(false)
   const { listar: listarAjustes, remover: removerAjuste } = useAjustesResposta()
-  const { usuarios } = useUsuarios()
-  // Usuários do workspace + os sem workspace fixo (platform_admins podem assumir qualquer um).
-  const usuariosDoWorkspace = usuarios.filter((u) => !ws || u.workspace_id === ws || !u.workspace_id)
+  // Responsáveis = quem pode atender canais no workspace (mesma fonte da transferência manual).
+  const { agentes: atendentes } = useAgentesDisponiveis(ws ?? undefined)
   const [ajustes, setAjustes] = useState<AjusteResposta[]>([])
 
   useEffect(() => { carregarProviders() }, [carregarProviders])
@@ -412,14 +411,21 @@ export default function CentralAgentesPage() {
                   onChange={(e) => setF('codigo_responsavel', e.target.value)}
                 >
                   <option value="">Nenhum — só marca como escalado (sem rotear)</option>
-                  {usuariosDoWorkspace.map((u) => (
-                    <option key={u.id} value={u.id}>{u.nome || u.email}</option>
+                  {atendentes.map((u) => (
+                    <option key={u.id} value={u.id}>{u.nome}</option>
                   ))}
                 </select>
               </Field>
+              {atendentes.length === 0 && (
+                <p className="text-xs mt-1" style={{ color: 'var(--ws-danger, #c80010)' }}>
+                  Nenhum usuário com permissão de atender canais neste workspace — habilite
+                  &ldquo;atender canais&rdquo; em algum usuário para poder escolher um responsável.
+                </p>
+              )}
               <p className="text-xs mt-1" style={{ color: 'var(--ws-text-3)' }}>
-                Definido: no handoff (baixa confiança, fora de horário, erro…) a conversa é
-                atribuída a essa pessoa e ganha uma nota com o resumo. Vazio = comportamento atual.
+                Definido: quando o agente não consegue responder (baixa confiança, erro…) ou quando o
+                cliente pede um atendente, a conversa é atribuída a essa pessoa, a IA desliga e a
+                thread ganha uma nota com o resumo. Vazio = comportamento atual.
               </p>
             </Section>
 

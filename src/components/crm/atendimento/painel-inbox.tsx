@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, FilterX, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check, AlertTriangle, Bot, UserRound, Users } from 'lucide-react'
+import { Search, FilterX, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check, AlertTriangle, Bot, UserRound, Users, Trash2 } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import type { AgenteApi } from '@/hooks/use-agentes-disponiveis'
@@ -50,7 +50,7 @@ interface PainelInboxProps {
   onRefetch: () => void
   onIniciarConversa?: () => void
   onToggleNovaConversa?: () => void
-  onCriarConversa?: (numero: string) => Promise<void>
+  onCriarConversa?: (numero: string, canalId?: string) => Promise<void>
   onClicarAreaVazia?: () => void
   onMarcarNaoLido?: (conversaId: string) => void
   onToggleFavorita?: (conversaId: string) => void
@@ -58,6 +58,7 @@ interface PainelInboxProps {
   onAplicarEtiqueta?: (conversaId: string, etiquetaId: string) => void
   onRemoverEtiqueta?: (conversaId: string, etiquetaId: string) => void
   onResolverConversa?: (conversaId: string) => void
+  onExcluirConversaVazia?: (conversaId: string) => void
   isMobile?: boolean
 }
 
@@ -73,6 +74,7 @@ function MenuContextoConversa({
   onAplicarEtiqueta,
   onRemoverEtiqueta,
   onResolverConversa,
+  onExcluirConversaVazia,
 }: {
   conversa: ConversaApi
   x: number
@@ -85,6 +87,7 @@ function MenuContextoConversa({
   onAplicarEtiqueta?: (conversaId: string, etiquetaId: string) => void
   onRemoverEtiqueta?: (conversaId: string, etiquetaId: string) => void
   onResolverConversa?: (id: string) => void
+  onExcluirConversaVazia?: (id: string) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [mostrarEtiquetas, setMostrarEtiquetas] = useState(false)
@@ -252,6 +255,22 @@ function MenuContextoConversa({
           </div>
         </>
       )}
+
+      {/* Excluir conversa vazia (P3b): só aparece quando NÃO há nenhuma mensagem trocada. */}
+      {onExcluirConversaVazia && conversa.ultimaMensagem === '' && !conversa.ultimaMensagemAt && (
+        <>
+          <div style={{ height: 1, background: 'var(--ws-surface-2)', margin: '3px 0' }} />
+          <div
+            style={{ ...itemStyle, color: '#e11d48' }}
+            onClick={() => handleItem(() => onExcluirConversaVazia(conversa.id))}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(225,29,72,0.07)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
+          >
+            <Trash2 size={14} />
+            Excluir conversa vazia
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -261,23 +280,28 @@ function PainelNovaConversaInline({
   onCancelar,
   isCriando,
   erro,
+  canais = [],
   isMobile = false,
 }: {
-  onCriarConversa: (numero: string) => Promise<void>
+  onCriarConversa: (numero: string, canalId?: string) => Promise<void>
   onCancelar: () => void
   isCriando?: boolean
   erro?: string | null
+  canais?: WhatsappCanal[]
   isMobile?: boolean
 }) {
   const [numero, setNumero] = useState('')
+  const [canalId, setCanalId] = useState('')
   const { contato, isLoading: isBuscando, notFound } = useBuscarContatoPorNumero(numero)
   const digits = numero.replace(/\D/g, '')
   const podeAbrir = digits.length >= 10
+  // Canal de envio: usa o escolhido; se não escolheu, cai no 1º (default). Vazio = backend decide.
+  const canalEfetivo = canalId || (canais.length >= 1 ? canais[0].id : '')
 
   const handleSubmit = useCallback(() => {
     if (!podeAbrir || isCriando) return
-    onCriarConversa(digits)
-  }, [digits, podeAbrir, isCriando, onCriarConversa])
+    onCriarConversa(digits, canalEfetivo || undefined)
+  }, [digits, podeAbrir, isCriando, onCriarConversa, canalEfetivo])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSubmit()
@@ -365,6 +389,34 @@ function PainelNovaConversaInline({
 
       {erro && (
         <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 8 }}>⚠ {erro}</div>
+      )}
+
+      {canais.length > 1 && (
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--ws-text-3)', marginBottom: 4 }}>Canal de envio</label>
+          <select
+            value={canalEfetivo}
+            onChange={e => setCanalId(e.target.value)}
+            disabled={isCriando}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: isMobile ? '11px 12px' : '8px 12px',
+              borderRadius: 8,
+              background: 'var(--ws-surface)',
+              border: '1px solid var(--ws-glass-border)',
+              color: 'var(--ws-text-1)',
+              fontSize: isMobile ? 16 : 13,
+              outline: 'none',
+            }}
+          >
+            {canais.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.nome}{c.numero_telefone ? ` · ${formatarTelefoneBR(c.numero_telefone) ?? c.numero_telefone}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -587,6 +639,7 @@ export function PainelInbox({
   onAplicarEtiqueta,
   onRemoverEtiqueta,
   onResolverConversa,
+  onExcluirConversaVazia,
   isMobile = false,
 }: PainelInboxProps) {
   const [menuContexto, setMenuContexto] = useState<{
@@ -873,6 +926,7 @@ export function PainelInbox({
             onCancelar={onToggleNovaConversa}
             isCriando={isCriandoConversa}
             erro={erroIniciarConversa}
+            canais={canais}
             isMobile={isMobile}
           />
         )}
@@ -1203,6 +1257,7 @@ export function PainelInbox({
           onAplicarEtiqueta={onAplicarEtiqueta}
           onRemoverEtiqueta={onRemoverEtiqueta}
           onResolverConversa={onResolverConversa}
+          onExcluirConversaVazia={onExcluirConversaVazia}
         />,
         document.body,
       )}

@@ -9,6 +9,8 @@ import { useEnviarMensagem } from '@/hooks/use-enviar-mensagem'
 import { useAssumirConversa } from '@/hooks/use-assumir-conversa'
 import { useTransferirConversa } from '@/hooks/use-transferir-conversa'
 import { useResolverConversa } from '@/hooks/use-resolver-conversa'
+import { useExcluirConversaVazia } from '@/hooks/use-excluir-conversa-vazia'
+import { toast } from 'sonner'
 import { useAgentesDisponiveis } from '@/hooks/use-agentes-disponiveis'
 import { useEquipes } from '@/hooks/use-equipes'
 import { useIniciarConversa } from '@/hooks/use-iniciar-conversa'
@@ -95,6 +97,7 @@ export function PaginaAtendimento() {
   const { assumir, isAssumindo, error: erroAssumir } = useAssumirConversa()
   const { transferir, isTransferindo, error: erroTransferir } = useTransferirConversa()
   const { resolver, isResolvendo, error: erroResolver } = useResolverConversa()
+  const { excluir: excluirConversaVazia } = useExcluirConversaVazia()
   const { iniciar: iniciarConversa, isIniciando, error: erroIniciar } = useIniciarConversa(workspaceAtual)
   const { marcarLido, marcarNaoLido } = useMarcarLido()
   const { atualizar: atualizarConversa } = useAtualizarConversa()
@@ -318,8 +321,8 @@ export function PaginaAtendimento() {
     }
   }, [conversaAtivaId, resolver, refetch, refetchMensagens])
 
-  const handleIniciarConversa = useCallback(async (numero: string) => {
-    const conversa = await iniciarConversa(numero)
+  const handleIniciarConversa = useCallback(async (numero: string, canalId?: string) => {
+    const conversa = await iniciarConversa(numero, canalId)
     if (conversa) {
       setNovaConversaAberta(false)
       setConversaAtivaId(conversa.id)
@@ -361,6 +364,18 @@ export function PaginaAtendimento() {
     setConversaAtivaId(conversaId)
     setMostrarModalResolver(true)
   }, [])
+
+  const handleExcluirConversaVazia = useCallback(async (conversaId: string) => {
+    if (typeof window !== 'undefined' && !window.confirm('Excluir esta conversa vazia? Esta ação não pode ser desfeita.')) return
+    const ok = await excluirConversaVazia(conversaId)
+    if (ok) {
+      setConversaAtivaId(prev => (prev === conversaId ? null : prev))
+      refetch()
+      toast.success('Conversa vazia excluída.')
+    } else {
+      toast.error('Não foi possível excluir — a conversa pode já ter mensagens.')
+    }
+  }, [excluirConversaVazia, refetch])
 
   const conversasFiltradas = useMemo(() => {
     if (!busca.trim()) return conversas
@@ -459,6 +474,7 @@ export function PaginaAtendimento() {
           onAplicarEtiqueta={handleAplicarEtiqueta}
           onRemoverEtiqueta={handleRemoverEtiqueta}
           onResolverConversa={handleResolverPeloMenu}
+          onExcluirConversaVazia={handleExcluirConversaVazia}
           isMobile={isMobile}
         />
       </div>

@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     if (access instanceof Response) return access
 
     const body = await request.json()
-    const { numero, workspace_id } = body
+    const { numero, workspace_id, canal_id } = body
 
     if (!numero || typeof numero !== 'string' || numero.trim().length < 10) {
       return NextResponse.json(
@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         numero: numero.trim(),
         workspace_id: workspaceId,
+        ...(typeof canal_id === 'string' && canal_id ? { canal_id } : {}),
       }),
       cache: 'no-store',
     })

@@ -217,6 +217,13 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-25) — CRM Atendimento: excluir conversa vazia (P3b)
+- Menu ⋮ de cada conversa (`MenuContextoConversa` em `painel-inbox.tsx`) ganhou item **"Excluir conversa vazia"** (🗑️ vermelho) ABAIXO de "Resolver conversa", visível **só** quando `ultimaMensagem==='' && !ultimaMensagemAt`. Hook `use-excluir-conversa-vazia.ts` + novo proxy `app/api/whatsapp/conversations/[id]/route.ts` (DELETE → backend). Confirmação leve (`window.confirm`) + toast `sonner`. A API (`DELETE /conversas/{id}`) valida e recusa **409 "Conversa não está vazia"** se houver mensagem (protege histórico). Par em `api/production`.
+
+### ✅ Implementado (2026-06-25) — CRM Atendimento: iniciar conversa com canal + checagem de número (P2+P3a)
+- **Iniciar nova conversa** (`PainelNovaConversaInline` em `painel-inbox.tsx`): seletor "Canal de envio" quando o cliente tem **>1 canal** (passa `canal_id`); `use-iniciar-conversa.ts` + proxy `app/api/whatsapp/conversations/iniciar/route.ts` encaminham `canal_id`.
+- **Checagem de número**: a API (`POST /conversas/iniciar`) confere se o número tem WhatsApp no canal (Evolution `/user/check`, WAHA `/contacts/check-exists`) e **bloqueia 422** se não existir → o painel mostra "Não encontrei um contato com WhatsApp neste número" (erro já propagado pelo proxy via `data.detail`). Fail-open em erro do provider. Par da API em `api/production@21905e4`.
+
 ### ✅ Implementado (2026-06-25) — Inteligência de IA: painel de análise da conversa (Fase 1)
 - Painel "🤖 Análise IA" do contato (`painel-contato.tsx`) conectado a **dados reais**: resumo, interesse, observações + **termômetro** SVG (`termometro-lead.tsx`, quente/morno/frio por score 0-100). O proxy GET `conversations/route.ts` passa `resumoIa` + `temperatura`/`temperaturaScore`/`interesse`/`observacoes` (de `conversa.resumo_ia` + `contexto_ia`, servidos pela API). Campo `objetivo` no cadastro do agente (`central-agentes/page.tsx`) guia o "interesse". Backend: análise assíncrona no worker com o modelo do agente (migration 096 `agentes.objetivo`; job `conversa_analise`, independente do `ai_ativo`).
 
@@ -444,6 +451,10 @@ Para nova feature: `/speckit.specify [nome]` → cria `spec.md`, depois `/specki
 - **Fecha agregação**: o route handler `api/whatsapp/conversations/[id]/marcar-lido` (usado pelo
   inbox ao abrir a conversa) marca a notificação `mensagem_nova` dela como lida → a próxima
   mensagem volta a gerar notificação (espelha o backend `marcar_lida_por_entidade`).
+- **v2 (realtime SSE)**: `lib/notificacoes-realtime.ts` (assina Redis `notifications:events`) +
+  route handler `api/notificacoes/stream` (SSE, espelha o whatsapp stream); `use-notificacoes.ts`
+  abre `EventSource` → evento é puro sinal → `mutate` re-busca (polling vira fallback), reconecta
+  ao trocar workspace. Página: switch "Ativo" por tipo (config) + ícone `Wifi` p/ canal reconectado.
 
 ---
 

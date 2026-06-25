@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { Bell, CheckCheck, Inbox, Loader2, MessageSquare, WifiOff } from 'lucide-react'
+import { Bell, CheckCheck, Inbox, Loader2, MessageSquare, Wifi, WifiOff } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api-client'
 import { useAuth } from '@/hooks/use-auth'
@@ -43,7 +43,8 @@ function tempoRelativo(iso: string | null): string {
 }
 
 function IconeTipo({ tipo, severidade }: { tipo: string; severidade: string }) {
-  const Icon = tipo === 'canal_offline' ? WifiOff : tipo === 'mensagem_nova' ? MessageSquare : Bell
+  const Icon =
+    tipo === 'canal_offline' ? WifiOff : tipo === 'canal_online' ? Wifi : tipo === 'mensagem_nova' ? MessageSquare : Bell
   const cor =
     severidade === 'critico' ? 'text-destructive' : severidade === 'aviso' ? 'text-primary' : 'text-muted-foreground'
   return <Icon className={cn('size-4 shrink-0', cor)} aria-hidden />
@@ -116,17 +117,16 @@ export default function NotificacoesPage() {
     if (n.link) router.push(n.link)
   }
 
-  async function salvarAudiencia(tipo: string, adminOn: boolean, atendenteOn: boolean) {
+  async function salvarConfig(tipo: string, ativo: boolean, adminOn: boolean, atendenteOn: boolean) {
     const roles = [...(adminOn ? ADMIN_ROLES : []), ...(atendenteOn ? ['company_agent'] : [])]
-    const algum = adminOn || atendenteOn
     setSalvando(tipo)
     void mutateConfig(
-      (cur = []) => cur.map((c) => (c.tipo === tipo ? { ...c, ativo: algum, audiencia_papeis: roles } : c)),
+      (cur = []) => cur.map((c) => (c.tipo === tipo ? { ...c, ativo, audiencia_papeis: roles } : c)),
       false,
     )
     try {
-      await api.put(`/notificacoes/config/${tipo}${qs}`, { ativo: algum, audiencia_papeis: roles })
-      toast.success('Quem vê foi atualizado')
+      await api.put(`/notificacoes/config/${tipo}${qs}`, { ativo, audiencia_papeis: roles })
+      toast.success('Configuração atualizada')
     } catch (err) {
       toast.error(getErro(err, 'Erro ao salvar'))
     } finally {
@@ -156,33 +156,40 @@ export default function NotificacoesPage() {
       {isAdmin && configs.length > 0 && (
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="ds-section-title">Quem vê cada tipo</CardTitle>
-            <p className="text-sm text-muted-foreground">Controle quais perfis recebem cada notificação no sino.</p>
+            <CardTitle className="ds-section-title">Tipos de notificação</CardTitle>
+            <p className="text-sm text-muted-foreground">Ligue/desligue cada tipo e escolha quais perfis recebem no sino.</p>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {configs.map((c) => {
-              const adminOn = c.ativo && c.audiencia_papeis.some((r) => ADMIN_ROLES.includes(r))
-              const atendenteOn = c.ativo && c.audiencia_papeis.includes('company_agent')
+              const adminOn = c.audiencia_papeis.some((r) => ADMIN_ROLES.includes(r))
+              const atendenteOn = c.audiencia_papeis.includes('company_agent')
               return (
                 <div key={c.tipo} className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-2">
-                    <IconeTipo tipo={c.tipo} severidade={c.tipo === 'canal_offline' ? 'critico' : 'info'} />
-                    <span className="text-sm font-medium text-foreground">{c.label}</span>
-                  </div>
-                  <div className="flex items-center gap-6">
+                  <label className="flex cursor-pointer items-center gap-3">
+                    <Switch
+                      checked={c.ativo}
+                      disabled={salvando === c.tipo}
+                      onCheckedChange={(v) => salvarConfig(c.tipo, v, adminOn, atendenteOn)}
+                    />
+                    <span className="flex items-center gap-2">
+                      <IconeTipo tipo={c.tipo} severidade={c.tipo === 'canal_offline' ? 'critico' : 'info'} />
+                      <span className="text-sm font-medium text-foreground">{c.label}</span>
+                    </span>
+                  </label>
+                  <div className={cn('flex items-center gap-6', !c.ativo && 'pointer-events-none opacity-40')}>
                     <label className="flex cursor-pointer items-center gap-2">
                       <Switch
                         checked={adminOn}
-                        disabled={salvando === c.tipo}
-                        onCheckedChange={(v) => salvarAudiencia(c.tipo, v, atendenteOn)}
+                        disabled={salvando === c.tipo || !c.ativo}
+                        onCheckedChange={(v) => salvarConfig(c.tipo, c.ativo, v, atendenteOn)}
                       />
                       <span className="text-sm text-muted-foreground">Administradores</span>
                     </label>
                     <label className="flex cursor-pointer items-center gap-2">
                       <Switch
                         checked={atendenteOn}
-                        disabled={salvando === c.tipo}
-                        onCheckedChange={(v) => salvarAudiencia(c.tipo, adminOn, v)}
+                        disabled={salvando === c.tipo || !c.ativo}
+                        onCheckedChange={(v) => salvarConfig(c.tipo, c.ativo, adminOn, v)}
                       />
                       <span className="text-sm text-muted-foreground">Atendentes</span>
                     </label>

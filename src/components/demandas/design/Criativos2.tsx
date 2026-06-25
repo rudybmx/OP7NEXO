@@ -85,6 +85,7 @@ export function Criativos2() {
   const [refImg, setRefImg] = useState<string | null>(null)
   const [assuntoNoticia, setAssuntoNoticia] = useState('')
   const [pautas, setPautas] = useState<Pauta[] | null>(null)
+  const [avisoPautas, setAvisoPautas] = useState<string | null>(null)
   const [buscandoPautas, setBuscandoPautas] = useState(false)
   const [personagens, setPersonagens] = useState<ItemRef[]>([])
   const [objetos, setObjetos] = useState<ItemRef[]>([])
@@ -122,10 +123,11 @@ export function Criativos2() {
   // ───── Origin A: buscar pautas de notícia (Firecrawl) ─────
   const buscarPautas = useCallback(async () => {
     if (!workspaceAtual || !assuntoNoticia.trim()) { setErro('Informe um assunto.'); return }
-    setBuscandoPautas(true); setErro(null); setPautas(null)
+    setBuscandoPautas(true); setErro(null); setPautas(null); setAvisoPautas(null)
     try {
-      const r = await api.post<{ pautas: Pauta[] }>('/design/carrossel/pautas', { workspace_id: workspaceAtual, assunto: assuntoNoticia.trim() })
+      const r = await api.post<{ pautas: Pauta[]; aviso?: string }>('/design/carrossel/pautas', { workspace_id: workspaceAtual, assunto: assuntoNoticia.trim() })
       setPautas(r.pautas || [])
+      setAvisoPautas(r.aviso || null)
     } catch (e) { setErro(errMsg(e) ||'Falha ao buscar pautas.') }
     finally { setBuscandoPautas(false) }
   }, [workspaceAtual, assuntoNoticia])
@@ -549,7 +551,7 @@ export function Criativos2() {
                     ))}
                   </div>
                 )}
-                {pautas && pautas.length === 0 && <span className="ds-help">Nenhuma pauta encontrada. Tente outro assunto.</span>}
+                {pautas && pautas.length === 0 && <span className="ds-help">{avisoPautas || 'Nenhuma pauta encontrada. Tente outro assunto.'}</span>}
               </div>
             )}
             <div className="grid grid-cols-3 gap-3">
