@@ -36,7 +36,7 @@ por WhatsApp admin, desabilitado por padrão) e "mensagem nova" só existia como
 - `POST /notificacoes/{id}/lida` · `POST /notificacoes/marcar-todas-lidas`
 - `GET /notificacoes/config` (admin) · `PUT /notificacoes/config/{tipo}` (admin)
 
-## Modelo de dados (migration 099)
+## Modelo de dados (migration 100)
 - `notificacoes` (workspace_id, tipo, severidade, titulo, mensagem, link, audiencia_papeis JSONB,
   entidade_tipo/entidade_id, dedupe_key, payload JSONB, criado_em)
 - `notificacao_leituras` (PK notificacao_id+user_id, lida_em)

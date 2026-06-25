@@ -8,16 +8,16 @@ Notificações in-app genéricas e escaláveis (tipo livre + payload JSONB), com
 Tipos iniciais: 'canal_offline' (gatilho health-check, audiência admin) e
 'mensagem_nova' (gatilho inbound, agregada por conversa, audiência atendente).
 
-Revision ID: 099
-Revises: 098
+Revision ID: 100
+Revises: 099
 Create Date: 2026-06-25
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "099"
-down_revision = "098"
+revision = "100"
+down_revision = "099"
 branch_labels = None
 depends_on = None
 

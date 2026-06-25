@@ -459,7 +459,7 @@ Para nova feature: `/speckit.specify [nome]` → cria `spec.md`, depois `/specki
 
 ---
 
-## Notificações (migration 099)
+## Notificações (migration 100)
 
 Notificações in-app genéricas. Tabelas: `notificacoes` + `notificacao_leituras` (leitura POR
 usuário, broadcast sem fan-out) + `notificacao_config` (audiência por workspace×tipo).
