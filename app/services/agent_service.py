@@ -162,11 +162,18 @@ def _montar_system(
     rag_chunks: list[str] | None = None,
     diretrizes_ws: str | None = None,
     ajustes_few_shot: str | None = None,
+    contato_nome: str | None = None,
 ) -> str:
     partes = [prompt.strip() or "Você é um assistente de atendimento prestativo e objetivo."]
     if diretrizes_ws and diretrizes_ws.strip():
         partes.append("DIRETRIZES (regras desta empresa — siga sempre):\n" + diretrizes_ws.strip())
     partes.append(_contexto_temporal())
+    if contato_nome and contato_nome.strip():
+        partes.append(
+            f"DADOS DO CONTATO:\n- Nome: {contato_nome.strip()} (use com parcimônia — sobretudo na "
+            "saudação e na confirmação; não repita a cada mensagem). O telefone já está registrado no "
+            "sistema; não peça."
+        )
     if agente.tom:
         partes.append(f"Tom de voz: {agente.tom}.")
     if agente.idiomas:
@@ -213,12 +220,20 @@ def _montar_user(mensagem: str, historico: list | None) -> str:
     return f"{prefixo}Mensagem atual do cliente:\n{mensagem}"
 
 
-def gerar_resposta(db: Session, agente: Agente, mensagem: str, historico: list | None = None) -> dict:
+def gerar_resposta(
+    db: Session,
+    agente: Agente,
+    mensagem: str,
+    historico: list | None = None,
+    contato_nome: str | None = None,
+) -> dict:
     """Gera a resposta do agente para uma mensagem. NÃO grava nada, NÃO envia.
 
     Retorna {resposta, score_confianca, intent, tokens_input, tokens_output, modelo}.
     JSON malformado do LLM → score 0 (sinaliza handoff). RAG ativo; as sugestões aprovadas pela
     equipe (Fase 2) entram como few-shot via _ajustes_few_shot (calibram tom/consistência).
+    `contato_nome` (passado pelo worker) injeta o nome do contato no system; vazio (ex.: sandbox
+    `/testar`, que não tem conversa) → bloco omitido.
     """
     prompt = _prompt_efetivo(db, agente)
     diretrizes = _diretrizes_workspace(db, agente.workspace_id)
@@ -230,7 +245,8 @@ def gerar_resposta(db: Session, agente: Agente, mensagem: str, historico: list |
         db,
         agente,
         _montar_system(
-            agente, prompt, rag_chunks, diretrizes_ws=diretrizes, ajustes_few_shot=ajustes
+            agente, prompt, rag_chunks, diretrizes_ws=diretrizes, ajustes_few_shot=ajustes,
+            contato_nome=contato_nome,
         ),
         _montar_user(mensagem, historico),
     )
@@ -777,6 +793,50 @@ def _handoff(db: Session, conversa, agente: Agente, *, canal_id, score, tokens, 
     _publish(conversa, tipo="conversation.refresh")
 
 
+def _enviar_e_persistir(db: Session, conversa, canal, agente: Agente, *, texto: str, score) -> bool:
+    """Envia `texto` pelo canal e, se enviado, persiste a mensagem outbound + atualiza os campos
+    neutros da conversa (ultima_mensagem/last_outbound_at/ai_respondido/ai_score_confianca). NÃO toca
+    em ai_escalado/ai_handoff_motivo/ai_ativo nem dá commit — quem chama decide (envio normal limpa a
+    marcação; handoff-falante escala) e commita. Retorna True se enviou."""
+    enviado, evo_msg_id = _enviar_resposta(conversa, canal, texto)
+    if not enviado:
+        return False
+    agora = datetime.now(timezone.utc)
+    # Persiste a mensagem enviada em crm_whatsapp_mensagens (espelha o envio humano em
+    # canais.enviar_mensagem_canal). Necessário: o Evolution NÃO ecoa o envio de volta para o
+    # webhook, então sem este INSERT a resposta não aparece no chat.
+    db.execute(
+        text("""
+            INSERT INTO public.crm_whatsapp_mensagens
+            (workspace_id, canal_id, conversa_id, contato_id, instance, remote_jid,
+             direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type,
+             status, evolution_msg_id, recebida_em, created_at, updated_at)
+            VALUES (:ws, :canal, :cid, :ct, :inst, :jid,
+                    'saida', true, 'agente', :rn, :msg, 'conversation',
+                    'enviada', :evid, NOW(), NOW(), NOW())
+        """),
+        {
+            "ws": str(conversa.workspace_id),
+            "canal": str(conversa.canal_id) if conversa.canal_id else None,
+            "cid": str(conversa.id),
+            "ct": str(conversa.contato_id) if conversa.contato_id else None,
+            "inst": conversa.instance,
+            "jid": conversa.remote_jid,
+            "rn": agente.nome or "Agente IA",
+            "msg": texto,
+            "evid": evo_msg_id,
+        },
+    )
+    conversa.ai_respondido = True
+    conversa.ai_agente_id = agente.id
+    conversa.ai_score_confianca = score
+    conversa.ultima_mensagem = texto
+    conversa.ultima_direcao = "saida"
+    conversa.ultima_msg_at = agora
+    conversa.last_outbound_at = agora
+    return True
+
+
 def processar_reply(db: Session, payload: dict) -> None:
     """Entrada do worker para job_type='agente_reply'. Resolve agente do canal, aplica
     gates (horário/limite → handoff), gera resposta e envia ou faz handoff por confiança."""
@@ -801,6 +861,14 @@ def processar_reply(db: Session, payload: dict) -> None:
     if not ultima_msg:
         return
 
+    contato_nome = None
+    if conversa.contato_id:
+        from app.models.crm.contato import Contato
+
+        _ct = db.get(Contato, conversa.contato_id)
+        if _ct is not None:
+            contato_nome = (_ct.nome or _ct.push_name or "").strip() or None
+
     if not dentro_do_horario(agente):
         _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="fora_horario")
         return
@@ -809,7 +877,7 @@ def processar_reply(db: Session, payload: dict) -> None:
         return
 
     try:
-        res = gerar_resposta(db, agente, ultima_msg, historico)
+        res = gerar_resposta(db, agente, ultima_msg, historico, contato_nome=contato_nome)
     except llm_client_service.LLMConfigError as exc:
         log.warning("[agente] config LLM inválida agente=%s: %s", agente.id, exc)
         _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="config")
@@ -822,45 +890,34 @@ def processar_reply(db: Session, payload: dict) -> None:
 
     score = res["score_confianca"]
     ti, to = res["tokens_input"], res["tokens_output"]
+    intent = (res.get("intent") or "").strip().lower()
+
+    # Transferência DELIBERADA (o agente sinalizou intent="transferir_humano"): envia o aviso ao
+    # cliente E escala para humano, DESLIGANDO a IA nesta conversa. Sem desligar ai_ativo, a próxima
+    # mensagem reativaria o bot (responderia / "transferiria" em loop) até alguém assumir. Checado
+    # ANTES do score: numa transferência o agente costuma estar confiante (score alto).
+    if intent == "transferir_humano" and res["resposta"]:
+        if _enviar_e_persistir(db, conversa, canal, agente, texto=res["resposta"], score=score):
+            conversa.ai_escalado = True
+            conversa.ai_handoff_motivo = "transferencia"
+            conversa.ai_handoff_at = datetime.now(timezone.utc)
+            conversa.ai_ativo = False
+            db.commit()
+            registrar_uso(
+                db, agente, canal_id=canal_id, conversa_id=conversa.id,
+                tokens_input=ti, tokens_output=to, escalado=True, score=score,
+            )
+            _publish(conversa, tipo="message.upsert", texto=res["resposta"], message_type="conversation")
+            _publish(conversa, tipo="conversation.refresh")
+            log.info("[agente] handoff-falante conversa=%s score=%s", conversa.id, score)
+        else:
+            _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="envio_falhou")
+        return
 
     if score >= agente.threshold_confianca and res["resposta"]:
-        enviado, evo_msg_id = _enviar_resposta(conversa, canal, res["resposta"])
-        if enviado:
-            agora = datetime.now(timezone.utc)
-            # Persiste a mensagem enviada em crm_whatsapp_mensagens (espelha o envio humano em
-            # canais.enviar_mensagem_canal). Necessário: o Evolution NÃO ecoa o envio de volta
-            # para o webhook, então sem este INSERT a resposta não aparece no chat.
-            db.execute(
-                text("""
-                    INSERT INTO public.crm_whatsapp_mensagens
-                    (workspace_id, canal_id, conversa_id, contato_id, instance, remote_jid,
-                     direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type,
-                     status, evolution_msg_id, recebida_em, created_at, updated_at)
-                    VALUES (:ws, :canal, :cid, :ct, :inst, :jid,
-                            'saida', true, 'agente', :rn, :msg, 'conversation',
-                            'enviada', :evid, NOW(), NOW(), NOW())
-                """),
-                {
-                    "ws": str(conversa.workspace_id),
-                    "canal": str(conversa.canal_id) if conversa.canal_id else None,
-                    "cid": str(conversa.id),
-                    "ct": str(conversa.contato_id) if conversa.contato_id else None,
-                    "inst": conversa.instance,
-                    "jid": conversa.remote_jid,
-                    "rn": agente.nome or "Agente IA",
-                    "msg": res["resposta"],
-                    "evid": evo_msg_id,
-                },
-            )
-            conversa.ai_respondido = True
+        if _enviar_e_persistir(db, conversa, canal, agente, texto=res["resposta"], score=score):
             conversa.ai_escalado = False  # resposta OK → limpa a marcação de falha
             conversa.ai_handoff_motivo = None
-            conversa.ai_agente_id = agente.id
-            conversa.ai_score_confianca = score
-            conversa.ultima_mensagem = res["resposta"]
-            conversa.ultima_direcao = "saida"
-            conversa.ultima_msg_at = agora
-            conversa.last_outbound_at = agora
             db.commit()
             registrar_uso(
                 db, agente, canal_id=canal_id, conversa_id=conversa.id,
