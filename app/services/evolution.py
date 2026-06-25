@@ -945,13 +945,20 @@ def enviar_mensagem_texto(
     texto: str,
     instance_id: str | None = None,
     instance_token: str | None = None,
+    quoted: dict | None = None,
 ) -> dict[str, Any]:
-    """Envia mensagem de texto via Evolution Go."""
+    """Envia mensagem de texto via Evolution Go.
+
+    `quoted` (opcional): {"messageId": <wa-id da msg citada>, "participant": <jid de quem
+    enviou a msg citada>} para responder citando (reply).
+    """
     body = {
         "number": numero,
         "text": texto,
         "id": str(uuid.uuid4()),
     }
+    if quoted:
+        body["quoted"] = quoted
     with httpx.Client(timeout=60) as client:
         resp = client.post(
             f"{META}/send/text",
@@ -996,14 +1003,17 @@ def enviar_mensagem_midia(
     file_name: str | None = None,
     instance_id: str | None = None,
     instance_token: str | None = None,
+    quoted: dict | None = None,
 ) -> dict[str, Any]:
-    """Envia mensagem de mídia via Evolution Go."""
+    """Envia mensagem de mídia via Evolution Go. `quoted` opcional p/ reply (ver enviar_mensagem_texto)."""
     body: dict[str, Any] = {
         "number": numero,
         "url": media_url,
         "type": tipo,
         "id": str(uuid.uuid4()),
     }
+    if quoted:
+        body["quoted"] = quoted
     if caption:
         body["caption"] = caption
     if file_name:

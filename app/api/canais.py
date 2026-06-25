@@ -1349,6 +1349,39 @@ def _desconectar_waha(canal: CanalEntrada, db: Session) -> dict:
     return {"status": "disconnected", "message": "Sessão WAHA parada."}
 
 
+def _resolver_msg_citada(db: Session, workspace_id, quoted_message_id: str | None) -> dict | None:
+    """Resolve a mensagem citada (reply) pelo id INTERNO da nossa Mensagem.
+
+    Retorna dados p/ citar no provider (wa-id + participante) e p/ gravar os
+    `quoted_*` na nova mensagem. None se não encontrar ou sem wa-id.
+    """
+    if not quoted_message_id:
+        return None
+    try:
+        row = db.execute(
+            text("""
+                SELECT evolution_msg_id, participant_jid, remote_jid, message_type, conteudo, from_me
+                FROM public.crm_whatsapp_mensagens
+                WHERE id = CAST(:qid AS uuid) AND workspace_id = CAST(:ws AS uuid)
+                LIMIT 1
+            """),
+            {"qid": str(quoted_message_id), "ws": str(workspace_id)},
+        ).fetchone()
+    except Exception:
+        logger.warning("[canais] quoted: id inválido %s", quoted_message_id)
+        return None
+    if not row or not row[0]:
+        return None
+    return {
+        "wa_id": row[0],
+        "participant_jid": row[1],
+        "remote_jid": row[2],
+        "message_type": row[3],
+        "conteudo": row[4],
+        "from_me": bool(row[5]),
+    }
+
+
 def _enviar_mensagem_waha(
     canal: CanalEntrada,
     payload: "EnviarMensagemIn",
@@ -1410,6 +1443,16 @@ def _enviar_mensagem_waha(
     chat_id      = _waha_chat_id(remote_jid)
     session, cfg = _waha_cfg(canal)
     instance     = session  # config.waha.session — espelha o inbound
+
+    # Reply (citação): reconstrói o id serializado do WAHA-NOWEB
+    # ({true|false}_{chatId}_{waid}[_{participantLid}]) a partir da msg citada.
+    _qc = _resolver_msg_citada(db, canal.workspace_id, payload.quoted_message_id)
+    waha_reply_to = None
+    if _qc and _qc["wa_id"]:
+        _fm = "true" if _qc["from_me"] else "false"
+        waha_reply_to = f"{_fm}_{chat_id}_{_qc['wa_id']}"
+        if "@g.us" in chat_id and _qc["participant_jid"]:
+            waha_reply_to += f"_{_qc['participant_jid']}"
 
     # ── Branch mídia (image / document / video / audio) ─────────────────
     if payload.media_url and payload.tipo in ("image", "document", "video", "audio"):
@@ -1476,6 +1519,7 @@ def _enviar_mensagem_waha(
                     mimetype=mimetype,
                     filename=filename,
                     caption=payload.caption or None,
+                    reply_to=waha_reply_to,
                 )
         except waha_service.WahaError as exc:
             logger.error("[canais] falha ao enviar mídia WAHA canal=%s tipo=%s", canal.id, payload.tipo)
@@ -1502,7 +1546,7 @@ def _enviar_mensagem_waha(
     # ── Branch texto ──────────────────────────────────────────────────────
     else:
         try:
-            waha_resp = waha_service.enviar_mensagem_texto(session, cfg, chat_id, texto)
+            waha_resp = waha_service.enviar_mensagem_texto(session, cfg, chat_id, texto, reply_to=waha_reply_to)
         except waha_service.WahaError as exc:
             logger.error("[canais] falha ao enviar mensagem WAHA canal=%s", canal.id)
             raise HTTPException(status_code=502, detail=str(exc))
@@ -1545,6 +1589,7 @@ def _enviar_mensagem_waha(
                 evolution_msg_id, instance, remote_jid,
                 direcao, from_me, remetente_tipo, remetente_nome,
                 conteudo, message_type, status, media_status,
+                quoted_message_id, quoted_remote_jid, quoted_message_type, quoted_text,
                 recebida_em, created_at, updated_at
             ) VALUES (
                 CAST(:ws   AS uuid), CAST(:canal AS uuid),
@@ -1552,6 +1597,7 @@ def _enviar_mensagem_waha(
                 :evid, :inst, :jid,
                 'saida', true, 'agente', :rn,
                 :msg, :mt, 'enviada', :ms,
+                :q_id, :q_jid, :q_mt, :q_txt,
                 NOW(), NOW(), NOW()
             ) RETURNING id
         """),
@@ -1567,6 +1613,10 @@ def _enviar_mensagem_waha(
             "msg":   msg_conteudo,
             "mt":    message_type,
             "ms":    media_status_val,
+            "q_id":  _qc["wa_id"] if _qc else None,
+            "q_jid": _qc["remote_jid"] if _qc else None,
+            "q_mt":  _qc["message_type"] if _qc else None,
+            "q_txt": _qc["conteudo"] if _qc else None,
         },
     )
     mensagem_id = msg_result.scalar()
@@ -2533,6 +2583,7 @@ class EnviarMensagemIn(BaseModel):
     tipo: str = "texto"  # texto, image, audio, video, document
     media_url: str | None = None
     caption: str | None = None
+    quoted_message_id: str | None = None  # id interno da nossa Mensagem citada (reply)
 
 
 class EnviarMensagemOut(BaseModel):
@@ -2989,10 +3040,19 @@ def enviar_mensagem_canal(
 
     logger.info("[enviar] conversa_id=%s numero_evo=%s numero_jid=%s is_group=%s texto=%s", conversa_id, numero_evo, numero_jid, is_group_jid, texto_seguro[:50])
 
+    # Reply (citação) Evolution: {messageId: wa-id citado, participant: jid de quem enviou}
+    _qc_evo = _resolver_msg_citada(db, c.workspace_id, payload.quoted_message_id)
+    evo_quoted = None
+    if _qc_evo and _qc_evo["wa_id"]:
+        evo_quoted = {
+            "messageId": _qc_evo["wa_id"],
+            "participant": _qc_evo["participant_jid"] or _qc_evo["remote_jid"] or numero_evo,
+        }
+
     # 1. Envia para Evolution API
     try:
         if payload.tipo == "texto" or not payload.media_url:
-            evo_resp = evo_service.enviar_mensagem_texto(instance, numero_evo, payload.texto or "", instance_id=instance_id, instance_token=instance_token)
+            evo_resp = evo_service.enviar_mensagem_texto(instance, numero_evo, payload.texto or "", instance_id=instance_id, instance_token=instance_token, quoted=evo_quoted)
         else:
             evo_resp = evo_service.enviar_mensagem_midia(
                 instance, numero_evo, payload.tipo, payload.media_url,
@@ -3000,6 +3060,7 @@ def enviar_mensagem_canal(
                 file_name=payload.caption,
                 instance_id=instance_id,
                 instance_token=instance_token,
+                quoted=evo_quoted,
             )
     except evo_service.EvolutionError as exc:
         logger.error("[canais] falha ao enviar mensagem: %s", exc)
@@ -3064,8 +3125,8 @@ def enviar_mensagem_canal(
     msg_result = db.execute(
         text("""
             INSERT INTO public.crm_whatsapp_mensagens
-            (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, status, media_status, recebida_em, created_at, updated_at)
-            VALUES (:ws, :canal, :cid, :ct, :evid, :inst, :jid, 'saida', true, 'agente', :rn, :msg, :mt, 'enviada', :media_status, NOW(), NOW(), NOW())
+            (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, status, media_status, quoted_message_id, quoted_remote_jid, quoted_message_type, quoted_text, recebida_em, created_at, updated_at)
+            VALUES (:ws, :canal, :cid, :ct, :evid, :inst, :jid, 'saida', true, 'agente', :rn, :msg, :mt, 'enviada', :media_status, :q_id, :q_jid, :q_mt, :q_txt, NOW(), NOW(), NOW())
             RETURNING id
         """),
         {
@@ -3080,6 +3141,10 @@ def enviar_mensagem_canal(
             "msg": msg_conteudo,
             "mt": msg_tipo,
             "media_status": "ready" if payload.media_url and payload.tipo != "texto" else None,
+            "q_id": _qc_evo["wa_id"] if _qc_evo else None,
+            "q_jid": _qc_evo["remote_jid"] if _qc_evo else None,
+            "q_mt": _qc_evo["message_type"] if _qc_evo else None,
+            "q_txt": _qc_evo["conteudo"] if _qc_evo else None,
         },
     )
     mensagem_id = msg_result.scalar()

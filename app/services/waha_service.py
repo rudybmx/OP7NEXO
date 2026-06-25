@@ -266,10 +266,16 @@ def obter_qr(session: str, cfg: dict) -> dict[str, Any] | None:
         raise WahaError(f"WAHA {session}/auth/qr: {exc}") from exc
 
 
-def enviar_mensagem_texto(session: str, cfg: dict, chat_id: str, texto: str) -> dict[str, Any]:
-    """POST /api/sendText — envia mensagem de texto via WAHA Plus."""
+def enviar_mensagem_texto(session: str, cfg: dict, chat_id: str, texto: str, reply_to: str | None = None) -> dict[str, Any]:
+    """POST /api/sendText — envia mensagem de texto via WAHA Plus.
+
+    `reply_to` (opcional): id serializado completo da msg citada
+    (`{true|false}_{chatId}_{waid}[_{participantLid}]`) para responder citando.
+    """
     base_url, headers = _headers(cfg)
-    body = {"session": session, "chatId": chat_id, "text": texto}
+    body: dict[str, Any] = {"session": session, "chatId": chat_id, "text": texto}
+    if reply_to:
+        body["reply_to"] = reply_to
     try:
         resp = httpx.post(
             f"{base_url}/api/sendText",
@@ -409,8 +415,12 @@ def enviar_mensagem_midia(
     mimetype: str,
     filename: str | None = None,
     caption: str | None = None,
+    reply_to: str | None = None,
 ) -> dict[str, Any]:
-    """POST /api/sendImage (imagem), /api/sendVideo (vídeo) ou /api/sendFile (documento) via WAHA Plus."""
+    """POST /api/sendImage (imagem), /api/sendVideo (vídeo) ou /api/sendFile (documento) via WAHA Plus.
+
+    `reply_to` opcional: id serializado da msg citada (ver enviar_mensagem_texto).
+    """
     base_url, headers = _headers(cfg)
     if tipo == "image":
         endpoint = "/api/sendImage"
@@ -422,6 +432,8 @@ def enviar_mensagem_midia(
     if filename:
         file_body["filename"] = filename
     body: dict[str, Any] = {"session": session, "chatId": chat_id, "file": file_body}
+    if reply_to:
+        body["reply_to"] = reply_to
     if caption:
         body["caption"] = caption
     try:

@@ -258,6 +258,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-26) — Atendimento: responder mensagem (quoted reply) via provider
+- `EnviarMensagemIn` ganhou `quoted_message_id` (id INTERNO da nossa `Mensagem` citada). `enviar_mensagem_canal` (Evolution) e `_enviar_mensagem_waha` resolvem a msg citada via `_resolver_msg_citada()` → `evolution_msg_id`(wa-id) + `participant_jid`/`remote_jid`/`message_type`/`conteudo`/`from_me`, e citam no provider: **Evolution** `evo_service.enviar_mensagem_texto/midia(..., quoted={messageId, participant})`; **WAHA** `waha_service.enviar_mensagem_texto/midia(..., reply_to=<id serializado>)` onde reply_to = `{true|false}_{chat_id}_{waid}[_{participantLid p/ grupo}]` (formato NOWEB confirmado ao vivo). Ambos INSERTs gravam `quoted_*` na nova msg (a resposta exibe a própria citação + funciona com o scroll P2). Sem citação, `quoted/reply_to=None` (envio normal).
+
 ### ✅ Implementado (2026-06-26) — Atendimento: menção em grupo resolve nome do contato
 - `GET /mensagens` agora retorna `mentioned_names: {"<dígitos>": "<nome>"}` por mensagem (`MensagemOut`). Em grupos a menção vem como `@<LID>` (ex. `@187385212055639`); o endpoint resolve via `_resolver_nomes_mencoes()` — 1 query batch em `crm_whatsapp_contatos` (`jid IN` dos `_derive_mentioned_jids`, **escopo do workspace**, `COALESCE(nome, push_name)`, ignora "nome" == próprio número). `_mensagem_out(m, name_by_jid)` monta o mapa por mensagem (chave = parte antes do `@`). Front troca `@<número>` por `@Nome` (fallback ao número). A maioria dos contatos guarda `jid = <LID>@lid`.
 
