@@ -2,12 +2,12 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check, AlertTriangle } from 'lucide-react'
+import { Search, FilterX, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check, AlertTriangle } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import type { AgenteApi } from '@/hooks/use-agentes-disponiveis'
 import type { WhatsappCanal } from '@/hooks/use-whatsapp-canais'
-import { FiltrosAtendimentoV2, type FiltrosV2State } from './filtros-atendimento-v2'
+import { FiltrosAtendimentoV2, FiltrosDropdownsV2, FILTROS_V2_PADRAO, type FiltrosV2State } from './filtros-atendimento-v2'
 import type { Etiqueta } from '@/hooks/use-etiquetas'
 import { FiltroEtiquetas } from './filtro-etiquetas'
 import { getCanalBadgeLabel, getCanalProviderLabel } from '@/lib/whatsapp-canal'
@@ -708,35 +708,30 @@ export function PainelInbox({
     WebkitOverflowScrolling: 'touch',
   }
 
+  // Reset rápido (FilterX) — reusa handlers existentes. Canal vive fora de FiltrosV2State.
+  const algumFiltroAtivo =
+    (canalSelecionadoId ?? 'todos') !== 'todos' ||
+    (!!filtrosV2 && JSON.stringify(filtrosV2) !== JSON.stringify(FILTROS_V2_PADRAO))
+  const resetFiltros = () => {
+    onCanalChange?.('todos')
+    onFiltrosV2Change?.(FILTROS_V2_PADRAO)
+  }
+
   return (
     <div style={containerStyle} className="atd-col-bg">
       <div style={headerStyle} className="atd-header-bg">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ws-text-1)', margin: 0 }}>Conversas</h2>
-            {aoVivo && (
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 10,
-                color: '#1D9E75',
-                background: 'rgba(29, 158, 117, 0.12)',
-                padding: '2px 8px',
-                borderRadius: 999,
-                fontWeight: 700,
-                border: '1px solid rgba(29, 158, 117, 0.16)',
-              }}>
-                <span style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: '#1D9E75',
-                  display: 'inline-block',
-                  animation: 'pulse 2s infinite',
-                }} />
-                ao vivo
-              </span>
+            {/* Desktop: os 3 filtros como icon-row. Mobile: ficam como selects em FiltrosAtendimentoV2. */}
+            {!isMobile && filtrosV2 && onFiltrosV2Change && (
+              <FiltrosDropdownsV2
+                valor={filtrosV2}
+                onChange={onFiltrosV2Change}
+                canais={canais}
+                canalSelecionadoId={canalSelecionadoId}
+                onCanalChange={onCanalChange ?? (() => {})}
+                agentes={agentes}
+              />
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -771,14 +766,33 @@ export function PainelInbox({
           </div>
         </div>
 
-        <div style={searchShellStyle}>
-          <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--ws-text-3)' }} />
-          <input
-            value={busca}
-            onChange={e => onBuscaChange(e.target.value)}
-            placeholder="Buscar conversa"
-            style={searchInputStyle}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+          {!isMobile && filtrosV2 && onFiltrosV2Change && (
+            <button
+              type="button"
+              onClick={resetFiltros}
+              title="Limpar filtros"
+              aria-label="Limpar filtros"
+              style={{
+                ...actionButtonStyle,
+                flexShrink: 0,
+                ...(algumFiltroAtivo
+                  ? { background: 'rgba(37, 211, 102, 0.16)', color: '#1D9E75', border: '1px solid rgba(29, 158, 117, 0.24)' }
+                  : {}),
+              }}
+            >
+              <FilterX size={15} />
+            </button>
+          )}
+          <div style={{ ...searchShellStyle, marginTop: 0, flex: 1 }}>
+            <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--ws-text-3)' }} />
+            <input
+              value={busca}
+              onChange={e => onBuscaChange(e.target.value)}
+              placeholder="Buscar conversa"
+              style={searchInputStyle}
+            />
+          </div>
         </div>
 
         {filtrosV2 && onFiltrosV2Change ? (

@@ -234,6 +234,11 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Botão de três pontinhos em cada item do inbox (`painel-inbox.tsx`) abre o `MenuContextoConversa` (favoritar/fixar/marcar não-lido/etiquetar/resolver); menu renderizado via **portal** (`createPortal(document.body)`) para escapar do `backdrop-filter`+`overflow:hidden` da coluna `.atd-col-bg`.
 - **Marcar como não lido** grava `marcada_nao_lida` (backend migration 092) via proxy SQL `PATCH /conversations/{id}/marcar-nao-lido` (não mexe em `nao_lidas`); item mostra **selo vermelho "Não lido"** e fica em destaque, distinto do badge verde de mensagens reais. Entrar na conversa → `marcar-lido` limpa `nao_lidas` + `marcada_nao_lida`. GET (`conversations/route.ts`) mapeia `marcadaNaoLida`.
 
+### ✅ Implementado (2026-06-25) — CRM Atendimento: filtros do inbox como icon-row + FilterX (desktop)
+- `painel-inbox.tsx` (header) + `filtros-atendimento-v2.tsx`: no **desktop**, os 3 filtros (número/responsável/acompanhamento) viram **botões-ícone com popover** (`DropdownMenu` Radix — novo export `FiltrosDropdownsV2`) na icon-row do header; removidos o título "Conversas" e o badge "ao vivo". Busca ganhou botão **`FilterX`** que zera todos os filtros e fica verde quando há filtro ativo. Pills em 2 linhas; "Arquivadas" virou botão-ícone `Archive`. **Mobile mantém os `<select>` nativos** (redesenho é desktop-only).
+- ⚠️ Gotcha: o filtro de **canal** (`canalSelecionadoId`/`onCanalChange`, default `'todos'`) vive **fora** do `FiltrosV2State` — o reset e o estado "verde" do FilterX precisam incluí-lo explicitamente.
+- Só apresentação (lógica/handlers e `pagina-atendimento.tsx` intactos). Ícones **lucide** (Tabler não existe no projeto). Verificado ao vivo (Playwright). **Deployado prod 2026-06-25 (`production@41800f1`).**
+
 ### 🧩 Code-complete, INERTE (2026-06-24) — CRM Atendimento: filtros server-side V2 (`FILTROS_V2`)
 - **Route handler** `GET /api/whatsapp/conversations`: sob `?v2=1`, repassa `canal_id/escopo/acompanhamento/tipo/arquivadas/nao_lidas/responsavel_id` ao FastAPI `GET /conversas` e **pula o filtro-em-memória pós-limit** (corrige bug de paginação). Caminho legado (sem `v2`) inalterado.
 - `use-conversas.ts`: 6º arg opcional `V2Filtros` → caminho v2 com paginação real por **offset** (UI "carregar mais" é follow-up — `loadMore`/`hasMore` ainda não consumidos na página).
