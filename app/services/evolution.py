@@ -552,12 +552,16 @@ def _is_duplicate_instance_error(resp: httpx.Response) -> bool:
     )
 
 
-def listar_instancias() -> list[dict[str, Any]]:
-    """Lista instancias conhecidas pela Evolution."""
+def listar_instancias(timeout: float = 30.0, *, retry: bool = True) -> list[dict[str, Any]]:
+    """Lista instancias conhecidas pela Evolution.
+
+    `retry=False` + timeout curto: caminho de leitura (reconciliação da listagem de
+    canais) — não pode travar a resposta. Read-only (GET /instance/all), nunca arma QR.
+    """
     def _call():
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=timeout) as client:
             return client.get(f"{META}/instance/all", headers=HEADERS)
-    resp = _retry_with_backoff(_call)
+    resp = _retry_with_backoff(_call) if retry else _call()
     if resp.status_code == 404:
         return []
     _handle_error(resp, "listar_instancias")

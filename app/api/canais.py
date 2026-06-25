@@ -843,6 +843,75 @@ def _reconciliar_waha_status(canais: list[CanalEntrada], db: Session) -> None:
         db.commit()
 
 
+def _reconciliar_evolution_status(canais: list[CanalEntrada], db: Session) -> None:
+    """Valida o connection_status dos canais Evolution contra o estado real no evolution-go.
+
+    1 chamada batch read-only (GET /instance/all); atualiza o banco quando divergir.
+    NUNCA reconecta nem arma QR (/instance/connect → re-arm storm). Falha de rede é
+    silenciada (fallback: mantém status do banco). Espelha _reconciliar_waha_status.
+    """
+    evo_canais = [c for c in canais if c.tipo == "whatsapp_evolution"]
+    if not evo_canais:
+        return
+    try:
+        instancias = evo_service.listar_instancias(timeout=5.0, retry=False)
+    except Exception as exc:
+        logger.warning("[canais] reconciliar Evolution falhou (fallback DB): %s", exc)
+        return
+    if not instancias:
+        return  # lista vazia/404 transitório: não marca todos como disconnected
+
+    by_id: dict[str, dict] = {}
+    by_name: dict[str, dict] = {}
+    for inst in instancias:
+        iid = str(inst.get("instance_id") or inst.get("id") or "").strip()
+        name = str(inst.get("instance_name") or inst.get("name") or "").strip().lower()
+        if iid:
+            by_id[iid] = inst
+        if name:
+            by_name[name] = inst
+
+    mudou = False
+    for c in evo_canais:
+        instance_name, instance_id, _tok = _evolution_meta(c)
+        inst = by_id.get(str(instance_id or "").strip()) or by_name.get(str(instance_name or "").strip().lower())
+        if inst is None:
+            novo = "disconnected"
+        else:
+            status = str(inst.get("status") or "").lower()
+            if status in ("open", "connected"):
+                novo = "connected"
+            elif status in ("connecting", "qrcode", "qr_code", "pairing"):
+                novo = "connecting"
+            elif status in ("close", "closed", "disconnected", "loggedout", "logged_out", "logout"):
+                novo = "disconnected"
+            elif inst.get("connected") is True:
+                novo = "connected"
+            elif inst.get("connected") is False:
+                novo = "disconnected"
+            else:
+                continue  # estado desconhecido: não mexe
+
+        # Anti-flap: não rebaixar connected->connecting por estado transitório (só close rebaixa)
+        if c.connection_status == "connected" and novo == "connecting":
+            continue
+        if novo == c.connection_status:
+            continue
+
+        c.connection_status = novo
+        if novo == "connected":
+            if not c.conectado_em:
+                c.conectado_em = datetime.now(timezone.utc)
+            numero = _extrair_numero_evolution(inst)
+            if numero and 10 <= len(numero) <= 15:
+                c.numero_telefone = numero
+        # disconnected/connecting: só reflete o status, sem apagar numero/conectado_em
+        mudou = True
+
+    if mudou:
+        db.commit()
+
+
 @router.get("/canais", response_model=list[CanalOut], response_model_exclude_none=True)
 def listar_todos_canais(
     db: Session = Depends(get_db),
@@ -863,6 +932,10 @@ def listar_todos_canais(
             _reconciliar_waha_status(canais, db)
         except Exception:
             logger.exception("[canais] reconciliação WAHA falhou — retornando status do banco")
+        try:
+            _reconciliar_evolution_status(canais, db)
+        except Exception:
+            logger.exception("[canais] reconciliação Evolution falhou — retornando status do banco")
     return [_canal_out(c) for c in canais]
 
 
