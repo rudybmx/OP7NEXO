@@ -42,6 +42,7 @@ from app.api.agentes import router as agentes_router
 from app.api.llm_providers import router as llm_providers_router
 from app.api.public_conectar import router as public_conectar_router
 from app.api.notificacoes import router as notificacoes_router
+from app.api.agenda import router as agenda_router
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import setup_logging
@@ -155,6 +156,7 @@ app.include_router(llm_providers_router)
 app.include_router(agentes_router)
 app.include_router(public_conectar_router)
 app.include_router(notificacoes_router)
+app.include_router(agenda_router)
 
 
 @app.get("/health")

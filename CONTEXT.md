@@ -449,6 +449,14 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - **Migration 093**: `ai_handoff_motivo VARCHAR(40)` + `ai_handoff_at` em `crm_whatsapp_conversas`. `agent_service._handoff` grava o motivo do handoff (`limite_tokens`/`baixa_confianca`/`erro_llm`/`fora_horario`/`config`/`envio_falhou`); `processar_reply` limpa (`ai_escalado=false`, `ai_handoff_motivo=NULL`) ao responder com sucesso. Serializado `ai_escalado`+`ai_handoff_motivo` em `ConversaOut`. Front exibe selo na conversa (inbox) com label do motivo — antes o handoff só ia pro log e o atendente via "sem resposta" sem saber.
 - **Reforço (1ª classe):** `_enviar_resposta` retorna `(enviado, evolution_msg_id)`; o INSERT da resposta grava `evolution_msg_id` (Evolution) → habilita recibo de entrega/leitura. `_publish` ganhou `instance`/`messageType` (paridade com envio humano).
 
+### ✅ Implementado (2026-06-25) — Agenda nativa (Fase 1: core)
+- **Migration 101** (`CREATE EXTENSION btree_gist`): tabelas `agendas` (recurso profissional/sala/equipamento: `capacidade_simultanea`, `fuso_horario`, `agente_agendamento` desativado|direto|confirmar, `responsavel_id` nullable), `agenda_horarios` (working hours por dia, várias faixas/dia, almoço), `agenda_bloqueios` (global=null ou por agenda), `agendamentos`. Espelham `op7nexo-front/src/types/agenda.ts`. Multi-tenant (`workspace_id` em tudo).
+- **Anti-double-booking matemático**: `agendamentos` tem `slot_index` + EXCLUDE GiST parcial `(agenda_id =, slot_index =, tstzrange(inicio,fim) &&) WHERE ativo AND status IN (agendado,confirmado,em_atendimento)`. Capacidade>1 = N slot_index. Provado em DB scratch (sobreposição→ExclusionViolation; back-to-back `[)` OK).
+- **Vínculo por TELEFONE** (não contato_id): `cliente_telefone` cru + `cliente_telefone_normalizado` (canonização 9º dígito BR em `app/services/agenda/telefone.py`, espelha `_canonical_br_jid`). `contato_id` é conveniência (nullable). **Exceção terceiro**: `para_terceiro` → paciente sem telefone, `agendado_por_telefone[_normalizado]` guarda quem marcou (aparece na caixa do contato via `cliente_tel_norm OU agendado_por_tel_norm`).
+- **Serviços** `app/services/agenda/`: `disponibilidade.py` (`gerar_slots` PURO + `calcular_disponibilidade` wrapper; timezone-aware, remove almoço/passado/bloqueio, respeita capacidade), `agendamento.py` (criar com menor slot_index livre + SAVEPOINT/EXCLUDE, mesmo-telefone-mesmo-horário→409, reagendar/cancelar/atualizar_status). Models em `app/models/crm/agenda.py`.
+- **API** `app/api/agenda.py` (prefixo `/agenda`): CRUD agendas/horários/bloqueios/agendamentos + `GET /disponibilidade` + `GET /overview` (KPIs, split web/IA por origem) + `GET /contatos/agendamentos?telefone` (caixa do Atendimento). Auth `get_usuario_atual`+`get_workspace_atual`, filtro `workspace_id`. Spec: `docs/specs/agenda-core/`.
+- Testado: 12 testes puros (telefone+disponibilidade) + migration up/down + EXCLUDE + serviço (slot/capacidade/variante 9dig/terceiro) em DB scratch. Front (religar mockup `use-agendas`/`use-agendamentos` + sidebar grupo AGENDA) = próxima parte da Fase 1.
+
 ### ⏳ Em andamento / Próximas tarefas
 1. Fase 2c: avatar de contatos `@lid` (depende de NOWEB Store — não implementado)
 2. Filtro campaign_id + adset_id em Criativos
@@ -467,7 +475,8 @@ op7nexo-api/docs/specs/
 ├── auth-multitenancy/spec.md   — Auth JWT + hierarquia multi-tenant
 ├── meta-ads/spec.md            — Meta Ads sync + insights + scheduler
 ├── canais-entrada/spec.md      — Canais WhatsApp/webhook
-└── gerador-criativos/spec.md   — Estúdio de Criativos (gpt-image-2 gera base; OP7NEXO monta criativo final)
+├── gerador-criativos/spec.md   — Estúdio de Criativos (gpt-image-2 gera base; OP7NEXO monta criativo final)
+└── agenda-core/spec.md         — Agenda nativa Fase 1 (agendas/horários/bloqueios/agendamentos, disponibilidade, anti-double-book, vínculo por telefone)
 
 op7nexo-front/docs/specs/
 ├── marketing/spec.md           — Meta Ads UI, filtros, insights IA

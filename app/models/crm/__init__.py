@@ -1,3 +1,4 @@
+from app.models.crm.agenda import Agenda, AgendaBloqueio, AgendaHorario, Agendamento
 from app.models.crm.assignment import ConversationAssignment
 from app.models.crm.contato import Contato
 from app.models.crm.conversa import Conversa
@@ -20,6 +21,10 @@ from app.models.crm.painel import (
 )
 
 __all__ = [
+    "Agenda",
+    "AgendaHorario",
+    "AgendaBloqueio",
+    "Agendamento",
     "Contato",
     "ConversationAssignment",
     "Conversa",

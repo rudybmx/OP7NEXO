@@ -17,6 +17,10 @@ from app.models.canal_entrada import CanalEntrada
 from app.models.canal_connect_token import CanalConnectToken
 from app.models.meta_token import MetaToken
 from app.models.crm import (
+    Agenda,
+    AgendaBloqueio,
+    AgendaHorario,
+    Agendamento,
     Contato,
     ConversationAssignment,
     Conversa,
@@ -84,6 +88,10 @@ __all__ = [
     "CanalEntrada",
     "CanalConnectToken",
     "MetaToken",
+    "Agenda",
+    "AgendaHorario",
+    "AgendaBloqueio",
+    "Agendamento",
     "Contato",
     "ConversationAssignment",
     "Conversa",
