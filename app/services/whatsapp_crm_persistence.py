@@ -454,6 +454,21 @@ def process_evolution_message(
             db.rollback()
             logger.warning("[webhook-process] enqueue agente_reply falhou conversa_id=%s: %s", conversa_id, exc)
 
+        # Inteligência de IA (Fase 1): análise da conversa. Caminho SEPARADO e INDEPENDENTE
+        # do ai_ativo (analisa também atendimento humano). Best-effort — nunca derruba o webhook.
+        try:
+            from app.services.agent_service import enfileirar_analise
+
+            enfileirar_analise(
+                db,
+                workspace_id=workspace_id,
+                canal_id=canal_id,
+                conversa_id=str(conversa_id),
+            )
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            logger.warning("[webhook-process] enqueue conversa_analise falhou conversa_id=%s: %s", conversa_id, exc)
+
     return _result(
         is_media=should_enqueue_media,
         mensagem_id=str(mensagem_id) if mensagem_id else None,

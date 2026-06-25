@@ -328,6 +328,172 @@ def enfileirar_agente_reply(db: Session, *, workspace_id, canal_id, conversa_id,
     db.commit()
 
 
+# ── análise de conversa (inteligência de IA — Fase 1) ─────────────────────────
+# Prompts de análise vivem AQUI (backend, versionados) — o "segredo" da qualidade,
+# fora do prompt editável do agente. Bump _ANALISE_PROMPT_VERSAO ao mudar o prompt.
+_ANALISE_PROMPT_VERSAO = "1"
+_ANALISE_DEBOUNCE_S = 20      # quiet-period após a última msg do lead
+_ANALISE_COOLDOWN_S = 180     # no máx. 1 análise / 3 min por conversa (custo)
+
+_ANALISE_INSTRUCOES = (
+    "Você é um analista de qualidade de atendimento e de qualificação de leads. Recebe o "
+    "histórico de uma conversa de WhatsApp entre um lead e um atendente (humano ou IA) e "
+    "produz uma análise objetiva para o supervisor.\n\n"
+    "Analise a conversa à luz do papel e do objetivo do agente acima e responda SOMENTE em "
+    "JSON válido, com as chaves exatas:\n"
+    '- "resumo": resumo curto e objetivo do que aconteceu (2-3 frases).\n'
+    '- "temperatura": "quente", "morno" ou "frio". quente = pronto para avançar/fechar; '
+    "morno = interessado mas com dúvidas/sem decisão; frio = pouco engajado, evasivo ou fora de perfil.\n"
+    '- "temperatura_score": número de 0 a 100 (0-39 frio, 40-69 morno, 70-100 quente).\n'
+    '- "interesse": o que o lead quer especificamente em relação ao OBJETIVO do agente '
+    '(ex.: objetivo "agendar consulta"; lead diz que quer limpeza dental → "agendar limpeza dental"). '
+    'Se o lead não expressou interesse claro, retorne "".\n'
+    '- "observacoes": observações sobre o ANDAMENTO do atendimento (não repita o resumo): '
+    "pontos de atenção, próximos passos, riscos, inconsistências do atendente.\n\n"
+    "Não invente informação que não esteja na conversa. Responda em português do Brasil."
+)
+
+
+def _transcript_para_analise(db: Session, conversa_id, limite: int = 24) -> str:
+    rows = db.execute(
+        text("""
+            SELECT direcao, conteudo
+            FROM public.crm_whatsapp_mensagens
+            WHERE conversa_id = CAST(:cid AS uuid) AND conteudo IS NOT NULL AND conteudo <> ''
+            ORDER BY created_at DESC
+            LIMIT :lim
+        """),
+        {"cid": str(conversa_id), "lim": limite},
+    ).fetchall()
+    linhas = [f"{'Lead' if d == 'entrada' else 'Atendente'}: {c}" for d, c in reversed(rows)]
+    return "\n".join(linhas)
+
+
+def analisar_conversa(db: Session, agente: Agente, conversa_id) -> dict | None:
+    """Roda a análise da conversa com o MODELO DO AGENTE. Tolerante a falha (try/except +
+    rollback) — degrada para None, nunca derruba o worker nem envenena a transação."""
+    transcript = _transcript_para_analise(db, conversa_id)
+    if not transcript.strip():
+        return None
+    papel = (_prompt_efetivo(db, agente) or "(não definido)").strip()
+    objetivo = (getattr(agente, "objetivo", None) or "(não definido)").strip()
+    system = (
+        f"PAPEL DO AGENTE (referência):\n{papel}\n\n"
+        f"OBJETIVO DO AGENTE: {objetivo}\n\n"
+        f"{_ANALISE_INSTRUCOES}"
+    )
+    user = f"Conversa:\n{transcript}\n\nProduza a análise em JSON."
+    try:
+        content, _usage = llm_client_service.chamar_json(db, agente, system, user)
+        data = json.loads(content)
+        temperatura = str(data.get("temperatura") or "").strip().lower()
+        if temperatura not in ("quente", "morno", "frio"):
+            temperatura = "morno"
+        try:
+            score = int(max(0.0, min(100.0, float(data.get("temperatura_score")))))
+        except (TypeError, ValueError):
+            score = {"frio": 20, "morno": 55, "quente": 85}[temperatura]
+        return {
+            "resumo": str(data.get("resumo") or "").strip(),
+            "temperatura": temperatura,
+            "temperatura_score": score,
+            "interesse": str(data.get("interesse") or "").strip(),
+            "observacoes": str(data.get("observacoes") or "").strip(),
+        }
+    except Exception as exc:  # noqa: BLE001 — análise nunca derruba nada
+        log.info("[analise] falhou conversa=%s: %s", conversa_id, exc)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+
+def enfileirar_analise(db: Session, *, workspace_id, canal_id, conversa_id) -> None:
+    """Enfileira job de análise (debounce + cooldown). INDEPENDENTE de `ai_ativo` — analisa
+    qualquer conversa de canal com agente, mesmo com auto-resposta desligada (supervisão de
+    atendimento humano também). Cooldown evita re-análise frequente (modelo de raciocínio é caro)."""
+    if _agente_ativo_do_canal(db, canal_id) is None:
+        return  # canal sem agente → nada a analisar como referência
+    last = db.execute(
+        text("SELECT (contexto_ia->>'analisado_em')::timestamptz FROM public.crm_whatsapp_conversas "
+             "WHERE id = CAST(:cid AS uuid)"),
+        {"cid": str(conversa_id)},
+    ).scalar()
+    agora = datetime.now(timezone.utc)
+    floor = (last + timedelta(seconds=_ANALISE_COOLDOWN_S)) if last else agora
+    run_at = max(agora + timedelta(seconds=_ANALISE_DEBOUNCE_S), floor).isoformat()
+    payload = json.dumps({
+        "conversa_id": str(conversa_id),
+        "canal_id": str(canal_id) if canal_id else None,
+        "workspace_id": str(workspace_id),
+    })
+    res = db.execute(
+        text("""
+            UPDATE public.crm_message_jobs
+            SET next_run_at = CAST(:run_at AS timestamptz), payload = CAST(:payload AS jsonb), updated_at = NOW()
+            WHERE job_type = 'conversa_analise' AND status = 'pending' AND payload->>'conversa_id' = :cid
+        """),
+        {"run_at": run_at, "payload": payload, "cid": str(conversa_id)},
+    )
+    if res.rowcount == 0:
+        db.execute(
+            text("""
+                INSERT INTO public.crm_message_jobs
+                    (workspace_id, canal_id, job_type, status, next_run_at, payload)
+                VALUES
+                    (CAST(:ws AS uuid), CAST(:canal AS uuid), 'conversa_analise', 'pending',
+                     CAST(:run_at AS timestamptz), CAST(:payload AS jsonb))
+            """),
+            {"ws": str(workspace_id), "canal": str(canal_id) if canal_id else None, "run_at": run_at, "payload": payload},
+        )
+    db.commit()
+
+
+def processar_analise(db: Session, payload: dict) -> None:
+    """Entrada do worker para job_type='conversa_analise'. Grava resumo + contexto_ia."""
+    conversa_id = payload.get("conversa_id")
+    canal_id = payload.get("canal_id")
+    workspace_id = payload.get("workspace_id")
+    if not conversa_id:
+        return
+    agente = _agente_ativo_do_canal(db, canal_id)
+    if agente is None:
+        return
+    res = analisar_conversa(db, agente, conversa_id)
+    if res is None:
+        return
+    contexto = {
+        "temperatura": res["temperatura"],
+        "temperatura_score": res["temperatura_score"],
+        "interesse": res["interesse"],
+        "observacoes": res["observacoes"],
+        "prompt_versao": _ANALISE_PROMPT_VERSAO,
+        "analisado_em": datetime.now(timezone.utc).isoformat(),
+        "agente_id": str(agente.id),
+    }
+    db.execute(
+        text("""
+            UPDATE public.crm_whatsapp_conversas
+            SET resumo_ia = :resumo, contexto_ia = CAST(:contexto AS jsonb)
+            WHERE id = CAST(:cid AS uuid)
+        """),
+        {"resumo": res["resumo"], "contexto": json.dumps(contexto), "cid": str(conversa_id)},
+    )
+    db.commit()
+    log.info("[analise] conversa=%s temperatura=%s score=%s", conversa_id, res["temperatura"], res["temperatura_score"])
+    try:
+        from app.services.redis_pub import publish_whatsapp_event
+        publish_whatsapp_event({
+            "type": "whatsapp.refresh",
+            "workspaceId": str(workspace_id),
+            "conversaId": str(conversa_id),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as exc:  # noqa: BLE001
+        log.info("[analise] publish refresh falhou conversa=%s: %s", conversa_id, exc)
+
+
 def _carregar_contexto(db: Session, conversa, limite: int = 12) -> tuple[list[dict], str | None]:
     """Últimas N mensagens da conversa em ordem cronológica. Retorna (historico, ultima_msg
     do cliente). `historico` exclui a última mensagem de entrada (ela vai como mensagem atual)."""

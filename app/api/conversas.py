@@ -47,6 +47,7 @@ class ConversaOut(BaseModel):
     etapa_funil: str | None
     prioridade: int | None
     resumo_ia: str | None
+    contexto_ia: dict | None = None
     equipe_id: str | None
     first_response_at: datetime | None
     assigned_at: datetime | None
@@ -245,6 +246,7 @@ def _conversa_out(c: Conversa) -> ConversaOut:
         etapa_funil=c.etapa_funil,
         prioridade=c.prioridade,
         resumo_ia=c.resumo_ia,
+        contexto_ia=c.contexto_ia,
         equipe_id=str(c.equipe_id) if c.equipe_id else None,
         first_response_at=c.first_response_at,
         assigned_at=c.assigned_at,

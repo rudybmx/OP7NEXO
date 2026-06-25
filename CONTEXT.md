@@ -224,6 +224,18 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-25) — Inteligência de IA sobre conversas (Fase 1: análise)
+- `agent_service.analisar_conversa(db, agente, conversa_id)` roda análise com o **modelo do agente**
+  (`chamar_json`) → `{resumo, temperatura (quente/morno/frio), temperatura_score 0-100, interesse,
+  observacoes}`. Prompt de análise é constante no backend (`_ANALISE_INSTRUCOES`, versionado em
+  `_ANALISE_PROMPT_VERSAO`) — fora do prompt editável do agente. Txn-safe (degrada p/ None).
+- Trigger assíncrono: `enfileirar_analise` (job `conversa_analise` em `crm_message_jobs`; debounce
+  20s + cooldown 180s/conversa) chamado em `process_evolution_message` só em msg de ENTRADA,
+  **INDEPENDENTE do `ai_ativo`** (analisa atendimento humano também); `whatsapp_event_worker` ganha
+  branch → `processar_analise` grava `conversa.resumo_ia` + `conversa.contexto_ia` (JSONB) + publica
+  `whatsapp.refresh`. Campo novo `agentes.objetivo` (migration **096**) guia o "interesse".
+  `contexto_ia` serializado em `ConversaOut`. Front: painel "Análise IA" real + termômetro SVG.
+
 ### ✅ Implementado (2026-06-25) — Central de Agentes: contexto temporal + diretrizes por workspace
 - `agent_service._montar_system` injeta um **bloco CONTEXTO TEMPORAL** (via `_contexto_temporal()`, UTC-3 fixo sem tzdata): hoje por extenso + ISO + hora + instrução para calcular datas relativas (amanhã/semana que vem/daqui N dias). Vale p/ `/testar` e worker, em TODOS os agentes — **sem tool**.
 - **Diretrizes por workspace**: nova tabela `agente_diretrizes_workspace` (migration **095**, 1 linha/workspace, `workspace_id` UNIQUE FK). Endpoints `GET/PUT /workspaces/{ws}/diretrizes` (platform_admin; schemas `DiretrizesIn` max_length 4000 / `DiretrizesOut`). `agent_service._diretrizes_workspace(db, ws_id)` injeta o texto no system prompt de todos os agentes do workspace, logo após o prompt do agente. **Txn-safe**: guard `has_table` cacheado + rollback (espelha `embedding_service._kb_table_existe` — diretriz nunca envenena a transação nem derruba o reply). Front: aba "Diretrizes" em `/admin/central-agentes` (`use-diretrizes` + textarea por workspace).

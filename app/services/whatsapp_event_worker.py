@@ -191,6 +191,14 @@ def _process_job(job_id: str) -> str:
                 _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
                 return "processed"
 
+            if job_type == "conversa_analise":
+                from app.services.agent_service import processar_analise
+
+                analise_payload = job["job_payload"] if isinstance(job["job_payload"], dict) else {}
+                processar_analise(db, analise_payload)
+                _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
+                return "processed"
+
             canal = db.query(CanalEntrada).filter(CanalEntrada.id == job["canal_id"]).first()
             if not canal:
                 raise RuntimeError(f"Canal não encontrado para job {job_id}")

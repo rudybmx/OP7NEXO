@@ -223,6 +223,7 @@ def _agente_out(agente: Agente, db: Session) -> AgenteOut:
         limite_tokens_dia=agente.limite_tokens_dia,
         alerta_threshold_pct=agente.alerta_threshold_pct,
         mensagem_abertura=agente.mensagem_abertura,
+        objetivo=agente.objetivo,
         canais=_canais_out(agente),
         horarios=[
             HorarioOut(
@@ -312,6 +313,7 @@ def criar_agente(
         limite_tokens_dia=payload.limite_tokens_dia,
         alerta_threshold_pct=payload.alerta_threshold_pct,
         mensagem_abertura=payload.mensagem_abertura,
+        objetivo=payload.objetivo,
     )
     db.add(agente)
     db.flush()  # obtém agente.id
@@ -370,6 +372,7 @@ def atualizar_agente(
         "limite_tokens_dia",
         "alerta_threshold_pct",
         "mensagem_abertura",
+        "objetivo",
     ):
         valor = getattr(payload, campo)
         if valor is not None:
