@@ -441,6 +441,9 @@ Para nova feature: `/speckit.specify [nome]` → cria `spec.md`, depois `/specki
 - **Página** `src/app/(plataforma)/administracao/empresas/notificacoes/page.tsx` — feed (filtros
   tipo/status/busca, marcar lida/todas) + bloco "Quem vê cada tipo" (audiência por papel,
   Switch → `PUT /notificacoes/config/{tipo}`, só admin). Item de menu em `contexto-layout.tsx`.
+- **Fecha agregação**: o route handler `api/whatsapp/conversations/[id]/marcar-lido` (usado pelo
+  inbox ao abrir a conversa) marca a notificação `mensagem_nova` dela como lida → a próxima
+  mensagem volta a gerar notificação (espelha o backend `marcar_lida_por_entidade`).
 
 ---
 
