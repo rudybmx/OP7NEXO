@@ -12,6 +12,7 @@ import { type AgenteInput, type HorarioItem, useAgentes } from '@/hooks/use-agen
 import { type LlmProvider, useLlmProviders } from '@/hooks/use-llm-providers'
 import { useDiretrizes } from '@/hooks/use-diretrizes'
 import { useAjustesResposta, type AjusteResposta } from '@/hooks/use-ajustes-resposta'
+import { useUsuarios } from '@/hooks/use-usuarios'
 import { BaseConhecimentoManager } from '@/components/admin/central-agentes/BaseConhecimentoManager'
 import { UsoDashboard } from '@/components/admin/central-agentes/UsoDashboard'
 
@@ -30,7 +31,7 @@ function emptyForm(): AgenteInput {
   return {
     nome: '', descricao: '', provider_id: null, modelo: null, status: 'inativo', tom: '',
     idiomas: [], blacklist_topicos: [], threshold_confianca: 0.7, debounce_segundos: 40,
-    limite_tokens_dia: null, alerta_threshold_pct: 80, mensagem_abertura: '', objetivo: '', tempo_followup_min: null, canais: [],
+    limite_tokens_dia: null, alerta_threshold_pct: 80, mensagem_abertura: '', objetivo: '', tempo_followup_min: null, codigo_responsavel: '', canais: [],
     horarios: [], prompt: '',
   }
 }
@@ -69,6 +70,8 @@ export default function CentralAgentesPage() {
   const [salvando, setSalvando] = useState(false)
   const [publicando, setPublicando] = useState(false)
   const { listar: listarAjustes, remover: removerAjuste } = useAjustesResposta()
+  const { usuarios } = useUsuarios()
+  const usuariosDoWorkspace = usuarios.filter((u) => !ws || u.workspace_id === ws)
   const [ajustes, setAjustes] = useState<AjusteResposta[]>([])
 
   useEffect(() => { carregarProviders() }, [carregarProviders])
@@ -103,7 +106,7 @@ export default function CentralAgentesPage() {
         status: a.status === 'ativo' ? 'ativo' : 'inativo', tom: a.tom ?? '', idiomas: a.idiomas,
         blacklist_topicos: a.blacklist_topicos, threshold_confianca: a.threshold_confianca,
         debounce_segundos: a.debounce_segundos, limite_tokens_dia: a.limite_tokens_dia,
-        alerta_threshold_pct: a.alerta_threshold_pct, mensagem_abertura: a.mensagem_abertura ?? '', objetivo: a.objetivo ?? '', tempo_followup_min: a.tempo_followup_min ?? null,
+        alerta_threshold_pct: a.alerta_threshold_pct, mensagem_abertura: a.mensagem_abertura ?? '', objetivo: a.objetivo ?? '', tempo_followup_min: a.tempo_followup_min ?? null, codigo_responsavel: a.codigo_responsavel ?? '',
         canais: a.canais.map((c) => c.canal_id), prompt: a.prompt_draft ?? '',
         horarios: a.horarios.map((h) => ({ dia_semana: h.dia_semana, hora_inicio: h.hora_inicio, hora_fim: h.hora_fim, ativo: h.ativo })),
       })
@@ -397,6 +400,26 @@ export default function CentralAgentesPage() {
                   placeholder="vazio ou 0 = desligado · ex.: 1440 = 1 dia"
                 />
               </Field>
+            </Section>
+
+            <Section titulo="Transferência para humano">
+              <Field label="Responsável que assume a conversa quando a IA faz handoff">
+                <select
+                  className={inputCls}
+                  style={inputStyle}
+                  value={form.codigo_responsavel ?? ''}
+                  onChange={(e) => setF('codigo_responsavel', e.target.value)}
+                >
+                  <option value="">Nenhum — só marca como escalado (sem rotear)</option>
+                  {usuariosDoWorkspace.map((u) => (
+                    <option key={u.id} value={u.id}>{u.nome || u.email}</option>
+                  ))}
+                </select>
+              </Field>
+              <p className="text-xs mt-1" style={{ color: 'var(--ws-text-3)' }}>
+                Definido: no handoff (baixa confiança, fora de horário, erro…) a conversa é
+                atribuída a essa pessoa e ganha uma nota com o resumo. Vazio = comportamento atual.
+              </p>
             </Section>
 
             {editId && (
