@@ -218,9 +218,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
-### ✅ Implementado (2026-06-25) — Central de Agentes: data/hora no prompt + tuning
-- `agent_service._montar_system` injeta **data/hora atual (horário de Brasília, UTC-3 fixo, sem tzdata)** no system prompt via novo `_data_hora_br()` → o agente sabe o dia de hoje **sem tool** (vale p/ `/testar` e p/ o worker). Resolve "que dia é hoje?".
-- Tuning de config (sem deploy): threshold de confiança do agente "Teste" baixado p/ 0.5 e prompt publicado mais rico que **orienta o `score_confianca`** (nota alta p/ resposta útil) — o auto-score do `deepseek-v4-flash` é ruidoso (0.3~1.0 p/ a mesma resposta) e escalava à toa (`baixa_confianca`).
+### ✅ Implementado (2026-06-25) — Central de Agentes: contexto temporal + diretrizes por workspace
+- `agent_service._montar_system` injeta um **bloco CONTEXTO TEMPORAL** (via `_contexto_temporal()`, UTC-3 fixo sem tzdata): hoje por extenso + ISO + hora + instrução para calcular datas relativas (amanhã/semana que vem/daqui N dias). Vale p/ `/testar` e worker, em TODOS os agentes — **sem tool**.
+- **Diretrizes por workspace**: nova tabela `agente_diretrizes_workspace` (migration **095**, 1 linha/workspace, `workspace_id` UNIQUE FK). Endpoints `GET/PUT /workspaces/{ws}/diretrizes` (platform_admin; schemas `DiretrizesIn` max_length 4000 / `DiretrizesOut`). `agent_service._diretrizes_workspace(db, ws_id)` injeta o texto no system prompt de todos os agentes do workspace, logo após o prompt do agente. **Txn-safe**: guard `has_table` cacheado + rollback (espelha `embedding_service._kb_table_existe` — diretriz nunca envenena a transação nem derruba o reply). Front: aba "Diretrizes" em `/admin/central-agentes` (`use-diretrizes` + textarea por workspace).
+- Tuning de config (sem deploy, do ajuste anterior): threshold do "Teste" 0.5 + prompt publicado que orienta o `score_confianca` (auto-score do `deepseek-v4-flash` é ruidoso 0.3~1.0).
 
 ### ✅ Implementado (2026-06-13) — Auto-refresh de Insights de IA (Meta + Google)
 - Insights de IA gerados automaticamente no `op7nexo-worker` para todos os workspaces com dados nos últimos 7 dias — antes só sob demanda. `scheduler._gerar_insights_ia()` (best-effort, sessão por workspace). **Spec 002**: agora em cron próprio (`meta_insights_ia` 06/12/18h+40min), pós-enfileiramento, não mais acoplado ao job de sync.

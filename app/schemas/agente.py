@@ -4,7 +4,7 @@ Out montados manualmente nos routers. `threshold_confianca` é 0..1 (a UI exibe 
 Campos de RAG/handoff-runtime/feedback são de fases posteriores e não entram aqui."""
 from __future__ import annotations
 
-from datetime import time
+from datetime import datetime, time
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -89,6 +89,18 @@ class AgenteUpdate(BaseModel):
     horarios: list[HorarioIn] | None = None
     habilidades: list[HabilidadeIn] | None = None
     prompt: str | None = None
+
+
+class DiretrizesIn(BaseModel):
+    """Diretrizes de IA do workspace — texto único injetado no system prompt de TODOS
+    os agentes do workspace. Teto de tamanho: entra em cada resposta (custo/latência)."""
+
+    diretrizes: str = Field(default="", max_length=4000)
+
+
+class DiretrizesOut(BaseModel):
+    diretrizes: str
+    atualizado_em: datetime | None = None
 
 
 class ToggleIn(BaseModel):

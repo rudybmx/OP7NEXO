@@ -18,7 +18,7 @@ import re
 import uuid
 from datetime import datetime, time, timedelta, timezone
 
-from sqlalchemy import func, text
+from sqlalchemy import func, inspect as sa_inspect, text
 from sqlalchemy.orm import Session
 
 from app.models.agente import Agente, AgenteCanal, AgentePrompt, AgenteUsoToken
@@ -46,9 +46,13 @@ def _prompt_efetivo(db: Session, agente: Agente) -> str:
     return draft.prompt_texto if draft else ""
 
 
-def _data_hora_br() -> str:
-    """Data e hora atuais no horário de Brasília (UTC-3 fixo — sem dependência de tzdata),
-    em português, para injetar no system prompt. O Brasil não tem horário de verão desde 2019."""
+_DIRETRIZES_TABELA_PRESENTE: bool | None = None
+
+
+def _contexto_temporal() -> str:
+    """Bloco de contexto temporal para o system prompt — data/hora atuais no horário de
+    Brasília (UTC-3 fixo, sem dependência de tzdata) + instrução para resolver datas
+    relativas. O Brasil não tem horário de verão desde 2019. Recalculado a cada mensagem."""
     agora = datetime.now(timezone(timedelta(hours=-3)))
     dias = (
         "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
@@ -58,18 +62,59 @@ def _data_hora_br() -> str:
         "janeiro", "fevereiro", "março", "abril", "maio", "junho",
         "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
     )
+    hoje = f"{dias[agora.weekday()]}, {agora.day} de {meses[agora.month - 1]} de {agora.year}"
     return (
-        f"{dias[agora.weekday()]}, {agora.day} de {meses[agora.month - 1]} "
-        f"de {agora.year}, {agora:%H:%M}"
+        "CONTEXTO TEMPORAL (sempre atual):\n"
+        f"- Hoje é {hoje} ({agora:%Y-%m-%d}).\n"
+        f"- Hora atual: {agora:%H:%M} (horário de Brasília, UTC-3).\n"
+        "- Para qualquer referência relativa (ontem, amanhã, semana que vem, daqui a N dias, "
+        "próximo mês), calcule SEMPRE a partir da data de hoje acima."
     )
 
 
-def _montar_system(agente: Agente, prompt: str, rag_chunks: list[str] | None = None) -> str:
+def _diretrizes_workspace(db: Session, workspace_id) -> str:
+    """Diretrizes de IA do workspace (texto injetado no system prompt de todos os agentes).
+    Tolerante a falha como o RAG (ver embedding_service._kb_table_existe): se a tabela ainda
+    não existir (janela de deploy) ou a query falhar, faz rollback e retorna "" — NUNCA
+    envenena a transação nem derruba o reply. Cache de existência por processo."""
+    global _DIRETRIZES_TABELA_PRESENTE
+    if _DIRETRIZES_TABELA_PRESENTE is None:
+        try:
+            _DIRETRIZES_TABELA_PRESENTE = sa_inspect(db.get_bind()).has_table(
+                "agente_diretrizes_workspace"
+            )
+        except Exception:  # noqa: BLE001 — na dúvida, trata como ausente (degrada p/ "")
+            _DIRETRIZES_TABELA_PRESENTE = False
+    if not _DIRETRIZES_TABELA_PRESENTE:
+        return ""
+    try:
+        row = db.execute(
+            text(
+                "SELECT diretrizes FROM agente_diretrizes_workspace "
+                "WHERE workspace_id = CAST(:ws AS uuid)"
+            ),
+            {"ws": str(workspace_id)},
+        ).first()
+        return (row[0] or "").strip() if row else ""
+    except Exception as exc:  # noqa: BLE001 — diretrizes nunca derrubam a geração
+        log.info("[diretrizes] leitura falhou ws=%s: %s", workspace_id, exc)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return ""
+
+
+def _montar_system(
+    agente: Agente,
+    prompt: str,
+    rag_chunks: list[str] | None = None,
+    diretrizes_ws: str | None = None,
+) -> str:
     partes = [prompt.strip() or "Você é um assistente de atendimento prestativo e objetivo."]
-    partes.append(
-        f"Data e hora atuais (horário de Brasília): {_data_hora_br()}. "
-        "Use esta informação quando perguntarem o dia, a data ou a hora de hoje."
-    )
+    if diretrizes_ws and diretrizes_ws.strip():
+        partes.append("DIRETRIZES (regras desta empresa — siga sempre):\n" + diretrizes_ws.strip())
+    partes.append(_contexto_temporal())
     if agente.tom:
         partes.append(f"Tom de voz: {agente.tom}.")
     if agente.idiomas:
@@ -117,11 +162,15 @@ def gerar_resposta(db: Session, agente: Agente, mensagem: str, historico: list |
     JSON malformado do LLM → score 0 (sinaliza handoff). RAG/few-shot entram nas fases 3-4.
     """
     prompt = _prompt_efetivo(db, agente)
+    diretrizes = _diretrizes_workspace(db, agente.workspace_id)
     from app.services import embedding_service
 
     rag_chunks = embedding_service.retrieve(db, agente.id, mensagem)
     content, usage = llm_client_service.chamar_json(
-        db, agente, _montar_system(agente, prompt, rag_chunks), _montar_user(mensagem, historico)
+        db,
+        agente,
+        _montar_system(agente, prompt, rag_chunks, diretrizes_ws=diretrizes),
+        _montar_user(mensagem, historico),
     )
     tokens_input = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
     tokens_output = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)

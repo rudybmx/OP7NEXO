@@ -1,6 +1,7 @@
 from app.models.agente.agente import Agente
 from app.models.agente.agente_base_conhecimento import AgenteBaseConhecimento
 from app.models.agente.agente_canal import AgenteCanal
+from app.models.agente.agente_diretrizes_workspace import AgenteDiretrizesWorkspace
 from app.models.agente.agente_habilidade import AgenteHabilidade
 from app.models.agente.agente_horario import AgenteHorario
 from app.models.agente.agente_prompt import AgentePrompt
@@ -13,6 +14,7 @@ __all__ = [
     "Agente",
     "AgenteBaseConhecimento",
     "AgenteCanal",
+    "AgenteDiretrizesWorkspace",
     "AgenteHabilidade",
     "AgenteHorario",
     "AgentePrompt",

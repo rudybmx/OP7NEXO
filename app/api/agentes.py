@@ -20,6 +20,7 @@ from app.models.agente import (
     Agente,
     AgenteBaseConhecimento,
     AgenteCanal,
+    AgenteDiretrizesWorkspace,
     AgenteHabilidade,
     AgenteHorario,
     AgentePrompt,
@@ -34,6 +35,8 @@ from app.schemas.agente import (
     AgenteOut,
     AgenteUpdate,
     CanalVinculadoOut,
+    DiretrizesIn,
+    DiretrizesOut,
     HabilidadeIn,
     HabilidadeOut,
     BaseConhecimentoIn,
@@ -445,6 +448,51 @@ def testar_agente(
         rag_chunks_usados=res.get("rag_chunks_usados", []),
         tokens_estimados=res["tokens_input"] + res["tokens_output"],
     )
+
+
+# ── diretrizes do workspace (injetadas no system prompt de TODOS os agentes) ───
+@router.get("/workspaces/{workspace_id}/diretrizes", response_model=DiretrizesOut)
+def obter_diretrizes(
+    workspace_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Diretrizes de IA do workspace — texto injetado no system prompt de todos os
+    agentes deste workspace. Vazio se ainda não houver."""
+    _get_workspace_or_404(workspace_id, db)
+    row = (
+        db.query(AgenteDiretrizesWorkspace)
+        .filter(AgenteDiretrizesWorkspace.workspace_id == workspace_id)
+        .first()
+    )
+    if not row:
+        return DiretrizesOut(diretrizes="", atualizado_em=None)
+    return DiretrizesOut(diretrizes=row.diretrizes, atualizado_em=row.atualizado_em)
+
+
+@router.put("/workspaces/{workspace_id}/diretrizes", response_model=DiretrizesOut)
+def salvar_diretrizes(
+    workspace_id: uuid.UUID,
+    payload: DiretrizesIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Upsert das diretrizes do workspace (1 linha por workspace)."""
+    _get_workspace_or_404(workspace_id, db)
+    row = (
+        db.query(AgenteDiretrizesWorkspace)
+        .filter(AgenteDiretrizesWorkspace.workspace_id == workspace_id)
+        .first()
+    )
+    texto = (payload.diretrizes or "").strip()
+    if row:
+        row.diretrizes = texto
+    else:
+        row = AgenteDiretrizesWorkspace(workspace_id=workspace_id, diretrizes=texto)
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return DiretrizesOut(diretrizes=row.diretrizes, atualizado_em=row.atualizado_em)
 
 
 def _fetch_url_texto(url: str) -> str:
