@@ -71,7 +71,8 @@ export default function CentralAgentesPage() {
   const [publicando, setPublicando] = useState(false)
   const { listar: listarAjustes, remover: removerAjuste } = useAjustesResposta()
   const { usuarios } = useUsuarios()
-  const usuariosDoWorkspace = usuarios.filter((u) => !ws || u.workspace_id === ws)
+  // Usuários do workspace + os sem workspace fixo (platform_admins podem assumir qualquer um).
+  const usuariosDoWorkspace = usuarios.filter((u) => !ws || u.workspace_id === ws || !u.workspace_id)
   const [ajustes, setAjustes] = useState<AjusteResposta[]>([])
 
   useEffect(() => { carregarProviders() }, [carregarProviders])
