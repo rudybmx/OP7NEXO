@@ -678,6 +678,11 @@ _HANDOFF_LABEL = {
     "envio_falhou": "falha ao enviar a resposta",
 }
 
+# Motivos que roteiam p/ o responsável (Fase 4). SÓ os "o agente não consegue responder ISTO":
+# transferir desliga `ai_ativo` permanentemente, então os TRANSITÓRIOS (fora_horario, limite_tokens
+# — o agente voltaria a funcionar sozinho) NÃO entram, senão a 1ª msg fora de hora mata o agente.
+_ROTEAR_NO_HANDOFF = {"baixa_confianca", "erro_llm", "config", "envio_falhou"}
+
 
 def _nome_usuario(db: Session, user_id) -> str:
     if not user_id:
@@ -751,7 +756,7 @@ def _handoff(db: Session, conversa, agente: Agente, *, canal_id, score, tokens, 
     # Fase 4: se o agente tem responsável, roteia a conversa p/ esse humano + posta o resumo na
     # thread. Opt-in (sem codigo_responsavel = comportamento antigo, só marca ai_escalado).
     # Transação SEPARADA: falha aqui NÃO desfaz o handoff já commitado.
-    if agente.codigo_responsavel:
+    if agente.codigo_responsavel and motivo in _ROTEAR_NO_HANDOFF:
         try:
             from app.services.whatsapp_crm_persistence import aplicar_transferencia
 
