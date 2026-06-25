@@ -459,6 +459,22 @@ Para nova feature: `/speckit.specify [nome]` → cria `spec.md`, depois `/specki
 
 ---
 
+## Notificações (migration 099)
+
+Notificações in-app genéricas. Tabelas: `notificacoes` + `notificacao_leituras` (leitura POR
+usuário, broadcast sem fan-out) + `notificacao_config` (audiência por workspace×tipo).
+- Service `app/services/notificacoes.py`: `criar_notificacao` resolve audiência (config ou
+  default por papel), dedupe por `dedupe_key` (1 "viva" sem leitura), roda em SAVEPOINT (nunca
+  derruba o chamador); `contar_nao_lidas`/`listar`/`marcar_*` filtram por papel (JSONB `@>`).
+- Endpoints `app/api/notificacoes.py`: `GET /notificacoes`, `/contador`, `POST /{id}/lida`,
+  `/marcar-todas-lidas`, `GET|PUT /config` (admin).
+- Gatilhos: `channel_health.py::run_channel_health_check` → `canal_offline` (anti-spam Redis 12h,
+  **roda no worker**); `whatsapp_crm_persistence.py` inbound → `mensagem_nova` (agregada por
+  conversa). Realtime: polling no front + publish Redis `notifications:events`.
+- Spec: `docs/specs/notificacoes/`. Deploy: precisa de `deploy.sh worker` (gatilho de canal).
+
+---
+
 ## COMO ATUALIZAR ESTE ARQUIVO
 
 Sempre que implementar uma feature:

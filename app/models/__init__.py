@@ -47,6 +47,7 @@ from app.models.criativo import (
     CriativoTemplate,
 )
 from app.models.estudio import EstudioTokenSaldo, EstudioTokenTransacao
+from app.models.notificacao import Notificacao, NotificacaoConfig, NotificacaoLeitura
 from app.models.agente import (
     Agente,
     AgenteBaseConhecimento,
@@ -111,6 +112,9 @@ __all__ = [
     "CriativoTemplate",
     "EstudioTokenSaldo",
     "EstudioTokenTransacao",
+    "Notificacao",
+    "NotificacaoLeitura",
+    "NotificacaoConfig",
     "Agente",
     "AgenteBaseConhecimento",
     "AgenteCanal",

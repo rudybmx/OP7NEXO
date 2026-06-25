@@ -5,6 +5,7 @@ from urllib.parse import quote
 import redis
 
 WHATSAPP_EVENTS_CHANNEL = os.getenv("WHATSAPP_EVENTS_CHANNEL", "whatsapp:events")
+NOTIFICACOES_EVENTS_CHANNEL = os.getenv("NOTIFICACOES_EVENTS_CHANNEL", "notifications:events")
 
 _redis_client: redis.Redis | None = None
 
@@ -36,3 +37,12 @@ def publish_whatsapp_event(event: dict) -> None:
     except Exception as e:
         # Não quebrar o webhook se o Redis falhar
         print(f"[redis_pub] falha ao publicar evento: {e}")
+
+
+def publish_notificacao_event(event: dict) -> None:
+    """Publica um evento de notificação no canal Redis (base p/ realtime futuro)."""
+    try:
+        r = _get_redis()
+        r.publish(NOTIFICACOES_EVENTS_CHANNEL, json.dumps(event))
+    except Exception as e:
+        print(f"[redis_pub] falha ao publicar notificação: {e}")

@@ -27,12 +27,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.services import evolution as evo_service
 from app.services import waha_service
+from app.services.notificacoes import criar_notificacao, marca_unica_redis
 from app.services.redis_pub import _get_redis
 
 logger = logging.getLogger(__name__)
 
 _ALERT_TTL_S = 12 * 3600  # re-alerta no máx. a cada 12h enquanto o canal segue caído
 _REDIS_KEY = "canal:health_alerted:{cid}"
+_REDIS_NOTIF_KEY = "notif:canal_offline:{cid}"  # anti-spam da notificação in-app (independe do alerta WhatsApp)
 _CONNECTING_STUCK_S = 3600  # 'connecting' por >1h = travado
 
 
@@ -167,8 +169,27 @@ def run_channel_health_check(db: Session) -> dict[str, int]:
             if c.get("connection_status") == "connected":
                 try:
                     r.delete(_REDIS_KEY.format(cid=c["id"]))
+                    r.delete(_REDIS_NOTIF_KEY.format(cid=c["id"]))
                 except Exception:  # noqa: BLE001
                     pass
+
+    # Notificação in-app por canal caído — anti-spam próprio (TTL 12h por canal),
+    # desacoplado do alerta WhatsApp (que pode estar desabilitado). Dedupe extra no DB.
+    for c in down:
+        if marca_unica_redis(_REDIS_NOTIF_KEY.format(cid=c["id"]), _ALERT_TTL_S):
+            criar_notificacao(
+                db,
+                c["workspace_id"],
+                "canal_offline",
+                titulo=f"Canal caiu: {c.get('nome') or 'WhatsApp'}",
+                mensagem=f"O canal {c.get('nome') or c['id']} está {c.get('connection_status')}. Reconecte ou repareie em Canais.",
+                severidade="critico",
+                link="/administracao/canais-omnichannel",
+                entidade=("canal", c["id"]),
+                dedupe_key=f"canal_offline:{c['id']}",
+                payload={"connection_status": c.get("connection_status"), "tipo": c.get("tipo")},
+            )
+    db.commit()
 
     # "Due" = caído sem marca ativa no Redis (novo ou já passou 12h). Sem Redis: trata tudo como due.
     def _due(c: dict) -> bool:

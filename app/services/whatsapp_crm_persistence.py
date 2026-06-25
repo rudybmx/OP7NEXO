@@ -469,6 +469,29 @@ def process_evolution_message(
             db.rollback()
             logger.warning("[webhook-process] enqueue conversa_analise falhou conversa_id=%s: %s", conversa_id, exc)
 
+        # Notificação in-app "mensagem nova" — agregada por conversa (1 viva por vez).
+        # Best-effort; criar_notificacao isola em SAVEPOINT e nunca propaga exceção.
+        try:
+            from app.services.notificacoes import criar_notificacao
+
+            preview = (msg_text or "").strip().replace("\n", " ")
+            if len(preview) > 120:
+                preview = preview[:117] + "..."
+            criar_notificacao(
+                db,
+                workspace_id,
+                "mensagem_nova",
+                titulo=sender_name or "Nova mensagem",
+                mensagem=preview or "Enviou uma mensagem",
+                link=f"/atendimento?conversa={conversa_id}",
+                entidade=("conversa", conversa_id),
+                dedupe_key=f"mensagem_nova:{conversa_id}",
+                payload={"contato": sender_name, "canal_id": str(canal_id) if canal_id else None},
+            )
+            db.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[webhook-process] notificação mensagem_nova falhou conversa_id=%s: %s", conversa_id, exc)
+
     return _result(
         is_media=should_enqueue_media,
         mensagem_id=str(mensagem_id) if mensagem_id else None,
