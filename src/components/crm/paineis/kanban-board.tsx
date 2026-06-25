@@ -136,8 +136,8 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
             onDragEnd={() => { setDragColuna(null); setDragOverColunaTarget(null) }}
             style={{
               width: 264, flexShrink: 0,
-              background: isOver ? 'rgba(62,91,255,0.04)' : 'rgba(14,20,42,0.03)',
-              border: `1px solid ${isColunaOver ? 'rgba(62,91,255,0.40)' : isOver ? 'rgba(62,91,255,0.25)' : 'rgba(14,20,42,0.06)'}`,
+              background: isOver ? 'rgba(62,91,255,0.04)' : 'var(--ws-surface-2)',
+              border: `1px solid ${isColunaOver ? 'rgba(62,91,255,0.40)' : isOver ? 'rgba(62,91,255,0.25)' : 'var(--ws-glass-border)'}`,
               borderRadius: 12, padding: '12px 10px',
               transition: 'all 150ms ease',
               opacity: isColunaDragging ? 0.4 : 1,
@@ -148,14 +148,14 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingLeft: 2 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 {reordenavel && (
-                  <GripVertical size={13} style={{ color: '#8892b0', cursor: 'grab', flexShrink: 0 }} />
+                  <GripVertical size={13} style={{ color: 'var(--ws-text-2)', cursor: 'grab', flexShrink: 0 }} />
                 )}
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: coluna.cor, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#0E142A' }}>{coluna.nome}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ws-text-1)' }}>{coluna.nome}</span>
                 <span style={{
                   fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 9999,
-                  background: isWipExceeded ? 'rgba(255,92,141,0.12)' : 'rgba(14,20,42,0.06)',
-                  color: isWipExceeded ? '#c2004f' : '#8892b0',
+                  background: isWipExceeded ? 'rgba(255,92,141,0.12)' : 'var(--ws-surface-2)',
+                  color: isWipExceeded ? '#c2004f' : 'var(--ws-text-2)',
                   border: isWipExceeded ? '1px solid rgba(255,92,141,0.20)' : 'none',
                 }}>
                   {cards.length}{coluna.limite ? `/${coluna.limite}` : ''}
@@ -170,9 +170,9 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
                 />
                 <button
                   onClick={() => setNovoCardColuna(coluna.id)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8892b0', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center', transition: 'all 150ms' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(14,20,42,0.08)'; e.currentTarget.style.color = '#0E142A' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#8892b0' }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ws-text-2)', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center', transition: 'all 150ms' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--ws-glass-bg)'; e.currentTarget.style.color = 'var(--ws-text-1)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--ws-text-2)' }}
                 >
                   <Plus size={14} />
                 </button>
@@ -210,25 +210,25 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
               ))}
 
               {novoCardColuna === coluna.id ? (
-                <div style={{ background: 'rgba(255,255,255,0.80)', border: '1px solid rgba(62,91,255,0.30)', borderRadius: 10, padding: '8px 10px' }}>
+                <div style={{ background: 'var(--ws-surface)', border: '1px solid rgba(62,91,255,0.30)', borderRadius: 10, padding: '8px 10px' }}>
                   <textarea
                     autoFocus value={novoCardTitulo}
                     onChange={e => setNovoCardTitulo(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); adicionarCard(coluna.id) } if (e.key === 'Escape') { setNovoCardColuna(null); setNovoCardTitulo('') } }}
                     placeholder="Título do card..." rows={2}
-                    style={{ width: '100%', fontSize: 13, color: '#0E142A', background: 'transparent', border: 'none', outline: 'none', resize: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }}
+                    style={{ width: '100%', fontSize: 13, color: 'var(--ws-text-1)', background: 'transparent', border: 'none', outline: 'none', resize: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }}
                   />
                   <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                     <button onClick={() => adicionarCard(coluna.id)} style={{ padding: '4px 12px', background: 'linear-gradient(135deg, #3E5BFF, #7A5AF8)', border: 'none', borderRadius: 6, fontSize: 11, color: 'white', cursor: 'pointer', fontWeight: 600 }}>Adicionar</button>
-                    <button onClick={() => { setNovoCardColuna(null); setNovoCardTitulo('') }} style={{ padding: '4px 10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#8892b0' }}>Cancelar</button>
+                    <button onClick={() => { setNovoCardColuna(null); setNovoCardTitulo('') }} style={{ padding: '4px 10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ws-text-2)' }}>Cancelar</button>
                   </div>
                 </div>
               ) : (
                 <button
                   onClick={() => setNovoCardColuna(coluna.id)}
-                  style={{ width: '100%', padding: '7px 10px', background: 'transparent', border: '1px dashed rgba(14,20,42,0.12)', borderRadius: 8, fontSize: 12, color: '#8892b0', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 150ms' }}
+                  style={{ width: '100%', padding: '7px 10px', background: 'transparent', border: '1px dashed var(--ws-glass-border)', borderRadius: 8, fontSize: 12, color: 'var(--ws-text-2)', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 150ms' }}
                   onMouseEnter={e => { e.currentTarget.style.background = 'rgba(62,91,255,0.04)'; e.currentTarget.style.color = '#3E5BFF'; e.currentTarget.style.borderColor = 'rgba(62,91,255,0.25)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8892b0'; e.currentTarget.style.borderColor = 'rgba(14,20,42,0.12)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ws-text-2)'; e.currentTarget.style.borderColor = 'var(--ws-glass-border)' }}
                 >
                   <Plus size={13} /> Novo item
                 </button>
@@ -240,9 +240,9 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
 
       <button
         onClick={adicionarColuna}
-        style={{ width: 200, flexShrink: 0, padding: '10px 16px', background: 'rgba(14,20,42,0.03)', border: '1px dashed rgba(14,20,42,0.12)', borderRadius: 12, fontSize: 12, color: '#8892b0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 150ms', whiteSpace: 'nowrap' as const }}
+        style={{ width: 200, flexShrink: 0, padding: '10px 16px', background: 'var(--ws-surface-2)', border: '1px dashed var(--ws-glass-border)', borderRadius: 12, fontSize: 12, color: 'var(--ws-text-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 150ms', whiteSpace: 'nowrap' as const }}
         onMouseEnter={e => { e.currentTarget.style.background = 'rgba(62,91,255,0.04)'; e.currentTarget.style.color = '#3E5BFF'; e.currentTarget.style.borderColor = 'rgba(62,91,255,0.25)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(14,20,42,0.03)'; e.currentTarget.style.color = '#8892b0'; e.currentTarget.style.borderColor = 'rgba(14,20,42,0.12)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'var(--ws-surface-2)'; e.currentTarget.style.color = 'var(--ws-text-2)'; e.currentTarget.style.borderColor = 'var(--ws-glass-border)' }}
       >
         <Plus size={14} /> Adicionar coluna
       </button>

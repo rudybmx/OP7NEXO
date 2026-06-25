@@ -51,8 +51,8 @@ export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: Coluna
         }}
         onBlur={confirmarRename}
         style={{
-          fontSize: 12, fontWeight: 600, color: '#0E142A',
-          background: 'rgba(255,255,255,0.80)', border: '1px solid rgba(62,91,255,0.40)',
+          fontSize: 12, fontWeight: 600, color: 'var(--ws-text-1)',
+          background: 'var(--ws-surface)', border: '1px solid rgba(62,91,255,0.40)',
           borderRadius: 6, padding: '2px 6px', outline: 'none', width: 130,
           fontFamily: 'inherit',
         }}
@@ -66,11 +66,11 @@ export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: Coluna
         onClick={() => setAberto(v => !v)}
         style={{
           background: 'none', border: 'none', cursor: 'pointer',
-          color: '#8892b0', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center',
+          color: 'var(--ws-text-2)', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center',
           transition: 'all 150ms',
         }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(14,20,42,0.08)'; e.currentTarget.style.color = '#0E142A' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#8892b0' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--ws-glass-bg)'; e.currentTarget.style.color = 'var(--ws-text-1)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--ws-text-2)' }}
       >
         <MoreHorizontal size={14} />
       </button>
@@ -78,7 +78,7 @@ export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: Coluna
       {aberto && (
         <div style={{
           position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 200,
-          background: 'rgba(255,255,255,0.95)',
+          background: 'var(--ws-surface)',
           border: '1px solid var(--ws-glass-border)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
@@ -100,13 +100,13 @@ export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: Coluna
               style={{
                 width: '100%', textAlign: 'left', padding: '8px 14px',
                 fontSize: 12, background: 'none', border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 8, color: '#0E142A',
+                display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ws-text-1)',
                 transition: 'background 100ms',
               }}
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(62,91,255,0.06)'}
               onMouseLeave={e => e.currentTarget.style.background = 'none'}
             >
-              <item.icon size={13} style={{ color: '#8892b0' }} />
+              <item.icon size={13} style={{ color: 'var(--ws-text-2)' }} />
               {item.label}
             </button>
           ))}

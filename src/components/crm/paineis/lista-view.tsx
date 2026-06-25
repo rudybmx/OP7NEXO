@@ -106,7 +106,7 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
       position: 'relative',
     }}>
       {/* Shine line */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)' }} />
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--ws-glass-border), transparent)' }} />
 
       {/* Cabeçalho da tabela */}
       <div style={{
@@ -118,7 +118,7 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
       }}>
         {reordenavel && <span />}
         {['Nome', 'Status', 'Responsável', 'Prioridade', 'Vencimento', ''].map(h => (
-          <span key={h} style={{ fontSize: 9, fontWeight: 600, color: '#8892b0', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+          <span key={h} style={{ fontSize: 9, fontWeight: 600, color: 'var(--ws-text-2)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
         ))}
       </div>
 
@@ -158,7 +158,7 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
                 onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
                 onMouseLeave={e => e.currentTarget.style.opacity = '0.3'}
               >
-                <GripVertical size={13} style={{ color: '#8892b0' }} />
+                <GripVertical size={13} style={{ color: 'var(--ws-text-2)' }} />
               </div>
             )}
 
@@ -167,9 +167,9 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
               onClick={() => onCardClick(card)}
               style={{ padding: '11px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
             >
-              <div style={{ width: 14, height: 14, border: '1.5px solid rgba(14,20,42,0.20)', borderRadius: 3, flexShrink: 0 }} />
+              <div style={{ width: 14, height: 14, border: '1.5px solid var(--ws-glass-border)', borderRadius: 3, flexShrink: 0 }} />
               <div>
-                <div style={{ fontSize: 13, fontWeight: 400, color: '#0E142A' }}>{card.titulo}</div>
+                <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--ws-text-1)' }}>{card.titulo}</div>
                 {(card.tags ?? []).length > 0 && (
                   <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
                     {card.tags!.slice(0, 2).map(tag => (
@@ -187,7 +187,7 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: coluna.cor }} />
                   {coluna.nome}
                 </span>
-              ) : <span style={{ fontSize: 11, color: '#8892b0' }}>—</span>}
+              ) : <span style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>—</span>}
             </div>
 
             {/* Responsável */}
@@ -197,9 +197,9 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
                   <div style={{ width: 20, height: 20, borderRadius: '50%', background: hashColor(card.responsavel), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 7, color: 'white', fontWeight: 700 }}>
                     {card.responsavelInitials}
                   </div>
-                  <span style={{ fontSize: 11, color: '#4a5580', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.responsavel.split(' ')[0]}</span>
+                  <span style={{ fontSize: 11, color: 'var(--ws-text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.responsavel.split(' ')[0]}</span>
                 </>
-              ) : <span style={{ fontSize: 11, color: '#8892b0' }}>—</span>}
+              ) : <span style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>—</span>}
             </div>
 
             {/* Prioridade */}
@@ -208,25 +208,25 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 9999, background: prio.bg, border: `1px solid ${prio.border}`, color: prio.cor }}>
                   <Flag size={9} /> {prio.label}
                 </span>
-              ) : <span style={{ fontSize: 11, color: '#8892b0' }}>—</span>}
+              ) : <span style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>—</span>}
             </div>
 
             {/* Vencimento */}
             <div onClick={() => onCardClick(card)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
               {card.dataVencimento ? (
                 <>
-                  <Calendar size={11} style={{ color: vencido ? '#FF5C8D' : '#8892b0' }} />
-                  <span style={{ fontSize: 11, color: vencido ? '#FF5C8D' : '#4a5580', fontWeight: vencido ? 600 : 400 }}>
+                  <Calendar size={11} style={{ color: vencido ? '#FF5C8D' : 'var(--ws-text-2)' }} />
+                  <span style={{ fontSize: 11, color: vencido ? '#FF5C8D' : 'var(--ws-text-2)', fontWeight: vencido ? 600 : 400 }}>
                     {formatarData(card.dataVencimento) /* FIXME: it should be formatarData(card.dataVencimento) */}
                   </span>
                 </>
-              ) : <span style={{ fontSize: 11, color: '#8892b0' }}>—</span>}
+              ) : <span style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>—</span>}
             </div>
 
             {/* Comentários */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
               {(card.comentarios ?? []).length > 0 && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, color: '#8892b0' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, color: 'var(--ws-text-2)' }}>
                   <MessageCircle size={10} />
                   {card.comentarios!.length}
                 </span>
@@ -240,7 +240,7 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
       {novoCardAtivo ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderTop: '1px solid var(--ws-divider)' }}>
           {reordenavel && <div style={{ width: 28 }} />}
-          <div style={{ width: 14, height: 14, border: '1.5px solid rgba(14,20,42,0.20)', borderRadius: 3, flexShrink: 0 }} />
+          <div style={{ width: 14, height: 14, border: '1.5px solid var(--ws-glass-border)', borderRadius: 3, flexShrink: 0 }} />
           <input
             autoFocus
             type="text"
@@ -249,7 +249,7 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
             onKeyDown={e => { if (e.key === 'Enter') adicionarCard(); if (e.key === 'Escape') { setNovoCardAtivo(false); setNovoTitulo('') } }}
             onBlur={adicionarCard}
             placeholder="Nome do card..."
-            style={{ flex: 1, fontSize: 13, color: '#0E142A', background: 'transparent', border: 'none', outline: 'none', fontFamily: 'inherit' }}
+            style={{ flex: 1, fontSize: 13, color: 'var(--ws-text-1)', background: 'transparent', border: 'none', outline: 'none', fontFamily: 'inherit' }}
           />
         </div>
       ) : (
@@ -259,10 +259,10 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
             width: '100%', textAlign: 'left', padding: '9px 16px',
             background: 'none', border: 'none', borderTop: '1px solid var(--ws-divider)',
             cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
-            fontSize: 12, color: '#8892b0', transition: 'all 150ms', fontFamily: 'inherit',
+            fontSize: 12, color: 'var(--ws-text-2)', transition: 'all 150ms', fontFamily: 'inherit',
           }}
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(62,91,255,0.02)'; e.currentTarget.style.color = '#3E5BFF' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#8892b0' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--ws-text-2)' }}
         >
           {reordenavel && <div style={{ width: 28 }} />}
           <Plus size={13} /> Novo item

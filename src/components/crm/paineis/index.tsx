@@ -114,7 +114,7 @@ export function PaineisCRM() {
           {seletorBoardAberto && (
             <div style={{
               position: 'absolute', top: '100%', left: 0, marginTop: 8, zIndex: 200,
-              background: 'rgba(255,255,255,0.95)', border: '1px solid var(--ws-glass-border)',
+              background: 'var(--ws-surface)', border: '1px solid var(--ws-glass-border)',
               backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
               borderRadius: 12, boxShadow: 'var(--ws-glass-shadow-lg)',
               minWidth: 240, overflow: 'hidden', padding: '6px 0',
@@ -127,7 +127,7 @@ export function PaineisCRM() {
                     width: '100%', textAlign: 'left', padding: '9px 14px',
                     background: 'none', border: 'none', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: 8,
-                    fontSize: 13, color: b.id === boardAtivoId ? '#3E5BFF' : '#0E142A',
+                    fontSize: 13, color: b.id === boardAtivoId ? '#3E5BFF' : 'var(--ws-text-1)',
                     fontWeight: b.id === boardAtivoId ? 500 : 400,
                   }}
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(62,91,255,0.06)'}
@@ -136,7 +136,7 @@ export function PaineisCRM() {
                   {b.id === boardAtivoId && <Check size={12} style={{ color: '#3E5BFF', flexShrink: 0 }} />}
                   {b.id !== boardAtivoId && <div style={{ width: 12 }} />}
                   {b.nome}
-                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#8892b0' }}>{b.cards.length}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ws-text-2)' }}>{b.cards.length}</span>
                 </button>
               ))}
               <div style={{ height: 1, background: 'var(--ws-divider)', margin: '4px 0' }} />
@@ -167,17 +167,17 @@ export function PaineisCRM() {
           </div>
 
           {/* Toggle group: modo modal + cadeado + visualização */}
-          <div style={{ display: 'inline-flex', background: 'rgba(14,20,42,0.05)', border: '1px solid rgba(14,20,42,0.08)', borderRadius: 10, padding: 3, gap: 2, alignItems: 'center' }}>
+          <div style={{ display: 'inline-flex', background: 'var(--ws-surface-2)', border: '1px solid var(--ws-glass-border)', borderRadius: 10, padding: 3, gap: 2, alignItems: 'center' }}>
             {/* Modo modal */}
             {([['lateral', Columns3, 'Abrir lateral'], ['central', Maximize2, 'Abrir central']] as const).map(([modo, Icon, title]) => (
               <button key={modo} onClick={() => setModoModal(modo)} title={title}
-                style={{ padding: '4px 8px', borderRadius: 7, border: 'none', cursor: 'pointer', background: modoModal === modo ? 'rgba(255,255,255,0.85)' : 'transparent', color: modoModal === modo ? '#3E5BFF' : 'var(--ws-text-3)', transition: 'all 150ms', display: 'flex', alignItems: 'center', boxShadow: modoModal === modo ? '0 2px 8px rgba(14,20,42,0.10)' : 'none' }}>
+                style={{ padding: '4px 8px', borderRadius: 7, border: 'none', cursor: 'pointer', background: modoModal === modo ? 'var(--ws-surface)' : 'transparent', color: modoModal === modo ? '#3E5BFF' : 'var(--ws-text-3)', transition: 'all 150ms', display: 'flex', alignItems: 'center', boxShadow: modoModal === modo ? '0 2px 8px rgba(14,20,42,0.10)' : 'none' }}>
                 <Icon size={13} />
               </button>
             ))}
 
             {/* Separador */}
-            <div style={{ width: 1, height: 18, background: 'rgba(14,20,42,0.10)', margin: '0 2px' }} />
+            <div style={{ width: 1, height: 18, background: 'var(--ws-divider)', margin: '0 2px' }} />
 
             {/* Cadeado de reordenação */}
             <button
@@ -195,12 +195,12 @@ export function PaineisCRM() {
             </button>
 
             {/* Separador */}
-            <div style={{ width: 1, height: 18, background: 'rgba(14,20,42,0.10)', margin: '0 2px' }} />
+            <div style={{ width: 1, height: 18, background: 'var(--ws-divider)', margin: '0 2px' }} />
 
             {/* Visualização */}
             {([['kanban', LayoutGrid, 'Kanban'], ['lista', List, 'Lista']] as const).map(([view, Icon, label]) => (
               <button key={view} onClick={() => setVisualizacao(view)}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, background: visualizacao === view ? 'rgba(255,255,255,0.85)' : 'transparent', color: visualizacao === view ? '#3E5BFF' : 'var(--ws-text-3)', fontWeight: visualizacao === view ? 500 : 400, transition: 'all 150ms', boxShadow: visualizacao === view ? '0 2px 8px rgba(14,20,42,0.10)' : 'none' }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, background: visualizacao === view ? 'var(--ws-surface)' : 'transparent', color: visualizacao === view ? '#3E5BFF' : 'var(--ws-text-3)', fontWeight: visualizacao === view ? 500 : 400, transition: 'all 150ms', boxShadow: visualizacao === view ? '0 2px 8px rgba(14,20,42,0.10)' : 'none' }}>
                 <Icon size={13} /> {label}
               </button>
             ))}
@@ -231,7 +231,7 @@ export function PaineisCRM() {
           )
         })}
         {reordenavel && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'rgba(239,159,39,0.08)', border: '1px solid rgba(239,159,39,0.25)', borderRadius: 8, fontSize: 11, color: '#854f0b', fontWeight: 500 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'rgba(239,159,39,0.08)', border: '1px solid rgba(239,159,39,0.25)', borderRadius: 8, fontSize: 11, color: 'var(--ws-text-1)', fontWeight: 500 }}>
             <Unlock size={11} /> Modo reordenação ativo — arraste cards e colunas
           </div>
         )}

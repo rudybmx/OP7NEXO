@@ -44,8 +44,8 @@ export function KanbanCardComp({ card, reordenavel, onClick }: KanbanCardProps) 
       onClick={onClick}
       draggable
       style={{
-        background: 'rgba(255,255,255,0.80)',
-        border: '1px solid rgba(255,255,255,0.50)',
+        background: 'var(--ws-surface)',
+        border: '1px solid var(--ws-glass-border)',
         borderRadius: 10,
         padding: '10px 12px',
         cursor: 'pointer',
@@ -58,13 +58,13 @@ export function KanbanCardComp({ card, reordenavel, onClick }: KanbanCardProps) 
         setHovered(true)
         e.currentTarget.style.transform = 'translateY(-1px)'
         e.currentTarget.style.boxShadow = '0 6px 20px rgba(14,20,42,0.12), 0 2px 6px rgba(14,20,42,0.08)'
-        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.70)'
+        e.currentTarget.style.borderColor = 'var(--ws-glass-border)'
       }}
       onMouseLeave={e => {
         setHovered(false)
         e.currentTarget.style.transform = 'translateY(0)'
         e.currentTarget.style.boxShadow = '0 2px 8px rgba(14,20,42,0.08), 0 1px 3px rgba(14,20,42,0.05)'
-        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.50)'
+        e.currentTarget.style.borderColor = 'var(--ws-glass-border)'
       }}
     >
       {reordenavel && (
@@ -73,7 +73,7 @@ export function KanbanCardComp({ card, reordenavel, onClick }: KanbanCardProps) 
           style={{
             position: 'absolute', top: 8, right: 8,
             opacity: hovered && reordenavel ? 0.6 : 0, transition: 'opacity 150ms',
-            color: '#8892b0', cursor: 'grab',
+            color: 'var(--ws-text-2)', cursor: 'grab',
             display: 'flex', alignItems: 'center',
           }}
         >
@@ -99,7 +99,7 @@ export function KanbanCardComp({ card, reordenavel, onClick }: KanbanCardProps) 
       )}
 
       {/* Título */}
-      <div style={{ fontSize: 13, fontWeight: 500, color: '#0E142A', lineHeight: 1.4, marginBottom: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ws-text-1)', lineHeight: 1.4, marginBottom: 8 }}>
         {card.titulo}
       </div>
 
@@ -121,7 +121,7 @@ export function KanbanCardComp({ card, reordenavel, onClick }: KanbanCardProps) 
           {card.dataVencimento && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 3,
-              fontSize: 10, color: vencido ? '#FF5C8D' : '#8892b0', fontWeight: vencido ? 600 : 400,
+              fontSize: 10, color: vencido ? '#FF5C8D' : 'var(--ws-text-2)', fontWeight: vencido ? 600 : 400,
             }}>
               <Calendar size={10} />
               {formatarDataCurta(card.dataVencimento)}
@@ -130,7 +130,7 @@ export function KanbanCardComp({ card, reordenavel, onClick }: KanbanCardProps) 
 
           {/* Comentários */}
           {(card.comentarios ?? []).length > 0 && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#8892b0' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--ws-text-2)' }}>
               <MessageCircle size={10} />
               {card.comentarios!.length}
             </span>
