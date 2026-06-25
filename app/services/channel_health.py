@@ -145,6 +145,29 @@ def _enviar_alerta(db: Session, due: list[dict]) -> bool:
         return False
 
 
+def _enviar_admin_whatsapp(db: Session, texto: str) -> bool:
+    """Envia um texto avulso ao admin (HEALTH_ALERT_TO) pelo canal remetente. Best-effort.
+    Reusa o remetente/anti-leak do alerta de queda; usado p/ aviso de reconexão."""
+    to = _digits(getattr(settings, "HEALTH_ALERT_TO", "") or "")
+    from_canal = (getattr(settings, "HEALTH_ALERT_FROM_CANAL", "") or "").strip()
+    if not to or not from_canal:
+        return False
+    sender = db.execute(
+        text("""SELECT id, tipo, connection_status, config, evolution_instance_id
+                FROM public.canais_entrada WHERE id = CAST(:i AS uuid)"""),
+        {"i": from_canal},
+    ).mappings().first()
+    if not sender or sender["connection_status"] != "connected":
+        logger.error("[health] remetente WhatsApp indisponível p/ reconexão: %s", from_canal)
+        return False
+    try:
+        _send_text(dict(sender), to, texto)
+        return True
+    except Exception as exc:  # noqa: BLE001 — falha de envio não derruba o job
+        logger.error("[health] falha ao enviar WhatsApp de reconexão: %s", exc)
+        return False
+
+
 def run_channel_health_check(db: Session) -> dict[str, int]:
     """Reconcilia + detecta canais caídos + alerta (anti-spam Redis). Idempotente por ciclo."""
     canais = [dict(c) for c in db.execute(text(
@@ -163,15 +186,39 @@ def run_channel_health_check(db: Session) -> dict[str, int]:
 
     down = [c for c in canais if _is_down(c)]
 
-    # Recuperados (connected) limpam a marca → próxima queda re-alerta na hora
+    # Recuperados (connected): limpam a marca. Se ESTAVAM marcados como caídos
+    # (`delete` retorna 1 — atômico, sem race get+delete), geram notificação de reconexão.
+    reconectados: list[dict] = []
     if r is not None:
         for c in canais:
             if c.get("connection_status") == "connected":
                 try:
                     r.delete(_REDIS_KEY.format(cid=c["id"]))
-                    r.delete(_REDIS_NOTIF_KEY.format(cid=c["id"]))
+                    reconectou = bool(r.delete(_REDIS_NOTIF_KEY.format(cid=c["id"])))
                 except Exception:  # noqa: BLE001
-                    pass
+                    reconectou = False
+                if reconectou:
+                    reconectados.append(c)
+                    criar_notificacao(
+                        db,
+                        c["workspace_id"],
+                        "canal_online",
+                        titulo=f"Canal reconectado: {c.get('nome') or 'WhatsApp'}",
+                        mensagem=f"O canal {c.get('nome') or c['id']} voltou a ficar online.",
+                        severidade="info",
+                        link="/administracao/canais-omnichannel",
+                        entidade=("canal", c["id"]),
+                        dedupe_key=f"canal_online:{c['id']}",
+                        payload={"tipo": c.get("tipo")},
+                    )
+
+    # Reconexão também avisa o admin por WhatsApp (se HEALTH_ALERT configurado). Best-effort.
+    if reconectados:
+        _enviar_admin_whatsapp(
+            db,
+            "✅ OP7NEXO — %d canal(is) reconectado(s):\n%s"
+            % (len(reconectados), "\n".join(f"• {c.get('nome') or c['id']}" for c in reconectados)),
+        )
 
     # Notificação in-app por canal caído — anti-spam próprio (TTL 12h por canal),
     # desacoplado do alerta WhatsApp (que pode estar desabilitado). Dedupe extra no DB.

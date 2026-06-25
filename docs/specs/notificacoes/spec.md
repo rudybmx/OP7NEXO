@@ -49,7 +49,19 @@ por WhatsApp admin, desabilitado por padrão) e "mensagem nova" só existia como
 - Ao vivo (pós-deploy): canal `disconnected` → 1 notificação (não duplica em 12h); msg nova →
   1 por conversa; abrir conversa marca lida; sino e página renderizam em light/dark.
 
-## Realtime / escalabilidade (v2)
-Polling no v1; o service já publica em Redis (`notifications:events`) para um SSE futuro. `tipo`
-genérico + `payload` JSONB ⇒ novos tipos sem migration. Diferido: ativar/desativar por tipo na
-UI, canais de entrega (email/WhatsApp/push), "canal reconectado".
+## v2 (implementada — sem migration nova)
+- **Realtime (SSE)**: front consome `/api/notificacoes/stream` (route handler que assina o Redis
+  `notifications:events` via `notificacoes-realtime.ts`, espelho do whatsapp-realtime). O evento é
+  PURO sinal de refresh → o hook re-busca pelos endpoints autenticados (audiência + leitura por
+  usuário); polling vira fallback lento. EventSource re-conecta ao trocar de workspace.
+- **Canal reconectado** (`canal_online`): no `channel_health`, quando `redis.delete` da marca de
+  offline retorna 1 (estava caído, atômico) → cria `canal_online` (info, audiência admin) + envia
+  WhatsApp de reconexão. Tipo adicionado a TIPOS_CONHECIDOS/DEFAULT_AUDIENCIA/label.
+- **Ativar/desativar por tipo**: switch "Ativo" na página (config `ativo`). Guard: `ativo=true` +
+  audiência vazia cai para a default do tipo (nunca `[]`, que significaria "todos veem").
+- **Entrega WhatsApp (global, admin OP7)**: reusa `_enviar_alerta` (queda, já existia) +
+  `_enviar_admin_whatsapp` (reconexão); fica NO `channel_health` (nunca em `criar_notificacao`,
+  que roda no caminho quente de inbound). Liga via env `HEALTH_ALERT_TO` + `HEALTH_ALERT_FROM_CANAL`.
+
+## Diferido (v3)
+E-mail/push (SMTP + Web Push), entrega WhatsApp por workspace (destino/canal por cliente).

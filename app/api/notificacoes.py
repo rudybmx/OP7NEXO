@@ -14,7 +14,7 @@ router = APIRouter(prefix="/notificacoes", tags=["notificacoes"])
 
 _ROLES_ADMIN = {RoleUsuario.platform_admin, RoleUsuario.network_admin, RoleUsuario.company_admin}
 _ROLES_VALIDOS = {r.value for r in RoleUsuario}
-_TIPO_LABEL = {"canal_offline": "Canal caiu", "mensagem_nova": "Mensagem nova"}
+_TIPO_LABEL = {"canal_offline": "Canal caiu", "canal_online": "Canal reconectado", "mensagem_nova": "Mensagem nova"}
 
 
 def _resolver_ws(workspace_id, workspace_filter) -> uuid.UUID:
@@ -118,6 +118,10 @@ def atualizar_config(
     if tipo not in svc.TIPOS_CONHECIDOS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de notificação desconhecido")
     papeis = [p for p in data.audiencia_papeis if p in _ROLES_VALIDOS]
+    # Guard: audiência [] significa "todos" no filtro de leitura. Com o tipo ATIVO,
+    # salvar [] exporia a notificação a todo mundo — cai para a audiência default do tipo.
+    if data.ativo and not papeis:
+        papeis = list(svc.DEFAULT_AUDIENCIA.get(tipo, []))
     import json
     db.execute(
         text(

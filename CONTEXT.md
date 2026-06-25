@@ -481,6 +481,10 @@ usuário, broadcast sem fan-out) + `notificacao_config` (audiência por workspac
   **roda no worker**); `whatsapp_crm_persistence.py` inbound → `mensagem_nova` (agregada por
   conversa). Realtime: polling no front + publish Redis `notifications:events`.
 - Spec: `docs/specs/notificacoes/`. Deploy: precisa de `deploy.sh worker` (gatilho de canal).
+- **v2 (sem migration)**: `canal_online` (reconexão; `redis.delete`==1 atômico) no channel_health +
+  `_enviar_admin_whatsapp` (aviso WhatsApp de reconexão; queda já era `_enviar_alerta`). Toggle
+  `ativo` por tipo no PUT /config com guard (ativo+audiência vazia → default, nunca `[]`). Entrega
+  WhatsApp = global (env `HEALTH_ALERT_TO`/`FROM_CANAL`), só no channel_health (nunca em criar_notificacao).
 
 ---
 

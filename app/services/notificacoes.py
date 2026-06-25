@@ -24,11 +24,12 @@ logger = logging.getLogger(__name__)
 # Sobrescrevível por workspace via tabela `notificacao_config`.
 DEFAULT_AUDIENCIA: dict[str, list[str]] = {
     "canal_offline": ["platform_admin", "company_admin"],
+    "canal_online": ["platform_admin", "company_admin"],
     "mensagem_nova": ["company_agent"],
 }
 
 # Tipos conhecidos (para a tela de configuração de audiência).
-TIPOS_CONHECIDOS: list[str] = ["canal_offline", "mensagem_nova"]
+TIPOS_CONHECIDOS: list[str] = ["canal_offline", "canal_online", "mensagem_nova"]
 
 
 # ─────────────────────────────── escrita ────────────────────────────────────
