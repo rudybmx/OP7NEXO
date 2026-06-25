@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   startOfWeek,
   endOfWeek,
@@ -183,7 +183,11 @@ export default function AgendaPage() {
   const router = useRouter()
 
   // ─── Estado de view e navegação temporal ───────────────────────────────────
-  const [view, setView] = useState<CalendarioView>('semana')
+  // View inicial derivada da sub-rota (/agendamentos → lista; /calendario|demais → semana).
+  // Cada sub-rota remonta a página (segmentos distintos), então o initializer re-roda.
+  const pathname = usePathname()
+  const viewInicial: CalendarioView = pathname?.endsWith('/agendamentos') ? 'lista' : 'semana'
+  const [view, setView] = useState<CalendarioView>(viewInicial)
   const [dataReferencia, setDataReferencia] = useState(new Date())
   const [buscaCliente, setBuscaCliente] = useState('')
   const [filtroStatus, setFiltroStatus] = useState<AgendamentoStatus[]>([])
