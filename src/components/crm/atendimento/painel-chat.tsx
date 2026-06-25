@@ -399,6 +399,26 @@ function quotedPreview(msg: MensagemApi): string {
   return quotedTypeLabel(msg.quotedMessageType)
 }
 
+// P2: ao clicar numa citação, rola até a mensagem original (casa data-wamid com o
+// wa-id citado) e dá um destaque breve. No-op se a original não está na página.
+function scrollToQuoted(wamid: string | null | undefined) {
+  if (!wamid || typeof document === 'undefined') return
+  let el: HTMLElement | null = null
+  try {
+    el = document.querySelector(`[data-wamid="${CSS.escape(wamid)}"]`)
+  } catch {
+    el = null
+  }
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.style.outline = '2px solid #c9a84c'
+  el.style.outlineOffset = '3px'
+  window.setTimeout(() => {
+    el!.style.outline = ''
+    el!.style.outlineOffset = ''
+  }, 1600)
+}
+
 // Autor da citação: nome (quando resolvido) ou número do JID citado
 function quotedAuthorLabel(msg: MensagemApi): string {
   if (msg.quotedAuthor) return msg.quotedAuthor
@@ -914,6 +934,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                 return (
                   <div
                     key={msg.id}
+                    data-wamid={msg.evolutionMsgId || undefined}
                     style={{
                       alignSelf: isEntrada ? 'flex-start' : 'flex-end',
                       maxWidth: isMobile ? '85%' : '70%',
@@ -949,13 +970,20 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                       minWidth: 120,
                     }}>
                       {(msg.quotedText || msg.quotedMessageId) && (
-                        <div style={{
+                        <div
+                          role={msg.quotedMessageId ? 'button' : undefined}
+                          tabIndex={msg.quotedMessageId ? 0 : undefined}
+                          title={msg.quotedMessageId ? 'Ir para a mensagem citada' : undefined}
+                          onClick={msg.quotedMessageId ? () => scrollToQuoted(msg.quotedMessageId) : undefined}
+                          onKeyDown={msg.quotedMessageId ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); scrollToQuoted(msg.quotedMessageId) } } : undefined}
+                          style={{
                           borderLeft: '3px solid #c9a84c',
                           background: isEntrada ? 'var(--ws-glass-bg)' : 'rgba(255,255,255,0.14)',
                           borderRadius: 6,
                           padding: '4px 8px',
                           marginBottom: 6,
                           fontSize: 12,
+                          cursor: msg.quotedMessageId ? 'pointer' : 'default',
                         }}>
                           <div style={{ fontWeight: 600, color: '#c9a84c', fontSize: 11, marginBottom: 2 }}>
                             {quotedAuthorLabel(msg)}

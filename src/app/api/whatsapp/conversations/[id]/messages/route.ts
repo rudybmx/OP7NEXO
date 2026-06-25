@@ -32,6 +32,7 @@ interface BackendMensagemRow {
   is_mentioned?: boolean | null
   mentioned_jids?: string[] | null
   mentioned_names?: Record<string, string> | null
+  evolution_msg_id?: string | null
   quoted_message_id?: string | null
   quoted_remote_jid?: string | null
   quoted_message_type?: string | null
@@ -87,6 +88,7 @@ interface MensagemRespostaRow {
   isMentioned: boolean
   mentionedJids: string[]
   mentionedNames: Record<string, string>
+  evolutionMsgId: string | null
   quotedText: string | null
   quotedAuthor: string | null
   quotedRemoteJid: string | null
@@ -186,6 +188,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         isMentioned: row.is_mentioned || false,
         mentionedJids: row.mentioned_jids || [],
         mentionedNames: row.mentioned_names || {},
+        evolutionMsgId: row.evolution_msg_id ?? null,
         quotedText: row.quoted_text ?? null,
         quotedAuthor: null,
         quotedRemoteJid: row.quoted_remote_jid ?? null,

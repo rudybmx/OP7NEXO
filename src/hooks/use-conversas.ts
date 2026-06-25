@@ -52,6 +52,7 @@ export interface MensagemApi {
   participantJid?: string | null
   participantName?: string | null
   isMentioned?: boolean
+  evolutionMsgId?: string | null  // wa-id da própria msg (alvo do scroll ao clicar numa citação)
   mentionedJids?: string[]
   mentionedNames?: Record<string, string>  // { "<dígitos do @lid/número>": "<nome do contato>" }
   quotedText?: string | null

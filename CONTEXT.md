@@ -217,6 +217,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-26) — CRM Atendimento: clicar na citação rola até a mensagem original (P2)
+- A prévia de citação na bolha (`painel-chat.tsx`) ficou **clicável**: ao clicar, rola até a mensagem original e dá um destaque breve (outline dourado ~1.6s). Casa o `quotedMessageId` (wa-id da msg citada) com o **`evolutionMsgId`** da própria mensagem, exposto agora no proxy `messages/route.ts` (`evolution_msg_id` → `evolutionMsgId`) e gravado como `data-wamid` na bolha; helper `scrollToQuoted` faz `querySelector([data-wamid])` + `scrollIntoView`. No-op se a original não está na janela carregada. **Front-only** (o backend já servia `evolution_msg_id` + `quoted_*`). Próximo: P3 (responder/quoted reply via provider).
+
 ### ✅ Implementado (2026-06-26) — CRM Atendimento: menção em grupo mostra NOME (não `@<LID>`)
 - Em grupos, menções apareciam como `@187385212055639` (o **LID** do WhatsApp). Agora o proxy `app/api/whatsapp/conversations/[id]/messages/route.ts` resolve cada `@<dígitos>` → nome do contato: 1 query batch workspace-scoped em `crm_whatsapp_contatos` (a maioria dos contatos guarda `jid = <LID>@lid`; também tenta `@s.whatsapp.net`), `COALESCE(nome, push_name)`. Expõe `mentionedNames: {"<dígitos>": "<nome>"}` por mensagem. **Fail-safe**: erro de DB → mapa vazio → mantém `@<número>` (comportamento antigo). `renderConteudoComMencoes` (`painel-chat.tsx`) troca `@<dígitos>` por `@Nome` (dourado), fallback ao número. ~57% dos LIDs têm nome cadastrado; o resto fica no número.
 
