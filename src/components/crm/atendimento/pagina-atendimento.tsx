@@ -74,7 +74,7 @@ export function PaginaAtendimento() {
         responsavelId: filtrosV2.responsavelId || undefined,
       }
     : null
-  const { conversas, isLoading, error, refetch } = useConversas(
+  const { conversas, isLoading, error, refetch, marcarLidaLocal } = useConversas(
     filtroAtivo === 'todas' ? undefined : filtroAtivo,
     undefined,
     workspaceAtual ?? undefined,
@@ -218,15 +218,16 @@ export function PaginaAtendimento() {
     }
     const conversa = conversas.find(c => c.id === id)
     setConversaAtivaId(id)
-    // Marcar como lida ao abrir (fire and forget)
-    if (conversa && conversa.naoLidas > 0) {
+    // Marcar como lida ao abrir — some na hora (otimista) e limpa no servidor
+    if (conversa && (conversa.naoLidas > 0 || conversa.marcadaNaoLida)) {
+      marcarLidaLocal(id)
       marcarLido(id)
     }
     // Mantido atrás de flag local para reativação futura.
     if (AI_HANDOFF_ENABLED && conversa && !conversa.responsavelId && conversa.status === 'nova') {
       setMostrarModalAssumir(true)
     }
-  }, [conversas, conversaEfemeraId, marcarLido])
+  }, [conversas, conversaEfemeraId, marcarLido, marcarLidaLocal])
 
   const handleAbandonarEfemera = useCallback(() => {
     if (!conversaEfemeraId) return

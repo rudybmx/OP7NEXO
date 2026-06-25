@@ -21,7 +21,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Sem acesso' }, { status: 403 })
     }
 
-    await db`UPDATE public.crm_whatsapp_conversas SET nao_lidas = 0, updated_at = NOW() WHERE id = ${id}::uuid`
+    await db`UPDATE public.crm_whatsapp_conversas SET nao_lidas = 0, marcada_nao_lida = false, updated_at = NOW() WHERE id = ${id}::uuid`
     return NextResponse.json({ ok: true })
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Erro' }, { status: 500 })

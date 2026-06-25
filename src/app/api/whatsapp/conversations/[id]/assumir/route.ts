@@ -46,6 +46,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
     }
 
+    // Teto (Fase 1): atendente não "rouba" conversa de outro humano (só própria/sem-dono/IA).
+    if (
+      access.user.role === 'company_agent' &&
+      conversa.responsavel_id &&
+      conversa.responsavel_id !== access.user.id
+    ) {
+      return NextResponse.json({ error: 'Sem permissao para esta conversa' }, { status: 403 })
+    }
+
     // Verifica se usuario tem acesso a equipe da conversa (se houver)
     if (conversa.equipe_id && access.user.role !== 'platform_admin') {
       const membro = await db`
@@ -74,6 +83,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       SET
         responsavel_id = ${access.user.id}::uuid,
         status = 'em_atendimento',
+        ai_ativo = false,
         historico_transferencias = historico_transferencias || ${historicoEntry}::jsonb,
         updated_at = NOW()
       WHERE id = ${id}::uuid

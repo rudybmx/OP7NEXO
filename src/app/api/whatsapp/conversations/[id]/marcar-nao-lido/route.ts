@@ -15,16 +15,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const { id } = await context.params
     const db = getSql()
 
-    const rows = await db`SELECT id, workspace_id, nao_lidas FROM public.crm_whatsapp_conversas WHERE id = ${id}::uuid`
+    const rows = await db`SELECT id, workspace_id FROM public.crm_whatsapp_conversas WHERE id = ${id}::uuid`
     if (rows.length === 0) return NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 })
     if (!access.allowedWorkspaceIds.has(rows[0].workspace_id)) {
       return NextResponse.json({ error: 'Sem acesso' }, { status: 403 })
     }
 
-    const naoLidasAtual = rows[0].nao_lidas ?? 0
-    if (naoLidasAtual === 0) {
-      await db`UPDATE public.crm_whatsapp_conversas SET nao_lidas = 1, updated_at = NOW() WHERE id = ${id}::uuid`
-    }
+    // Marcação manual "não lida" (independente do contador nao_lidas de mensagens reais)
+    await db`UPDATE public.crm_whatsapp_conversas SET marcada_nao_lida = true, updated_at = NOW() WHERE id = ${id}::uuid`
     return NextResponse.json({ ok: true })
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Erro' }, { status: 500 })

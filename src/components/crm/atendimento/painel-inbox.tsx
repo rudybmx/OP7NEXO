@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check } from 'lucide-react'
+import { Search, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check, AlertTriangle } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import type { AgenteApi } from '@/hooks/use-agentes-disponiveis'
@@ -14,6 +14,15 @@ import { getCanalBadgeLabel, getCanalProviderLabel } from '@/lib/whatsapp-canal'
 import { formatarTelefoneBR } from '@/lib/formatar'
 import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { useBuscarContatoPorNumero } from '@/hooks/use-buscar-contato'
+
+const AGENTE_HANDOFF_LABEL: Record<string, string> = {
+  limite_tokens: 'limite de tokens',
+  baixa_confianca: 'baixa confiança',
+  erro_llm: 'erro ao gerar',
+  fora_horario: 'fora do horário',
+  config: 'config inválida',
+  envio_falhou: 'falha no envio',
+}
 
 interface PainelInboxProps {
   conversas: ConversaApi[]
@@ -987,9 +996,9 @@ export function PainelInbox({
                     alignItems: 'center',
                     gap: 6,
                     minWidth: 0,
-                    color: conversa.naoLidas > 0 ? 'var(--ws-text-1)' : 'var(--ws-text-3)',
+                    color: (conversa.naoLidas > 0 || conversa.marcadaNaoLida) ? 'var(--ws-text-1)' : 'var(--ws-text-3)',
                     fontSize: 12,
-                    fontWeight: conversa.naoLidas > 0 ? 600 : 400,
+                    fontWeight: (conversa.naoLidas > 0 || conversa.marcadaNaoLida) ? 600 : 400,
                   }}>
                     {conversa.badges?.mentioned && <AtSign size={11} style={{ flexShrink: 0, color: '#c9a84c' }} />}
                     {conversa.badges?.hasMedia && <Paperclip size={11} style={{ flexShrink: 0 }} />}
@@ -1004,6 +1013,39 @@ export function PainelInbox({
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                    {/* Marcada manualmente como não lida */}
+                    {conversa.marcadaNaoLida && (
+                      <span style={{
+                        ...chipBaseStyle,
+                        background: 'rgba(255, 43, 61, 0.16)',
+                        color: '#ff2b3d',
+                        border: '1px solid rgba(255, 43, 61, 0.55)',
+                        fontWeight: 700,
+                        letterSpacing: 0.3,
+                        boxShadow: '0 0 8px rgba(255, 43, 61, 0.55)',
+                      }}>
+                        Não lido
+                      </span>
+                    )}
+                    {/* Agente IA escalou (handoff) — atendente precisa assumir */}
+                    {conversa.aiEscalado && (
+                      <span
+                        title="O agente IA não respondeu (escalou para humano) — assuma a conversa."
+                        style={{
+                          ...chipBaseStyle,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          background: 'rgba(133, 79, 11, 0.12)',
+                          color: '#854f0b',
+                          border: '1px solid rgba(133, 79, 11, 0.30)',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <AlertTriangle size={11} style={{ flexShrink: 0 }} />
+                        Agente: {AGENTE_HANDOFF_LABEL[conversa.aiHandoffMotivo ?? ''] ?? 'escalou'}
+                      </span>
+                    )}
                     {/* Canal: channelLabel se disponível, senão providerLabel */}
                     <span
                       title={channelLabel || providerLabel}
