@@ -42,6 +42,7 @@ export interface AgenteDetalhe extends AgenteListItem {
   alerta_threshold_pct: number
   mensagem_abertura: string | null
   objetivo: string | null
+  tempo_followup_min: number | null
   horarios: (HorarioItem & { id: string })[]
   habilidades: unknown[]
   prompt_draft: string | null
@@ -66,6 +67,7 @@ export interface AgenteInput {
   alerta_threshold_pct?: number
   mensagem_abertura?: string | null
   objetivo?: string | null
+  tempo_followup_min?: number | null
   canais?: string[]
   horarios?: HorarioItem[]
   prompt?: string | null
