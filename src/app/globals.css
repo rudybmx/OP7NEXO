@@ -136,7 +136,7 @@
   --bg: #f5f5f5;
   --bg2: #ffffff;
   --text: #3d3d3d;
-  --text2: #9b9a97;
+  --text2: #636e7d;  /* muted-foreground — WCAG AA: 5.2:1 sobre #fff, 4.75:1 sobre bg #f5f5f5 (era #9b9a97, 2.8:1, reprovava) */
   --border: #e9e9e7;
   --border2: #e2e1de;
   --gold: #006EFF;            /* PRIMARY (azul brand). Nome legado --gold mantido p/ compat; renomear na Fase 2. */
@@ -191,12 +191,12 @@
   --bg: #000533;
   --bg2: #00214d;
   --text: #f5f5f5;
-  --text2: #6b6b6b;
+  --text2: #94a3b8;  /* muted-foreground — clareado p/ WCAG AA sobre navy (era #6b6b6b, ~3:1, reprovava) */
   --border: #2d2d2d;
   --border2: #2a2a2a;
   --background: var(--bg);
   --foreground: var(--text);
-  --card: #00214d;
+  --card: #0d2e5a;  /* clareado p/ separar do bg #000533 no dark (era #00214d, contraste sutil). --bg2 fica #00214d → secondary/muted intactos */
   --card-border: rgba(255,255,255,0.08);
   --card-foreground: var(--ws-text-1);
   --popover: var(--bg);

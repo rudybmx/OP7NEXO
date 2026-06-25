@@ -26,9 +26,9 @@ Use **sempre** as classes utilitárias do Tailwind (`bg-primary`, `text-foregrou
 | Token / classe | Light | Dark | Uso |
 |---|---|---|---|
 | `bg-background` | `#f5f5f5` | `#000533` | fundo da página |
-| `bg-card` / `bg-popover` | `#ffffff` | `#00214d` | cards, modais, dropdowns (flat) |
+| `bg-card` / `bg-popover` | `#ffffff` | `#0d2e5a` | cards, modais, dropdowns (flat) |
 | `text-foreground` | `#3d3d3d` | `#f5f5f5` | texto principal |
-| `text-muted-foreground` | `#9b9a97` | `#6b6b6b` | labels, metadados (hierarquia mais fraca) |
+| `text-muted-foreground` | `#636e7d` | `#94a3b8` | labels, metadados (hierarquia mais fraca) — passa WCAG AA |
 | `bg-primary` / `text-primary` / `ring` | `#006EFF` | `#006EFF` | ação principal, links, foco |
 | `text-primary-foreground` | `#ffffff` | `#ffffff` | texto sobre `bg-primary` |
 | `bg-destructive` | `#c80010` | `#c80010` | ações destrutivas, erro |
@@ -38,7 +38,7 @@ Use **sempre** as classes utilitárias do Tailwind (`bg-primary`, `text-foregrou
 
 **Cor primária = azul `#006EFF` sólido.** O laranja/vermelho da marca são **acento** (gradiente secundário), não a primária.
 
-> ⚠️ **A confirmar com a marca:** os neutros derivados (`muted`, `secondary`, `accent`, `input` e o conjunto **dark** completo) ainda são propostas. As 7 cores de marca acima são definitivas; o resto é ajustável.
+> ⚠️ **Neutros — estado real.** `card`, `muted-foreground`, `border` (`#e9e9e7`/`#2d2d2d`), `input` (`#e2e1de`/`#2a2a2a`) já estão definidos (acima/no código). Mas **`secondary`, `accent` e `muted` ainda resolvem para a camada legada `--ws-*`/HeroUI** — `bg-accent` = `#005691` (teal) no light / `#282828` no dark; `bg-muted` = `#9ca3af`. São **redefinidos na Fase 2** (re-skin, com revisão visual), quando essa camada e o 2º `@theme inline` saírem. As 7 cores de marca são definitivas.
 
 ### 1.3 Gradientes de marca — onde usar
 
