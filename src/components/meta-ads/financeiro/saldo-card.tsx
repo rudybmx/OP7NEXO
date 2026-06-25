@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, CreditCard, Info, Wallet } from 'lucide-react'
-import { SiMastercard, SiPix, SiVisa } from 'react-icons/si'
+import { AlertTriangle, CreditCard, Info, Wallet, QrCode } from 'lucide-react'
 import { MiniGauge } from '@/components/ui/mini-gauge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { FinanceiroConta, FinanceiroMetaAds, FinanceiroResumo } from '@/types/meta-ads-financeiro'
@@ -67,13 +66,13 @@ function fundingIcon(conta?: FinanceiroConta | null) {
     .toUpperCase()
 
   if (brand.includes('VISA') || texto.includes('VISA')) {
-    return <SiVisa size={28} style={{ color: 'var(--ws-blue)' }} />
+    return <CreditCard size={28} style={{ color: 'var(--ws-blue)' }} />
   }
   if (brand.includes('MASTER') || texto.includes('MASTER')) {
-    return <SiMastercard size={28} style={{ color: 'var(--ws-text-2)' }} />
+    return <CreditCard size={28} style={{ color: 'var(--ws-text-2)' }} />
   }
   if (conta?.isPrepayAccount || texto.includes('PIX') || texto.includes('PRE')) {
-    return <SiPix size={20} style={{ color: 'var(--ws-green)' }} />
+    return <QrCode size={20} style={{ color: 'var(--ws-green)' }} />
   }
   return <CreditCard size={18} style={{ color: 'var(--ws-text-3)' }} />
 }

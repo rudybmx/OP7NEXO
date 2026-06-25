@@ -1,15 +1,7 @@
 'use client'
 
 import React from 'react'
-import { 
-  FaFacebook, 
-  FaGoogle, 
-  FaLinkedin, 
-  FaTiktok, 
-  FaWhatsapp, 
-  FaGlobe 
-} from 'react-icons/fa'
-import { Smartphone, Eye, TrendingUp, TrendingDown, Target } from 'lucide-react'
+import { Smartphone, Eye, TrendingUp, TrendingDown, Target, Globe, Search, Briefcase, Music, MessageCircle } from 'lucide-react'
 import { CampanhaMetrics } from '@/types/campanhas'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
@@ -22,14 +14,14 @@ interface CampanhasTabelaProps {
 export function CampanhasTabela({ campanhas, onVerLeads }: CampanhasTabelaProps) {
   const getPlatIcon = (plat: string) => {
     const icons: Record<string, any> = {
-      meta: FaFacebook,
-      google: FaGoogle,
-      linkedin: FaLinkedin,
-      tiktok: FaTiktok,
-      whatsapp: FaWhatsapp,
+      meta: Globe,
+      google: Search,
+      linkedin: Briefcase,
+      tiktok: Music,
+      whatsapp: MessageCircle,
       offline: Smartphone,
     }
-    const Icon = icons[plat.toLowerCase()] || FaGlobe
+    const Icon = icons[plat.toLowerCase()] || Globe
     const colors: Record<string, string> = {
       meta: '#1877F2',
       google: '#4285F4',

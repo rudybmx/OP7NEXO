@@ -13,9 +13,12 @@ import {
   CheckCircle2,
   XCircle,
   HelpCircle,
-  Smartphone
+  Smartphone,
+  Globe,
+  Briefcase,
+  Music,
+  MessageCircle
 } from 'lucide-react'
-import { FaWhatsapp, FaFacebook, FaGoogle, FaLinkedin, FaTiktok } from 'react-icons/fa'
 import { FollowupLead, LeadStatusFollowup, LeadStatusFechamento } from '@/types/followup'
 import { CampanhaMetrics } from '@/types/campanhas'
 import { formatDistanceToNow, parseISO } from 'date-fns'
@@ -54,13 +57,13 @@ export function CampanhasPainelLeads({ isOpen, onClose, campanha, leads }: Campa
 
   const getPlatIcon = (plat: string) => {
     const icons: Record<string, any> = {
-      meta: FaFacebook,
-      google: FaGoogle,
-      linkedin: FaLinkedin,
-      tiktok: FaTiktok,
-      whatsapp: FaWhatsapp,
+      meta: Globe,
+      google: Search,
+      linkedin: Briefcase,
+      tiktok: Music,
+      whatsapp: MessageCircle,
     }
-    const Icon = icons[plat.toLowerCase()] || FaFacebook
+    const Icon = icons[plat.toLowerCase()] || Globe
     return <Icon size={16} />
   }
 

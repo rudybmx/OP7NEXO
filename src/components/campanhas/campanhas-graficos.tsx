@@ -11,7 +11,6 @@ import {
   ResponsiveContainer, 
   Cell 
 } from 'recharts'
-import { FaFacebook, FaGoogle, FaLinkedin, FaTiktok, FaWhatsapp, FaGlobe } from 'react-icons/fa'
 import { Smartphone } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────────────────────

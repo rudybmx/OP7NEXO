@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useMemo } from 'react'
-import { 
+import {
   Plus,
   Filter,
   Search,
@@ -9,9 +9,11 @@ import {
   Clock,
   ChevronRight,
   Smartphone,
-  Globe
+  Globe,
+  MessageCircle,
+  Briefcase,
+  Music
 } from 'lucide-react'
-import { FaWhatsapp, FaGoogle, FaLinkedin, FaTiktok, FaFacebook } from 'react-icons/fa'
 import { useFollowup } from '@/hooks/use-followup'
 import { FollowupLead, FiltrosFollowup, LeadOrigem } from '@/types/followup'
 import { Button } from '@/components/ui/button'
@@ -36,11 +38,11 @@ import { ptBR } from 'date-fns/locale'
 
 const OrigemIcon = ({ origem, size = 12 }: { origem: LeadOrigem, size?: number }) => {
   const configs: Record<LeadOrigem, { icon: any, color: string }> = {
-    meta_ads: { icon: FaFacebook, color: '#1877F2' },
-    google_ads: { icon: FaGoogle, color: '#4285F4' },
-    whatsapp: { icon: FaWhatsapp, color: '#25d366' },
-    linkedin_ads: { icon: FaLinkedin, color: '#0A66C2' },
-    tiktok_ads: { icon: FaTiktok, color: '#000000' },
+    meta_ads: { icon: Globe, color: '#1877F2' },
+    google_ads: { icon: Search, color: '#4285F4' },
+    whatsapp: { icon: MessageCircle, color: '#25d366' },
+    linkedin_ads: { icon: Briefcase, color: '#0A66C2' },
+    tiktok_ads: { icon: Music, color: '#000000' },
     offline: { icon: Smartphone, color: '#64748b' },
     organico: { icon: Globe, color: '#3E5BFF' },
     indicacao: { icon: Globe, color: '#7A5AF8' },
@@ -517,7 +519,7 @@ export default function FollowupPage() {
                 boxShadow: '0 4px 16px rgba(62,91,255,0.2)'
               }}
             >
-              <FaWhatsapp />
+              <MessageCircle size={16} />
               Abrir no WhatsApp
             </Button>
           </div>

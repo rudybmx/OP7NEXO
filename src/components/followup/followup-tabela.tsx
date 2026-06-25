@@ -11,15 +11,11 @@ import {
   Clock, 
   ChevronRight,
   ChevronLeft,
-  MoreHorizontal
+  MoreHorizontal,
+  Search,
+  Briefcase,
+  Music
 } from 'lucide-react'
-import { 
-  FaFacebook, 
-  FaGoogle, 
-  FaLinkedin, 
-  FaTiktok, 
-  FaWhatsapp 
-} from 'react-icons/fa'
 import { 
   formatDistanceToNow, 
   isToday, 
@@ -182,11 +178,11 @@ const StatusBadge = ({ status }: { status: LeadStatusFollowup }) => {
 
 const OrigemBadge = ({ origem }: { origem: LeadOrigem }) => {
   const configs: Record<LeadOrigem, { icon: any, color: string, label: string }> = {
-    meta_ads: { icon: FaFacebook, color: '#1877F2', label: 'Meta Ads' },
-    google_ads: { icon: FaGoogle, color: '#4285F4', label: 'Google Ads' },
-    linkedin_ads: { icon: FaLinkedin, color: '#0A66C2', label: 'Linkedin' },
-    tiktok_ads: { icon: FaTiktok, color: '#000000', label: 'TikTok' },
-    whatsapp: { icon: FaWhatsapp, color: '#25d366', label: 'WhatsApp' },
+    meta_ads: { icon: Globe, color: '#1877F2', label: 'Meta Ads' },
+    google_ads: { icon: Search, color: '#4285F4', label: 'Google Ads' },
+    linkedin_ads: { icon: Briefcase, color: '#0A66C2', label: 'Linkedin' },
+    tiktok_ads: { icon: Music, color: '#000000', label: 'TikTok' },
+    whatsapp: { icon: MessageCircle, color: '#25d366', label: 'WhatsApp' },
     offline: { icon: MapPin, color: '#64748b', label: 'Presencial' },
     organico: { icon: Globe, color: '#3E5BFF', label: 'Orgânico' },
     indicacao: { icon: Users, color: '#7A5AF8', label: 'Indicação' },

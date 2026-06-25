@@ -1,8 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { X, Save, Calendar, Info, Globe, Smartphone, Megaphone } from 'lucide-react'
-import { FaFacebook, FaGoogle, FaLinkedin, FaTiktok, FaWhatsapp } from 'react-icons/fa'
+import { X, Save, Calendar, Info, Globe, Smartphone, Megaphone, Search, Briefcase, Music, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -37,11 +36,11 @@ export function CampanhasModalCadastro({ isOpen, onClose, onSave }: CampanhasMod
   if (!isOpen) return null
 
   const plataformas = [
-    { id: 'meta', label: 'Meta (FB/IG)', icon: FaFacebook, color: '#1877F2' },
-    { id: 'google', label: 'Google Ads', icon: FaGoogle, color: '#4285F4' },
-    { id: 'linkedin', label: 'LinkedIn', icon: FaLinkedin, color: '#0A66C2' },
-    { id: 'tiktok', label: 'TikTok', icon: FaTiktok, color: '#000000' },
-    { id: 'whatsapp', label: 'WhatsApp', icon: FaWhatsapp, color: '#25D366' },
+    { id: 'meta', label: 'Meta (FB/IG)', icon: Globe, color: '#1877F2' },
+    { id: 'google', label: 'Google Ads', icon: Search, color: '#4285F4' },
+    { id: 'linkedin', label: 'LinkedIn', icon: Briefcase, color: '#0A66C2' },
+    { id: 'tiktok', label: 'TikTok', icon: Music, color: '#000000' },
+    { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, color: '#25D366' },
     { id: 'offline', label: 'Offline', icon: Smartphone, color: '#64748b' }
   ]
 
