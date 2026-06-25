@@ -163,6 +163,7 @@ def _montar_system(
     diretrizes_ws: str | None = None,
     ajustes_few_shot: str | None = None,
     contato_nome: str | None = None,
+    resumo_conversa: str | None = None,
 ) -> str:
     partes = [prompt.strip() or "Você é um assistente de atendimento prestativo e objetivo."]
     if diretrizes_ws and diretrizes_ws.strip():
@@ -173,6 +174,13 @@ def _montar_system(
             f"DADOS DO CONTATO:\n- Nome: {contato_nome.strip()} (use com parcimônia — sobretudo na "
             "saudação e na confirmação; não repita a cada mensagem). O telefone já está registrado no "
             "sistema; não peça."
+        )
+    if resumo_conversa and resumo_conversa.strip():
+        partes.append(
+            "CONTEXTO DESTA CONVERSA (resumo do que já aconteceu com este cliente, gerado "
+            "automaticamente — use como referência para dar continuidade e NÃO repetir perguntas já "
+            "respondidas; as mensagens recentes abaixo são a fonte autoritativa):\n"
+            + resumo_conversa.strip()
         )
     if agente.tom:
         partes.append(f"Tom de voz: {agente.tom}.")
@@ -226,6 +234,7 @@ def gerar_resposta(
     mensagem: str,
     historico: list | None = None,
     contato_nome: str | None = None,
+    resumo_conversa: str | None = None,
 ) -> dict:
     """Gera a resposta do agente para uma mensagem. NÃO grava nada, NÃO envia.
 
@@ -246,7 +255,7 @@ def gerar_resposta(
         agente,
         _montar_system(
             agente, prompt, rag_chunks, diretrizes_ws=diretrizes, ajustes_few_shot=ajustes,
-            contato_nome=contato_nome,
+            contato_nome=contato_nome, resumo_conversa=resumo_conversa,
         ),
         _montar_user(mensagem, historico),
     )
@@ -916,6 +925,17 @@ def processar_reply(db: Session, payload: dict) -> None:
         if _ct is not None:
             contato_nome = (_ct.nome or _ct.push_name or "").strip() or None
 
+    # "memória longa" da conversa: resumo/interesse da análise (Fase 1, job conversa_analise) já
+    # gravados em resumo_ia/contexto_ia. Cobre o que sai da janela de 12 msgs e dá continuidade quando
+    # o cliente volta dias depois. Ausente/~1 ciclo atrasado em conversa nova → degrada p/ None.
+    resumo_conversa = None
+    _resumo = (getattr(conversa, "resumo_ia", None) or "").strip()
+    _ctx = getattr(conversa, "contexto_ia", None)
+    _interesse = (_ctx.get("interesse") or "").strip() if isinstance(_ctx, dict) else ""
+    _partes_resumo = [p for p in (_resumo, f"Interesse do cliente: {_interesse}" if _interesse else "") if p]
+    if _partes_resumo:
+        resumo_conversa = " · ".join(_partes_resumo)
+
     if not dentro_do_horario(agente):
         _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="fora_horario")
         return
@@ -939,7 +959,9 @@ def processar_reply(db: Session, payload: dict) -> None:
     _set_digitando(conversa, canal, ativo=True, wamid=wamid)
 
     try:
-        res = gerar_resposta(db, agente, ultima_msg, historico, contato_nome=contato_nome)
+        res = gerar_resposta(
+            db, agente, ultima_msg, historico, contato_nome=contato_nome, resumo_conversa=resumo_conversa
+        )
     except llm_client_service.LLMConfigError as exc:
         log.warning("[agente] config LLM inválida agente=%s: %s", agente.id, exc)
         _handoff(db, conversa, agente, canal_id=canal_id, score=None, tokens=(0, 0), motivo="config", canal=canal)
