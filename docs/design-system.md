@@ -26,7 +26,8 @@ Use **sempre** as classes utilitárias do Tailwind (`bg-primary`, `text-foregrou
 | Token / classe | Light | Dark | Uso |
 |---|---|---|---|
 | `bg-background` | `#f5f5f5` | `#000533` | fundo da página |
-| `bg-card` / `bg-popover` | `#ffffff` | `#0d2e5a` | cards, modais, dropdowns (flat) |
+| `bg-card` | `#ffffff` | `#0d2e5a` | cards, superfícies flat |
+| `bg-popover` | `#f5f5f5` | `#000533` | dropdowns/selects/popovers — ⚠️ ligado a `--bg` (sem elevação vs. fundo); alinhar a `--card` na Fase 2 |
 | `text-foreground` | `#3d3d3d` | `#f5f5f5` | texto principal |
 | `text-muted-foreground` | `#636e7d` | `#94a3b8` | labels, metadados (hierarquia mais fraca) — passa WCAG AA |
 | `bg-primary` / `text-primary` / `ring` | `#006EFF` | `#006EFF` | ação principal, links, foco |
