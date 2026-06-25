@@ -1,23 +1,22 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { toast } from 'sonner'
 import {
   isWithinInterval,
   parseISO,
-  startOfDay,
-  endOfDay,
   startOfWeek,
   endOfWeek,
   isSameDay,
 } from 'date-fns'
+import api from '@/lib/api-client'
+import { useWorkspace } from '@/lib/workspace-context'
 import {
   Agendamento,
   AgendamentoStatus,
   AgendamentoOrigem,
   FiltrosAgendamento,
 } from '@/types/agenda'
-import { MOCK_AGENDAMENTOS } from '@/lib/mock-agenda'
 
 // ─── Tipos de entrada ─────────────────────────────────────────────────────────
 export interface CriarAgendamentoInput {
@@ -31,6 +30,9 @@ export interface CriarAgendamentoInput {
   observacoes?: string
   origem: AgendamentoOrigem
   criado_por?: string
+  // Exceção terceiro (agendamento para outra pessoa que não o dono do telefone)
+  para_terceiro?: boolean
+  agendado_por_telefone?: string
 }
 
 export interface EditarAgendamentoInput extends Partial<CriarAgendamentoInput> {}
@@ -45,65 +47,79 @@ export const FILTROS_PADRAO: FiltrosAgendamento = {
   busca: '',
 }
 
+// Campos que o PATCH /agenda/agendamentos/{id} aceita (edição parcial)
+const CAMPOS_EDITAVEIS = ['cliente_nome', 'cliente_email', 'data_hora_inicio', 'data_hora_fim', 'servico', 'observacoes'] as const
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 export function useAgendamentos() {
-  const [todos, setTodos] = useState<Agendamento[]>(MOCK_AGENDAMENTOS)
+  const { workspaceAtual } = useWorkspace()
+  const [todos, setTodos] = useState<Agendamento[]>([])
   const [filtros, setFiltros] = useState<FiltrosAgendamento>(FILTROS_PADRAO)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // ─── Aplicar filtros reativamente ────────────────────────────────────────────
+  // ─── Carga do backend (fetch condicional — não busca sem workspace resolvido) ──
+  const refetch = useCallback(async () => {
+    if (!workspaceAtual) {
+      setTodos([])
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({ workspace_id: workspaceAtual, limit: '2000' })
+      const data = await api.get<Agendamento[]>(`/agenda/agendamentos?${params.toString()}`)
+      setTodos(data)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao carregar agendamentos.'
+      setError(msg)
+    } finally {
+      setLoading(false)
+    }
+  }, [workspaceAtual])
+
+  useEffect(() => {
+    void refetch()
+  }, [refetch])
+
+  // ─── Aplicar filtros reativamente (client-side sobre `todos`) ──────────────────
   const agendamentos = useMemo(() => {
     let resultado = [...todos]
 
     if (filtros.agenda_ids.length > 0) {
       resultado = resultado.filter((a) => filtros.agenda_ids.includes(a.agenda_id))
     }
-
     if (filtros.status.length > 0) {
       resultado = resultado.filter((a) => filtros.status.includes(a.status))
     }
-
     if (filtros.origem.length > 0) {
       resultado = resultado.filter((a) => filtros.origem.includes(a.origem))
     }
-
     if (filtros.data_inicio) {
       const inicio = parseISO(filtros.data_inicio)
-      resultado = resultado.filter(
-        (a) => parseISO(a.data_hora_inicio) >= inicio
-      )
+      resultado = resultado.filter((a) => parseISO(a.data_hora_inicio) >= inicio)
     }
-
     if (filtros.data_fim) {
       const fim = parseISO(filtros.data_fim)
-      resultado = resultado.filter(
-        (a) => parseISO(a.data_hora_inicio) <= fim
-      )
+      resultado = resultado.filter((a) => parseISO(a.data_hora_inicio) <= fim)
     }
-
     if (filtros.busca.trim()) {
       const q = filtros.busca.toLowerCase()
       resultado = resultado.filter(
         (a) =>
           a.cliente_nome.toLowerCase().includes(q) ||
-          a.cliente_telefone.includes(q) ||
+          (a.cliente_telefone ?? '').includes(q) ||
           (a.servico ?? '').toLowerCase().includes(q)
       )
     }
 
-    // Ordenar por data/hora crescente
     return resultado.sort(
       (a, b) =>
         new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime()
     )
   }, [todos, filtros])
 
-  // ─── Getters derivados ────────────────────────────────────────────────────────
-  /**
-   * Retorna agendamentos de um dia específico.
-   * TODO: Substituir por: GET /agendamentos?data_hora_inicio=gte.{dia}T00:00&data_hora_inicio=lt.{dia+1}T00:00
-   */
+  // ─── Getters derivados (em memória sobre `todos`) ──────────────────────────────
   const getAgendamentosDoDia = useCallback(
     (data: string, agenda_id?: string): Agendamento[] => {
       const dia = parseISO(data)
@@ -116,10 +132,6 @@ export function useAgendamentos() {
     [todos]
   )
 
-  /**
-   * Retorna agendamentos de uma semana, filtrados por agenda_ids.
-   * TODO: Substituir por: GET /agendamentos?data_hora_inicio=gte.{inicio}&data_hora_inicio=lte.{fim}&agenda_id=in.({ids})
-   */
   const getAgendamentosDaSemana = useCallback(
     (inicio: string, fim: string, agenda_ids: string[] = []): Agendamento[] => {
       const start = parseISO(inicio)
@@ -137,9 +149,7 @@ export function useAgendamentos() {
   // ─── KPIs utilitários ─────────────────────────────────────────────────────────
   const getKpisHoje = useCallback(() => {
     const hoje = new Date()
-    const dodiaHoje = todos.filter((a) =>
-      isSameDay(parseISO(a.data_hora_inicio), hoje)
-    )
+    const dodiaHoje = todos.filter((a) => isSameDay(parseISO(a.data_hora_inicio), hoje))
     const confirmados = dodiaHoje.filter((a) =>
       ['confirmado', 'compareceu', 'em_atendimento'].includes(a.status)
     ).length
@@ -170,32 +180,25 @@ export function useAgendamentos() {
     }
   }, [todos])
 
-  // ─── Mutações ─────────────────────────────────────────────────────────────────
-  /**
-   * Cria um novo agendamento.
-   * TODO: Substituir por: POST /agendamentos (PostgREST)
-   */
+  // ─── Mutações (API real) ───────────────────────────────────────────────────────
   const criarAgendamento = useCallback(
     async (input: CriarAgendamentoInput): Promise<Agendamento | null> => {
+      if (!workspaceAtual) {
+        toast.error('Selecione um workspace antes de agendar.')
+        return null
+      }
       setLoading(true)
       setError(null)
       try {
-        await new Promise((r) => setTimeout(r, 400))
-
-        const novo: Agendamento = {
-          id: `ag-${Date.now()}`,
+        const novo = await api.post<Agendamento>('/agenda/agendamentos', {
+          workspace_id: workspaceAtual,
           ...input,
-          status: 'agendado',
-          nps_enviado: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }
-
+        })
         setTodos((prev) => [...prev, novo])
         toast.success(`Agendamento criado para ${input.cliente_nome}!`)
         return novo
       } catch (err) {
-        const msg = 'Erro ao criar agendamento.'
+        const msg = err instanceof Error ? err.message : 'Erro ao criar agendamento.'
         setError(msg)
         toast.error(msg)
         return null
@@ -203,33 +206,24 @@ export function useAgendamentos() {
         setLoading(false)
       }
     },
-    []
+    [workspaceAtual]
   )
 
-  /**
-   * Edita um agendamento existente.
-   * TODO: Substituir por: PATCH /agendamentos?id=eq.{id} (PostgREST)
-   */
   const editarAgendamento = useCallback(
     async (id: string, input: EditarAgendamentoInput): Promise<Agendamento | null> => {
       setLoading(true)
       setError(null)
       try {
-        await new Promise((r) => setTimeout(r, 400))
-
-        let updated: Agendamento | null = null
-        setTodos((prev) =>
-          prev.map((a) => {
-            if (a.id !== id) return a
-            updated = { ...a, ...input, updated_at: new Date().toISOString() }
-            return updated
-          })
-        )
-
-        if (updated) toast.success('Agendamento atualizado!')
+        const patch: Record<string, unknown> = {}
+        for (const campo of CAMPOS_EDITAVEIS) {
+          if (input[campo] !== undefined) patch[campo] = input[campo]
+        }
+        const updated = await api.patch<Agendamento>(`/agenda/agendamentos/${id}`, patch)
+        setTodos((prev) => prev.map((a) => (a.id === id ? updated : a)))
+        toast.success('Agendamento atualizado!')
         return updated
       } catch (err) {
-        const msg = 'Erro ao editar agendamento.'
+        const msg = err instanceof Error ? err.message : 'Erro ao editar agendamento.'
         setError(msg)
         toast.error(msg)
         return null
@@ -240,10 +234,6 @@ export function useAgendamentos() {
     []
   )
 
-  /**
-   * Atualiza apenas o status de um agendamento.
-   * TODO: Substituir por: PATCH /agendamentos?id=eq.{id} com body { status }
-   */
   const atualizarStatus = useCallback(
     async (
       id: string,
@@ -257,22 +247,11 @@ export function useAgendamentos() {
       setLoading(true)
       setError(null)
       try {
-        await new Promise((r) => setTimeout(r, 300))
-
-        setTodos((prev) =>
-          prev.map((a) => {
-            if (a.id !== id) return a
-            return {
-              ...a,
-              status,
-              ...extras,
-              cancelado_em:
-                status === 'cancelado' ? new Date().toISOString() : a.cancelado_em,
-              updated_at: new Date().toISOString(),
-            }
-          })
-        )
-
+        const updated = await api.patch<Agendamento>(`/agenda/agendamentos/${id}/status`, {
+          status,
+          ...extras,
+        })
+        setTodos((prev) => prev.map((a) => (a.id === id ? updated : a)))
         const MSG: Partial<Record<AgendamentoStatus, string>> = {
           confirmado: 'Agendamento confirmado!',
           compareceu: 'Marcado como compareceu ✓',
@@ -283,7 +262,7 @@ export function useAgendamentos() {
         toast.success(MSG[status] ?? 'Status atualizado.')
         return true
       } catch (err) {
-        const msg = 'Erro ao atualizar status.'
+        const msg = err instanceof Error ? err.message : 'Erro ao atualizar status.'
         setError(msg)
         toast.error(msg)
         return false
@@ -294,13 +273,12 @@ export function useAgendamentos() {
     []
   )
 
-  /**
-   * Remove (soft delete) um agendamento.
-   * TODO: Substituir por: PATCH /agendamentos?id=eq.{id} com body { status: 'cancelado' }
-   */
-  const deletarAgendamento = useCallback(async (id: string): Promise<boolean> => {
-    return atualizarStatus(id, 'cancelado')
-  }, [atualizarStatus])
+  const deletarAgendamento = useCallback(
+    async (id: string): Promise<boolean> => {
+      return atualizarStatus(id, 'cancelado')
+    },
+    [atualizarStatus]
+  )
 
   return {
     agendamentos,
@@ -318,5 +296,7 @@ export function useAgendamentos() {
     editarAgendamento,
     atualizarStatus,
     deletarAgendamento,
+    // extra (não quebra consumidores existentes)
+    refetch,
   }
 }

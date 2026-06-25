@@ -116,6 +116,19 @@ export const secoesNavegacao: SecaoNavegacao[] = [
         ],
       },
       {
+        nome: "Agenda",
+        secao: "CRM",
+        chaveIcone: "Calendar",
+        abertoPadrao: false,
+        itens: [
+          { nome: "Visão Geral",   rota: "/crm/agenda" },
+          { nome: "Calendário",    rota: "/crm/agenda/calendario" },
+          { nome: "Agendamentos",  rota: "/crm/agenda/agendamentos" },
+          { nome: "Agendas",       rota: "/crm/agenda/agendas" },
+          { nome: "Opções Gerais", rota: "/crm/agenda/opcoes-gerais" },
+        ],
+      },
+      {
         nome: "Campanhas",
         secao: "CRM",
         chaveIcone: "Send",
@@ -132,7 +145,6 @@ export const secoesNavegacao: SecaoNavegacao[] = [
         abertoPadrao: false,
         itens: [
           { nome: "Painéis",               rota: "/crm/paineis" },
-          { nome: "Agenda",                 rota: "/crm/agenda" },
           { nome: "NPS",                    rota: "/crm/nps" },
           { nome: "Follow-up / Resgate",    rota: "/crm/followup" },
           { nome: "Follow-up / Resgate 2",  rota: "/crm/followup-2" },
