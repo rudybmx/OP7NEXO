@@ -96,6 +96,9 @@ def fetch_candidates(db: Session, ws: str | None, canal: str | None) -> list[dic
         "cv.remote_jid NOT LIKE '%@broadcast'",
         "cv.remote_jid NOT LIKE '%@newsletter'",
         "COALESCE(cv.remote_jid, '') <> ''",
+        # Só JIDs telefônicos: @s.whatsapp.net OU bare puramente numérico (10-13 díg).
+        # Exclui UUID (canais webhook/Helena/IG), @c.us e quaisquer ids externos.
+        "(cv.remote_jid LIKE '%@s.whatsapp.net' OR cv.remote_jid ~ '^[0-9]{10,13}$')",
     ]
     params: dict[str, Any] = {}
     if ws:
@@ -122,14 +125,6 @@ def build_groups(rows: list[dict]) -> dict[tuple, list[dict]]:
         canon = _canonical_br_jid(r["remote_jid"])
         groups[(str(r["workspace_id"]), str(r["canal_id"]), canon)].append(r)
     return groups
-
-
-def _pick_canonical_contato(members: list[dict], canon_jid: str, survivor: dict) -> Any:
-    """Contato canônico: o membro cujo contato já tem o jid canônico; senão o da sobrevivente."""
-    for m in members:
-        if m.get("contato_jid") == canon_jid and m["contato_id"]:
-            return m["contato_id"]
-    return survivor["contato_id"]
 
 
 def _canonicalize_contato_jid(db: Session, *, contato_id: Any, ws: str, canon_jid: str) -> None:
@@ -161,7 +156,8 @@ def _retire_orphan_contato(db: Session, *, orphan_id: Any, canon_contato: Any) -
         UPDATE public.crm_whatsapp_contatos canon
         SET nome = CASE
                        WHEN NULLIF(BTRIM(canon.nome), '') IS NULL OR canon.nome = canon.jid
-                            OR canon.nome LIKE '%@%'
+                            OR canon.nome LIKE '%@%' OR canon.nome ~ '^[0-9]+$'
+                            OR canon.nome = split_part(canon.jid, '@', 1)
                        THEN COALESCE(NULLIF(BTRIM(orph.nome), ''), canon.nome)
                        ELSE canon.nome END,
             telefone = COALESCE(NULLIF(canon.telefone, ''), orph.telefone),
@@ -186,7 +182,10 @@ def process_merge_group(db: Session, members: list[dict], canon_jid: str, contat
     losers = ordered[1:]
     canonical_id = survivor["id"]
     old_ids = [m["id"] for m in losers]
-    canon_contato = _pick_canonical_contato(members, canon_jid, survivor)
+    # Contato canônico = o da conversa SOBREVIVENTE (mais recente = quase sempre o
+    # enriquecido, nome real). NÃO o que casa o jid canônico — em prod a 12-díg viva tem o
+    # nome real e a 13-díg stale tem nome=número (ver bug do caso Rudy).
+    canon_contato = survivor["contato_id"]
     group_conv_ids = [m["id"] for m in members]
     old_contatos = list({m["contato_id"] for m in losers if m["contato_id"] and m["contato_id"] != canon_contato})
 
@@ -286,7 +285,8 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("Candidatas: %d conversas | tabelas c/ contato_id: %s", len(rows), ", ".join(contato_tables))
 
         merge_groups = {k: v for k, v in groups.items() if len(v) > 1}
-        backfills = [v[0] for k, v in groups.items() if len(v) == 1 and v[0]["remote_jid"] != k[2]]
+        backfills = [v[0] for k, v in groups.items()
+                     if len(v) == 1 and "@" not in v[0]["remote_jid"] and v[0]["remote_jid"] != k[2]]
         logger.info("=== %d grupos a mesclar | %d conversas a backfill (bare->canônico) ===",
                     len(merge_groups), len(backfills))
         logger.info("Modo: %s\n", "APPLY (transação atômica)" if args.apply else "DRY-RUN (read-only)")

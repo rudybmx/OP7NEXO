@@ -708,8 +708,8 @@ def _canonical_br_jid(jid: str) -> str:
         return f"{digits[:4]}9{digits[4:]}@s.whatsapp.net"
     if len(digits) == 13 and digits.startswith("55") and digits[4] == "9":
         return f"{digits}@s.whatsapp.net"
-    if "@" not in jid and digits:
-        return f"{digits}@s.whatsapp.net"
+    if "@" not in jid and jid.isdigit() and 10 <= len(jid) <= 13:
+        return f"{jid}@s.whatsapp.net"
     return jid
 
 
