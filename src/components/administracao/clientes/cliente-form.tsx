@@ -2,7 +2,8 @@
 
 import React from 'react'
 import { ArrowLeft, Check, Loader2 } from 'lucide-react'
-import { Button, Input, Tabs } from '@heroui/react'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { MODULOS, formatCNPJ, useClienteForm } from '@/hooks/use-cliente-form'
 
@@ -83,22 +84,20 @@ export function ClienteForm({ clienteId }: { clienteId?: string }) {
         </div>
       </div>
 
-      <Tabs.Root defaultSelectedKey="cadastro" variant="secondary">
-        <Tabs.ListContainer>
-          <Tabs.List aria-label="Seções do cadastro">
-            <Tabs.Tab id="cadastro">Cadastro</Tabs.Tab>
-            <Tabs.Tab id="modulos">Módulos</Tabs.Tab>
-            <Tabs.Tab id="integracoes">Integrações</Tabs.Tab>
-          </Tabs.List>
-        </Tabs.ListContainer>
+      <Tabs defaultValue="cadastro">
+        <TabsList aria-label="Seções do cadastro">
+          <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
+          <TabsTrigger value="modulos">Módulos</TabsTrigger>
+          <TabsTrigger value="integracoes">Integrações</TabsTrigger>
+        </TabsList>
 
         {/* ===== Aba Cadastro ===== */}
-        <Tabs.Panel id="cadastro" style={{ paddingTop: 24 }}>
+        <TabsContent value="cadastro" style={{ paddingTop: 24 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {/* Nome */}
             <div>
               <label style={labelStyle}>Nome<Req /></label>
-              <Input
+              <input
                 value={form.nome}
                 onChange={e => setForm(p => ({ ...p, nome: e.target.value }))}
                 placeholder="Nome comercial do cliente"
@@ -110,7 +109,7 @@ export function ClienteForm({ clienteId }: { clienteId?: string }) {
             <div>
               <label style={labelStyle}>CNPJ<Req /></label>
               <div style={{ position: 'relative' }}>
-                <Input
+                <input
                   value={form.cnpj}
                   onChange={e => setForm(p => ({ ...p, cnpj: formatCNPJ(e.target.value) }))}
                   onBlur={e => buscarCNPJ(e.target.value)}
@@ -131,7 +130,7 @@ export function ClienteForm({ clienteId }: { clienteId?: string }) {
             {/* Razão Social */}
             <div>
               <label style={labelStyle}>Razão Social</label>
-              <Input
+              <input
                 value={form.razao_social}
                 onChange={e => setForm(p => ({ ...p, razao_social: e.target.value }))}
                 placeholder="Preenchida automaticamente via CNPJ"
@@ -146,35 +145,35 @@ export function ClienteForm({ clienteId }: { clienteId?: string }) {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 12 }}>
                   <div>
                     <label style={labelStyle}>Logradouro</label>
-                    <Input value={form.endereco.logradouro} onChange={e => setEndereco('logradouro', e.target.value)} style={inputStyle} />
+                    <input value={form.endereco.logradouro} onChange={e => setEndereco('logradouro', e.target.value)} style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>Nº</label>
-                    <Input value={form.endereco.numero} onChange={e => setEndereco('numero', e.target.value)} style={inputStyle} />
+                    <input value={form.endereco.numero} onChange={e => setEndereco('numero', e.target.value)} style={inputStyle} />
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
                     <label style={labelStyle}>Complemento</label>
-                    <Input value={form.endereco.complemento} onChange={e => setEndereco('complemento', e.target.value)} style={inputStyle} />
+                    <input value={form.endereco.complemento} onChange={e => setEndereco('complemento', e.target.value)} style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>Bairro</label>
-                    <Input value={form.endereco.bairro} onChange={e => setEndereco('bairro', e.target.value)} style={inputStyle} />
+                    <input value={form.endereco.bairro} onChange={e => setEndereco('bairro', e.target.value)} style={inputStyle} />
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 140px', gap: 12 }}>
                   <div>
                     <label style={labelStyle}>Cidade</label>
-                    <Input value={form.endereco.municipio} onChange={e => setEndereco('municipio', e.target.value)} style={inputStyle} />
+                    <input value={form.endereco.municipio} onChange={e => setEndereco('municipio', e.target.value)} style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>UF</label>
-                    <Input value={form.endereco.uf} onChange={e => setEndereco('uf', e.target.value.toUpperCase().slice(0, 2))} maxLength={2} style={inputStyle} />
+                    <input value={form.endereco.uf} onChange={e => setEndereco('uf', e.target.value.toUpperCase().slice(0, 2))} maxLength={2} style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>CEP</label>
-                    <Input value={form.endereco.cep} onChange={e => setEndereco('cep', e.target.value)} style={inputStyle} />
+                    <input value={form.endereco.cep} onChange={e => setEndereco('cep', e.target.value)} style={inputStyle} />
                   </div>
                 </div>
               </div>
@@ -186,7 +185,7 @@ export function ClienteForm({ clienteId }: { clienteId?: string }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
                   <label style={labelStyle}>Telefone principal<Req /></label>
-                  <Input
+                  <input
                     value={form.telefone_principal}
                     onChange={e => setForm(p => ({ ...p, telefone_principal: e.target.value }))}
                     placeholder="(00) 00000-0000"
@@ -195,7 +194,7 @@ export function ClienteForm({ clienteId }: { clienteId?: string }) {
                 </div>
                 <div>
                   <label style={labelStyle}>Telefone do responsável</label>
-                  <Input
+                  <input
                     value={form.telefone_responsavel}
                     onChange={e => setForm(p => ({ ...p, telefone_responsavel: e.target.value }))}
                     placeholder="(00) 00000-0000"
@@ -211,10 +210,10 @@ export function ClienteForm({ clienteId }: { clienteId?: string }) {
               <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--ws-text-1)' }}>Cliente ativo</span>
             </div>
           </div>
-        </Tabs.Panel>
+        </TabsContent>
 
         {/* ===== Aba Módulos ===== */}
-        <Tabs.Panel id="modulos" style={{ paddingTop: 24 }}>
+        <TabsContent value="modulos" style={{ paddingTop: 24 }}>
           <p style={hintStyle}>Selecione os módulos disponíveis para este cliente.</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
             {MODULOS.map(m => {
@@ -247,10 +246,10 @@ export function ClienteForm({ clienteId }: { clienteId?: string }) {
               )
             })}
           </div>
-        </Tabs.Panel>
+        </TabsContent>
 
         {/* ===== Aba Integrações (placeholder) ===== */}
-        <Tabs.Panel id="integracoes" style={{ paddingTop: 24 }}>
+        <TabsContent value="integracoes" style={{ paddingTop: 24 }}>
           <div style={{
             border: '1px dashed rgba(15,23,42,0.18)', borderRadius: 12, padding: '40px 24px',
             textAlign: 'center', color: 'var(--ws-text-3)',
@@ -258,8 +257,8 @@ export function ClienteForm({ clienteId }: { clienteId?: string }) {
             <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--ws-text-2)' }}>Integrações</p>
             <p style={{ margin: '6px 0 0', fontSize: 13 }}>Em breve: conecte contas de anúncios e canais a este cliente.</p>
           </div>
-        </Tabs.Panel>
-      </Tabs.Root>
+        </TabsContent>
+      </Tabs>
 
       {/* Footer fixo */}
       <div style={{
@@ -267,8 +266,8 @@ export function ClienteForm({ clienteId }: { clienteId?: string }) {
         display: 'flex', justifyContent: 'flex-end', gap: 12,
         padding: '16px 0', background: 'linear-gradient(to top, var(--bg) 70%, transparent)',
       }}>
-        <Button variant="ghost" onPress={cancelar} isDisabled={salvando}>Cancelar</Button>
-        <Button variant="primary" onPress={salvar} isDisabled={!podeSalvar || salvando}>
+        <Button variant="ghost" onClick={cancelar} disabled={salvando}>Cancelar</Button>
+        <Button onClick={salvar} disabled={!podeSalvar || salvando}>
           {salvando && <Loader2 size={14} className="animate-spin" style={{ marginRight: 6 }} />}
           {salvando ? 'Salvando...' : editando ? 'Salvar alterações' : 'Salvar cliente'}
         </Button>

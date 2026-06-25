@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Building2, Loader2, Search, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Input } from '@heroui/react'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import api from '@/lib/api-client'
 import type { AdminUserRole, WorkspaceOption } from '@/lib/admin-users-edit'
@@ -312,15 +312,15 @@ export function NovoUsuarioForm() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
           <div>
             <label style={labelStyle}>Nome<Req /></label>
-            <Input value={form.nome} onChange={e => setForm(p => ({ ...p, nome: e.target.value }))} placeholder="Nome completo" disabled={disabledCampos} style={inputStyle} />
+            <input value={form.nome} onChange={e => setForm(p => ({ ...p, nome: e.target.value }))} placeholder="Nome completo" disabled={disabledCampos} style={inputStyle} />
           </div>
           <div>
             <label style={labelStyle}>Email<Req /></label>
-            <Input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="usuario@empresa.com.br" disabled={disabledCampos} style={inputStyle} />
+            <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="usuario@empresa.com.br" disabled={disabledCampos} style={inputStyle} />
           </div>
           <div>
             <label style={labelStyle}>Senha<Req /></label>
-            <Input type="password" value={form.senha} onChange={e => setForm(p => ({ ...p, senha: e.target.value }))} placeholder="Mínimo 6 caracteres" disabled={disabledCampos} style={inputStyle} />
+            <input type="password" value={form.senha} onChange={e => setForm(p => ({ ...p, senha: e.target.value }))} placeholder="Mínimo 6 caracteres" disabled={disabledCampos} style={inputStyle} />
           </div>
           <div>
             <label style={labelStyle}>Role global<Req /></label>
@@ -453,8 +453,8 @@ export function NovoUsuarioForm() {
         display: 'flex', justifyContent: 'flex-end', gap: 12,
         padding: '16px 0', background: 'linear-gradient(to top, var(--bg) 70%, transparent)',
       }}>
-        <Button variant="ghost" onPress={voltar} isDisabled={salvando}>Cancelar</Button>
-        <Button variant="primary" onPress={salvar} isDisabled={salvando}>
+        <Button variant="ghost" onClick={voltar} disabled={salvando}>Cancelar</Button>
+        <Button onClick={salvar} disabled={salvando}>
           {salvando ? <Loader2 size={14} className="animate-spin" style={{ marginRight: 6 }} /> : <UserPlus size={14} style={{ marginRight: 6 }} />}
           {salvando ? 'Salvando...' : usuarioCriado ? 'Salvar vínculos' : 'Salvar'}
         </Button>

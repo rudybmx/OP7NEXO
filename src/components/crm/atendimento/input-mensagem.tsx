@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
 import { FileAudio, FileText, Image, Mic, Pause, Play, Plus, Send, Video, X } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
-import { Switch } from '@heroui/react'
+import { Switch } from '@/components/ui/switch'
 import { useAtualizarConversa } from '@/hooks/use-atualizar-conversa'
 import {
   DropdownMenu,
@@ -499,12 +499,15 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
       ) : (
         <>
         <div style={agenteSwitchRowStyle}>
-          <Switch size="sm" isSelected={agenteAtivo} onChange={handleToggleAgente} isDisabled={agenteTogglando}>
-            <Switch.Control><Switch.Thumb /></Switch.Control>
-            <Switch.Content className="ds-help">
-              {agenteAtivo ? 'Agente IA respondendo' : 'Agente IA desligado'}
-            </Switch.Content>
-          </Switch>
+          <Switch
+            checked={agenteAtivo}
+            onCheckedChange={handleToggleAgente}
+            disabled={agenteTogglando}
+            aria-label="Alternar agente IA"
+          />
+          <span className="ds-help">
+            {agenteAtivo ? 'Agente IA respondendo' : 'Agente IA desligado'}
+          </span>
         </div>
         <div style={composerRowStyle}>
           <input

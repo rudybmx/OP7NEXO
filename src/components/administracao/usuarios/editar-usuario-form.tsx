@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Building2, Edit3, Loader2, Search, Star } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Input } from '@heroui/react'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import api from '@/lib/api-client'
 import {
@@ -219,11 +219,11 @@ export function EditarUsuarioForm({ userId }: { userId: string }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div>
           <label style={labelStyle}>Nome<Req /></label>
-          <Input value={editForm.nome} onChange={e => setEditForm(p => ({ ...p, nome: e.target.value }))} placeholder="Nome completo" style={inputStyle} />
+          <input value={editForm.nome} onChange={e => setEditForm(p => ({ ...p, nome: e.target.value }))} placeholder="Nome completo" style={inputStyle} />
         </div>
         <div>
           <label style={labelStyle}>Email<Req /></label>
-          <Input type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} placeholder="usuario@empresa.com.br" style={inputStyle} />
+          <input type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} placeholder="usuario@empresa.com.br" style={inputStyle} />
         </div>
         <div>
           <label style={labelStyle}>Role<Req /></label>
@@ -246,7 +246,7 @@ export function EditarUsuarioForm({ userId }: { userId: string }) {
         </div>
         <div>
           <label style={labelStyle}>Nova Senha <span style={{ fontWeight: 400 }}>(opcional — deixe vazio para manter)</span></label>
-          <Input type="password" value={editForm.senha} onChange={e => setEditForm(p => ({ ...p, senha: e.target.value }))} placeholder="Mínimo 6 caracteres" style={inputStyle} />
+          <input type="password" value={editForm.senha} onChange={e => setEditForm(p => ({ ...p, senha: e.target.value }))} placeholder="Mínimo 6 caracteres" style={inputStyle} />
         </div>
 
         {/* Workspace Access */}
@@ -344,8 +344,8 @@ export function EditarUsuarioForm({ userId }: { userId: string }) {
         display: 'flex', justifyContent: 'flex-end', gap: 12,
         padding: '16px 0', background: 'linear-gradient(to top, var(--bg) 70%, transparent)',
       }}>
-        <Button variant="ghost" onPress={voltar} isDisabled={salvando}>Cancelar</Button>
-        <Button variant="primary" onPress={salvarEdicao} isDisabled={salvando}>
+        <Button variant="ghost" onClick={voltar} disabled={salvando}>Cancelar</Button>
+        <Button onClick={salvarEdicao} disabled={salvando}>
           {salvando ? <Loader2 size={14} className="animate-spin" style={{ marginRight: 6 }} /> : <Edit3 size={14} style={{ marginRight: 6 }} />}
           {salvando ? 'Salvando...' : 'Salvar'}
         </Button>
