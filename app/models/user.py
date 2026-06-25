@@ -39,6 +39,9 @@ class User(Base, TimestampMixin):
         Enum(RoleUsuario, name="role_usuario"), nullable=False
     )
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Colunas já existentes no banco (NOT NULL default false) — mapeadas p/ o CRUD gerir via UI.
+    pode_atender_canais: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    pode_acessar_crm: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     network: Mapped["Network | None"] = relationship(back_populates="usuarios")
     acessos_companies: Mapped[list["UserCompanyAccess"]] = relationship(back_populates="usuario")

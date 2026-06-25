@@ -41,6 +41,8 @@ def _usuario_out(u: User) -> UsuarioOut:
         email=u.email,
         role=u.role.value,
         ativo=u.ativo,
+        pode_atender_canais=u.pode_atender_canais,
+        pode_acessar_crm=u.pode_acessar_crm,
     )
 
 def _get_company_or_404(company_id: uuid.UUID, db: Session) -> Company:
@@ -78,6 +80,8 @@ def _usuario_admin_out(u: User, workspace_id: uuid.UUID | None, workspace_nome: 
         workspace_id=str(workspace_id) if workspace_id else None,
         workspace_nome=workspace_nome,
         ativo=u.ativo,
+        pode_atender_canais=u.pode_atender_canais,
+        pode_acessar_crm=u.pode_acessar_crm,
     )
 
 def _workspace_access_role_for_user(role: RoleUsuario) -> str:
@@ -106,6 +110,8 @@ def _criar_usuario_admin(payload: UsuarioIn, db: Session) -> UsuarioAdminOut:
         senha_hash=hash_senha(payload.senha),
         role=payload.role,
         ativo=payload.ativo,
+        pode_atender_canais=payload.pode_atender_canais,
+        pode_acessar_crm=payload.pode_acessar_crm,
         workspace_id=workspace.id if workspace else None,
     )
     db.add(novo)
@@ -140,6 +146,8 @@ def listar_usuarios_admin(
             u.email,
             u.role::text AS role,
             u.ativo,
+            u.pode_atender_canais,
+            u.pode_acessar_crm,
             u.workspace_id::text AS workspace_id,
             w.nome AS workspace_nome
         FROM users u
@@ -254,6 +262,10 @@ def atualizar_usuario(
         alvo.role = payload.role
     if payload.ativo is not None and eh_superior:
         alvo.ativo = payload.ativo
+    if payload.pode_atender_canais is not None and eh_superior:
+        alvo.pode_atender_canais = payload.pode_atender_canais
+    if payload.pode_acessar_crm is not None and eh_superior:
+        alvo.pode_acessar_crm = payload.pode_acessar_crm
 
     db.commit()
     db.refresh(alvo)

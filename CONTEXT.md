@@ -29,7 +29,17 @@
 > **só quando o agente tem `codigo_responsavel`** (opt-in; sem responsável o bloco não entra e a
 > feature não dispara). **Responsável** = usuários com `pode_atender_canais=true` no workspace
 > (mesma fonte da transferência manual `/api/whatsapp/agentes`); `_validate_responsavel` valida isso
-> por SQL cru (a coluna não está no model SQLAlchemy de `users`).
+> por SQL cru.
+
+> **Aba "Acessos" no cadastro de usuário (2026-06):** `users.pode_atender_canais` +
+> `pode_acessar_crm` (colunas NOT NULL default false que já existiam no banco) agora estão **no model
+> SQLAlchemy** (`app/models/user.py`) e no CRUD (`app/schemas/user.py` + `app/api/users.py`: PUT/POST
+> setam só por superior; GET/list retornam). Front: `editar-usuario-form.tsx` virou **Tabs**
+> ("Dados Básicos" + "Acessos"); a aba Acessos tem Switch de `pode_atender_canais` (destrava o
+> responsável/transferência), `pode_acessar_crm`, perfil de atendimento derivado do `role`
+> (atendente=company_agent / supervisor=demais, via `crm_escopo.eh_supervisor`) e a seção "Acesso a
+> Workspaces" (viewer/editor/admin) movida pra cá. v1 surgical: SEM acesso por-canal (tabela nova) e
+> SEM supervisor dedicado — ficam pra v2.
 
 ## O QUE É O SISTEMA
 

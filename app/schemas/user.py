@@ -10,6 +10,8 @@ class UsuarioIn(BaseModel):
     role: RoleUsuario = RoleUsuario.company_agent
     workspace_id: str | None = None
     ativo: bool = True
+    pode_atender_canais: bool = False
+    pode_acessar_crm: bool = False
 
 
 class UsuarioAtualizarIn(BaseModel):
@@ -18,6 +20,8 @@ class UsuarioAtualizarIn(BaseModel):
     senha: str | None = None
     role: RoleUsuario | None = None
     ativo: bool | None = None
+    pode_atender_canais: bool | None = None
+    pode_acessar_crm: bool | None = None
 
 
 class AcessoIn(BaseModel):
@@ -50,6 +54,8 @@ class UsuarioOut(BaseModel):
     ativo: bool
     workspace_id: str | None = None
     workspace_nome: str | None = None
+    pode_atender_canais: bool = False
+    pode_acessar_crm: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -62,5 +68,7 @@ class UsuarioAdminOut(BaseModel):
     ativo: bool
     workspace_id: str | None = None
     workspace_nome: str | None = None
+    pode_atender_canais: bool = False
+    pode_acessar_crm: bool = False
 
     model_config = {"from_attributes": True}
