@@ -171,8 +171,16 @@ def _montar_system(
     partes.append(_contexto_temporal())
     if contato_nome and contato_nome.strip():
         partes.append(
-            f"DADOS DO CONTATO:\n- Nome: {contato_nome.strip()} (use com parcimônia — sobretudo na "
-            "saudação e na confirmação; não repita a cada mensagem). O telefone já está registrado no "
+            f"DADOS DO CONTATO:\n- Nome (confirmado pelo cliente): {contato_nome.strip()} (use com "
+            "parcimônia — sobretudo na saudação e na confirmação; não repita a cada mensagem). O "
+            "telefone já está registrado no sistema; não peça."
+        )
+    else:
+        partes.append(
+            "DADOS DO CONTATO:\n- O nome do cliente AINDA NÃO foi confirmado. NUNCA presuma, invente ou "
+            "deduza o nome do cliente (o nome que aparece no WhatsApp é não-confiável e NÃO deve ser "
+            "usado para se dirigir a ele). Se precisar do nome para atender melhor, pergunte de forma "
+            "natural; só use o nome depois que o cliente o informar. O telefone já está registrado no "
             "sistema; não peça."
         )
     if resumo_conversa and resumo_conversa.strip():
@@ -933,7 +941,9 @@ def processar_reply(db: Session, payload: dict) -> None:
 
         _ct = db.get(Contato, conversa.contato_id)
         if _ct is not None:
-            contato_nome = (_ct.nome or _ct.push_name or "").strip() or None
+            # só o nome CONFIRMADO — nunca o push_name (nome do WhatsApp, não-confiável).
+            # Sem confirmado → None → o prompt instrui o agente a perguntar (ver _montar_system).
+            contato_nome = (_ct.nome_confirmado or "").strip() or None
 
     # "memória longa" da conversa: resumo/interesse da análise (Fase 1, job conversa_analise) já
     # gravados em resumo_ia/contexto_ia. Cobre o que sai da janela de 12 msgs e dá continuidade quando

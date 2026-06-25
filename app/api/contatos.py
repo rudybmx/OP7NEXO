@@ -25,6 +25,8 @@ class ContatoOut(BaseModel):
     telefone: str | None
     nome: str | None
     push_name: str | None
+    nome_confirmado: str | None = None
+    nome_origem: str | None = None
     avatar_url: str | None
     origem: str | None
     tags: list[str] | None
@@ -153,6 +155,8 @@ def _contato_out(c: Contato, conversation_count: int = 0) -> ContatoOut:
         telefone=c.telefone,
         nome=c.nome,
         push_name=c.push_name,
+        nome_confirmado=getattr(c, "nome_confirmado", None),
+        nome_origem=getattr(c, "nome_origem", None),
         avatar_url=c.avatar_url,
         origem=c.origem,
         tags=c.tags or [],
@@ -280,6 +284,9 @@ def criar_contato(
         for field, value in data.model_dump(exclude_unset=True).items():
             if value is not None:
                 setattr(existing, field, value)
+        if data.nome:  # criação/edição manual = nome confirmado (humano)
+            existing.nome_confirmado = data.nome
+            existing.nome_origem = "humano"
         db.commit()
         db.refresh(existing)
         return _contato_out(existing)
@@ -289,6 +296,8 @@ def criar_contato(
         jid=data.jid,
         telefone=data.telefone,
         nome=data.nome,
+        nome_confirmado=data.nome,  # criação manual = nome confirmado (humano)
+        nome_origem="humano" if data.nome else None,
         push_name=data.push_name,
         avatar_url=data.avatar_url,
         origem=data.origem,
@@ -356,6 +365,10 @@ def atualizar_contato(
 
     for field, value in update_data.items():
         setattr(c, field, value)
+    # edição manual do nome = nome confirmado (humano); protege contra sobrescrita pela IA
+    if "nome" in update_data and update_data["nome"]:
+        c.nome_confirmado = update_data["nome"]
+        c.nome_origem = "humano"
 
     db.commit()
     db.refresh(c)

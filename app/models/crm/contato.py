@@ -40,6 +40,11 @@ class Contato(Base):
     telefone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     nome: Mapped[str | None] = mapped_column(String(255), nullable=True)
     push_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # nome CONFIRMADO (declarado pelo cliente / editado por humano), separado do push_name
+    # (nome do WhatsApp, não-confiável). Display e agente preferem este quando presente.
+    # nome_origem: 'humano' (atendente) | 'ia' (declarado pelo cliente, capturado pela IA) | None.
+    nome_confirmado: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    nome_origem: Mapped[str | None] = mapped_column(String(20), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_fetched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

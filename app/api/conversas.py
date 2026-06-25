@@ -202,7 +202,7 @@ def _resolved_contact_name(c: Conversa) -> str:
     contato = c.contato
     remote_jid = c.remote_jid or ""
     if contato:
-        for candidate in (contato.push_name, contato.nome):
+        for candidate in (contato.nome_confirmado, contato.push_name, contato.nome):
             display = _valid_contact_display_name(candidate, jid=remote_jid)
             if display:
                 return display
@@ -688,7 +688,7 @@ def iniciar_conversa(
             workspace_id=str(contato.workspace_id),
             jid=contato.jid,
             telefone=contato.telefone or numero_limpo,
-            nome=contato.push_name or contato.nome or numero_formatado,
+            nome=contato.nome_confirmado or contato.push_name or contato.nome or numero_formatado,
             push_name=contato.push_name,
         ),
         existente=existente,
