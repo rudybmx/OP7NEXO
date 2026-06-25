@@ -127,13 +127,13 @@ export function PaineisCRM() {
                     width: '100%', textAlign: 'left', padding: '9px 14px',
                     background: 'none', border: 'none', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: 8,
-                    fontSize: 13, color: b.id === boardAtivoId ? '#3E5BFF' : 'var(--ws-text-1)',
+                    fontSize: 13, color: b.id === boardAtivoId ? '#006EFF' : 'var(--ws-text-1)',
                     fontWeight: b.id === boardAtivoId ? 500 : 400,
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(62,91,255,0.06)'}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,110,255,0.06)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'none'}
                 >
-                  {b.id === boardAtivoId && <Check size={12} style={{ color: '#3E5BFF', flexShrink: 0 }} />}
+                  {b.id === boardAtivoId && <Check size={12} style={{ color: '#006EFF', flexShrink: 0 }} />}
                   {b.id !== boardAtivoId && <div style={{ width: 12 }} />}
                   {b.nome}
                   <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ws-text-2)' }}>{b.cards.length}</span>
@@ -142,8 +142,8 @@ export function PaineisCRM() {
               <div style={{ height: 1, background: 'var(--ws-divider)', margin: '4px 0' }} />
               <button
                 onClick={novoBoard}
-                style={{ width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#3E5BFF' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(62,91,255,0.06)'}
+                style={{ width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#006EFF' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,110,255,0.06)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
                 <Plus size={13} /> Novo painel
@@ -161,7 +161,7 @@ export function PaineisCRM() {
               type="text" placeholder="Buscar..." value={busca}
               onChange={e => setBusca(e.target.value)}
               style={{ height: 32, paddingLeft: 30, paddingRight: 12, background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)', backdropFilter: 'blur(10px)', borderRadius: 'var(--ws-radius-md)', fontSize: 12, color: 'var(--ws-text-1)', outline: 'none', width: 180, boxShadow: 'var(--ws-glass-shadow-sm)', fontFamily: 'inherit' }}
-              onFocus={e => { e.target.style.borderColor = 'rgba(62,91,255,0.50)'; e.target.style.boxShadow = '0 0 0 3px rgba(62,91,255,0.12)' }}
+              onFocus={e => { e.target.style.borderColor = 'rgba(0,110,255,0.50)'; e.target.style.boxShadow = '0 0 0 3px rgba(0,110,255,0.12)' }}
               onBlur={e => { e.target.style.borderColor = 'var(--ws-glass-border)'; e.target.style.boxShadow = 'var(--ws-glass-shadow-sm)' }}
             />
           </div>
@@ -171,7 +171,7 @@ export function PaineisCRM() {
             {/* Modo modal */}
             {([['lateral', Columns3, 'Abrir lateral'], ['central', Maximize2, 'Abrir central']] as const).map(([modo, Icon, title]) => (
               <button key={modo} onClick={() => setModoModal(modo)} title={title}
-                style={{ padding: '4px 8px', borderRadius: 7, border: 'none', cursor: 'pointer', background: modoModal === modo ? 'var(--ws-surface)' : 'transparent', color: modoModal === modo ? '#3E5BFF' : 'var(--ws-text-3)', transition: 'all 150ms', display: 'flex', alignItems: 'center', boxShadow: modoModal === modo ? '0 2px 8px rgba(14,20,42,0.10)' : 'none' }}>
+                style={{ padding: '4px 8px', borderRadius: 7, border: 'none', cursor: 'pointer', background: modoModal === modo ? 'var(--ws-surface)' : 'transparent', color: modoModal === modo ? '#006EFF' : 'var(--ws-text-3)', transition: 'all 150ms', display: 'flex', alignItems: 'center', boxShadow: modoModal === modo ? '0 2px 8px rgba(14,20,42,0.10)' : 'none' }}>
                 <Icon size={13} />
               </button>
             ))}
@@ -200,7 +200,7 @@ export function PaineisCRM() {
             {/* Visualização */}
             {([['kanban', LayoutGrid, 'Kanban'], ['lista', List, 'Lista']] as const).map(([view, Icon, label]) => (
               <button key={view} onClick={() => setVisualizacao(view)}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, background: visualizacao === view ? 'var(--ws-surface)' : 'transparent', color: visualizacao === view ? '#3E5BFF' : 'var(--ws-text-3)', fontWeight: visualizacao === view ? 500 : 400, transition: 'all 150ms', boxShadow: visualizacao === view ? '0 2px 8px rgba(14,20,42,0.10)' : 'none' }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, background: visualizacao === view ? 'var(--ws-surface)' : 'transparent', color: visualizacao === view ? '#006EFF' : 'var(--ws-text-3)', fontWeight: visualizacao === view ? 500 : 400, transition: 'all 150ms', boxShadow: visualizacao === view ? '0 2px 8px rgba(14,20,42,0.10)' : 'none' }}>
                 <Icon size={13} /> {label}
               </button>
             ))}
@@ -209,9 +209,9 @@ export function PaineisCRM() {
           {/* Novo card */}
           <button
             onClick={novoCard}
-            style={{ height: 32, padding: '0 14px', background: 'linear-gradient(135deg, #3E5BFF, #7A5AF8)', border: 'none', borderRadius: 'var(--ws-radius-md)', fontSize: 12, fontWeight: 600, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 12px rgba(62,91,255,0.35)', transition: 'all 150ms' }}
-            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 20px rgba(62,91,255,0.50)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-            onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(62,91,255,0.35)'; e.currentTarget.style.transform = 'translateY(0)' }}
+            style={{ height: 32, padding: '0 14px', background: 'linear-gradient(135deg, #006EFF, #0047cc)', border: 'none', borderRadius: 'var(--ws-radius-md)', fontSize: 12, fontWeight: 600, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 12px rgba(0,110,255,0.35)', transition: 'all 150ms' }}
+            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,110,255,0.50)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+            onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,110,255,0.35)'; e.currentTarget.style.transform = 'translateY(0)' }}
           >
             <Plus size={14} /> Novo card
           </button>

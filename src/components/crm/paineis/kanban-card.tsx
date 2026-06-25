@@ -91,8 +91,8 @@ export function KanbanCardComp({ card, reordenavel, onClick }: KanbanCardProps) 
           {card.tags!.slice(0, 3).map(tag => (
             <span key={tag} style={{
               fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 9999,
-              background: 'rgba(62,91,255,0.08)', border: '1px solid rgba(62,91,255,0.15)',
-              color: '#3E5BFF', textTransform: 'uppercase', letterSpacing: '0.04em',
+              background: 'rgba(0,110,255,0.08)', border: '1px solid rgba(0,110,255,0.15)',
+              color: '#006EFF', textTransform: 'uppercase', letterSpacing: '0.04em',
             }}>{tag}</span>
           ))}
         </div>

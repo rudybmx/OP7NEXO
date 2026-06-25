@@ -42,7 +42,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
   function adicionarColuna() {
     const nome = prompt('Nome da nova coluna:')
     if (!nome?.trim()) return
-    const cores = ['#8892b0', '#3E5BFF', '#EF9F27', '#7A5AF8', '#0fa856', '#FF5C8D', '#00b8c8']
+    const cores = ['#8892b0', '#006EFF', '#EF9F27', '#0047cc', '#0fa856', '#FF5C8D', '#00b8c8']
     const nova: KanbanColuna = {
       id: `col-${Date.now()}`, nome: nome.trim(),
       cor: cores[board.colunas.length % cores.length], ordem: board.colunas.length,
@@ -136,8 +136,8 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
             onDragEnd={() => { setDragColuna(null); setDragOverColunaTarget(null) }}
             style={{
               width: 264, flexShrink: 0,
-              background: isOver ? 'rgba(62,91,255,0.04)' : 'var(--ws-surface-2)',
-              border: `1px solid ${isColunaOver ? 'rgba(62,91,255,0.40)' : isOver ? 'rgba(62,91,255,0.25)' : 'var(--ws-glass-border)'}`,
+              background: isOver ? 'rgba(0,110,255,0.04)' : 'var(--ws-surface-2)',
+              border: `1px solid ${isColunaOver ? 'rgba(0,110,255,0.40)' : isOver ? 'rgba(0,110,255,0.25)' : 'var(--ws-glass-border)'}`,
               borderRadius: 12, padding: '12px 10px',
               transition: 'all 150ms ease',
               opacity: isColunaDragging ? 0.4 : 1,
@@ -197,7 +197,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
                   onDragEnd={() => { setDragCard(null); setDragOverCard(null) }}
                   style={{
                     opacity: dragCard === card.id ? 0.4 : 1,
-                    borderTop: dragOverCard === card.id ? '2px solid rgba(62,91,255,0.40)' : undefined,
+                    borderTop: dragOverCard === card.id ? '2px solid rgba(0,110,255,0.40)' : undefined,
                     transition: 'opacity 150ms',
                   }}
                 >
@@ -210,7 +210,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
               ))}
 
               {novoCardColuna === coluna.id ? (
-                <div style={{ background: 'var(--ws-surface)', border: '1px solid rgba(62,91,255,0.30)', borderRadius: 10, padding: '8px 10px' }}>
+                <div style={{ background: 'var(--ws-surface)', border: '1px solid rgba(0,110,255,0.30)', borderRadius: 10, padding: '8px 10px' }}>
                   <textarea
                     autoFocus value={novoCardTitulo}
                     onChange={e => setNovoCardTitulo(e.target.value)}
@@ -219,7 +219,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
                     style={{ width: '100%', fontSize: 13, color: 'var(--ws-text-1)', background: 'transparent', border: 'none', outline: 'none', resize: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }}
                   />
                   <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                    <button onClick={() => adicionarCard(coluna.id)} style={{ padding: '4px 12px', background: 'linear-gradient(135deg, #3E5BFF, #7A5AF8)', border: 'none', borderRadius: 6, fontSize: 11, color: 'white', cursor: 'pointer', fontWeight: 600 }}>Adicionar</button>
+                    <button onClick={() => adicionarCard(coluna.id)} style={{ padding: '4px 12px', background: 'linear-gradient(135deg, #006EFF, #0047cc)', border: 'none', borderRadius: 6, fontSize: 11, color: 'white', cursor: 'pointer', fontWeight: 600 }}>Adicionar</button>
                     <button onClick={() => { setNovoCardColuna(null); setNovoCardTitulo('') }} style={{ padding: '4px 10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ws-text-2)' }}>Cancelar</button>
                   </div>
                 </div>
@@ -227,7 +227,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
                 <button
                   onClick={() => setNovoCardColuna(coluna.id)}
                   style={{ width: '100%', padding: '7px 10px', background: 'transparent', border: '1px dashed var(--ws-glass-border)', borderRadius: 8, fontSize: 12, color: 'var(--ws-text-2)', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 150ms' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(62,91,255,0.04)'; e.currentTarget.style.color = '#3E5BFF'; e.currentTarget.style.borderColor = 'rgba(62,91,255,0.25)' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,110,255,0.04)'; e.currentTarget.style.color = '#006EFF'; e.currentTarget.style.borderColor = 'rgba(0,110,255,0.25)' }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ws-text-2)'; e.currentTarget.style.borderColor = 'var(--ws-glass-border)' }}
                 >
                   <Plus size={13} /> Novo item
@@ -241,7 +241,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
       <button
         onClick={adicionarColuna}
         style={{ width: 200, flexShrink: 0, padding: '10px 16px', background: 'var(--ws-surface-2)', border: '1px dashed var(--ws-glass-border)', borderRadius: 12, fontSize: 12, color: 'var(--ws-text-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 150ms', whiteSpace: 'nowrap' as const }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(62,91,255,0.04)'; e.currentTarget.style.color = '#3E5BFF'; e.currentTarget.style.borderColor = 'rgba(62,91,255,0.25)' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,110,255,0.04)'; e.currentTarget.style.color = '#006EFF'; e.currentTarget.style.borderColor = 'rgba(0,110,255,0.25)' }}
         onMouseLeave={e => { e.currentTarget.style.background = 'var(--ws-surface-2)'; e.currentTarget.style.color = 'var(--ws-text-2)'; e.currentTarget.style.borderColor = 'var(--ws-glass-border)' }}
       >
         <Plus size={14} /> Adicionar coluna

@@ -196,7 +196,7 @@ export function CardModal({ card, colunas, aberto, modo = 'lateral', onFechar, o
                     {colunas.map(c => (
                       <button key={c.id} onClick={() => { salvar({ status: c.id }); setShowStatus(false) }}
                         style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ws-text-1)' }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(62,91,255,0.06)'}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,110,255,0.06)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'none'}
                       >
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.cor }} />
@@ -243,7 +243,7 @@ export function CardModal({ card, colunas, aberto, modo = 'lateral', onFechar, o
                       return (
                         <button key={u} onClick={() => { salvar({ responsavel: u, responsavelInitials: initials }); setShowResponsavel(false) }}
                           style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ws-text-1)' }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(62,91,255,0.06)'}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,110,255,0.06)'}
                           onMouseLeave={e => e.currentTarget.style.background = 'none'}
                         >
                           <div style={{ width: 18, height: 18, borderRadius: '50%', background: hashColor(u), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, color: 'white', fontWeight: 700 }}>{initials}</div>
@@ -346,9 +346,9 @@ export function CardModal({ card, colunas, aberto, modo = 'lateral', onFechar, o
                     onChange={e => setNovoCampoNome(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') adicionarCampo(); if (e.key === 'Escape') setShowNovoCampo(false) }}
                     placeholder="Nome do campo..."
-                    style={{ flex: 1, fontSize: 12, color: 'var(--ws-text-1)', background: 'var(--ws-surface-2)', border: '1px solid rgba(62,91,255,0.40)', borderRadius: 6, padding: '4px 8px', outline: 'none', fontFamily: 'inherit' }}
+                    style={{ flex: 1, fontSize: 12, color: 'var(--ws-text-1)', background: 'var(--ws-surface-2)', border: '1px solid rgba(0,110,255,0.40)', borderRadius: 6, padding: '4px 8px', outline: 'none', fontFamily: 'inherit' }}
                   />
-                  <button onClick={adicionarCampo} style={{ padding: '4px 10px', background: 'rgba(62,91,255,0.12)', border: '1px solid rgba(62,91,255,0.25)', borderRadius: 6, fontSize: 11, color: '#3E5BFF', cursor: 'pointer', fontWeight: 600 }}>OK</button>
+                  <button onClick={adicionarCampo} style={{ padding: '4px 10px', background: 'rgba(0,110,255,0.12)', border: '1px solid rgba(0,110,255,0.25)', borderRadius: 6, fontSize: 11, color: '#006EFF', cursor: 'pointer', fontWeight: 600 }}>OK</button>
                   <button onClick={() => setShowNovoCampo(false)} style={{ padding: '4px 8px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ws-text-2)', fontSize: 11 }}>✕</button>
                 </div>
               </div>
@@ -379,7 +379,7 @@ export function CardModal({ card, colunas, aberto, modo = 'lateral', onFechar, o
               fontFamily: 'inherit', boxSizing: 'border-box',
               transition: 'border-color 150ms',
             }}
-            onFocus={e => e.target.style.borderColor = 'rgba(62,91,255,0.30)'}
+            onFocus={e => e.target.style.borderColor = 'rgba(0,110,255,0.30)'}
           />
         </div>
 
@@ -417,12 +417,12 @@ export function CardModal({ card, colunas, aberto, modo = 'lateral', onFechar, o
                   border: '1px solid var(--ws-glass-border)', borderRadius: 8, padding: '8px 10px',
                   outline: 'none', resize: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
                 }}
-                onFocus={e => e.target.style.borderColor = 'rgba(62,91,255,0.30)'}
+                onFocus={e => e.target.style.borderColor = 'rgba(0,110,255,0.30)'}
                 onBlur={e => e.target.style.borderColor = 'var(--ws-glass-border)'}
               />
               {comentarioTexto.trim() && (
                 <button onClick={adicionarComentario}
-                  style={{ marginTop: 6, padding: '5px 14px', background: 'linear-gradient(135deg, #3E5BFF, #7A5AF8)', border: 'none', borderRadius: 6, fontSize: 11, color: 'white', cursor: 'pointer', fontWeight: 600 }}>
+                  style={{ marginTop: 6, padding: '5px 14px', background: 'linear-gradient(135deg, #006EFF, #0047cc)', border: 'none', borderRadius: 6, fontSize: 11, color: 'white', cursor: 'pointer', fontWeight: 600 }}>
                   Comentar
                 </button>
               )}

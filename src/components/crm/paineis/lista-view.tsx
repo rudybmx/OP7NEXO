@@ -113,7 +113,7 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
         display: 'grid',
         gridTemplateColumns: reordenavel ? '28px 1fr 140px 100px 120px 50px' : '1fr 140px 100px 120px 50px',
         padding: '8px 16px',
-        background: 'rgba(62,91,255,0.03)',
+        background: 'rgba(0,110,255,0.03)',
         borderBottom: '1px solid var(--ws-divider)',
       }}>
         {reordenavel && <span />}
@@ -146,11 +146,11 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
               alignItems: 'center',
               transition: 'background 100ms',
               opacity: isDragging ? 0.4 : 1,
-              background: isOver ? 'rgba(62,91,255,0.06)' : 'transparent',
-              borderTop: isOver ? '2px solid rgba(62,91,255,0.40)' : undefined,
+              background: isOver ? 'rgba(0,110,255,0.06)' : 'transparent',
+              borderTop: isOver ? '2px solid rgba(0,110,255,0.40)' : undefined,
             }}
-            onMouseEnter={e => { if (!isDragging) (e.currentTarget as HTMLDivElement).style.background = 'rgba(62,91,255,0.02)' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = isOver ? 'rgba(62,91,255,0.06)' : 'transparent' }}
+            onMouseEnter={e => { if (!isDragging) (e.currentTarget as HTMLDivElement).style.background = 'rgba(0,110,255,0.02)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = isOver ? 'rgba(0,110,255,0.06)' : 'transparent' }}
           >
             {/* Handle de drag */}
             {reordenavel && (
@@ -173,7 +173,7 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
                 {(card.tags ?? []).length > 0 && (
                   <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
                     {card.tags!.slice(0, 2).map(tag => (
-                      <span key={tag} style={{ fontSize: 9, padding: '1px 5px', borderRadius: 9999, background: 'rgba(62,91,255,0.08)', color: '#3E5BFF', border: '1px solid rgba(62,91,255,0.15)', fontWeight: 600 }}>{tag}</span>
+                      <span key={tag} style={{ fontSize: 9, padding: '1px 5px', borderRadius: 9999, background: 'rgba(0,110,255,0.08)', color: '#006EFF', border: '1px solid rgba(0,110,255,0.15)', fontWeight: 600 }}>{tag}</span>
                     ))}
                   </div>
                 )}
@@ -261,7 +261,7 @@ export function ListaView({ board, reordenavel, onCardClick, onBoardChange }: Li
             cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
             fontSize: 12, color: 'var(--ws-text-2)', transition: 'all 150ms', fontFamily: 'inherit',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(62,91,255,0.02)'; e.currentTarget.style.color = '#3E5BFF' }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,110,255,0.02)'; e.currentTarget.style.color = '#006EFF' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--ws-text-2)' }}
         >
           {reordenavel && <div style={{ width: 28 }} />}

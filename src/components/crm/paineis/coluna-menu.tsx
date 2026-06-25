@@ -52,7 +52,7 @@ export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: Coluna
         onBlur={confirmarRename}
         style={{
           fontSize: 12, fontWeight: 600, color: 'var(--ws-text-1)',
-          background: 'var(--ws-surface)', border: '1px solid rgba(62,91,255,0.40)',
+          background: 'var(--ws-surface)', border: '1px solid rgba(0,110,255,0.40)',
           borderRadius: 6, padding: '2px 6px', outline: 'none', width: 130,
           fontFamily: 'inherit',
         }}
@@ -103,7 +103,7 @@ export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: Coluna
                 display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ws-text-1)',
                 transition: 'background 100ms',
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(62,91,255,0.06)'}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,110,255,0.06)'}
               onMouseLeave={e => e.currentTarget.style.background = 'none'}
             >
               <item.icon size={13} style={{ color: 'var(--ws-text-2)' }} />
