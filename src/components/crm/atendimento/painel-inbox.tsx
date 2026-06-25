@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, FilterX, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check, AlertTriangle, Bot, UserRound, Users } from 'lucide-react'
+import { Search, FilterX, RefreshCw, MessageCircle, AtSign, Paperclip, Loader2, UserCheck, UserX, X, Star, Pin, BellOff, Tag, CheckCircle, MoreVertical, Check, AlertTriangle, Bot, UserRound, Users, Trash2 } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import type { AgenteApi } from '@/hooks/use-agentes-disponiveis'
@@ -58,6 +58,7 @@ interface PainelInboxProps {
   onAplicarEtiqueta?: (conversaId: string, etiquetaId: string) => void
   onRemoverEtiqueta?: (conversaId: string, etiquetaId: string) => void
   onResolverConversa?: (conversaId: string) => void
+  onExcluirConversaVazia?: (conversaId: string) => void
   isMobile?: boolean
 }
 
@@ -73,6 +74,7 @@ function MenuContextoConversa({
   onAplicarEtiqueta,
   onRemoverEtiqueta,
   onResolverConversa,
+  onExcluirConversaVazia,
 }: {
   conversa: ConversaApi
   x: number
@@ -85,6 +87,7 @@ function MenuContextoConversa({
   onAplicarEtiqueta?: (conversaId: string, etiquetaId: string) => void
   onRemoverEtiqueta?: (conversaId: string, etiquetaId: string) => void
   onResolverConversa?: (id: string) => void
+  onExcluirConversaVazia?: (id: string) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [mostrarEtiquetas, setMostrarEtiquetas] = useState(false)
@@ -249,6 +252,22 @@ function MenuContextoConversa({
           >
             <CheckCircle size={14} />
             Resolver conversa
+          </div>
+        </>
+      )}
+
+      {/* Excluir conversa vazia (P3b): só aparece quando NÃO há nenhuma mensagem trocada. */}
+      {onExcluirConversaVazia && conversa.ultimaMensagem === '' && !conversa.ultimaMensagemAt && (
+        <>
+          <div style={{ height: 1, background: 'var(--ws-surface-2)', margin: '3px 0' }} />
+          <div
+            style={{ ...itemStyle, color: '#e11d48' }}
+            onClick={() => handleItem(() => onExcluirConversaVazia(conversa.id))}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(225,29,72,0.07)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
+          >
+            <Trash2 size={14} />
+            Excluir conversa vazia
           </div>
         </>
       )}
@@ -620,6 +639,7 @@ export function PainelInbox({
   onAplicarEtiqueta,
   onRemoverEtiqueta,
   onResolverConversa,
+  onExcluirConversaVazia,
   isMobile = false,
 }: PainelInboxProps) {
   const [menuContexto, setMenuContexto] = useState<{
@@ -1237,6 +1257,7 @@ export function PainelInbox({
           onAplicarEtiqueta={onAplicarEtiqueta}
           onRemoverEtiqueta={onRemoverEtiqueta}
           onResolverConversa={onResolverConversa}
+          onExcluirConversaVazia={onExcluirConversaVazia}
         />,
         document.body,
       )}

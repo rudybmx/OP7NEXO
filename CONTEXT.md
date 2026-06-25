@@ -217,6 +217,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-25) — CRM Atendimento: excluir conversa vazia (P3b)
+- Menu ⋮ de cada conversa (`MenuContextoConversa` em `painel-inbox.tsx`) ganhou item **"Excluir conversa vazia"** (🗑️ vermelho) ABAIXO de "Resolver conversa", visível **só** quando `ultimaMensagem==='' && !ultimaMensagemAt`. Hook `use-excluir-conversa-vazia.ts` + novo proxy `app/api/whatsapp/conversations/[id]/route.ts` (DELETE → backend). Confirmação leve (`window.confirm`) + toast `sonner`. A API (`DELETE /conversas/{id}`) valida e recusa **409 "Conversa não está vazia"** se houver mensagem (protege histórico). Par em `api/production`.
+
 ### ✅ Implementado (2026-06-25) — CRM Atendimento: iniciar conversa com canal + checagem de número (P2+P3a)
 - **Iniciar nova conversa** (`PainelNovaConversaInline` em `painel-inbox.tsx`): seletor "Canal de envio" quando o cliente tem **>1 canal** (passa `canal_id`); `use-iniciar-conversa.ts` + proxy `app/api/whatsapp/conversations/iniciar/route.ts` encaminham `canal_id`.
 - **Checagem de número**: a API (`POST /conversas/iniciar`) confere se o número tem WhatsApp no canal (Evolution `/user/check`, WAHA `/contacts/check-exists`) e **bloqueia 422** se não existir → o painel mostra "Não encontrei um contato com WhatsApp neste número" (erro já propagado pelo proxy via `data.detail`). Fail-open em erro do provider. Par da API em `api/production@21905e4`.
