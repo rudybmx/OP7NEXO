@@ -448,6 +448,10 @@ Para nova feature: `/speckit.specify [nome]` → cria `spec.md`, depois `/specki
 - **Fecha agregação**: o route handler `api/whatsapp/conversations/[id]/marcar-lido` (usado pelo
   inbox ao abrir a conversa) marca a notificação `mensagem_nova` dela como lida → a próxima
   mensagem volta a gerar notificação (espelha o backend `marcar_lida_por_entidade`).
+- **v2 (realtime SSE)**: `lib/notificacoes-realtime.ts` (assina Redis `notifications:events`) +
+  route handler `api/notificacoes/stream` (SSE, espelha o whatsapp stream); `use-notificacoes.ts`
+  abre `EventSource` → evento é puro sinal → `mutate` re-busca (polling vira fallback), reconecta
+  ao trocar workspace. Página: switch "Ativo" por tipo (config) + ícone `Wifi` p/ canal reconectado.
 
 ---
 

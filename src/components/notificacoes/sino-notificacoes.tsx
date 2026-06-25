@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, CheckCheck, Inbox, MessageSquare, WifiOff } from 'lucide-react'
+import { Bell, CheckCheck, Inbox, MessageSquare, Wifi, WifiOff } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useAuth } from '@/hooks/use-auth'
 import { useNotificacoes, type Notificacao } from '@/hooks/use-notificacoes'
@@ -29,7 +29,8 @@ function tempoRelativo(iso: string | null): string {
 }
 
 function IconeTipo({ tipo, severidade }: { tipo: string; severidade: string }) {
-  const Icon = tipo === 'canal_offline' ? WifiOff : tipo === 'mensagem_nova' ? MessageSquare : Bell
+  const Icon =
+    tipo === 'canal_offline' ? WifiOff : tipo === 'canal_online' ? Wifi : tipo === 'mensagem_nova' ? MessageSquare : Bell
   const cor =
     severidade === 'critico' ? 'text-destructive' : severidade === 'aviso' ? 'text-primary' : 'text-muted-foreground'
   return <Icon className={cn('size-4 shrink-0', cor)} aria-hidden />
