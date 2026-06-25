@@ -529,6 +529,11 @@ def adicionar_base_conhecimento(
     da página. PDF não é suportado nesta fase (envie o texto como 'documento')."""
     _get_workspace_or_404(workspace_id, db)
     agente = _get_agente_or_404(workspace_id, agente_id, db)
+    if not embedding_service._kb_table_existe(db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Base de conhecimento indisponível (Fase 3/pgvector ainda não deployada).",
+        )
     if payload.tipo == "url":
         if not payload.url:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="url obrigatória para tipo=url")
@@ -559,6 +564,8 @@ def listar_base_conhecimento(
 ):
     _get_workspace_or_404(workspace_id, db)
     _get_agente_or_404(workspace_id, agente_id, db)
+    if not embedding_service._kb_table_existe(db):
+        return []
     rows = (
         db.query(AgenteBaseConhecimento)
         .filter(AgenteBaseConhecimento.agente_id == agente_id)
@@ -590,6 +597,8 @@ def remover_base_conhecimento(
 ):
     _get_workspace_or_404(workspace_id, db)
     _get_agente_or_404(workspace_id, agente_id, db)
+    if not embedding_service._kb_table_existe(db):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item não encontrado")
     row = (
         db.query(AgenteBaseConhecimento)
         .filter(AgenteBaseConhecimento.id == kb_id, AgenteBaseConhecimento.agente_id == agente_id)
