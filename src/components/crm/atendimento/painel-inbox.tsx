@@ -140,7 +140,7 @@ function MenuContextoConversa({
         zIndex: 9999,
         minWidth: 210,
         background: 'var(--ws-surface)',
-        border: '1px solid rgba(15, 23, 42, 0.10)',
+        border: '1px solid var(--ws-glass-border)',
         borderRadius: 10,
         boxShadow: '0 8px 32px rgba(15, 23, 42, 0.16)',
         backdropFilter: 'blur(16px)',
@@ -152,7 +152,7 @@ function MenuContextoConversa({
         <div
           style={{ ...itemStyle, color: conversa.favorita ? '#c9a84c' : 'var(--ws-text-1)' }}
           onClick={() => handleItem(() => onToggleFavorita(conversa.id))}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(15,23,42,0.05)' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--ws-glass-bg)' }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
         >
           <Star size={14} fill={conversa.favorita ? '#c9a84c' : 'none'} />
@@ -164,7 +164,7 @@ function MenuContextoConversa({
         <div
           style={{ ...itemStyle, color: conversa.fixada ? '#006EFF' : 'var(--ws-text-1)' }}
           onClick={() => handleItem(() => onToggleFixada(conversa.id))}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(15,23,42,0.05)' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--ws-glass-bg)' }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
         >
           <Pin size={14} />
@@ -176,7 +176,7 @@ function MenuContextoConversa({
         <div
           style={itemStyle}
           onClick={() => handleItem(() => onMarcarNaoLido(conversa.id))}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(15,23,42,0.05)' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--ws-glass-bg)' }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
         >
           <BellOff size={14} />
@@ -189,7 +189,7 @@ function MenuContextoConversa({
           <div
             style={{ ...itemStyle, justifyContent: 'space-between' }}
             onClick={() => setMostrarEtiquetas(v => !v)}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(15,23,42,0.05)' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--ws-glass-bg)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -199,7 +199,7 @@ function MenuContextoConversa({
             <span style={{ fontSize: 10, color: 'var(--ws-text-3)' }}>{mostrarEtiquetas ? '▲' : '▼'}</span>
           </div>
           {mostrarEtiquetas && (
-            <div style={{ padding: '4px 8px', borderTop: '1px solid rgba(15,23,42,0.06)' }}>
+            <div style={{ padding: '4px 8px', borderTop: '1px solid var(--ws-glass-border)' }}>
               {etiquetasWorkspace.map(et => {
                 const aplicada = etiquetaIds.has(et.id)
                 return (
@@ -218,7 +218,7 @@ function MenuContextoConversa({
                       if (aplicada) onRemoverEtiqueta?.(conversa.id, et.id)
                       else onAplicarEtiqueta?.(conversa.id, et.id)
                     }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(15,23,42,0.05)' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--ws-glass-bg)' }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
                   >
                     <span style={{
@@ -240,7 +240,7 @@ function MenuContextoConversa({
 
       {onResolverConversa && conversa.status !== 'resolvido' && (
         <>
-          <div style={{ height: 1, background: 'rgba(15,23,42,0.07)', margin: '3px 0' }} />
+          <div style={{ height: 1, background: 'var(--ws-surface-2)', margin: '3px 0' }} />
           <div
             style={{ ...itemStyle, color: '#1D9E75' }}
             onClick={() => handleItem(() => onResolverConversa(conversa.id))}
@@ -318,7 +318,7 @@ function PainelNovaConversaInline({
             padding: isMobile ? '12px 12px 12px 28px' : '9px 12px 9px 28px',
             borderRadius: 8,
             background: 'var(--ws-surface)',
-            border: erro ? '1px solid #ef4444' : '1px solid rgba(15, 23, 42, 0.10)',
+            border: erro ? '1px solid #ef4444' : '1px solid var(--ws-glass-border)',
             color: 'var(--ws-text-1)',
             fontSize: isMobile ? 16 : 14,
             fontVariantNumeric: 'tabular-nums',
@@ -333,7 +333,7 @@ function PainelNovaConversaInline({
           padding: '7px 10px',
           borderRadius: 8,
           background: 'var(--ws-glass-bg)',
-          border: '1px solid rgba(15,23,42,0.08)',
+          border: '1px solid var(--ws-glass-border)',
           display: 'flex',
           alignItems: 'center',
           gap: 8,
@@ -375,7 +375,7 @@ function PainelNovaConversaInline({
           style={{
             padding: '6px 12px',
             borderRadius: 7,
-            border: '1px solid rgba(15,23,42,0.10)',
+            border: '1px solid var(--ws-glass-border)',
             background: 'transparent',
             color: 'var(--ws-text-2)',
             cursor: 'pointer',
@@ -506,9 +506,9 @@ function getProviderTone(tipo?: string | null): CSSProperties {
 
 function getSoftChipStyle(): CSSProperties {
   return {
-    background: 'rgba(15, 23, 42, 0.04)',
+    background: 'var(--ws-surface-2)',
     color: 'var(--ws-text-2)',
-    border: '1px solid rgba(15, 23, 42, 0.08)',
+    border: '1px solid var(--ws-glass-border)',
   }
 }
 
@@ -536,9 +536,9 @@ function getStatusChipStyle(status?: string | null): CSSProperties {
   }
   if (status === 'aguardando' || status === 'processando') {
     return {
-      background: 'rgba(15, 23, 42, 0.05)',
+      background: 'var(--ws-surface-2)',
       color: 'var(--ws-text-2)',
-      border: '1px solid rgba(15, 23, 42, 0.10)',
+      border: '1px solid var(--ws-glass-border)',
     }
   }
   return {
@@ -852,7 +852,7 @@ export function PainelInbox({
                       fontSize: isMobile ? 13 : 11,
                       fontWeight: 700,
                       cursor: 'pointer',
-                      border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid rgba(15, 23, 42, 0.08)',
+                      border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid var(--ws-glass-border)',
                       background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'var(--ws-surface)',
                       color: ativo ? '#1D9E75' : 'var(--ws-text-2)',
                       boxShadow: ativo ? '0 4px 10px rgba(29, 158, 117, 0.10)' : 'none',
@@ -1144,7 +1144,7 @@ export function PainelInbox({
                     onMouseEnter={e => {
                       const el = e.currentTarget as HTMLElement
                       el.style.opacity = '1'
-                      el.style.background = 'rgba(15,23,42,0.06)'
+                      el.style.background = 'var(--ws-glass-bg)'
                     }}
                     onMouseLeave={e => {
                       const el = e.currentTarget as HTMLElement

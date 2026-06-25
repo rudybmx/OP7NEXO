@@ -69,8 +69,8 @@ const dropIconBtn = (ativo: boolean): CSSProperties => ({
   padding: '6px 8px',
   borderRadius: 10,
   cursor: 'pointer',
-  border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid rgba(15, 23, 42, 0.08)',
-  background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'rgba(255, 255, 255, 0.88)',
+  border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid var(--ws-glass-border)',
+  background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'var(--ws-glass-bg)',
   color: ativo ? '#1D9E75' : 'var(--ws-text-2)',
   boxShadow: ativo ? '0 4px 10px rgba(29, 158, 117, 0.10)' : 'none',
 })
@@ -208,8 +208,8 @@ export function FiltrosAtendimentoV2({
     fontSize: isMobile ? 13 : 11,
     fontWeight: 700,
     cursor: 'pointer',
-    border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid rgba(15, 23, 42, 0.08)',
-    background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'rgba(255, 255, 255, 0.88)',
+    border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid var(--ws-glass-border)',
+    background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'var(--ws-glass-bg)',
     color: ativo ? '#1D9E75' : 'var(--ws-text-2)',
     boxShadow: ativo ? '0 4px 10px rgba(29, 158, 117, 0.10)' : 'none',
   })

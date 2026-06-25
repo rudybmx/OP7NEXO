@@ -383,7 +383,7 @@ function ModalContato({ contato, modo, onFechar, onSalvar, onExcluir }: ModalCon
         overflow: 'hidden', position: 'relative',
         animation: 'fadeInScale 150ms ease',
       }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent)' }} />
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--ws-glass-border), transparent)' }} />
 
         {/* Header */}
         <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--ws-divider)', display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -676,7 +676,7 @@ export function PaginaContatos() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
         {STATS.map(s => (
           <div key={s.label} style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)', borderRadius: 'var(--ws-radius-lg)' as unknown as number, backdropFilter: 'blur(16px)', boxShadow: 'var(--ws-glass-shadow-sm)', padding: '14px 18px', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)' }} />
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--ws-glass-border), transparent)' }} />
             <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ws-text-3)', marginBottom: 6 }}>{s.label}</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: s.cor, letterSpacing: '-0.02em', lineHeight: 1 }}>{s.valor}</div>
             <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 4 }}>{s.sub}</div>
@@ -723,7 +723,7 @@ export function PaginaContatos() {
 
       {/* Tabela */}
       <div style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)', borderRadius: 'var(--ws-radius-lg)', backdropFilter: 'blur(16px)', boxShadow: 'var(--ws-glass-shadow)', overflow: 'hidden', position: 'relative' }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)', zIndex: 1 }} />
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--ws-glass-border), transparent)', zIndex: 1 }} />
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 860 }}>
             <thead>

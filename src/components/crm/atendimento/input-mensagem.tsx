@@ -349,9 +349,9 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
 
   const attachmentTone = useMemo(() => {
     if (!attachment) return {
-      background: 'rgba(15, 23, 42, 0.04)',
+      background: 'var(--ws-surface-2)',
       color: 'var(--ws-text-2)',
-      border: '1px solid rgba(15, 23, 42, 0.08)',
+      border: '1px solid var(--ws-glass-border)',
     }
 
     if (attachment.kind === 'audio') {
@@ -379,9 +379,9 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
     }
 
     return {
-      background: 'rgba(15, 23, 42, 0.04)',
+      background: 'var(--ws-surface-2)',
       color: 'var(--ws-text-2)',
-      border: '1px solid rgba(15, 23, 42, 0.08)',
+      border: '1px solid var(--ws-glass-border)',
     }
   }, [attachment])
 
@@ -478,7 +478,7 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
             <button
               type="button"
               onClick={togglePauseResume}
-              style={{ ...recordingButtonStyle, background: 'rgba(15, 23, 42, 0.06)', color: '#0f172a' }}
+              style={{ ...recordingButtonStyle, background: 'var(--ws-surface-2)', color: 'var(--ws-text-1)' }}
               title={isPaused ? 'Retomar gravação' : 'Pausar gravação'}
               aria-label={isPaused ? 'Retomar gravação' : 'Pausar gravação'}
             >
@@ -669,8 +669,8 @@ const iconCircleButtonStyle: CSSProperties = {
   width: 42,
   height: 42,
   borderRadius: '50%',
-  background: 'rgba(15, 23, 42, 0.05)',
-  border: '1px solid rgba(15, 23, 42, 0.08)',
+  background: 'var(--ws-surface-2)',
+  border: '1px solid var(--ws-glass-border)',
   color: 'var(--ws-text-2)',
   cursor: 'pointer',
   display: 'inline-flex',

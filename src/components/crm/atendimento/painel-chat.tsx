@@ -145,9 +145,9 @@ function getMessageStatusMeta(status?: string | null) {
     label: formatStatusLabel(status),
     icon: <Clock size={11} />,
     style: {
-      background: 'rgba(15, 23, 42, 0.06)',
+      background: 'var(--ws-surface-2)',
       color: 'var(--ws-text-2)',
-      border: '1px solid rgba(15, 23, 42, 0.10)',
+      border: '1px solid var(--ws-glass-border)',
     } satisfies CSSProperties,
   }
 }
@@ -224,7 +224,7 @@ function MediaImagem({
         maxWidth: '100%',
         borderRadius: 10,
         overflow: 'hidden',
-        background: 'rgba(15,23,42,0.06)',
+        background: 'var(--ws-surface-2)',
         aspectRatio: loaded && !error ? 'auto' : '4/3',
       }}
     >
@@ -232,7 +232,7 @@ function MediaImagem({
         <>
           <div
             className="animate-pulse"
-            style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.08)' }}
+            style={{ position: 'absolute', inset: 0, background: 'var(--ws-glass-bg)' }}
           />
           <div style={{
             position: 'absolute',
@@ -278,7 +278,7 @@ function MediaImagem({
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: 12,
-          color: 'rgba(15,23,42,0.45)',
+          color: 'var(--ws-text-2)',
         }}>
           Imagem indisponível
         </div>
@@ -288,8 +288,8 @@ function MediaImagem({
 }
 
 function renderMidiaPending(kind: string, filename: string | null | undefined, isEntrada: boolean, isIA: boolean, key: string) {
-  const mutedColor = isEntrada ? 'var(--ws-text-2)' : (isIA ? 'rgba(255,255,255,0.55)' : 'rgba(15,32,58,0.50)')
-  const skeletonBg = isEntrada ? 'rgba(15,23,42,0.08)' : (isIA ? 'rgba(255,255,255,0.10)' : 'rgba(15,32,58,0.08)')
+  const mutedColor = isEntrada ? 'var(--ws-text-2)' : (isIA ? 'rgba(255,255,255,0.55)' : 'var(--ws-text-2)')
+  const skeletonBg = isEntrada ? 'var(--ws-glass-bg)' : (isIA ? 'rgba(255,255,255,0.10)' : 'var(--ws-glass-bg)')
 
   if (kind === 'image') {
     return (
@@ -543,9 +543,6 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
     backgroundRepeat: 'repeat',
     backgroundPosition: 'center top',
     backgroundSize: '440px auto',
-    opacity: 0.065,
-    mixBlendMode: 'multiply',
-    filter: 'saturate(0.8)',
   }
 
   return (
@@ -657,9 +654,9 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                   fontWeight: 700,
                   letterSpacing: '0.03em',
                   textTransform: 'uppercase',
-                  background: 'rgba(15, 23, 42, 0.05)',
+                  background: 'var(--ws-surface-2)',
                   color: 'var(--ws-text-2)',
-                  border: '1px solid rgba(15, 23, 42, 0.10)',
+                  border: '1px solid var(--ws-glass-border)',
                 }}>
                   Grupo
                 </span>
@@ -707,9 +704,9 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                   fontWeight: 700,
                   letterSpacing: '0.03em',
                   textTransform: 'uppercase',
-                  background: 'rgba(15, 23, 42, 0.04)',
+                  background: 'var(--ws-surface-2)',
                   color: 'var(--ws-text-2)',
-                  border: '1px solid rgba(15, 23, 42, 0.08)',
+                  border: '1px solid var(--ws-glass-border)',
                   maxWidth: '100%',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -736,7 +733,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                 : 'var(--ws-surface)',
               border: painelAberto
                 ? '1px solid rgba(0, 110, 255, 0.18)'
-                : '1px solid rgba(15, 23, 42, 0.08)',
+                : '1px solid var(--ws-glass-border)',
               color: painelAberto ? 'var(--ws-blue)' : 'var(--ws-text-2)',
               cursor: 'pointer',
               display: 'flex',
@@ -770,7 +767,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
               height: isMobile ? 40 : 32,
               borderRadius: 10,
               background: 'var(--ws-surface)',
-              border: '1px solid rgba(15, 23, 42, 0.08)',
+              border: '1px solid var(--ws-glass-border)',
               color: 'var(--ws-text-3)',
               cursor: 'pointer',
               padding: 0,
@@ -811,13 +808,12 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
       </div>
 
       {/* Mensagens */}
-      <div style={{
+      <div className="atd-chat-bg" style={{
         position: 'relative',
         minHeight: 0,
         overflow: 'hidden',
-        background: 'linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(244, 247, 255, 0.98) 100%)',
       }}>
-        <div aria-hidden style={patternOverlayStyle} />
+        <div aria-hidden className="atd-chat-pattern" style={patternOverlayStyle} />
         <div style={{
           position: 'relative',
           zIndex: 1,
@@ -852,7 +848,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                   background: 'rgba(255,255,255,0.20)',
                   padding: '4px 12px',
                   borderRadius: 99,
-                  border: '1px solid rgba(15, 23, 42, 0.08)',
+                  border: '1px solid var(--ws-glass-border)',
                   backdropFilter: 'blur(8px)',
                 }}>
                   {grupo.data}
@@ -871,8 +867,8 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                       background: msg.isMentioned
                         ? 'linear-gradient(180deg, rgba(255, 248, 220, 0.98), rgba(255, 244, 197, 0.96))'
                         : 'var(--ws-surface)',
-                      color: '#0f172a',
-                      border: `1px solid ${msg.isMentioned ? 'rgba(201, 168, 76, 0.28)' : 'rgba(15, 23, 42, 0.08)'}`,
+                      color: msg.isMentioned ? '#0f172a' : 'var(--ws-text-1)',
+                      border: `1px solid ${msg.isMentioned ? 'rgba(201, 168, 76, 0.28)' : 'var(--ws-glass-border)'}`,
                       boxShadow: '0 8px 20px rgba(15, 23, 42, 0.06)',
                     }
                   : isIA
@@ -883,16 +879,15 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         boxShadow: '0 10px 22px rgba(15, 39, 68, 0.12)',
                       }
                     : {
-                        background: 'linear-gradient(180deg, #E9EEFD 0%, #DDE3FA 100%)',
-                        color: 'var(--ws-text-1)',
                         border: '1px solid rgba(0, 110, 255, 0.12)',
                         boxShadow: '0 10px 22px rgba(0, 110, 255, 0.08)',
                       }
+                const isOut = !isEntrada && !isIA
                 const footerColor = isEntrada
                   ? 'var(--ws-text-2)'
                   : isIA
                     ? 'var(--ws-glass-bg)'
-                    : 'rgba(16, 32, 58, 0.70)'
+                    : 'var(--ws-text-2)'
                 return (
                   <div
                     key={msg.id}
@@ -917,7 +912,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         ? (conversa.isGroup ? participantLabel : (msg.remetenteNome || 'Contato'))
                         : (isIA ? 'IA Agente' : 'Atendente')}
                     </div>
-                    <div style={{
+                    <div className={isOut ? 'atd-bubble-out' : undefined} style={{
                       padding: '10px 14px 9px',
                       borderRadius: isEntrada ? '0 16px 16px 16px' : '16px 0 16px 16px',
                       fontSize: 13,
@@ -933,7 +928,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                       {(msg.quotedText || msg.quotedMessageId) && (
                         <div style={{
                           borderLeft: '3px solid #c9a84c',
-                          background: isEntrada ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.14)',
+                          background: isEntrada ? 'var(--ws-glass-bg)' : 'rgba(255,255,255,0.14)',
                           borderRadius: 6,
                           padding: '4px 8px',
                           marginBottom: 6,

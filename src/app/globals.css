@@ -519,6 +519,36 @@ body {
   background: var(--ws-surface-2);
 }
 
+/* Fundo da área de mensagens (display das conversas) */
+.atd-chat-bg {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(244, 247, 255, 0.98) 100%);
+}
+.dark .atd-chat-bg {
+  background: var(--ws-page-bg);
+}
+
+/* Bolha de saída (atendente) — unidade acoplada bg+texto */
+.atd-bubble-out {
+  background: linear-gradient(180deg, #E9EEFD 0%, #DDE3FA 100%);
+  color: #0f2744;
+}
+.dark .atd-bubble-out {
+  background: linear-gradient(180deg, #16335e 0%, #1d3f72 100%);
+  color: #eaf1ff;
+}
+
+/* Pattern de fundo do chat — multiply some no dark, vira soft-light claro */
+.atd-chat-pattern {
+  opacity: 0.065;
+  mix-blend-mode: multiply;
+  filter: saturate(0.8);
+}
+.dark .atd-chat-pattern {
+  opacity: 0.10;
+  mix-blend-mode: soft-light;
+  filter: none;
+}
+
 /* ============================================
    CONTENT GRID — responsive cols
    ============================================ */

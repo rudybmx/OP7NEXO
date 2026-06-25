@@ -120,7 +120,7 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
               height: isMobile ? 40 : 32,
               borderRadius: 10,
               background: 'var(--ws-surface)',
-              border: '1px solid rgba(15, 23, 42, 0.08)',
+              border: '1px solid var(--ws-glass-border)',
               color: 'var(--ws-text-3)',
               cursor: 'pointer',
               display: 'inline-flex',
