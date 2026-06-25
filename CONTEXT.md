@@ -217,6 +217,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-25) — CRM Atendimento: iniciar conversa com canal + checagem de número (P2+P3a)
+- **Iniciar nova conversa** (`PainelNovaConversaInline` em `painel-inbox.tsx`): seletor "Canal de envio" quando o cliente tem **>1 canal** (passa `canal_id`); `use-iniciar-conversa.ts` + proxy `app/api/whatsapp/conversations/iniciar/route.ts` encaminham `canal_id`.
+- **Checagem de número**: a API (`POST /conversas/iniciar`) confere se o número tem WhatsApp no canal (Evolution `/user/check`, WAHA `/contacts/check-exists`) e **bloqueia 422** se não existir → o painel mostra "Não encontrei um contato com WhatsApp neste número" (erro já propagado pelo proxy via `data.detail`). Fail-open em erro do provider. Par da API em `api/production@21905e4`.
+
 ### ✅ Implementado (2026-06-25) — Inteligência de IA: painel de análise da conversa (Fase 1)
 - Painel "🤖 Análise IA" do contato (`painel-contato.tsx`) conectado a **dados reais**: resumo, interesse, observações + **termômetro** SVG (`termometro-lead.tsx`, quente/morno/frio por score 0-100). O proxy GET `conversations/route.ts` passa `resumoIa` + `temperatura`/`temperaturaScore`/`interesse`/`observacoes` (de `conversa.resumo_ia` + `contexto_ia`, servidos pela API). Campo `objetivo` no cadastro do agente (`central-agentes/page.tsx`) guia o "interesse". Backend: análise assíncrona no worker com o modelo do agente (migration 096 `agentes.objetivo`; job `conversa_analise`, independente do `ai_ativo`).
 
