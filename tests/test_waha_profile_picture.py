@@ -490,7 +490,8 @@ def test_process_group_enrichment_job_updates_group_avatar_url(monkeypatch):
 
 
 def test_enqueue_group_enrichment_skips_when_avatar_recent():
-    """Regressão do busy-loop: com group_avatar_fetched_at recente, não re-enfileira."""
+    """Regressão do busy-loop: grupo sem foto buscado há pouco (dentro do TTL curto
+    de 24h) NÃO re-enfileira a cada mensagem."""
     workspace_id = str(uuid.uuid4())
     canal_id = str(uuid.uuid4())
     conversa_id = str(uuid.uuid4())
@@ -500,10 +501,10 @@ def test_enqueue_group_enrichment_skips_when_avatar_recent():
         conversation_row={
             "id": conversa_id,
             "workspace_id": workspace_id,
-            # Nome preenchido, foto ausente, MAS buscado há 1 dia → dentro do TTL (7d).
+            # Nome preenchido, foto ausente, buscado há 2h → dentro do TTL curto (24h).
             "group_name": "Recepção",
             "group_avatar_url": None,
-            "group_avatar_fetched_at": datetime.now(timezone.utc) - timedelta(days=1),
+            "group_avatar_fetched_at": datetime.now(timezone.utc) - timedelta(hours=2),
         },
     )
 
@@ -518,6 +519,64 @@ def test_enqueue_group_enrichment_skips_when_avatar_recent():
 
     assert ok is False
     assert db.inserted_jobs == []
+
+
+def test_enqueue_group_enrichment_retenta_sem_foto_apos_ttl_curto():
+    """Grupo SEM foto buscado há >24h re-enfileira (TTL curto) — não fica travado 7 dias."""
+    workspace_id = str(uuid.uuid4())
+    canal_id = str(uuid.uuid4())
+    conversa_id = str(uuid.uuid4())
+    db = _AvatarDb(
+        canal_row={"id": canal_id, "workspace_id": workspace_id, "config": {"waha": {"session": "op7-waha"}}},
+        contact_row={"id": str(uuid.uuid4()), "workspace_id": workspace_id},
+        conversation_row={
+            "id": conversa_id,
+            "workspace_id": workspace_id,
+            "group_name": "Recepção",
+            "group_avatar_url": None,  # sem foto
+            "group_avatar_fetched_at": datetime.now(timezone.utc) - timedelta(hours=30),
+        },
+    )
+
+    ok = contact_avatar_enrichment.enqueue_group_enrichment(
+        db,
+        workspace_id=workspace_id,
+        canal_id=canal_id,
+        conversa_id=conversa_id,
+        group_jid="120363123456789@g.us",
+        instance="op7-waha",
+    )
+
+    assert ok is True
+    assert len(db.inserted_jobs) == 1
+
+
+def test_enqueue_contato_retenta_sem_foto_apos_ttl_curto():
+    """Contato SEM foto buscado há >24h re-enfileira; COM foto continua travado 7 dias."""
+    workspace_id = str(uuid.uuid4())
+    canal_id = str(uuid.uuid4())
+    contact_id = str(uuid.uuid4())
+    db = _AvatarDb(
+        canal_row={"id": canal_id, "workspace_id": workspace_id, "config": {"waha": {"session": "op7-waha"}}},
+        contact_row={
+            "id": contact_id,
+            "workspace_id": workspace_id,
+            "avatar_url": None,  # sem foto
+            "avatar_fetched_at": datetime.now(timezone.utc) - timedelta(hours=30),
+        },
+    )
+
+    ok = contact_avatar_enrichment.enqueue_contact_avatar_enrichment(
+        db,
+        workspace_id=workspace_id,
+        canal_id=canal_id,
+        contact_id=contact_id,
+        jid="554799999999@c.us",
+        instance="op7-waha",
+    )
+
+    assert ok is True
+    assert len(db.inserted_jobs) == 1
 
 
 def test_process_group_enrichment_marca_fetched_at_mesmo_sem_foto(monkeypatch):
