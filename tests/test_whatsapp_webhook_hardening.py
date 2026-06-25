@@ -163,6 +163,14 @@ class _PersistenceDb:
         if "insert into public.crm_message_jobs" in sql_lower:
             return _Result(row=(str(uuid.uuid4()),))
 
+        # Dedup BR variante do 9º dígito (_resolve_existing_br_conversation): sem variante
+        # seeded neste fake → retorna vazio, mantendo o fluxo idêntico ao anterior.
+        if "from public.crm_whatsapp_conversas" in sql_lower and (
+            "select 1 from public.crm_whatsapp_conversas" in sql_lower
+            or "select ct.id as contato_id" in sql_lower
+        ):
+            return _Result()
+
         if "select id, status" in sql_lower and "from public.crm_whatsapp_conversas" in sql_lower and "remote_jid = :jid" in sql_lower and "ativo = true" in sql_lower:
             key = (str(params.get("ws")), str(params.get("canal")), str(params.get("jid")))
             row = self.conversations_by_key.get(key)

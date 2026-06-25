@@ -271,6 +271,17 @@ def process_evolution_message(
         is_lid=normalized.is_lid,
     )
 
+    # Variante do 9º dígito BR (não-LID): se a forma 12/13 díg já tem conversa ativa,
+    # roteia a mensagem para ela em vez de criar contato/conversa duplicados.
+    # NÃO altera o ramo @lid acima (caminho provado).
+    if not normalized.is_lid and contato_id_existente is None and not is_group:
+        resolved_remote_jid, contato_id_existente = _resolve_existing_br_conversation(
+            db,
+            workspace_id=workspace_id,
+            canal_id=canal_id,
+            remote_jid=resolved_remote_jid,
+        )
+
     if is_group and participant_jid:
         _upsert_participant_contact(
             db,
@@ -666,6 +677,93 @@ def _record_lead_origin_event(
         )
 
 
+# --- Normalização de JID BR (variante do 9º dígito) -------------------------
+# O WhatsApp BR representa o mesmo celular em duas formas: 12 dígitos (legado,
+# sem o 9 após o DDD) e 13 dígitos (atual, com o 9). Sem normalizar, as duas
+# formas viram contatos/conversas separados. O gate de celular (5º dígito ∈ 6-9)
+# evita transformar fixo em celular falso. O ramo @lid (_resolve_lid_contact)
+# mantém lógica própria por ser caminho provado e não usa estes helpers.
+
+
+def _br_jid_candidates(jid: str) -> list[str]:
+    """JIDs equivalentes de um número BR: original + variante do 9º dígito @s.whatsapp.net."""
+    candidates = [jid]
+    digits = _digits(jid)
+    if len(digits) == 12 and digits.startswith("55") and digits[4] in "6789":
+        candidates.append(f"{digits}@s.whatsapp.net")
+        candidates.append(f"{digits[:4]}9{digits[4:]}@s.whatsapp.net")
+    elif len(digits) == 13 and digits.startswith("55") and digits[4] == "9":
+        candidates.append(f"{digits}@s.whatsapp.net")
+        candidates.append(f"{digits[:4]}{digits[5:]}@s.whatsapp.net")
+    return list(dict.fromkeys(candidates))
+
+
+def _canonical_br_jid(jid: str) -> str:
+    """Forma canônica para gravar: 13 díg @s.whatsapp.net (celular BR) ou bare→@s.whatsapp.net.
+    Preserva grupo/lid/broadcast e qualquer JID que não case com o padrão de celular BR."""
+    if not jid or "@g.us" in jid or "@lid" in jid or "@broadcast" in jid:
+        return jid
+    digits = _digits(jid)
+    if len(digits) == 12 and digits.startswith("55") and digits[4] in "6789":
+        return f"{digits[:4]}9{digits[4:]}@s.whatsapp.net"
+    if len(digits) == 13 and digits.startswith("55") and digits[4] == "9":
+        return f"{digits}@s.whatsapp.net"
+    if "@" not in jid and digits:
+        return f"{digits}@s.whatsapp.net"
+    return jid
+
+
+def _resolve_existing_br_conversation(
+    db: Session,
+    *,
+    workspace_id: str,
+    canal_id: str,
+    remote_jid: str,
+) -> tuple[str, Any | None]:
+    """Inbound não-LID: se a variante do 9º dígito já tem conversa ATIVA, roteia a mensagem
+    para ela (devolve jid_existente, contato_id). Só atua para @s.whatsapp.net individual BR.
+    Determinístico: só age quando um candidato bate numa conversa ativa real (sem falso-merge).
+    Filtro `ativo = true` apenas — idêntico ao ramo @lid e a _upsert_conversation, que reabre
+    conversa resolvida no inbound."""
+    if not remote_jid or "@s.whatsapp.net" not in remote_jid:
+        return remote_jid, None
+    variant_candidates = [c for c in _br_jid_candidates(remote_jid) if c != remote_jid]
+    if not variant_candidates:
+        return remote_jid, None
+    # Se o JID exato já tem conversa ativa, deixa o fluxo normal cuidar (não desvia p/ variante).
+    exact = db.execute(
+        text("""
+            SELECT 1 FROM public.crm_whatsapp_conversas
+            WHERE workspace_id = CAST(:ws AS uuid)
+              AND canal_id = CAST(:canal AS uuid)
+              AND remote_jid = :jid
+              AND ativo = true
+            LIMIT 1
+        """),
+        {"ws": workspace_id, "canal": canal_id, "jid": remote_jid},
+    ).fetchone()
+    if exact:
+        return remote_jid, None
+    for candidate_jid in variant_candidates:
+        row = db.execute(
+            text("""
+                SELECT ct.id AS contato_id
+                FROM public.crm_whatsapp_conversas cv
+                JOIN public.crm_whatsapp_contatos ct ON ct.id = cv.contato_id
+                WHERE cv.workspace_id = CAST(:ws AS uuid)
+                  AND cv.canal_id = CAST(:canal AS uuid)
+                  AND cv.remote_jid = :jid
+                  AND cv.ativo = true
+                ORDER BY cv.updated_at DESC LIMIT 1
+            """),
+            {"ws": workspace_id, "canal": canal_id, "jid": candidate_jid},
+        ).fetchone()
+        if row:
+            logger.info("[webhook-process] JID %s casado com variante 9º díg existente %s", remote_jid, candidate_jid)
+            return candidate_jid, row[0]
+    return remote_jid, None
+
+
 def _resolve_lid_contact(
     db: Session,
     *,
@@ -879,6 +977,74 @@ def _upsert_contact(
 
 
 
+def _move_conversation_children_to_canonical(db: Session, *, canonical_id: Any, old_ids: list) -> None:
+    """Move as 9 tabelas-filhas de crm_whatsapp_conversas das conversas `old_ids` para a
+    canônica. 7 têm FK simples (UPDATE direto); crm_conversa_etiquetas (PK conversa+etiqueta)
+    e crm_painel_cards (unique parcial painel+conversa enquanto ativo) exigem tratar colisão.
+    Reutilizado pelo script de consolidação para manter a mesma lógica."""
+    params = {"canonical": canonical_id, "old_ids": old_ids}
+    for table in (
+        "crm_whatsapp_mensagens",
+        "crm_whatsapp_midia",
+        "crm_whatsapp_memorias_ia",
+        "crm_conversation_assignments",
+        "crm_followups",
+        "crm_lead_origin_events",
+        "agente_uso_tokens",
+    ):
+        db.execute(
+            text(f"UPDATE public.{table} SET conversa_id = :canonical WHERE conversa_id = ANY(:old_ids)"),
+            params,
+        )
+
+    # crm_conversa_etiquetas: PK (conversa_id, etiqueta_id). Apaga as que colidiriam — com a
+    # canônica ou entre as próprias antigas (mantém menor conversa_id) — depois move o resto.
+    db.execute(
+        text("""
+            DELETE FROM public.crm_conversa_etiquetas o
+            WHERE o.conversa_id = ANY(:old_ids)
+              AND (
+                  EXISTS (SELECT 1 FROM public.crm_conversa_etiquetas c
+                          WHERE c.conversa_id = :canonical AND c.etiqueta_id = o.etiqueta_id)
+                  OR EXISTS (SELECT 1 FROM public.crm_conversa_etiquetas o2
+                             WHERE o2.conversa_id = ANY(:old_ids)
+                               AND o2.etiqueta_id = o.etiqueta_id
+                               AND o2.conversa_id < o.conversa_id)
+              )
+        """),
+        params,
+    )
+    db.execute(
+        text("UPDATE public.crm_conversa_etiquetas SET conversa_id = :canonical WHERE conversa_id = ANY(:old_ids)"),
+        params,
+    )
+
+    # crm_painel_cards: unique parcial (painel_id, conversa_id) WHERE conversa_id IS NOT NULL
+    # AND ativo = true. Desativa cards antigos que colidiriam (a canônica vence; entre antigos
+    # do mesmo painel sobrevive o de menor id), depois move todos para a canônica.
+    db.execute(
+        text("""
+            UPDATE public.crm_painel_cards victim
+            SET ativo = false, atualizado_em = NOW()
+            WHERE victim.conversa_id = ANY(:old_ids)
+              AND victim.ativo = true
+              AND EXISTS (
+                  SELECT 1 FROM public.crm_painel_cards keeper
+                  WHERE keeper.painel_id = victim.painel_id
+                    AND keeper.ativo = true
+                    AND keeper.id <> victim.id
+                    AND (keeper.conversa_id = :canonical OR keeper.conversa_id = ANY(:old_ids))
+                    AND (keeper.conversa_id = :canonical OR keeper.id < victim.id)
+              )
+        """),
+        params,
+    )
+    db.execute(
+        text("UPDATE public.crm_painel_cards SET conversa_id = :canonical, atualizado_em = NOW() WHERE conversa_id = ANY(:old_ids)"),
+        params,
+    )
+
+
 def _merge_duplicate_conversations(
     db: Session,
     *,
@@ -888,8 +1054,8 @@ def _merge_duplicate_conversations(
 ) -> int:
     """Consolida conversas ativas não-resolvidas com o mesmo JID em uma só.
 
-    Escolhe a mais recente como canônica. Move mensagens, mídias, memorias_ia,
-    followups, assignments e lead_events. Soft-delete as antigas.
+    Escolhe a mais recente como canônica. Move as 9 tabelas-filhas
+    (_move_conversation_children_to_canonical) e soft-delete as antigas.
     Retorna número de conversas mescladas (0 se não havia duplicatas).
     """
     rows = db.execute(
@@ -915,19 +1081,8 @@ def _merge_duplicate_conversations(
     canonical_id = rows[0][0]
     old_ids = [r[0] for r in rows[1:]]
 
-    # Move all related records to the canonical conversation
-    for table, col in [
-        ("crm_whatsapp_mensagens", "conversa_id"),
-        ("crm_whatsapp_midia", "conversa_id"),
-        ("crm_whatsapp_memorias_ia", "conversa_id"),
-        ("crm_conversation_assignments", "conversa_id"),
-        ("crm_followups", "conversa_id"),
-        ("crm_lead_origin_events", "conversa_id"),
-    ]:
-        db.execute(
-            text(f"UPDATE public.{table} SET {col} = :canonical WHERE {col} = ANY(:old_ids)"),
-            {"canonical": canonical_id, "old_ids": old_ids},
-        )
+    # Move as 9 tabelas-filhas para a conversa canônica (com tratamento de colisão).
+    _move_conversation_children_to_canonical(db, canonical_id=canonical_id, old_ids=old_ids)
 
     # Sum unread counts from old conversations
     unread_total = db.execute(

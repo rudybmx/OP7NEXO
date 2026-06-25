@@ -50,7 +50,12 @@ from app.services import helena_chat as helena_service
 from app.services.canal_labels import canal_provider, canal_provider_label
 from app.services.waha_normalizer import adapt_waha_to_evolution
 from app.services.redis_pub import publish_whatsapp_event
-from app.services.whatsapp_crm_persistence import process_evolution_message, process_evolution_connection_event
+from app.services.whatsapp_crm_persistence import (
+    process_evolution_message,
+    process_evolution_connection_event,
+    _br_jid_candidates,
+    _canonical_br_jid,
+)
 from app.services.whatsapp_event_queue import enqueue_evolution_event
 from app.services.whatsapp_media import StoredMedia, enqueue_inbound_media_download, register_media_record, store_media_bytes
 from app.services.whatsapp_normalizer import (
@@ -2875,16 +2880,21 @@ def enviar_mensagem_canal(
         # Preserva @g.us para grupos
         is_group_jid = "@g.us" in payload.numero
         numero_evo = numero_jid + ("@g.us" if is_group_jid else "@s.whatsapp.net") if "@" not in numero_jid else numero_jid
-        # Busca conversa pelo JID
-        conv_result = db.execute(
-            text("""
-                SELECT id, contato_id FROM public.crm_whatsapp_conversas
-                WHERE instance = :inst AND remote_jid = :jid AND status != 'resolvido'
-                ORDER BY updated_at DESC LIMIT 1
-            """),
-            {"inst": instance, "jid": numero_evo},
-        )
-        conv_row = conv_result.fetchone()
+        # Busca conversa ativa pelo JID, incluindo a variante do 9º dígito BR (evita duplicar
+        # quando o inbound salvou a outra forma do número). Grupos: lookup exato apenas.
+        _lookup_jids = [numero_evo] if is_group_jid else _br_jid_candidates(numero_evo)
+        conv_row = None
+        for _cand in _lookup_jids:
+            conv_row = db.execute(
+                text("""
+                    SELECT id, contato_id FROM public.crm_whatsapp_conversas
+                    WHERE instance = :inst AND remote_jid = :jid AND status != 'resolvido'
+                    ORDER BY updated_at DESC LIMIT 1
+                """),
+                {"inst": instance, "jid": _cand},
+            ).fetchone()
+            if conv_row:
+                break
         if conv_row:
             conversa_id = conv_row[0]
             contato_id = conv_row[1]
@@ -2937,7 +2947,7 @@ def enviar_mensagem_canal(
             """),
             {
                 "ws": str(c.workspace_id),
-                "jid": numero_jid,
+                "jid": _canonical_br_jid(numero_evo),
                 "tel": numero_evo.split("@")[0],
                 "evo": numero_evo,
                 "nome": numero_evo.split("@")[0],
@@ -2956,7 +2966,7 @@ def enviar_mensagem_canal(
                 "canal": str(c.id),
                 "ct": str(contato_id),
                 "inst": instance,
-                "jid": numero_jid,
+                "jid": _canonical_br_jid(numero_evo),
                 "msg": texto_seguro[:500],
             },
         )
@@ -3084,16 +3094,21 @@ def enviar_template_canal(
         # Preserva @g.us para grupos
         is_group_jid = "@g.us" in payload.numero
         numero_evo = numero_jid + ("@g.us" if is_group_jid else "@s.whatsapp.net") if "@" not in numero_jid else numero_jid
-        # Busca conversa pelo JID
-        conv_result = db.execute(
-            text("""
-                SELECT id, contato_id FROM public.crm_whatsapp_conversas
-                WHERE instance = :inst AND remote_jid = :jid AND status != 'resolvido'
-                ORDER BY updated_at DESC LIMIT 1
-            """),
-            {"inst": instance, "jid": numero_evo},
-        )
-        conv_row = conv_result.fetchone()
+        # Busca conversa ativa pelo JID, incluindo a variante do 9º dígito BR (evita duplicar
+        # quando o inbound salvou a outra forma do número). Grupos: lookup exato apenas.
+        _lookup_jids = [numero_evo] if is_group_jid else _br_jid_candidates(numero_evo)
+        conv_row = None
+        for _cand in _lookup_jids:
+            conv_row = db.execute(
+                text("""
+                    SELECT id, contato_id FROM public.crm_whatsapp_conversas
+                    WHERE instance = :inst AND remote_jid = :jid AND status != 'resolvido'
+                    ORDER BY updated_at DESC LIMIT 1
+                """),
+                {"inst": instance, "jid": _cand},
+            ).fetchone()
+            if conv_row:
+                break
         if conv_row:
             conversa_id = conv_row[0]
             contato_id = conv_row[1]
@@ -3133,7 +3148,7 @@ def enviar_template_canal(
             """),
             {
                 "ws": str(c.workspace_id),
-                "jid": numero_jid,
+                "jid": _canonical_br_jid(numero_evo),
                 "tel": numero_evo.split("@")[0],
                 "evo": numero_evo,
                 "nome": numero_evo.split("@")[0],
@@ -3151,7 +3166,7 @@ def enviar_template_canal(
                 "ws": str(c.workspace_id),
                 "ct": str(contato_id),
                 "inst": instance,
-                "jid": numero_jid,
+                "jid": _canonical_br_jid(numero_evo),
                 "msg": f"[Template: {payload.template_name}]",
             },
         )

@@ -169,6 +169,12 @@ Versão da Graph API centralizada em `settings.META_GRAPH_API_VERSION`.
 - O payload bruto é salvo para auditoria e debug
 - Normalizar eventos com `event.upper().replace(".", "_")` e tratar tanto o legado (`messages.upsert`, `messages.update`, `connection.update`) quanto o Go novo
 
+### Dedup de conversas (variante do 9º dígito BR)
+- O mesmo celular aparece como 12 díg (legado, sem o 9) e 13 díg (atual); o envio manual gravava JID *bare* (sem `@s.whatsapp.net`). Ambos geravam contatos/conversas duplicados.
+- Prevenção (em `whatsapp_crm_persistence.py`): helpers `_br_jid_candidates`/`_canonical_br_jid` (gate de celular, 5º díg ∈ 6-9). Inbound (`process_evolution_message`) tem ramo não-LID `_resolve_existing_br_conversation` que roteia para a conversa ativa da variante; o ramo `@lid` (`_resolve_lid_contact`) é separado e inalterado. Envio manual/template em `canais.py` faz lookup por candidato e grava JID canônico com sufixo.
+- `_merge_duplicate_conversations`/`_move_conversation_children_to_canonical` movem as **9** tabelas-filhas (inclui `agente_uso_tokens`, `crm_conversa_etiquetas`, `crm_painel_cards` com tratamento de colisão).
+- Consolidação de dados existentes: `scripts/consolidar_conversas_duplicadas.py` (dry-run read-only por default; `--apply` numa transação com `CREATE UNIQUE INDEX` como invariante).
+
 ## PADRÕES FRONT-END
 
 ### Stack
