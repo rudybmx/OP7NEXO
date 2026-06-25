@@ -632,14 +632,44 @@ def processar_analise(db: Session, payload: dict) -> None:
         """),
         {"resumo": res["resumo"], "contexto": json.dumps(contexto), "cid": str(conversa_id)},
     )
-    # Fase 2: se a análise captou um nome DECLARADO pelo lead, confirma (origem 'ia'),
-    # nunca sobrescrevendo um nome confirmado por humano.
-    if res.get("nome_cliente"):
-        _cid = db.execute(
-            text("SELECT contato_id FROM public.crm_whatsapp_conversas WHERE id = CAST(:cid AS uuid)"),
-            {"cid": str(conversa_id)},
-        ).scalar()
-        if _cid:
+    # contato_id desta conversa — usado para espelhar a análise (Fase 3) e o nome (Fase 2) no contato.
+    _cid = db.execute(
+        text("SELECT contato_id FROM public.crm_whatsapp_conversas WHERE id = CAST(:cid AS uuid)"),
+        {"cid": str(conversa_id)},
+    ).scalar()
+    if _cid:
+        # Fase 3: espelha a ÚLTIMA análise no cadastro do contato (last-write) — resumo/temperatura/
+        # score em colunas próprias; interesse/observações em perfil_json.contexto_ia (sem migration).
+        db.execute(
+            text("""
+                UPDATE public.crm_whatsapp_contatos
+                SET resumo_ia = :resumo,
+                    sentimento_ia = :temperatura,
+                    score_lead_ia = :score,
+                    perfil_json = jsonb_set(
+                        COALESCE(perfil_json, '{}'::jsonb), '{contexto_ia}',
+                        CAST(:ctx_contato AS jsonb), true
+                    ),
+                    updated_at = NOW()
+                WHERE id = CAST(:cid AS uuid)
+            """),
+            {
+                "resumo": res["resumo"],
+                "temperatura": res["temperatura"],
+                "score": res["temperatura_score"],
+                "ctx_contato": json.dumps({
+                    "interesse": res["interesse"],
+                    "observacoes": res["observacoes"],
+                    "temperatura": res["temperatura"],
+                    "temperatura_score": res["temperatura_score"],
+                    "analisado_em": contexto["analisado_em"],
+                    "conversa_id": str(conversa_id),
+                }),
+                "cid": str(_cid),
+            },
+        )
+        # Fase 2: nome declarado pelo lead → confirma (origem 'ia'), nunca sobrescreve humano.
+        if res.get("nome_cliente"):
             _aplicar_nome_confirmado_ia(db, _cid, res["nome_cliente"])
     db.commit()
     log.info("[analise] conversa=%s temperatura=%s score=%s", conversa_id, res["temperatura"], res["temperatura_score"])
