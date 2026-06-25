@@ -39,3 +39,14 @@ Substituir `<GlassCard>` por `<Card>` (flat) nos 5 call sites. Remover `glass-ca
 3. P3 objetos utils.ts → shadcn (pode ser sub-dividido por tipo de objeto).
 
 Guard-rails: worktree `agent/ds-fundacao`; commit granular; qualquer coisa globals.css-global é verificada **por amostragem**, não exaustivamente — sempre declarar isso.
+
+---
+
+## Status (2026-06-25)
+
+- **P1 (tokens)** ✅ `9157f2d` — camada HeroUI morta removida; accent/secondary/popover redefinidos; Tabs strip corrigido; muted preservado. Verificado: build + visual (amostragem, light+dark).
+- **P2 (glass-card)** ✅ `50a22af` — o componente `ui/glass-card.tsx` era **dead code** (0 imports); deletado. Os 5 "usos" eram funções locais homônimas (4 showcase v1, 1 glass `--ws-*` em graficos-distribuicao — deferidas ao épico).
+- **P3a (objetos dead de utils.ts)** ✅ `c249c3d` — `filtroAtivo`/`filtroInativo`/`glassCard`/`glassCardHover`/`botaoPrimario`: 0 imports reais → removidos. Restou só `cn()` + `tabAtiva`/`tabInativa`.
+- **P3b (`tabAtiva`/`tabInativa`)** ⏸️ **DEFERIDO** — únicos objetos de utils.ts realmente importados (3 telas de abas: `crm/nps`, `crm/agenda/configuracoes`, `crm/gestao/agenda`). NÃO é troca mecânica: reestruturação por-tela (contextos distintos — `configuracoes` é dark-fixed; conflito `style`↔`className`; `--ws-gold`). Fazer numa sessão dedicada (→ shadcn `Tabs` ou classes `.ds-tab`). Abas funcionais; débito aceitável.
+
+**Limpeza contida ≈ concluída** (P1+P2+P3a). Resta P3b (abas) + o épico `--ws-*` (238 arq., fora desta fase).
