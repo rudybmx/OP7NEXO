@@ -24,7 +24,25 @@ CONTACT_AVATAR_JOB_TYPE = "contact_avatar_enrichment"
 GROUP_ENRICHMENT_JOB_TYPE = "group_enrichment"
 LID_PHONE_ENRICHMENT_JOB_TYPE = "lid_phone_enrichment"
 AVATAR_TTL_DAYS = 7
+# Quando o fetch NÃO achou foto (sem foto pública, privacidade, store ainda não
+# populado), usamos um TTL curto para re-tentar em horas em vez de travar 7 dias.
+# Evita que um backfill envenene o contato por uma semana — ver causa-raiz #2.
+AVATAR_NULL_TTL_HOURS = 24
 WAHA_STORE_DISABLED_MSG = "Enable NOWEB store"
+
+
+def _avatar_ttl_blocks(fetched_at: datetime | None, *, has_photo: bool) -> bool:
+    """True se ainda estamos dentro do TTL — não se deve re-buscar agora.
+
+    has_photo=True  → TTL longo (AVATAR_TTL_DAYS): já temos a foto.
+    has_photo=False → TTL curto (AVATAR_NULL_TTL_HOURS): re-tentar em horas.
+    """
+    if fetched_at is None:
+        return False
+    if fetched_at.tzinfo is None:
+        fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+    window = timedelta(days=AVATAR_TTL_DAYS) if has_photo else timedelta(hours=AVATAR_NULL_TTL_HOURS)
+    return (datetime.now(timezone.utc) - fetched_at) < window
 
 
 def _store_sessions() -> frozenset[str]:
@@ -120,7 +138,7 @@ def enqueue_contact_avatar_enrichment(
         # Verificar TTL no contato antes de criar job
         row = db.execute(
             text("""
-                SELECT avatar_fetched_at
+                SELECT avatar_fetched_at, avatar_url
                 FROM public.crm_whatsapp_contatos
                 WHERE id = CAST(:cid AS uuid)
                   AND workspace_id = CAST(:ws AS uuid)
@@ -128,12 +146,8 @@ def enqueue_contact_avatar_enrichment(
             {"cid": contact_id, "ws": workspace_id},
         ).mappings().first()
 
-        if row and row["avatar_fetched_at"] is not None:
-            fetched = row["avatar_fetched_at"]
-            if fetched.tzinfo is None:
-                fetched = fetched.replace(tzinfo=timezone.utc)
-            if (datetime.now(timezone.utc) - fetched) < timedelta(days=AVATAR_TTL_DAYS):
-                return False  # Já tem avatar recente
+        if row and _avatar_ttl_blocks(row["avatar_fetched_at"], has_photo=bool(row["avatar_url"])):
+            return False  # Avatar recente (ou sem foto re-tentado há pouco)
 
         # Dedup: job pending/running recente para este contato
         existing = db.execute(
@@ -297,7 +311,7 @@ def enqueue_group_enrichment(
         # Não inserir job se o avatar do grupo foi buscado dentro do TTL (7 dias)
         row = db.execute(
             text("""
-                SELECT group_avatar_fetched_at
+                SELECT group_avatar_fetched_at, group_avatar_url
                 FROM public.crm_whatsapp_conversas
                 WHERE id = CAST(:conv_id AS uuid)
                   AND workspace_id = CAST(:ws AS uuid)
@@ -305,12 +319,8 @@ def enqueue_group_enrichment(
             {"conv_id": conversa_id, "ws": workspace_id},
         ).mappings().first()
 
-        if row and row["group_avatar_fetched_at"] is not None:
-            fetched = row["group_avatar_fetched_at"]
-            if fetched.tzinfo is None:
-                fetched = fetched.replace(tzinfo=timezone.utc)
-            if (datetime.now(timezone.utc) - fetched) < timedelta(days=AVATAR_TTL_DAYS):
-                return False  # Já buscado recentemente
+        if row and _avatar_ttl_blocks(row["group_avatar_fetched_at"], has_photo=bool(row["group_avatar_url"])):
+            return False  # Buscado recentemente (ou sem foto re-tentado há pouco)
 
         # Dedup: job pending/running recente para esta conversa
         existing = db.execute(
@@ -434,18 +444,14 @@ def process_contact_avatar_enrichment_job(db: Session, job: dict[str, Any]) -> d
     # Verificar TTL: se já buscou recentemente, skip
     row = db.execute(
         text("""
-            SELECT avatar_fetched_at FROM public.crm_whatsapp_contatos
+            SELECT avatar_fetched_at, avatar_url FROM public.crm_whatsapp_contatos
             WHERE id = CAST(:cid AS uuid) AND workspace_id = CAST(:ws AS uuid)
         """),
         {"cid": contact_id, "ws": workspace_id},
     ).mappings().first()
 
-    if row and row["avatar_fetched_at"] is not None:
-        fetched = row["avatar_fetched_at"]
-        if fetched.tzinfo is None:
-            fetched = fetched.replace(tzinfo=timezone.utc)
-        if (datetime.now(timezone.utc) - fetched) < timedelta(days=AVATAR_TTL_DAYS):
-            return {"status": "skipped"}
+    if row and _avatar_ttl_blocks(row["avatar_fetched_at"], has_photo=bool(row["avatar_url"])):
+        return {"status": "skipped"}
 
     cfg = _load_canal_cfg(db, workspace_id=workspace_id, canal_id=canal_id)
     if cfg is None:
@@ -558,18 +564,14 @@ def process_group_enrichment_job(db: Session, job: dict[str, Any]) -> dict[str, 
     # o provider devolvia nome mas não a foto — ver enqueue_group_enrichment.)
     row = db.execute(
         text("""
-            SELECT group_avatar_fetched_at FROM public.crm_whatsapp_conversas
+            SELECT group_avatar_fetched_at, group_avatar_url FROM public.crm_whatsapp_conversas
             WHERE id = CAST(:conv_id AS uuid) AND workspace_id = CAST(:ws AS uuid)
         """),
         {"conv_id": conversa_id, "ws": workspace_id},
     ).mappings().first()
 
-    if row and row["group_avatar_fetched_at"] is not None:
-        fetched = row["group_avatar_fetched_at"]
-        if fetched.tzinfo is None:
-            fetched = fetched.replace(tzinfo=timezone.utc)
-        if (datetime.now(timezone.utc) - fetched) < timedelta(days=AVATAR_TTL_DAYS):
-            return {"status": "skipped"}
+    if row and _avatar_ttl_blocks(row["group_avatar_fetched_at"], has_photo=bool(row["group_avatar_url"])):
+        return {"status": "skipped"}
 
     cfg = _load_canal_cfg(db, workspace_id=workspace_id, canal_id=canal_id)
     if cfg is None:
