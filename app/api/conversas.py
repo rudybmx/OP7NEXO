@@ -17,6 +17,7 @@ from app.schemas.agente import AjusteRespostaIn, AjusteRespostaOut
 from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
 from app.services.whatsapp_crm_persistence import aplicar_transferencia, record_assignment_event
 from app.services.crm_escopo import aplicar_teto_conversas, eh_supervisor, pode_transferir, pode_ver_conversa
+from app.services import evolution as evo_service, waha_service
 
 router = APIRouter(prefix="/conversas", tags=["conversas"])
 
@@ -124,6 +125,7 @@ class TransferirIn(BaseModel):
 class IniciarConversaIn(BaseModel):
     numero: str
     workspace_id: str | None = None
+    canal_id: str | None = None
 
 
 class IniciarContatoOut(BaseModel):
@@ -439,6 +441,26 @@ def criar_conversa(
     return _conversa_out(c)
 
 
+def _numero_tem_whatsapp(canal: CanalEntrada, numero: str) -> bool | None:
+    """Despacha a checagem de número no WhatsApp por tipo de canal.
+    True/False = definitivo; None = não deu para checar → fail-open (caller NÃO bloqueia criação)."""
+    try:
+        if canal.tipo == "whatsapp_evolution":
+            from app.api.canais import _evolution_meta
+
+            _name, instance_id, instance_token = _evolution_meta(canal)
+            return evo_service.numero_tem_whatsapp(instance_id, instance_token, numero)
+        if canal.tipo == "whatsapp_waha":
+            inner = (canal.config or {}).get("waha") or {}
+            session = inner.get("session") or canal.evolution_instance_id or ""
+            if not session:
+                return None
+            return waha_service.numero_existe(session, numero, inner)
+    except Exception:
+        return None
+    return None
+
+
 @router.post("/iniciar", response_model=IniciarConversaOut, status_code=status.HTTP_201_CREATED)
 def iniciar_conversa(
     data: IniciarConversaIn,
@@ -469,7 +491,28 @@ def iniciar_conversa(
     if ws_id is None and usuario.role != RoleUsuario.platform_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Workspace não definido")
 
-    # Busca canal ativo
+    # Canal explícito (P2): se canal_id foi informado, usa esse canal (qualquer tipo whatsapp ativo).
+    canal = None
+    if data.canal_id:
+        try:
+            _cid = uuid.UUID(data.canal_id)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="canal_id inválido")
+        canal = (
+            db.query(CanalEntrada)
+            .filter(
+                CanalEntrada.id == _cid,
+                CanalEntrada.tipo.in_(["whatsapp_evolution", "whatsapp_waha"]),
+                (CanalEntrada.connection_status == "connected") | (CanalEntrada.status == "ativo"),
+            )
+            .first()
+        )
+        if canal is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Canal informado não encontrado ou inativo.")
+        if ws_id is not None and canal.workspace_id != ws_id and usuario.role != RoleUsuario.platform_admin:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Canal não pertence ao workspace informado.")
+
+    # Busca canal ativo (fallback: 1º Evolution conectado/ativo) quando canal_id não foi informado.
     q = (
         db.query(CanalEntrada)
         .filter(
@@ -489,7 +532,8 @@ def iniciar_conversa(
     if ws_id is not None:
         q = q.filter(CanalEntrada.workspace_id == ws_id)
 
-    canal = q.first()
+    if canal is None:
+        canal = q.first()
 
     # Fallback para platform_admin quando ws_id foi informado mas não achou canal nesse workspace
     if not canal and usuario.role == RoleUsuario.platform_admin and ws_id is not None:
@@ -531,6 +575,14 @@ def iniciar_conversa(
     numero_formatado = numero_limpo
     if numero_limpo.startswith("55") and len(numero_limpo) >= 12:
         numero_formatado = f"+55 {numero_limpo[2:4]} {numero_limpo[4:]}"
+
+    # Bloqueia se o número não tiver WhatsApp no canal escolhido (P3a). Fail-open: erro/timeout do
+    # provider (retorno None) NÃO bloqueia — só bloqueia em "não existe" definitivo (False).
+    if _numero_tem_whatsapp(canal, numero_limpo) is False:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Não encontrei um contato com WhatsApp neste número.",
+        )
 
     # Upsert contato
     contato = (
