@@ -440,6 +440,11 @@ def gerar(
                 try:
                     with SessionLocal() as wdb:
                         rows = [wdb.get(CriativoGeracao, gid) for gid in gids]
+                        # 1 formato (uso padrão do gerador): NÃO recorta — preserva a
+                        # arte INTEIRA, sem comer o respiro/bordas (sintoma reportado).
+                        # Multiformato é opt-in de vários aspectos → mantém o recorte
+                        # (object-cover), única forma de derivar N proporções da mesma
+                        # base; cobra por arquivo. O carrossel também recorta (default).
                         if multi:
                             image_gen.executar_geracao_multiformato(
                                 wdb, rows, logo_bytes=logo_bytes, referencia_bytes=ref_bytes,
@@ -448,7 +453,7 @@ def gerar(
                         else:
                             image_gen.executar_geracao_integrada(
                                 wdb, rows[0], logo_bytes=logo_bytes, referencia_bytes=ref_bytes,
-                                personagem_bytes=personagem_bytes,
+                                personagem_bytes=personagem_bytes, recortar=False,
                             )
                 finally:
                     done_ev.set()

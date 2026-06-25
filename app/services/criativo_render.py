@@ -77,18 +77,25 @@ def _cover(img: Image.Image, size: tuple[int, int]) -> Image.Image:
     return img.crop((left, top, left + tw, top + th))
 
 
-def ajustar_para_canvas(content: bytes, creative_format: str | None) -> bytes:
+def ajustar_para_canvas(
+    content: bytes, creative_format: str | None, *, recortar: bool = True
+) -> bytes:
     """Reenquadra a imagem gerada para o tamanho EXATO do canal (object-cover).
 
     O gpt-image-2 só devolve 1024²/1024×1536/1536×1024, então 4:5 e 9:16 vinham
     ambos em 2:3. Aqui escalamos/cortamos pro size final do canal (EXPORT_SIZES):
     1:1→1080×1080, 4:5→1080×1350, 9:16→1080×1920. Centro preservado; o respiro
     pedido no prompt evita que conteúdo essencial caia na faixa cortada.
+
+    `recortar=False` (gerador original): preserva a arte INTEIRA no tamanho nativo
+    do gpt-image, sem cortar bordas pro aspecto do canal. O carrossel usa o
+    default True (precisa do aspecto exato do canal).
     """
     img = Image.open(BytesIO(content))
     if img.mode not in ("RGB", "RGBA"):
         img = img.convert("RGB")
-    img = _cover(img, export_size(creative_format))
+    if recortar:
+        img = _cover(img, export_size(creative_format))
     buf = BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()

@@ -625,15 +625,19 @@ def _render_base(
 def _compose_e_persistir(
     db: Session, ger: CriativoGeracao, base_content: bytes, *,
     logo_bytes: bytes | None = None, logo_mode: str = "compor",
+    recortar: bool = True,
 ) -> CriativoGeracao:
     """Reenquadra a base pro formato do `ger` (object-cover), compõe a logo real
-    (modo compor) e salva no storage. Não altera status (quem chama decide)."""
+    (modo compor) e salva no storage. Não altera status (quem chama decide).
+
+    `recortar=False` (gerador original): mantém a arte inteira, sem recorte pro
+    aspecto do canal. O carrossel usa o default True."""
     from app.services import criativo_render
 
     content = base_content
     # Reenquadra pro tamanho EXATO do canal (gpt-image-2 só tem 1024²/1024×1536/1536×1024).
     try:
-        content = criativo_render.ajustar_para_canvas(content, ger.creative_format)
+        content = criativo_render.ajustar_para_canvas(content, ger.creative_format, recortar=recortar)
     except Exception as exc:  # noqa: BLE001
         log.warning("[image_gen] ajuste de canvas falhou geracao=%s: %s", ger.id, exc)
 
@@ -667,6 +671,7 @@ def executar_geracao_integrada(
     referencia_bytes: bytes | None = None,
     personagem_bytes: list[bytes] | None = None,
     objeto_bytes: list[bytes] | None = None,
+    recortar: bool = True,
 ) -> CriativoGeracao:
     """Gera a arte integrada (1 formato): renderiza a base e persiste o final."""
     spec = ger.params_json or {}
@@ -679,7 +684,7 @@ def executar_geracao_integrada(
             referencia_bytes=referencia_bytes, personagem_bytes=personagem_bytes,
             objeto_bytes=objeto_bytes,
         )
-        _compose_e_persistir(db, ger, content, logo_bytes=logo_bytes, logo_mode=logo_mode)
+        _compose_e_persistir(db, ger, content, logo_bytes=logo_bytes, logo_mode=logo_mode, recortar=recortar)
         ger.usage = usage
         ger.request_id = request_id
         ger.model_snapshot = model_snapshot
@@ -706,6 +711,7 @@ def executar_geracao_multiformato(
     logo_bytes: bytes | None = None,
     referencia_bytes: bytes | None = None,
     personagem_bytes: list[bytes] | None = None,
+    recortar: bool = True,
 ) -> list[CriativoGeracao]:
     """Gera UMA base (1 chamada de IA) no master size e a reenquadra em cada formato
     dos `gers` → a MESMA arte em N proporções. usage/registro só no 1º (1 chamada)."""
@@ -735,7 +741,7 @@ def executar_geracao_multiformato(
     # Mesma base → reenquadra/persiste em cada formato (Pillow, sem custo de IA).
     for i, g in enumerate(gers):
         try:
-            _compose_e_persistir(db, g, content, logo_bytes=logo_bytes, logo_mode=logo_mode)
+            _compose_e_persistir(db, g, content, logo_bytes=logo_bytes, logo_mode=logo_mode, recortar=recortar)
             g.usage = usage if i == 0 else {}
             g.request_id = request_id
             g.model_snapshot = model_snapshot
