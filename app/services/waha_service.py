@@ -13,6 +13,23 @@ logger = logging.getLogger(__name__)
 _TIMEOUT = 15.0
 OP7_WAHA_WEBHOOK_EVENTS = ["message", "message.any", "message.ack", "session.status"]
 
+# NOWEB store: necessário para foto de perfil de contatos não-cacheados e para
+# resolução de @lid → telefone. Sem ele, /api/contacts/profile-picture devolve
+# null para a maioria dos contatos e refresh=true trava (>65s). fullSync popula o
+# store no (re)start da sessão. Validado ao vivo: ligar store + restart mantém a
+# sessão WORKING sem novo QR e preserva os webhooks.
+#
+# ⚠️ Ligar o store reinicia a sessão (breve desconexão). Para manter o rollout
+# CONTROLADO (não habilitar em todo cliente que reconectar), só injetamos o store
+# em sessões da allowlist WAHA_STORE_SESSIONS. Rollout = adicionar a sessão ao env.
+OP7_WAHA_NOWEB_CONFIG: dict[str, Any] = {"store": {"enabled": True, "fullSync": True}}
+
+
+def _store_enabled(session: str) -> bool:
+    """True se a sessão está na allowlist WAHA_STORE_SESSIONS (rollout controlado)."""
+    raw = os.environ.get("WAHA_STORE_SESSIONS", "")
+    return session in {s.strip() for s in raw.split(",") if s.strip()}
+
 # Mapeamento de status WAHA → connection_status interno
 STATUS_MAP: dict[str, str] = {
     "STOPPED": "disconnected",
@@ -118,10 +135,13 @@ def criar_sessao(session: str, cfg: dict) -> dict[str, Any]:
     """POST /api/sessions — cria sessão. 422 = já existe (ignorado)."""
     base_url, headers = _headers(cfg)
     try:
+        config: dict[str, Any] = {}
+        if _store_enabled(session):
+            config["noweb"] = OP7_WAHA_NOWEB_CONFIG
         resp = httpx.post(
             f"{base_url}/api/sessions",
             headers=headers,
-            json={"name": session, "config": {}},
+            json={"name": session, "config": config},
             timeout=_TIMEOUT,
         )
         if resp.status_code == 422:
@@ -188,6 +208,9 @@ def configurar_webhook(session: str, webhook_url: str, cfg: dict) -> dict[str, A
         next_webhooks.append({"url": webhook_url, "events": OP7_WAHA_WEBHOOK_EVENTS})
 
     next_config = {**current_config, "webhooks": next_webhooks}
+    # NOWEB store só nas sessões da allowlist (rollout controlado — ver _store_enabled).
+    if _store_enabled(session):
+        next_config["noweb"] = {**(current_config.get("noweb") or {}), **OP7_WAHA_NOWEB_CONFIG}
     body = {
         "config": next_config
     }
