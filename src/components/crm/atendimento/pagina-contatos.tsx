@@ -36,6 +36,13 @@ interface Contato {
   ultimoContato: string
   notas?: string
   criadoEm: string
+  nomeConfirmado?: boolean  // nome confirmado (cliente/humano) vs fallback push_name (WhatsApp); ausente nos mocks
+  resumoIa?: string
+  temperatura?: string      // quente | morno | frio (sentimento_ia)
+  scoreLeadIa?: number
+  interesse?: string        // de perfil_json.contexto_ia.interesse (análise da conversa)
+  instagram?: string
+  facebook?: string
 }
 
 // ─── Configs visuais ──────────────────────────────────────────────────────────
@@ -208,10 +215,14 @@ function extractTelefone(c: ContatoApi): string {
 }
 
 function mapearContatoReal(c: ContatoApi): Contato {
-  const nome = c.push_name || c.nome || c.telefone || c.jid.split('@')[0] || 'Sem nome'
+  const ctx = (c.perfil_json as { contexto_ia?: { interesse?: string } } | null)?.contexto_ia
+  const nomeConfirmado = !!(c.nome_confirmado && c.nome_confirmado.trim())
+  // precedência: nome confirmado (cliente/humano) > push_name (WhatsApp) > nome legado > telefone
+  const nome = c.nome_confirmado || c.push_name || c.nome || c.telefone || c.jid.split('@')[0] || 'Sem nome'
   return {
     id: c.id,
     nome,
+    nomeConfirmado,
     telefone: extractTelefone(c),
     email: undefined,
     avatarInitials: getIniciais(nome),
@@ -227,6 +238,12 @@ function mapearContatoReal(c: ContatoApi): Contato {
     ultimoContato: formatarDataCurta(c.last_message_at || c.atualizado_em),
     notas: c.notas || undefined,
     criadoEm: c.criado_em.slice(0, 10),
+    resumoIa: c.resumo_ia || undefined,
+    temperatura: c.sentimento_ia || undefined,
+    scoreLeadIa: c.score_lead_ia ?? undefined,
+    interesse: ctx?.interesse || undefined,
+    instagram: c.instagram || undefined,
+    facebook: c.facebook || undefined,
   }
 }
 
@@ -294,6 +311,12 @@ function Avatar({ initials, cor, src, size = 32 }: { initials: string; cor: stri
 }
 
 // ─── Modal de Contato ─────────────────────────────────────────────────────────
+
+const TEMP_CONFIG: Record<string, { bg: string; cor: string; border: string }> = {
+  quente: { bg: 'rgba(255,59,59,0.10)',  cor: '#c2004f', border: 'rgba(255,59,59,0.25)' },
+  morno:  { bg: 'rgba(239,159,39,0.12)', cor: '#BA7517', border: 'rgba(239,159,39,0.25)' },
+  frio:   { bg: 'rgba(62,91,255,0.10)',  cor: '#3E5BFF', border: 'rgba(62,91,255,0.25)' },
+}
 
 interface ModalContatoProps {
   contato: Contato | null
@@ -541,6 +564,40 @@ function ModalContato({ contato, modo, onFechar, onSalvar, onExcluir }: ModalCon
               readOnly={soLeitura}
             />
           </div>
+
+          {/* Inteligência (IA) — só leitura, quando há dados da análise / redes sociais */}
+          {soLeitura && (form.resumoIa || form.interesse || form.temperatura || form.instagram || form.facebook || form.nomeConfirmado === false) && (
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--ws-divider)' }}>
+              <label style={labelStyle}>Inteligência (IA)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: (form.resumoIa || form.instagram || form.facebook) ? 10 : 0 }}>
+                {form.temperatura && (() => {
+                  const t = TEMP_CONFIG[form.temperatura] ?? TEMP_CONFIG.morno
+                  return (
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 9999, textTransform: 'capitalize', background: t.bg, color: t.cor, border: `1px solid ${t.border}` }}>
+                      {form.temperatura}{typeof form.scoreLeadIa === 'number' ? ` · ${form.scoreLeadIa}` : ''}
+                    </span>
+                  )
+                })()}
+                {form.nomeConfirmado === false && (
+                  <span title="Nome do WhatsApp — ainda não confirmado pelo cliente" style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(37,211,102,0.10)', border: '1px solid rgba(37,211,102,0.25)', color: '#128C7E' }}>
+                    Nome do WhatsApp
+                  </span>
+                )}
+                {form.interesse && (
+                  <span style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>Interesse: <strong style={{ color: 'var(--ws-text-1)' }}>{form.interesse}</strong></span>
+                )}
+              </div>
+              {form.resumoIa && (
+                <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--ws-text-2)', margin: 0, background: 'var(--ws-surface-2)', padding: '10px 12px', borderRadius: 8 }}>{form.resumoIa}</p>
+              )}
+              {(form.instagram || form.facebook) && (
+                <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
+                  {form.instagram && <span style={{ fontSize: 11, color: 'var(--ws-text-2)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Instagram size={12} /> {form.instagram}</span>}
+                  {form.facebook && <span style={{ fontSize: 11, color: 'var(--ws-text-2)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Facebook size={12} /> {form.facebook}</span>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -615,6 +672,7 @@ export function PaginaContatos() {
       const novo: Contato = {
         id: `c-${Date.now()}`,
         nome: dados.nome ?? 'Sem nome',
+        nomeConfirmado: true,   // criação manual = nome confirmado
         telefone: dados.telefone ?? '',
         email: dados.email,
         avatarInitials: (dados.nome ?? '?').split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase(),
@@ -748,7 +806,15 @@ export function PaginaContatos() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <Avatar initials={c.avatarInitials} cor={c.avatarCor} src={resolveAvatarSrc(c.avatarUrl)} size={30} />
                       <div>
-                        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ws-text-1)' }}>{c.nome}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--ws-text-1)' }}>{c.nome}</span>
+                          {!c.nomeConfirmado && (
+                            <span title="Nome do WhatsApp — ainda não confirmado pelo cliente"
+                              style={{ fontSize: 9, fontWeight: 600, padding: '1px 5px', borderRadius: 9999, background: 'rgba(37,211,102,0.10)', border: '1px solid rgba(37,211,102,0.25)', color: '#128C7E', whiteSpace: 'nowrap' }}>
+                              WhatsApp
+                            </span>
+                          )}
+                        </div>
                         {c.email && <div style={{ fontSize: 10, color: 'var(--ws-text-3)' }}>{c.email}</div>}
                       </div>
                     </div>

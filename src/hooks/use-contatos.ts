@@ -9,6 +9,8 @@ export interface ContatoApi {
   telefone: string | null
   nome: string | null
   push_name: string | null
+  nome_confirmado: string | null
+  nome_origem: string | null
   avatar_url: string | null
   origem: string | null
   tags: string[] | null
