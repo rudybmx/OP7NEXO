@@ -98,7 +98,7 @@ Importe **sempre** de `@/components/ui/[nome]`. Props/variantes exatas: ver o ar
 | Sidebar | `@/components/ui/sidebar` | Radix + CVA |
 
 **Componentes custom (em transição):**
-- `glass-card.tsx` → **substituir por `Card`** (flat). Deprecado.
+- ~~`glass-card.tsx`~~ → **removido na F2** (era dead code, 0 imports). Use `Card`.
 - `ws-table.tsx` → padrão de tabela atual; será unificado num `DataTable` (Fase 4).
 - `info-tooltip.tsx`, `mini-gauge.tsx` → manter (casos específicos).
 
