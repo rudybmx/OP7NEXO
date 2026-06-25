@@ -9,6 +9,7 @@ Multi-tenant: todo acesso passa por `verificar_acesso_workspace` (via `_get_car`
 """
 import base64
 import json
+import logging
 import threading
 import uuid
 from typing import Optional
@@ -26,6 +27,8 @@ from app.services import carrossel_analise, carrossel_director, carrossel_gen, c
 from app.services.ai_usage import registrar_uso
 from app.services.image_gen import _map_error
 from app.services.upload_validation import validar_e_normalizar_imagem
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/design/carrossel", tags=["carrossel"])
 
@@ -183,7 +186,11 @@ def pautas(
     from app.services import firecrawl_news
     try:
         res, usage = firecrawl_news.buscar_pautas(payload.assunto)
+    except firecrawl_news.SemNoticiasError as e:
+        # Sem notícia para o termo: resultado benigno, não é erro de gateway.
+        return {"pautas": [], "aviso": str(e)}
     except firecrawl_news.PautasIndisponiveisError as e:
+        log.warning("[pautas] upstream indisponível assunto=%r: %s", payload.assunto, e)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             detail={"error_code": "pautas_indisponiveis", "error_message": str(e)})
     try:

@@ -21,7 +21,11 @@ log = logging.getLogger(__name__)
 
 
 class PautasIndisponiveisError(RuntimeError):
-    """Firecrawl indisponível/sem resultados ou curadoria inválida."""
+    """Firecrawl indisponível ou curadoria inválida (falha real de upstream)."""
+
+
+class SemNoticiasError(PautasIndisponiveisError):
+    """Nenhuma notícia recente para o assunto — resultado benigno, não é falha."""
 
 
 class Pauta(BaseModel):
@@ -71,7 +75,7 @@ def buscar_pautas(assunto: str, n: int = 5) -> tuple[PautasResult, dict]:
     """assunto → 5 pautas newsjacking a partir de notícias frescas. (pautas, usage)."""
     noticias = _buscar_noticias(assunto)
     if not noticias:
-        raise PautasIndisponiveisError("Nenhuma notícia recente encontrada para esse assunto.")
+        raise SemNoticiasError("Nenhuma notícia recente encontrada para esse assunto.")
 
     contexto = "\n".join(
         f"- {x.get('title')} | {(x.get('snippet') or x.get('description') or '')[:240]} | {x.get('url')}"
