@@ -33,7 +33,7 @@ class CrmEtiqueta(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    conversas: Mapped[list] = relationship(
+    conversas: Mapped[list["Conversa"]] = relationship(
         "Conversa",
         secondary="crm_conversa_etiquetas",
         back_populates="etiquetas",

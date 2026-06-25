@@ -152,7 +152,7 @@ class Conversa(Base):
     memorias_ia: Mapped[list["MemoriaIA"]] = relationship(
         back_populates="conversa", lazy="select"
     )
-    etiquetas: Mapped[list] = relationship(
+    etiquetas: Mapped[list["CrmEtiqueta"]] = relationship(
         "CrmEtiqueta",
         secondary="crm_conversa_etiquetas",
         back_populates="conversas",
