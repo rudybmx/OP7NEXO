@@ -15,7 +15,7 @@ from app.models.crm import Contato, Conversa, CrmEtiqueta
 from app.models.user import RoleUsuario, User
 from app.schemas.agente import AjusteRespostaIn, AjusteRespostaOut
 from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
-from app.services.whatsapp_crm_persistence import record_assignment_event
+from app.services.whatsapp_crm_persistence import aplicar_transferencia, record_assignment_event
 from app.services.crm_escopo import aplicar_teto_conversas, eh_supervisor, pode_transferir, pode_ver_conversa
 
 router = APIRouter(prefix="/conversas", tags=["conversas"])
@@ -934,43 +934,14 @@ def transferir_conversa(
     if not pode_transferir(usuario, c):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para transferir esta conversa")
 
-    old_responsavel_id = c.responsavel_id
-    old_equipe_id = c.equipe_id
-    if data.responsavel_id is not None:
-        c.responsavel_id = data.responsavel_id
-        c.ai_ativo = False  # handoff p/ humano => IA off (transferir só-equipe NÃO toca IA)
-    if data.equipe_id is not None:
-        c.equipe_id = data.equipe_id
-    mudou = (data.responsavel_id is not None and data.responsavel_id != old_responsavel_id) or (
-        data.equipe_id is not None and data.equipe_id != old_equipe_id
+    aplicar_transferencia(
+        db,
+        c,
+        responsavel_id=data.responsavel_id,
+        equipe_id=data.equipe_id,
+        actor_user_id=usuario.id,
+        source="conversa.transferir",
     )
-    if mudou:
-        hist = list(c.historico_transferencias or [])
-        hist.append(
-            {
-                "de": str(old_responsavel_id) if old_responsavel_id else None,
-                "para": str(c.responsavel_id) if c.responsavel_id else None,
-                "de_equipe": str(old_equipe_id) if old_equipe_id else None,
-                "para_equipe": str(c.equipe_id) if c.equipe_id else None,
-                "quando": datetime.utcnow().isoformat(),
-                "transferido_por": str(usuario.id),
-            }
-        )
-        c.historico_transferencias = hist
-        record_assignment_event(
-            db,
-            workspace_id=c.workspace_id,
-            canal_id=c.canal_id,
-            conversa_id=c.id,
-            contato_id=c.contato_id,
-            action="transfer",
-            from_responsavel_id=old_responsavel_id,
-            to_responsavel_id=c.responsavel_id,
-            from_equipe_id=old_equipe_id,
-            to_equipe_id=c.equipe_id,
-            actor_user_id=usuario.id,
-            payload={"source": "conversa.transferir"},
-        )
     db.commit()
     db.refresh(c)
     return _conversa_out(c)

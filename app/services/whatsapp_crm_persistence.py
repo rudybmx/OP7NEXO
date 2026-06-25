@@ -533,6 +533,66 @@ def record_assignment_event(
     )
 
 
+def aplicar_transferencia(
+    db: Session,
+    conversa,
+    *,
+    responsavel_id: str | uuid.UUID | None = None,
+    equipe_id: str | uuid.UUID | None = None,
+    actor_user_id: str | uuid.UUID | None = None,
+    source: str = "manual",
+    payload_extra: dict[str, Any] | None = None,
+) -> bool:
+    """Núcleo da transferência de conversa — compartilhado pelo endpoint (humano) e pelo worker
+    (agente no handoff). Espelha a lógica do `transferir_conversa`: aplica responsável/equipe,
+    desliga a IA no handoff p/ humano (transferir só-equipe NÃO toca a IA), registra
+    `historico_transferencias` + `record_assignment_event` (ambos consumidos pela timeline do
+    CRM — por isso é UM lugar só, evita drift). NÃO commita: o chamador controla a transação.
+    `responsavel_id`/`equipe_id` None => não mexe nessa dimensão. Retorna True se algo mudou."""
+    from datetime import datetime
+
+    old_responsavel_id = conversa.responsavel_id
+    old_equipe_id = conversa.equipe_id
+    if responsavel_id is not None:
+        conversa.responsavel_id = responsavel_id
+        conversa.ai_ativo = False  # handoff p/ humano => IA off
+    if equipe_id is not None:
+        conversa.equipe_id = equipe_id
+    mudou = (responsavel_id is not None and responsavel_id != old_responsavel_id) or (
+        equipe_id is not None and equipe_id != old_equipe_id
+    )
+    if not mudou:
+        return False
+    hist = list(conversa.historico_transferencias or [])
+    hist.append(
+        {
+            "de": str(old_responsavel_id) if old_responsavel_id else None,
+            "para": str(conversa.responsavel_id) if conversa.responsavel_id else None,
+            "de_equipe": str(old_equipe_id) if old_equipe_id else None,
+            "para_equipe": str(conversa.equipe_id) if conversa.equipe_id else None,
+            "quando": datetime.utcnow().isoformat(),
+            "transferido_por": str(actor_user_id) if actor_user_id else None,
+            "origem": source,
+        }
+    )
+    conversa.historico_transferencias = hist
+    record_assignment_event(
+        db,
+        workspace_id=conversa.workspace_id,
+        canal_id=conversa.canal_id,
+        conversa_id=conversa.id,
+        contato_id=conversa.contato_id,
+        action="transfer",
+        from_responsavel_id=old_responsavel_id,
+        to_responsavel_id=conversa.responsavel_id,
+        from_equipe_id=old_equipe_id,
+        to_equipe_id=conversa.equipe_id,
+        actor_user_id=actor_user_id,
+        payload={"source": source, **(payload_extra or {})},
+    )
+    return mudou
+
+
 def _find_existing_message(
     db: Session,
     *,

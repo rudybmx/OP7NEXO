@@ -12,6 +12,16 @@
 > anti-hijack no webhook `process_evolution_connection_event`. Front: `/conectar/[token]`.
 > Spec: `docs/specs/link-conexao-publico/`.
 
+> **Transferência IA→humano (Fase 4, 2026-06):** o agente tem `agentes.codigo_responsavel`
+> (FK users, migration 099). Quando definido, no **handoff** (`agent_service._handoff`, worker) a
+> conversa é roteada para esse humano e ganha uma mensagem interna `remetente_tipo='sistema'` com
+> o resumo do handoff (reusa a análise da Fase 1: `resumo_ia`/`contexto_ia`). Núcleo da
+> transferência extraído em `whatsapp_crm_persistence.aplicar_transferencia` (compartilhado pelo
+> endpoint humano `POST /conversas/{id}/transferir` e pelo worker — evita drift de
+> `historico_transferencias`/`crm_conversation_assignments`). Opt-in: sem `codigo_responsavel`, o
+> handoff só marca `ai_escalado` (comportamento antigo). Transferência por agente: `actor_user_id`
+> nulo, `payload.source='agente.handoff'`.
+
 ## O QUE É O SISTEMA
 
 SaaS de Marketing + CRM multi-tenant. Cada cliente é um **workspace**. O produto gerencia campanhas de Meta Ads, canais de comunicação (WhatsApp via Evolution API) e dados de performance.

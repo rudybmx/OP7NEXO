@@ -35,6 +35,9 @@ class Agente(Base):
     mensagem_abertura: Mapped[str | None] = mapped_column(Text, nullable=True)
     objetivo: Mapped[str | None] = mapped_column(Text, nullable=True)
     tempo_followup_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    codigo_responsavel: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

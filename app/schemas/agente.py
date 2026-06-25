@@ -65,6 +65,7 @@ class AgenteIn(BaseModel):
     mensagem_abertura: str | None = None
     objetivo: str | None = Field(default=None, max_length=2000)
     tempo_followup_min: int | None = Field(default=None, ge=0)
+    codigo_responsavel: str | None = None  # FK users: humano que recebe o handoff (Fase 4)
     # Vínculos opcionais na criação
     canais: list[str] = Field(default_factory=list)  # canal_ids
     horarios: list[HorarioIn] = Field(default_factory=list)
@@ -89,6 +90,7 @@ class AgenteUpdate(BaseModel):
     mensagem_abertura: str | None = None
     objetivo: str | None = Field(default=None, max_length=2000)
     tempo_followup_min: int | None = Field(default=None, ge=0)
+    codigo_responsavel: str | None = None
     canais: list[str] | None = None
     horarios: list[HorarioIn] | None = None
     habilidades: list[HabilidadeIn] | None = None
@@ -234,6 +236,7 @@ class AgenteOut(BaseModel):
     mensagem_abertura: str | None
     objetivo: str | None
     tempo_followup_min: int | None
+    codigo_responsavel: str | None
     canais: list[CanalVinculadoOut]
     horarios: list[HorarioOut]
     habilidades: list[HabilidadeOut]

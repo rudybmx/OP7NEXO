@@ -669,6 +669,72 @@ def _publish(conversa, *, tipo: str, texto: str | None = None, message_type: str
         log.info("[agente] publish redis falhou conversa=%s: %s", conversa.id, exc)
 
 
+_HANDOFF_LABEL = {
+    "baixa_confianca": "confiança baixa na resposta",
+    "fora_horario": "fora do horário de atendimento",
+    "limite_tokens": "limite diário de uso atingido",
+    "config": "configuração do agente inválida",
+    "erro_llm": "erro ao gerar a resposta",
+    "envio_falhou": "falha ao enviar a resposta",
+}
+
+
+def _nome_usuario(db: Session, user_id) -> str:
+    if not user_id:
+        return "atendente"
+    try:
+        row = db.execute(
+            text("SELECT nome FROM users WHERE id = CAST(:id AS uuid)"), {"id": str(user_id)}
+        ).first()
+        return row[0] if row and row[0] else "atendente"
+    except Exception:  # noqa: BLE001
+        return "atendente"
+
+
+def _postar_msg_sistema(db: Session, conversa, agente: Agente, motivo: str) -> None:
+    """Mensagem interna (remetente_tipo='sistema') com o resumo de handoff p/ o humano que
+    assume. Reusa a análise da Fase 1 (resumo_ia/contexto_ia) quando houver; senão só o motivo.
+    NÃO envia ao cliente, NÃO mexe no preview/nao_lidas do inbox (é nota interna da thread)."""
+    responsavel_nome = _nome_usuario(db, agente.codigo_responsavel)
+    motivo_legivel = _HANDOFF_LABEL.get(motivo, motivo)
+    partes = [
+        f"🔄 Conversa transferida para {responsavel_nome} pelo agente "
+        f"{agente.nome or 'IA'} (motivo: {motivo_legivel})."
+    ]
+    resumo = (getattr(conversa, "resumo_ia", None) or "").strip()
+    if resumo:
+        partes.append(f"Resumo: {resumo}")
+    ctx = getattr(conversa, "contexto_ia", None)
+    if isinstance(ctx, dict):
+        extras = []
+        if ctx.get("temperatura"):
+            extras.append(f"termômetro: {ctx['temperatura']}")
+        if ctx.get("interesse"):
+            extras.append(f"interesse: {ctx['interesse']}")
+        if extras:
+            partes.append(" · ".join(extras))
+    db.execute(
+        text("""
+            INSERT INTO public.crm_whatsapp_mensagens
+            (workspace_id, canal_id, conversa_id, contato_id, instance, remote_jid,
+             direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type,
+             status, recebida_em, created_at, updated_at)
+            VALUES (:ws, :canal, :cid, :ct, :inst, :jid,
+                    'sistema', false, 'sistema', 'Sistema', :msg, 'sistema',
+                    'enviada', NOW(), NOW(), NOW())
+        """),
+        {
+            "ws": str(conversa.workspace_id),
+            "canal": str(conversa.canal_id) if conversa.canal_id else None,
+            "cid": str(conversa.id),
+            "ct": str(conversa.contato_id) if conversa.contato_id else None,
+            "inst": conversa.instance,
+            "jid": conversa.remote_jid,
+            "msg": "\n".join(partes),
+        },
+    )
+
+
 def _handoff(db: Session, conversa, agente: Agente, *, canal_id, score, tokens, motivo: str) -> None:
     conversa.ai_escalado = True
     conversa.ai_handoff_motivo = motivo
@@ -676,12 +742,33 @@ def _handoff(db: Session, conversa, agente: Agente, *, canal_id, score, tokens, 
     conversa.ai_agente_id = agente.id
     if score is not None:
         conversa.ai_score_confianca = score
-    db.commit()
+    db.commit()  # handoff marcado (garantido — independe do roteamento abaixo)
     registrar_uso(
         db, agente, canal_id=canal_id, conversa_id=conversa.id,
         tokens_input=tokens[0], tokens_output=tokens[1], escalado=True, score=score,
     )
     log.info("[agente] handoff conversa=%s motivo=%s score=%s", conversa.id, motivo, score)
+    # Fase 4: se o agente tem responsável, roteia a conversa p/ esse humano + posta o resumo na
+    # thread. Opt-in (sem codigo_responsavel = comportamento antigo, só marca ai_escalado).
+    # Transação SEPARADA: falha aqui NÃO desfaz o handoff já commitado.
+    if agente.codigo_responsavel:
+        try:
+            from app.services.whatsapp_crm_persistence import aplicar_transferencia
+
+            mudou = aplicar_transferencia(
+                db,
+                conversa,
+                responsavel_id=agente.codigo_responsavel,
+                actor_user_id=None,
+                source="agente.handoff",
+                payload_extra={"motivo": motivo, "agente_id": str(agente.id)},
+            )
+            if mudou:
+                _postar_msg_sistema(db, conversa, agente, motivo)
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 — roteamento nunca derruba o worker
+            log.warning("[agente] roteamento de handoff falhou conversa=%s: %s", conversa.id, exc)
+            db.rollback()
     _publish(conversa, tipo="conversation.refresh")
 
 

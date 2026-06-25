@@ -94,6 +94,19 @@ def _validate_provider(provider_id: str | None, db: Session) -> uuid.UUID | None
     return pid
 
 
+def _validate_responsavel(codigo_responsavel: str | None, db: Session) -> uuid.UUID | None:
+    """Humano que recebe o handoff (Fase 4). "" / None => sem responsável (limpa o campo)."""
+    if not codigo_responsavel:
+        return None
+    try:
+        uid = uuid.UUID(codigo_responsavel)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="codigo_responsavel inválido")
+    if not db.query(User.id).filter(User.id == uid).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Usuário responsável não encontrado")
+    return uid
+
+
 def _validate_canais(workspace_id: uuid.UUID, canal_ids: list[str], db: Session) -> list[uuid.UUID]:
     if not canal_ids:
         return []
@@ -227,6 +240,7 @@ def _agente_out(agente: Agente, db: Session) -> AgenteOut:
         mensagem_abertura=agente.mensagem_abertura,
         objetivo=agente.objetivo,
         tempo_followup_min=agente.tempo_followup_min,
+        codigo_responsavel=str(agente.codigo_responsavel) if agente.codigo_responsavel else None,
         canais=_canais_out(agente),
         horarios=[
             HorarioOut(
@@ -318,6 +332,7 @@ def criar_agente(
         mensagem_abertura=payload.mensagem_abertura,
         objetivo=payload.objetivo,
         tempo_followup_min=payload.tempo_followup_min,
+        codigo_responsavel=_validate_responsavel(payload.codigo_responsavel, db),
     )
     db.add(agente)
     db.flush()  # obtém agente.id
@@ -363,6 +378,9 @@ def atualizar_agente(
 
     if payload.provider_id is not None:
         agente.provider_id = _validate_provider(payload.provider_id, db)
+    if payload.codigo_responsavel is not None:
+        # "" limpa o responsável; uuid define; ausente (None) => não mexe
+        agente.codigo_responsavel = _validate_responsavel(payload.codigo_responsavel, db)
     for campo in (
         "nome",
         "descricao",
