@@ -12,7 +12,9 @@ import {
   Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Table, Chip, Button } from '@heroui/react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { WSTableShell, WSTable } from '@/components/ui/ws-table'
 import { useAuth } from '@/hooks/use-auth'
 import api from '@/lib/api-client'
 
@@ -37,6 +39,9 @@ function getErrorMessage(error: unknown, fallback: string): string {
   if (typeof error === 'string' && error.trim()) return error
   return fallback
 }
+
+const thStyle = { padding: '10px 14px', whiteSpace: 'nowrap', borderBottom: '1px solid var(--ws-glass-border)', textAlign: 'left' } as const
+const tdStyle = { padding: '10px 14px', borderBottom: '1px solid var(--ws-glass-border)', verticalAlign: 'middle' } as const
 
 export default function ClientesPage() {
   const { user, isLoading: authLoading } = useAuth()
@@ -154,80 +159,79 @@ export default function ClientesPage() {
           <p style={{ fontSize: 13, color: 'var(--ws-text-2)', marginTop: 12 }}>Carregando clientes...</p>
         </div>
       ) : (
-        <Table>
-          <Table.ScrollContainer>
-          <Table.Content aria-label="Clientes" style={{ minWidth: 700 }}>
-            <Table.Header>
-              <Table.Column isRowHeader>Nome</Table.Column>
-              <Table.Column>CNPJ</Table.Column>
-              <Table.Column>Módulos</Table.Column>
-              <Table.Column>Status</Table.Column>
-              <Table.Column>Ações</Table.Column>
-            </Table.Header>
-            <Table.Body
-              items={filtrados}
-              renderEmptyState={() => (
-                <div style={{ padding: 48, textAlign: 'center' }}>
-                  <Building2 size={28} style={{ color: 'var(--ws-text-3)', marginBottom: 10 }} />
-                  <p style={{ fontSize: 13, color: 'var(--ws-text-2)' }}>
-                    {busca ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado'}
-                  </p>
-                  {!busca && (
-                    <p style={{ fontSize: 12, color: 'var(--ws-text-3)', marginTop: 4 }}>
-                      Clique em &ldquo;Novo Cliente&rdquo; para começar
+        <WSTableShell>
+          <WSTable minWidth={700}>
+            <thead>
+              <tr>
+                <th className="ds-table-th" style={thStyle}>Nome</th>
+                <th className="ds-table-th" style={thStyle}>CNPJ</th>
+                <th className="ds-table-th" style={thStyle}>Módulos</th>
+                <th className="ds-table-th" style={thStyle}>Status</th>
+                <th className="ds-table-th" style={thStyle}>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtrados.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="ds-table-td" style={{ ...tdStyle, textAlign: 'center', color: 'var(--ws-text-3)' }}>
+                    <Building2 size={28} style={{ color: 'var(--ws-text-3)', marginBottom: 10 }} />
+                    <p style={{ fontSize: 13, color: 'var(--ws-text-2)' }}>
+                      {busca ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado'}
                     </p>
-                  )}
-                </div>
-              )}
-            >
-              {(c) => (
-                <Table.Row key={c.id}>
-                  <Table.Cell>
+                    {!busca && (
+                      <p style={{ fontSize: 12, color: 'var(--ws-text-3)', marginTop: 4 }}>
+                        Clique em &ldquo;Novo Cliente&rdquo; para começar
+                      </p>
+                    )}
+                  </td>
+                </tr>
+              ) : filtrados.map(c => (
+                <tr key={c.id}>
+                  <td className="ds-table-td" style={tdStyle}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ws-text-1)' }}>{c.nome}</div>
                       {c.razao_social && (
                         <div style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>{c.razao_social}</div>
                       )}
                     </div>
-                  </Table.Cell>
-                  <Table.Cell>
+                  </td>
+                  <td className="ds-table-td" style={tdStyle}>
                     <span style={{ fontSize: 13, color: 'var(--ws-text-2)' }}>{c.cnpj || '—'}</span>
-                  </Table.Cell>
-                  <Table.Cell>
+                  </td>
+                  <td className="ds-table-td" style={tdStyle}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(c.modulos || []).length === 0 ? (
                         <span style={{ fontSize: 12, color: 'var(--ws-text-3)' }}>—</span>
                       ) : (c.modulos || []).map(m => (
-                        <Chip key={m} size="sm" variant="soft">
+                        <Badge key={m} variant="secondary">
                           {MODULOS.find(x => x.id === m)?.label || m}
-                        </Chip>
+                        </Badge>
                       ))}
                     </div>
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Chip size="sm" variant="soft" color={c.ativo ? 'success' : 'danger'}>
+                  </td>
+                  <td className="ds-table-td" style={tdStyle}>
+                    <Badge variant="secondary" style={{ background: c.ativo ? 'rgba(15,168,86,0.12)' : 'rgba(163,45,45,0.12)', color: c.ativo ? '#0fa856' : '#a32d2d', border: 'none' }}>
                       {c.ativo ? 'Ativo' : 'Inativo'}
-                    </Chip>
-                  </Table.Cell>
-                  <Table.Cell>
+                    </Badge>
+                  </td>
+                  <td className="ds-table-td" style={tdStyle}>
                     <div style={{ display: 'flex', gap: 2 }}>
-                      <Button isIconOnly size="sm" variant="ghost" onPress={() => router.push(`/administracao/empresas/contas/${c.id}/editar`)}>
+                      <Button size="icon-sm" variant="ghost" onClick={() => router.push(`/administracao/empresas/contas/${c.id}/editar`)}>
                         <Pencil size={14} />
                       </Button>
-                      <Button isIconOnly size="sm" variant="ghost" isDisabled>
+                      <Button size="icon-sm" variant="ghost" disabled>
                         <CreditCard size={14} />
                       </Button>
-                      <Button isIconOnly size="sm" variant="ghost" onPress={() => router.push(`/administracao/usuarios?workspace_id=${c.id}`)}>
+                      <Button size="icon-sm" variant="ghost" onClick={() => router.push(`/administracao/usuarios?workspace_id=${c.id}`)}>
                         <Users size={14} />
                       </Button>
                     </div>
-                  </Table.Cell>
-                </Table.Row>
-              )}
-            </Table.Body>
-          </Table.Content>
-          </Table.ScrollContainer>
-        </Table>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </WSTable>
+        </WSTableShell>
       )}
     </div>
   )

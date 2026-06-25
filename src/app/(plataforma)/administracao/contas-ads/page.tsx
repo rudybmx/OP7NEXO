@@ -6,7 +6,9 @@ import { Building2, Loader2, Plus, Search, CreditCard, RefreshCw, CheckCircle2, 
 import { toast } from 'sonner'
 import { NovaContaDialog } from '@/components/administracao/contas-ads/nova-conta-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, TableScrollContainer, TableContent, Chip, Button as HeroButton } from '@heroui/react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { WSTableShell, WSTable } from '@/components/ui/ws-table'
 import { useAuth } from '@/hooks/use-auth'
 import { Progress } from '@/components/ui/progress'
 import { Switch } from '@/components/ui/switch'
@@ -235,6 +237,9 @@ function formatarTooltipSyncJob(job: SyncJobState): string {
   if (job.erro) partes.push(`Erro: ${job.erro}`)
   return partes.join(' | ')
 }
+
+const thStyle = { padding: '10px 14px', whiteSpace: 'nowrap', borderBottom: '1px solid var(--ws-glass-border)', textAlign: 'left' } as const
+const tdStyle = { padding: '10px 14px', borderBottom: '1px solid var(--ws-glass-border)', verticalAlign: 'middle' } as const
 
 export default function ContasAdsPage() {
   const { user, isLoading: authLoading } = useAuth()
@@ -514,18 +519,18 @@ export default function ContasAdsPage() {
     const cooldownUntil = state?.cooldown_until && isFutureIso(state.cooldown_until) ? state.cooldown_until : null
     if (job?.status === 'done') {
       return (
-        <Chip size="sm" variant="soft" color="success" title={jobTooltip}>
+        <Badge variant="secondary" title={jobTooltip} style={{ background: 'rgba(15,168,86,0.12)', color: '#0fa856', border: 'none' }}>
           <CheckCircle2 size={11} className="mr-0.5" />
           Concluído
-        </Chip>
+        </Badge>
       )
     }
     if (job?.status === 'error') {
       return (
-        <Chip size="sm" variant="soft" color="danger" title={jobTooltip} className="cursor-help">
+        <Badge variant="secondary" title={jobTooltip} className="cursor-help" style={{ background: 'rgba(163,45,45,0.12)', color: '#a32d2d', border: 'none' }}>
           <XCircle size={11} className="mr-0.5" />
           Erro
-        </Chip>
+        </Badge>
       )
     }
     if (job?.status === 'pending' || job?.status === 'running') {
@@ -545,45 +550,45 @@ export default function ContasAdsPage() {
     }
     if (c.sync_paused) {
       return (
-        <Chip size="sm" variant="soft" color="danger" title="Sync pausado. Despausar a conta antes de tentar novamente." className="cursor-help">
+        <Badge variant="secondary" title="Sync pausado. Despausar a conta antes de tentar novamente." className="cursor-help" style={{ background: 'rgba(163,45,45,0.12)', color: '#a32d2d', border: 'none' }}>
           <XCircle size={11} className="mr-0.5" />
           Pausado
-        </Chip>
+        </Badge>
       )
     }
     if (cooldownUntil) {
       return (
-        <Chip size="sm" variant="soft" title={`Cooldown até ${formatarDataHora(cooldownUntil)}`} className="cursor-help" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+        <Badge variant="secondary" title={`Cooldown até ${formatarDataHora(cooldownUntil)}`} className="cursor-help" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c', border: 'none' }}>
           <Clock3 size={11} className="mr-0.5" />
           Cooldown
-        </Chip>
+        </Badge>
       )
     }
     if (state?.last_run_status === 'running') {
       return (
-        <Chip size="sm" variant="soft" color="accent" title={state.last_run_at ? `Última execução iniciada em ${formatarDataHora(state.last_run_at)}` : 'Sync em execução'} className="cursor-help">
+        <Badge variant="secondary" title={state.last_run_at ? `Última execução iniciada em ${formatarDataHora(state.last_run_at)}` : 'Sync em execução'} className="cursor-help" style={{ background: 'rgba(62,91,255,0.12)', color: 'var(--ws-blue)', border: 'none' }}>
           <Loader2 size={11} className="animate-spin mr-0.5" />
           Executando
-        </Chip>
+        </Badge>
       )
     }
     if (state?.last_run_status === 'error') {
       return (
         <div className="flex items-center gap-1">
-          <Chip size="sm" variant="soft" color="danger" title={state.last_error_message || state.last_error_stage || 'Erro no último sync'} className="cursor-help">
+          <Badge variant="secondary" title={state.last_error_message || state.last_error_stage || 'Erro no último sync'} className="cursor-help" style={{ background: 'rgba(163,45,45,0.12)', color: '#a32d2d', border: 'none' }}>
             <XCircle size={11} className="mr-0.5" />
             Erro
-          </Chip>
-          <HeroButton isIconOnly size="sm" variant="ghost" onPress={() => handleSync(c)} aria-label="Tentar sync novamente">
+          </Badge>
+          <Button size="icon-sm" variant="ghost" onClick={() => handleSync(c)} aria-label="Tentar sync novamente">
             <RotateCcw size={13} />
-          </HeroButton>
+          </Button>
         </div>
       )
     }
     return (
-      <HeroButton isIconOnly size="sm" variant="ghost" onPress={() => handleSync(c)} aria-label="Sincronizar conta">
+      <Button size="icon-sm" variant="ghost" onClick={() => handleSync(c)} aria-label="Sincronizar conta">
         <RotateCcw size={14} />
-      </HeroButton>
+      </Button>
     )
   }
 
@@ -793,70 +798,71 @@ export default function ContasAdsPage() {
           )}
         </div>
       ) : (
-        <Table variant="primary" aria-label="Contas Ads" className="w-full">
-          <TableScrollContainer>
-            <TableContent aria-label="Contas Ads" className="min-w-[900px]">
-              <TableHeader>
-                <TableColumn isRowHeader id="plataforma">Plataforma</TableColumn>
-                <TableColumn id="account_id">Account ID</TableColumn>
-                <TableColumn id="nome">Nome</TableColumn>
-                <TableColumn id="cliente">Cliente</TableColumn>
-                <TableColumn id="periodo">Período</TableColumn>
-                <TableColumn id="insights">Insights</TableColumn>
-                <TableColumn id="atualizado" className="min-w-[160px]">Última Atualização</TableColumn>
-                <TableColumn id="acoes" className="text-end">Ações</TableColumn>
-              </TableHeader>
-              <TableBody>
+        <WSTableShell>
+          <WSTable minWidth={900}>
+              <thead>
+                <tr>
+                  <th className="ds-table-th" style={thStyle}>Plataforma</th>
+                  <th className="ds-table-th" style={thStyle}>Account ID</th>
+                  <th className="ds-table-th" style={thStyle}>Nome</th>
+                  <th className="ds-table-th" style={thStyle}>Cliente</th>
+                  <th className="ds-table-th" style={thStyle}>Período</th>
+                  <th className="ds-table-th" style={thStyle}>Insights</th>
+                  <th className="ds-table-th min-w-[160px]" style={thStyle}>Última Atualização</th>
+                  <th className="ds-table-th" style={{ ...thStyle, textAlign: 'right' }}>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
                 {filtradas.map(c => {
                   const plat = PLATFORM_BADGE[c.plataforma]
                   const insights = insightsBadge(c)
                   return (
-                    <TableRow key={c.id} id={c.id}>
+                    <tr key={c.id}>
                       {/* Plataforma */}
-                      <TableCell>
-                        <Chip
-                          size="sm"
+                      <td className="ds-table-td" style={tdStyle}>
+                        <Badge
+                          variant="secondary"
                           className="font-semibold"
-                          style={{ background: plat.bg, color: plat.color }}
+                          style={{ background: plat.bg, color: plat.color, border: 'none' }}
                         >
                           {plat.label}
-                        </Chip>
-                      </TableCell>
+                        </Badge>
+                      </td>
                       {/* Account ID */}
-                      <TableCell>
+                      <td className="ds-table-td" style={tdStyle}>
                         <code className="font-mono text-[11px]" style={{ color: 'var(--ws-text-3)' }}>
                           {c.account_id}
                         </code>
-                      </TableCell>
+                      </td>
                       {/* Nome */}
-                      <TableCell className="max-w-[180px]">
+                      <td className="ds-table-td max-w-[180px]" style={tdStyle}>
                         <span className="block truncate text-[13px] font-medium" style={{ color: 'var(--ws-text-1)' }}>
                           {c.nome}
                         </span>
-                      </TableCell>
+                      </td>
                       {/* Cliente */}
-                      <TableCell className="max-w-[140px]">
+                      <td className="ds-table-td max-w-[140px]" style={tdStyle}>
                         <span className="block truncate text-[13px]" style={{ color: 'var(--ws-text-2)' }}>
                           {c.workspace_nome || '—'}
                         </span>
-                      </TableCell>
+                      </td>
                       {/* Período */}
-                      <TableCell className="text-[13px] whitespace-nowrap" style={{ color: 'var(--ws-text-3)' }}>
+                      <td className="ds-table-td text-[13px] whitespace-nowrap" style={{ ...tdStyle, color: 'var(--ws-text-3)' }}>
                         {c.periodo_sync_inicio ? formatarPeriodo(c.periodo_sync_inicio) : '—'}
-                      </TableCell>
+                      </td>
                       {/* Insights */}
-                      <TableCell>
-                        <Chip
-                          size="sm"
+                      <td className="ds-table-td" style={tdStyle}>
+                        <Badge
+                          variant="secondary"
                           className="font-semibold"
-                          style={{ background: insights.bg, color: insights.color }}
+                          style={{ background: insights.bg, color: insights.color, border: 'none' }}
                         >
                           <span className="size-1.5 rounded-full flex-shrink-0 mr-1" style={{ background: insights.color }} />
                           {insights.label}
-                        </Chip>
-                      </TableCell>
+                        </Badge>
+                      </td>
                       {/* Última Atualização */}
-                      <TableCell className="text-[13px]" style={{ color: 'var(--ws-text-3)' }}>
+                      <td className="ds-table-td text-[13px]" style={{ ...tdStyle, color: 'var(--ws-text-3)' }}>
                         <div className="flex flex-col gap-0.5">
                           <span className="flex items-center gap-1.5">
                             {(() => {
@@ -888,21 +894,21 @@ export default function ContasAdsPage() {
                             </span>
                           )}
                         </div>
-                      </TableCell>
+                      </td>
                       {/* Ações */}
-                      <TableCell>
+                      <td className="ds-table-td" style={tdStyle}>
                         <div className="flex items-center justify-end gap-1">
-                          <HeroButton
-                            isIconOnly size="sm" variant="ghost"
-                            onPress={() => abrirEdicaoConta(c)}
+                          <Button
+                            size="icon-sm" variant="ghost"
+                            onClick={() => abrirEdicaoConta(c)}
                             aria-label="Editar conta"
                           >
                             <Pencil size={14} />
-                          </HeroButton>
+                          </Button>
                           {renderSyncCell(c)}
-                          <HeroButton
-                            isIconOnly size="sm" variant="ghost"
-                            onPress={() => setConfirmToggle(c)}
+                          <Button
+                            size="icon-sm" variant="ghost"
+                            onClick={() => setConfirmToggle(c)}
                             aria-label={c.ativo ? 'Desativar conta' : 'Ativar conta'}
                             className={c.ativo
                               ? 'text-[var(--ws-coral)] hover:bg-[var(--ws-coral-soft)]'
@@ -910,16 +916,15 @@ export default function ContasAdsPage() {
                             }
                           >
                             <Power size={14} />
-                          </HeroButton>
+                          </Button>
                         </div>
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                    </tr>
                   )
                 })}
-              </TableBody>
-            </TableContent>
-          </TableScrollContainer>
-        </Table>
+              </tbody>
+          </WSTable>
+        </WSTableShell>
       )}
 
       <NovaContaDialog

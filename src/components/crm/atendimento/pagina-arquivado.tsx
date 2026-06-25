@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Table, Chip, Button } from '@heroui/react'
-import { Archive, Search, RefreshCw, CheckCircle2, XCircle, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { WSTableShell, WSTable } from '@/components/ui/ws-table'
+import { Archive, Search, RefreshCw, CheckCircle2, XCircle, X, Loader2 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -41,6 +43,9 @@ function normalizarResolucao(val: string | null): 'ganho' | 'perdido' | null {
   if (l === 'perdido') return 'perdido'
   return null
 }
+
+const thStyle = { padding: '10px 14px', whiteSpace: 'nowrap', borderBottom: '1px solid var(--ws-glass-border)', textAlign: 'left' } as const
+const tdStyle = { padding: '10px 14px', borderBottom: '1px solid var(--ws-glass-border)', verticalAlign: 'middle' } as const
 
 // ─── Modal de Edição ──────────────────────────────────────────────────────────
 
@@ -147,18 +152,19 @@ function ModalEditar({
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-            <Button variant="flat" onPress={onFechar} style={{ flex: 1 }} isDisabled={salvando}>
+            <Button variant="outline" onClick={onFechar} style={{ flex: 1 }} disabled={salvando}>
               Cancelar
             </Button>
             <Button
-              onPress={handleSalvar}
-              isLoading={salvando}
+              onClick={handleSalvar}
+              disabled={salvando}
               style={{
                 flex: 1.5,
                 background: resolucao === 'ganho' ? '#0fa856' : '#a32d2d',
                 color: 'white',
               }}
             >
+              {salvando && <Loader2 size={14} className="animate-spin" />}
               Salvar
             </Button>
           </div>
@@ -243,12 +249,12 @@ export function PaginaArquivado() {
           </div>
         </div>
         <Button
-          variant="flat"
+          variant="outline"
           size="sm"
-          onPress={() => carregar(filtroTab)}
-          isLoading={carregando}
-          startContent={<RefreshCw size={14} />}
+          onClick={() => carregar(filtroTab)}
+          disabled={carregando}
         >
+          {carregando ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           Atualizar
         </Button>
       </div>
@@ -328,96 +334,87 @@ export function PaginaArquivado() {
           Erro ao carregar dados: {erro}
         </div>
       ) : (
-        <Table>
-          <Table.ScrollContainer minWidth={900}>
-            <Table.Content
-              aria-label="Conversas arquivadas"
-              isStriped
-              removeWrapper
-            >
-              <Table.Header>
-                <Table.Column>Data Entrada</Table.Column>
-                <Table.Column>Últ. Atualização</Table.Column>
-                <Table.Column>Nome</Table.Column>
-                <Table.Column>Telefone</Table.Column>
-                <Table.Column>Responsável Fechamento</Table.Column>
-                <Table.Column>Resumo da Conversa</Table.Column>
-                <Table.Column>Status</Table.Column>
-                <Table.Column>Fase Lead</Table.Column>
-                <Table.Column>Ações</Table.Column>
-              </Table.Header>
-              <Table.Body
-                emptyContent={
-                  carregando
-                    ? 'Carregando...'
-                    : 'Nenhuma conversa arquivada encontrada'
-                }
-                isLoading={carregando}
-              >
-                {conversasFiltradas.map(c => {
-                  const tipo = normalizarResolucao(c.resolucao)
-                  return (
-                    <Table.Row key={c.id}>
-                      <Table.Cell>
-                        <span style={{ fontSize: 12, color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>
-                          {formatarData(c.created_at)}
-                        </span>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <span style={{ fontSize: 12, color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>
-                          {formatarData(c.updated_at)}
-                        </span>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <span style={{ fontWeight: 500, fontSize: 13 }}>{c.contato_nome ?? '—'}</span>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <span style={{ fontSize: 12, color: 'var(--ws-text-2)' }}>{c.contato_telefone ?? '—'}</span>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <span style={{ fontSize: 13, color: 'var(--ws-text-2)' }}>{c.responsavel_fechamento ?? '—'}</span>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <span style={{
-                          display: '-webkit-box', WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                          fontSize: 12, color: 'var(--ws-text-2)', maxWidth: 220,
-                        }}>
-                          {c.observacao || c.ultima_mensagem || '—'}
-                        </span>
-                      </Table.Cell>
-                      <Table.Cell>
-                        {tipo ? (
-                          <Chip
-                            size="sm"
-                            variant="soft"
-                            color={tipo === 'ganho' ? 'success' : 'danger'}
-                          >
-                            {tipo === 'ganho' ? 'Ganho' : 'Perdido'}
-                          </Chip>
-                        ) : (
-                          <span style={{ color: 'var(--ws-text-3)', fontSize: 12 }}>—</span>
-                        )}
-                      </Table.Cell>
-                      <Table.Cell>
-                        {c.lead_status ? (
-                          <Chip size="sm" variant="flat">{c.lead_status}</Chip>
-                        ) : (
-                          <span style={{ color: 'var(--ws-text-3)', fontSize: 12 }}>—</span>
-                        )}
-                      </Table.Cell>
-                      <Table.Cell>
-                        <Button size="sm" variant="ghost" onPress={() => setEditando(c)}>
-                          Editar
-                        </Button>
-                      </Table.Cell>
-                    </Table.Row>
-                  )
-                })}
-              </Table.Body>
-            </Table.Content>
-          </Table.ScrollContainer>
-        </Table>
+        <WSTableShell>
+          <WSTable minWidth={900}>
+            <thead>
+              <tr>
+                <th className="ds-table-th" style={thStyle}>Data Entrada</th>
+                <th className="ds-table-th" style={thStyle}>Últ. Atualização</th>
+                <th className="ds-table-th" style={thStyle}>Nome</th>
+                <th className="ds-table-th" style={thStyle}>Telefone</th>
+                <th className="ds-table-th" style={thStyle}>Responsável Fechamento</th>
+                <th className="ds-table-th" style={thStyle}>Resumo da Conversa</th>
+                <th className="ds-table-th" style={thStyle}>Status</th>
+                <th className="ds-table-th" style={thStyle}>Fase Lead</th>
+                <th className="ds-table-th" style={thStyle}>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {conversasFiltradas.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="ds-table-td" style={{ ...tdStyle, textAlign: 'center', color: 'var(--ws-text-3)' }}>
+                    {carregando ? 'Carregando...' : 'Nenhuma conversa arquivada encontrada'}
+                  </td>
+                </tr>
+              ) : conversasFiltradas.map(c => {
+                const tipo = normalizarResolucao(c.resolucao)
+                return (
+                  <tr key={c.id}>
+                    <td className="ds-table-td" style={tdStyle}>
+                      <span style={{ fontSize: 12, color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>
+                        {formatarData(c.created_at)}
+                      </span>
+                    </td>
+                    <td className="ds-table-td" style={tdStyle}>
+                      <span style={{ fontSize: 12, color: 'var(--ws-text-2)', whiteSpace: 'nowrap' }}>
+                        {formatarData(c.updated_at)}
+                      </span>
+                    </td>
+                    <td className="ds-table-td" style={tdStyle}>
+                      <span style={{ fontWeight: 500, fontSize: 13 }}>{c.contato_nome ?? '—'}</span>
+                    </td>
+                    <td className="ds-table-td" style={tdStyle}>
+                      <span style={{ fontSize: 12, color: 'var(--ws-text-2)' }}>{c.contato_telefone ?? '—'}</span>
+                    </td>
+                    <td className="ds-table-td" style={tdStyle}>
+                      <span style={{ fontSize: 13, color: 'var(--ws-text-2)' }}>{c.responsavel_fechamento ?? '—'}</span>
+                    </td>
+                    <td className="ds-table-td" style={tdStyle}>
+                      <span style={{
+                        display: '-webkit-box', WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                        fontSize: 12, color: 'var(--ws-text-2)', maxWidth: 220,
+                      }}>
+                        {c.observacao || c.ultima_mensagem || '—'}
+                      </span>
+                    </td>
+                    <td className="ds-table-td" style={tdStyle}>
+                      {tipo ? (
+                        <Badge variant="secondary" style={{ background: tipo === 'ganho' ? 'rgba(15,168,86,0.12)' : 'rgba(163,45,45,0.12)', color: tipo === 'ganho' ? '#0fa856' : '#a32d2d', border: 'none' }}>
+                          {tipo === 'ganho' ? 'Ganho' : 'Perdido'}
+                        </Badge>
+                      ) : (
+                        <span style={{ color: 'var(--ws-text-3)', fontSize: 12 }}>—</span>
+                      )}
+                    </td>
+                    <td className="ds-table-td" style={tdStyle}>
+                      {c.lead_status ? (
+                        <Badge variant="secondary">{c.lead_status}</Badge>
+                      ) : (
+                        <span style={{ color: 'var(--ws-text-3)', fontSize: 12 }}>—</span>
+                      )}
+                    </td>
+                    <td className="ds-table-td" style={tdStyle}>
+                      <Button size="sm" variant="ghost" onClick={() => setEditando(c)}>
+                        Editar
+                      </Button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </WSTable>
+        </WSTableShell>
       )}
 
       {/* Rodapé */}
