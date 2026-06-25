@@ -217,6 +217,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-25) — CRM Atendimento: envio de mídia (gif/imagem/vídeo/áudio/doc) — fix 403
+- **Bug**: enviar mídia pelo compositor ficava "Carregando mídia" e nunca enviava. Causa: `use-enviar-mensagem.ts` fazia o upload via `/api/proxy/canais/{id}/upload-midia` (catch-all transparente) com `Authorization: Bearer ${localStorage['op7nexo_token']}` — mas o token **não existe no localStorage** (auth vive no cookie httpOnly `ws-session`). O backend recebia sem Bearer → **403 "Not authenticated"** → upload falhava → mensagem otimista era removida. Texto funcionava porque `/api/whatsapp/send` resolve o token do cookie.
+- **Fix (front-only)**: nova rota cookie-aware `app/api/whatsapp/canais/[canalId]/upload-midia/route.ts` (resolve `Authorization` header **ou** `Bearer <cookie ws-session>`, igual `resolveWhatsappWorkspaceAccess`) que **encaminha o multipart** ao backend `POST /canais/{id}/upload-midia`. O hook passou a chamar essa rota. Vale para **toda mídia**, não só gif. ⚠️ Latente: os ~33 consumidores de `/api/proxy/` com `Bearer ${getToken()}` (localStorage) têm o mesmo risco — avaliar à parte.
+
 ### ✅ Implementado (2026-06-25) — CRM Atendimento: excluir conversa vazia (P3b)
 - Menu ⋮ de cada conversa (`MenuContextoConversa` em `painel-inbox.tsx`) ganhou item **"Excluir conversa vazia"** (🗑️ vermelho) ABAIXO de "Resolver conversa", visível **só** quando `ultimaMensagem==='' && !ultimaMensagemAt`. Hook `use-excluir-conversa-vazia.ts` + novo proxy `app/api/whatsapp/conversations/[id]/route.ts` (DELETE → backend). Confirmação leve (`window.confirm`) + toast `sonner`. A API (`DELETE /conversas/{id}`) valida e recusa **409 "Conversa não está vazia"** se houver mensagem (protege histórico). Par em `api/production`.
 

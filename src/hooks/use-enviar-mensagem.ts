@@ -70,9 +70,13 @@ export function useEnviarMensagem(): UseEnviarMensagemReturn {
         const filename = options.filename || (options.file instanceof File ? options.file.name : `audio-${Date.now()}.webm`)
         formData.append('arquivo', options.file, filename)
         formData.append('conversa_id', conversaId)
+        // Rota cookie-aware (ws-session): o /api/proxy só repassa o header Bearer,
+        // que NÃO existe nesta app (token vive no cookie httpOnly, não no
+        // localStorage) — por isso o upload de mídia dava 403 "Not authenticated".
+        // O cookie é enviado automaticamente pelo browser nesta chamada same-origin.
         const uploadHeaders: Record<string, string> = {}
         if (token) uploadHeaders.Authorization = `Bearer ${token}`
-        const uploadRes = await fetch(`/api/proxy/canais/${options.canalId}/upload-midia`, {
+        const uploadRes = await fetch(`/api/whatsapp/canais/${options.canalId}/upload-midia`, {
           method: 'POST',
           headers: uploadHeaders,
           body: formData,
