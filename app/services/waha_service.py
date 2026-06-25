@@ -52,6 +52,28 @@ def _headers(cfg: dict) -> tuple[str, dict[str, str]]:
     return base_url, {"X-Api-Key": api_key, "Content-Type": "application/json"}
 
 
+def numero_existe(session: str, numero: str, cfg: dict) -> bool | None:
+    """Checa se o número tem WhatsApp via GET /api/contacts/check-exists.
+    True/False = definitivo; None = não deu para checar (erro/timeout) → caller decide (fail-open)."""
+    digits = "".join(ch for ch in str(numero or "") if ch.isdigit())
+    if not digits:
+        return None
+    try:
+        base_url, headers = _headers(cfg)
+        resp = httpx.get(
+            f"{base_url}/api/contacts/check-exists",
+            params={"phone": digits, "session": session},
+            headers=headers,
+            timeout=12,
+        )
+        if resp.status_code >= 400:
+            return None
+        data = resp.json()
+        return bool(data.get("numberExists")) if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
 def estado_sessao(session: str, cfg: dict) -> dict[str, Any]:
     """GET /api/sessions/{session}"""
     base_url, headers = _headers(cfg)

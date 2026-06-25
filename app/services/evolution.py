@@ -1069,6 +1069,32 @@ def enviar_template_hsm(
 # ── Enriquecimento de contatos e grupos ───────────────────────────────
 
 
+def numero_tem_whatsapp(instance_id: str | None, instance_token: str | None, numero: str) -> bool | None:
+    """Checa se o número tem WhatsApp via POST /user/check (auth da INSTÂNCIA — apikey global dá 401).
+    True/False = resposta definitiva; None = não deu para checar (erro/timeout/sem token) → o caller
+    decide (fail-open: NÃO bloquear criação por falha do provider)."""
+    digits = "".join(ch for ch in str(numero or "") if ch.isdigit())
+    if not digits or not instance_token:
+        return None
+    try:
+        with httpx.Client(timeout=12) as client:
+            resp = client.post(
+                f"{META}/user/check",
+                headers=_send_headers(instance_id, instance_token),
+                json={"number": [digits]},
+            )
+        if resp.status_code >= 400:
+            return None
+        data = resp.json()
+        users = (data.get("data") or {}).get("Users") if isinstance(data, dict) else None
+        if not users:
+            return False
+        first = users[0] if isinstance(users, list) else {}
+        return bool(first.get("IsInWhatsapp")) if isinstance(first, dict) else None
+    except Exception:
+        return None
+
+
 def buscar_contato(instance_name: str, jid: str) -> list[dict[str, Any]]:
     """Busca contato(s) sincronizados na instância. Retorna lista vazia se não encontrar."""
     digits = "".join(ch for ch in str(jid or "") if ch.isdigit())
