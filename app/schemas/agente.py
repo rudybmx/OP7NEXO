@@ -64,6 +64,7 @@ class AgenteIn(BaseModel):
     alerta_threshold_pct: int = Field(default=80, ge=0, le=100)
     mensagem_abertura: str | None = None
     objetivo: str | None = Field(default=None, max_length=2000)
+    tempo_followup_min: int | None = Field(default=None, ge=0)
     # Vínculos opcionais na criação
     canais: list[str] = Field(default_factory=list)  # canal_ids
     horarios: list[HorarioIn] = Field(default_factory=list)
@@ -87,6 +88,7 @@ class AgenteUpdate(BaseModel):
     alerta_threshold_pct: int | None = Field(default=None, ge=0, le=100)
     mensagem_abertura: str | None = None
     objetivo: str | None = Field(default=None, max_length=2000)
+    tempo_followup_min: int | None = Field(default=None, ge=0)
     canais: list[str] | None = None
     horarios: list[HorarioIn] | None = None
     habilidades: list[HabilidadeIn] | None = None
@@ -231,6 +233,7 @@ class AgenteOut(BaseModel):
     alerta_threshold_pct: int
     mensagem_abertura: str | None
     objetivo: str | None
+    tempo_followup_min: int | None
     canais: list[CanalVinculadoOut]
     horarios: list[HorarioOut]
     habilidades: list[HabilidadeOut]

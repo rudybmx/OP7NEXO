@@ -228,6 +228,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-25) — Inteligência de IA: followup automático (Fase 3)
+- Campo `agentes.tempo_followup_min` (migration **098**): min sem resposta do lead → etiqueta automática (vazio = desligado). Job novo `scheduler._job_followup_etiqueta` (5min) → `followup_automacao.aplicar_followup_etiquetas` aplica a **etiqueta 'followup'** (= **fonte única** do estado; **NÃO toca `lead_status`**, que é lifecycle) nas conversas de canal com agente cujo lead parou de responder > `tempo_followup_min`; **idempotente** (pula quem já tem) + `find_or_create_etiqueta`. **Pausa sozinho** (lead responde → `ultima_direcao='entrada'` deixa de casar). Endpoints `GET /crm/followups/leads` + `/metricas` (montam `FollowupLead` de conversa+contato+`contexto_ia` da Fase 1; `status_followup` derivado de timing) + `PATCH /crm/followups/conversa/{id}/fechamento` (coluna nova `crm_whatsapp_conversas.followup_fechamento`). Front: página `/crm/followup` ligada ao real (mock→hook real), campo `tempo_followup` no cadastro. Fechamento (ganho/perda) persiste; temperatura read-only; pausar/override "em breve".
+
 ### ✅ Implementado (2026-06-25) — Inteligência de IA: feedback de qualidade (Fase 2)
 - Tabela `agente_ajustes_resposta` (migration **097**): admin/supervisor sugere uma "resposta melhor" na tela de conversas → salva na Central do agente p/ curadoria + treino futuro (few-shot, **ainda NÃO injetado** — "melhorar depois"). `POST /conversas/{id}/ajuste-resposta` (CRM, `get_usuario_atual` + `eh_supervisor`; resolve o agente pelo canal da conversa). Curadoria: `GET`/`DELETE /workspaces/{ws}/agentes/{id}/ajustes` (platform_admin). Schemas `AjusteRespostaIn`/`AjusteRespostaOut`. Front: ícone sutil na bolha do agente (só admin) + modal (shadcn Dialog) + lista no drawer do agente.
 

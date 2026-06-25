@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -108,6 +109,167 @@ def _sync_next_followup(db: Session, *, contato_id: uuid.UUID, conversa_id: uuid
             conversa.followup_due_at = next_due
             if conversa.lead_status == "novo" and next_due:
                 conversa.lead_status = "followup"
+
+
+# ── Página de Followup (worklist de leads em followup — etiqueta 'followup') ──────
+class FollowupLeadOut(BaseModel):
+    id: str
+    org_id: str
+    nome: str | None = None
+    telefone: str
+    email: str | None = None
+    origem: str
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    utm_campaign: str | None = None
+    followup_config_id: str | None = None
+    status_followup: str
+    tentativa_atual: int = 1
+    max_tentativas: int = 1
+    proximo_envio: str | None = None
+    ultimo_contato: str | None = None
+    ultimo_resumo: str | None = None
+    temperatura: str | None = None
+    interesse: str | None = None
+    status_fechamento: str = "em_aberto"
+    session_id: str | None = None
+    agente_id: str | None = None
+    agendamento_id: str | None = None
+    recorrencia_ativa: bool = False
+    recorrencia_config_id: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class FollowupMetricasOut(BaseModel):
+    ativos: int
+    vencidos: int
+    esgotados: int
+    ganhos: int
+    percas: int
+    total: int
+    taxa_conversao: float
+    responderam: int
+
+
+class FollowupFechamentoIn(BaseModel):
+    status_fechamento: str
+
+
+def _map_origem(utm_source: str | None, campanha_origem: str | None) -> str:
+    s = (utm_source or campanha_origem or "").lower()
+    if any(k in s for k in ("meta", "facebook", "fb", "instagram", "ig")):
+        return "meta_ads"
+    if "google" in s:
+        return "google_ads"
+    if "tiktok" in s:
+        return "tiktok_ads"
+    if "linkedin" in s:
+        return "linkedin_ads"
+    if any(k in s for k in ("indica", "referr")):
+        return "indicacao"
+    return "whatsapp"
+
+
+def _iso(v) -> str | None:
+    return v.isoformat() if v else None
+
+
+def _followup_leads(db: Session, workspace_id, limit: int = 500) -> list[dict]:
+    rows = db.execute(
+        text("""
+            SELECT c.id::text AS id, c.workspace_id::text AS org_id, ct.nome, ct.telefone,
+                   ct.utm_source, ct.utm_medium, ct.campanha_origem,
+                   c.last_inbound_at, c.last_outbound_at, c.ultima_msg_at, c.followup_due_at,
+                   c.resumo_ia, c.contexto_ia->>'temperatura' AS temperatura,
+                   c.contexto_ia->>'interesse' AS interesse, c.followup_fechamento,
+                   c.ai_agente_id::text AS agente_id, c.criado_em, c.atualizado_em
+            FROM crm_whatsapp_conversas c
+            JOIN crm_whatsapp_contatos ct ON ct.id = c.contato_id
+            JOIN crm_conversa_etiquetas ce ON ce.conversa_id = c.id
+            JOIN crm_etiquetas e ON e.id = ce.etiqueta_id AND e.nome = 'followup' AND e.ativo = true
+            WHERE c.workspace_id = CAST(:ws AS uuid) AND c.ativo = true
+            ORDER BY c.last_outbound_at DESC NULLS LAST
+            LIMIT :lim
+        """),
+        {"ws": str(workspace_id), "lim": limit},
+    ).mappings().all()
+    out: list[dict] = []
+    for r in rows:
+        respondeu = r["last_inbound_at"] is not None and (
+            r["last_outbound_at"] is None or r["last_inbound_at"] > r["last_outbound_at"]
+        )
+        out.append({
+            "id": r["id"], "org_id": r["org_id"], "nome": r["nome"], "telefone": r["telefone"] or "",
+            "origem": _map_origem(r["utm_source"], r["campanha_origem"]),
+            "utm_source": r["utm_source"], "utm_medium": r["utm_medium"],
+            "status_followup": "respondeu" if respondeu else "ativo",
+            "tentativa_atual": 1, "max_tentativas": 1,
+            "proximo_envio": _iso(r["followup_due_at"]),
+            "ultimo_contato": _iso(r["last_outbound_at"] or r["ultima_msg_at"]),
+            "ultimo_resumo": r["resumo_ia"], "temperatura": r["temperatura"], "interesse": r["interesse"],
+            "status_fechamento": r["followup_fechamento"] or "em_aberto",
+            "session_id": r["id"], "agente_id": r["agente_id"],
+            "recorrencia_ativa": False,
+            "created_at": _iso(r["criado_em"]), "updated_at": _iso(r["atualizado_em"]),
+        })
+    return out
+
+
+@router.get("/leads", response_model=list[FollowupLeadOut])
+def listar_followup_leads(
+    workspace_id: uuid.UUID = Query(...),
+    usuario: User = Depends(get_usuario_atual),
+    _wf=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    """Leads em followup (conversas com a etiqueta 'followup'), enriquecidos com a análise da IA."""
+    verificar_acesso_workspace(usuario, workspace_id, db)
+    return [FollowupLeadOut(**d) for d in _followup_leads(db, workspace_id)]
+
+
+@router.get("/metricas", response_model=FollowupMetricasOut)
+def followup_metricas(
+    workspace_id: uuid.UUID = Query(...),
+    usuario: User = Depends(get_usuario_atual),
+    _wf=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    verificar_acesso_workspace(usuario, workspace_id, db)
+    leads = _followup_leads(db, workspace_id, limit=2000)
+    total = len(leads)
+    ganhos = sum(1 for x in leads if x["status_fechamento"] == "ganho")
+    percas = sum(1 for x in leads if x["status_fechamento"] in ("perca", "perdido"))
+    return FollowupMetricasOut(
+        ativos=sum(1 for x in leads if x["status_followup"] == "ativo"),
+        vencidos=0,
+        esgotados=0,
+        ganhos=ganhos,
+        percas=percas,
+        total=total,
+        taxa_conversao=round((ganhos / total) * 100, 1) if total else 0.0,
+        responderam=sum(1 for x in leads if x["status_followup"] == "respondeu"),
+    )
+
+
+@router.patch("/conversa/{conversa_id}/fechamento")
+def atualizar_fechamento_followup(
+    conversa_id: uuid.UUID,
+    data: FollowupFechamentoIn,
+    usuario: User = Depends(get_usuario_atual),
+    _wf=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    valido = {"em_aberto", "ganho", "perca", "perdido", "reagendado"}
+    if data.status_fechamento not in valido:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="status_fechamento inválido")
+    c = db.query(Conversa).filter(Conversa.id == conversa_id).first()
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
+    verificar_acesso_workspace(usuario, c.workspace_id, db)
+    c.followup_fechamento = data.status_fechamento
+    db.commit()
+    return {"id": str(c.id), "status_fechamento": c.followup_fechamento}
 
 
 @router.get("", response_model=list[FollowUpOut])

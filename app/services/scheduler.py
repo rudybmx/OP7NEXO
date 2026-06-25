@@ -215,6 +215,21 @@ def _job_leads_sem_resposta() -> None:
         log.exception("Erro no job leads_sem_resposta: %s", exc)
 
 
+def _job_followup_etiqueta() -> None:
+    """A cada 5min: aplica a etiqueta 'followup' em conversas cujo lead parou de responder
+    além do `tempo_followup_min` do agente do canal (etiqueta = fonte do estado de followup;
+    idempotente, pula quem já tem)."""
+    try:
+        with SessionLocal() as db:
+            from app.services.followup_automacao import aplicar_followup_etiquetas
+
+            n = aplicar_followup_etiquetas(db)
+            if n:
+                log.info("Scheduler: followup — %d conversa(s) etiquetadas", n)
+    except Exception as exc:
+        log.exception("Erro no job followup_etiqueta: %s", exc)
+
+
 def _job_process_whatsapp_events() -> None:
     try:
         result = process_next_whatsapp_jobs(limit=25)
@@ -282,6 +297,16 @@ def iniciar_scheduler() -> None:
         "interval",
         minutes=5,
         id="leads_sem_resposta",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
+    )
+    scheduler.add_job(
+        _job_followup_etiqueta,
+        "interval",
+        minutes=5,
+        id="followup_etiqueta",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

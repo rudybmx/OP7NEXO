@@ -34,6 +34,7 @@ class Agente(Base):
     alerta_threshold_pct: Mapped[int] = mapped_column(Integer, nullable=False, default=80)
     mensagem_abertura: Mapped[str | None] = mapped_column(Text, nullable=True)
     objetivo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tempo_followup_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

@@ -226,6 +226,7 @@ def _agente_out(agente: Agente, db: Session) -> AgenteOut:
         alerta_threshold_pct=agente.alerta_threshold_pct,
         mensagem_abertura=agente.mensagem_abertura,
         objetivo=agente.objetivo,
+        tempo_followup_min=agente.tempo_followup_min,
         canais=_canais_out(agente),
         horarios=[
             HorarioOut(
@@ -316,6 +317,7 @@ def criar_agente(
         alerta_threshold_pct=payload.alerta_threshold_pct,
         mensagem_abertura=payload.mensagem_abertura,
         objetivo=payload.objetivo,
+        tempo_followup_min=payload.tempo_followup_min,
     )
     db.add(agente)
     db.flush()  # obtém agente.id
@@ -375,6 +377,7 @@ def atualizar_agente(
         "alerta_threshold_pct",
         "mensagem_abertura",
         "objetivo",
+        "tempo_followup_min",
     ):
         valor = getattr(payload, campo)
         if valor is not None:
