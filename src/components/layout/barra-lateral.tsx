@@ -770,6 +770,7 @@ export function BarraLateral() {
       <div
         style={{
           padding: isCollapsed ? "25px 0" : "20px 14px 16px",
+          background: "linear-gradient(160deg, rgba(0,110,255,0.22) 0%, rgba(0,5,51,0) 70%)",
           borderBottom: `1px solid ${W08}`,
           marginBottom: 14,
           display: "flex",
