@@ -183,7 +183,7 @@ def _followup_leads(db: Session, workspace_id, limit: int = 500) -> list[dict]:
                    c.last_inbound_at, c.last_outbound_at, c.ultima_msg_at, c.followup_due_at,
                    c.resumo_ia, c.contexto_ia->>'temperatura' AS temperatura,
                    c.contexto_ia->>'interesse' AS interesse, c.followup_fechamento,
-                   c.ai_agente_id::text AS agente_id, c.criado_em, c.atualizado_em
+                   c.ai_agente_id::text AS agente_id, c.created_at, c.updated_at
             FROM crm_whatsapp_conversas c
             JOIN crm_whatsapp_contatos ct ON ct.id = c.contato_id
             JOIN crm_conversa_etiquetas ce ON ce.conversa_id = c.id
@@ -211,7 +211,7 @@ def _followup_leads(db: Session, workspace_id, limit: int = 500) -> list[dict]:
             "status_fechamento": r["followup_fechamento"] or "em_aberto",
             "session_id": r["id"], "agente_id": r["agente_id"],
             "recorrencia_ativa": False,
-            "created_at": _iso(r["criado_em"]), "updated_at": _iso(r["atualizado_em"]),
+            "created_at": _iso(r["created_at"]), "updated_at": _iso(r["updated_at"]),
         })
     return out
 
