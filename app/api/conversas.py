@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
 from app.models.canal_entrada import CanalEntrada
 from app.models.agente import AgenteAjusteResposta
-from app.models.crm import Contato, Conversa, CrmEtiqueta
+from app.models.crm import Contato, Conversa, CrmEtiqueta, Mensagem
 from app.models.user import RoleUsuario, User
 from app.schemas.agente import AjusteRespostaIn, AjusteRespostaOut
 from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
@@ -900,6 +900,14 @@ def desativar_conversa(
 ):
     c = _get_conversa_or_404(conversa_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
+    # Só exclui conversa VAZIA (sem nenhuma mensagem) — protege histórico (P3b).
+    tem_mensagem = (
+        db.query(Mensagem.id)
+        .filter(Mensagem.conversa_id == c.id, Mensagem.ativo.is_(True))
+        .first()
+    )
+    if tem_mensagem is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Conversa não está vazia.")
     c.ativo = False
     c.deleted_at = datetime.utcnow()
     db.commit()
