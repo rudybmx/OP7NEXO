@@ -2,13 +2,15 @@
 
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, Clock, FileText, PlayCircle, AlertCircle, User } from 'lucide-react'
+import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, Clock, FileText, PlayCircle, AlertCircle, User, Sparkles } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { CardRastreamento } from './card-rastreamento'
 import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
 import { formatarTelefoneBR } from '@/lib/formatar'
+import { useAuth } from '@/hooks/use-auth'
+import { ModalSugerirResposta } from './modal-sugerir-resposta'
 
 const AI_HANDOFF_ENABLED = false
 const CHAT_PATTERN_URL = 'https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7_dash_odc/Pattern%20OP7.svg'
@@ -522,6 +524,9 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpen
 
 export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, onVoltar, isMobile = false }: PainelChatProps) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const { user } = useAuth()
+  const isAdmin = !!user && user.role !== 'company_agent'
+  const [ajuste, setAjuste] = useState<{ mensagemId: string; original: string } | null>(null)
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
   const titulo = formatHeaderTitle(conversa)
   const telefone = formatarTelefoneBR(conversa.contato.telefone || conversa.remoteJid)
@@ -974,6 +979,16 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         gap: 6,
                         fontVariantNumeric: 'tabular-nums',
                       }}>
+                        {isOutgoing && isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setAjuste({ mensagemId: msg.id, original: msg.conteudo || '' })}
+                            title="Sugerir resposta melhor (admin)"
+                            style={{ display: 'inline-flex', alignItems: 'center', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', color: footerColor, opacity: 0.45 }}
+                          >
+                            <Sparkles size={12} />
+                          </button>
+                        )}
                         <span>{messageTime}</span>
                         {isOutgoing && messageStatus && (
                           <span
@@ -1043,6 +1058,14 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
           )}
         </DialogContent>
       </Dialog>
+      {ajuste && (
+        <ModalSugerirResposta
+          conversaId={conversa.id}
+          mensagemId={ajuste.mensagemId}
+          respostaOriginal={ajuste.original}
+          onClose={() => setAjuste(null)}
+        />
+      )}
     </div>
   )
 }

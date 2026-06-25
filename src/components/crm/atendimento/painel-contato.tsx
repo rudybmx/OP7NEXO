@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { CalendarClock, Phone, User, Users, MessageSquare, X } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
+import { TermometroLead } from './termometro-lead'
 import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { useCrmFollowups } from '@/hooks/use-crm-followups'
 import { formatarTelefoneBR } from '@/lib/formatar'
@@ -383,16 +384,38 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
               border: '1px solid rgba(62,91,255,0.15)',
               borderRadius: 12,
               padding: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
             }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: '#3E5BFF', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Resumo</div>
-              <p style={{ fontSize: 11, color: 'var(--ws-text-2)', lineHeight: 1.5, margin: 0 }}>
-                Lead interagindo via WhatsApp. Aguardando próxima ação do atendente.
-              </p>
+              {conversa.temperaturaScore != null || conversa.resumoIa ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <TermometroLead score={conversa.temperaturaScore} temperatura={conversa.temperatura} />
+                  </div>
+                  {conversa.resumoIa && <AnaliseCampo titulo="Resumo" texto={conversa.resumoIa} />}
+                  {conversa.interesse && <AnaliseCampo titulo="Interesse" texto={conversa.interesse} />}
+                  {conversa.observacoes && <AnaliseCampo titulo="Observações" texto={conversa.observacoes} />}
+                </>
+              ) : (
+                <p style={{ fontSize: 11, color: 'var(--ws-text-3)', lineHeight: 1.5, margin: 0 }}>
+                  Ainda sem análise. A IA analisa a conversa automaticamente quando o lead responde.
+                </p>
+              )}
             </div>
           )}
         </div>
       </div>
     </aside>
+  )
+}
+
+function AnaliseCampo({ titulo, texto }: { titulo: string; texto: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 600, color: '#3E5BFF', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{titulo}</div>
+      <p style={{ fontSize: 11, color: 'var(--ws-text-2)', lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap' }}>{texto}</p>
+    </div>
   )
 }
 
