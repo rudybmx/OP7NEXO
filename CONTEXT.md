@@ -169,6 +169,10 @@ Versão da Graph API centralizada em `settings.META_GRAPH_API_VERSION`.
 - O payload bruto é salvo para auditoria e debug
 - Normalizar eventos com `event.upper().replace(".", "_")` e tratar tanto o legado (`messages.upsert`, `messages.update`, `connection.update`) quanto o Go novo
 
+### Reconciliação de status na listagem (2026-06)
+- `GET /canais?validate_waha=1` reconcilia o `connection_status` real **dos dois providers**: `_reconciliar_waha_status` (WAHA) e `_reconciliar_evolution_status` (Evolution) em `app/api/canais.py`.
+- Evolution: 1 chamada **read-only** `evolution.listar_instancias(timeout=5.0, retry=False)` (GET /instance/all) — **nunca** `/instance/connect` (re-arm storm). Mapeia open→connected / connecting / close→disconnected; anti-flap (não rebaixa connected→connecting); grava número (jid) só na transição p/ connected, com guard de tamanho (anti-LID). Falha de rede silenciada (mantém DB).
+
 ### Dedup de conversas (variante do 9º dígito BR)
 - O mesmo celular aparece como 12 díg (legado, sem o 9) e 13 díg (atual); o envio manual gravava JID *bare* (sem `@s.whatsapp.net`). Ambos geravam contatos/conversas duplicados.
 - Prevenção (em `whatsapp_crm_persistence.py`): helpers `_br_jid_candidates`/`_canonical_br_jid` (gate de celular, 5º díg ∈ 6-9). Inbound (`process_evolution_message`) tem ramo não-LID `_resolve_existing_br_conversation` que roteia para a conversa ativa da variante; o ramo `@lid` (`_resolve_lid_contact`) é separado e inalterado. Envio manual/template em `canais.py` faz lookup por candidato e grava JID canônico com sufixo.
