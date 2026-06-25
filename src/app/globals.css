@@ -539,13 +539,13 @@ body {
 
 /* Pattern de fundo do chat — ícones de redes/mensageria em outline (verde), variante por tema */
 .atd-chat-pattern {
-  background-image: url('/chat-pattern.svg');
+  background-image: url('/chat-pattern.svg?v=2');
   background-repeat: repeat;
   background-size: 340px 340px;
   opacity: 0.38;
 }
 .dark .atd-chat-pattern {
-  background-image: url('/chat-pattern-dark.svg');
+  background-image: url('/chat-pattern-dark.svg?v=2');
   opacity: 0.22;
 }
 
