@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
 import api from '@/lib/api-client'
 import { getCanalProviderLabel } from '@/lib/whatsapp-canal'
+import { formatarTelefoneBR } from '@/lib/formatar'
 import { EditarCanalDialog, type EditCanalForm } from '@/components/administracao/canais/editar-canal-dialog'
 import { NovoCanalDialog } from '@/components/administracao/canais/novo-canal-dialog'
 import { sanitizeCanalConfigForEdit } from '@/components/administracao/canais/webhook-config'
@@ -381,11 +382,6 @@ export default function CanaisOmnichannelPage() {
     return matchBusca && matchTipo
   })
 
-  const contagemPorTipo = TIPOS.reduce<Record<string, number>>((acc, t) => {
-    acc[t.id] = canais.filter(c => c.tipo === t.id).length
-    return acc
-  }, {})
-
   if (authLoading || !user || user.role !== 'platform_admin') {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
@@ -419,32 +415,6 @@ export default function CanaisOmnichannelPage() {
           <Plus size={16} />
           Novo Canal
         </button>
-      </div>
-
-      {/* Cards de tipo */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 28 }}>
-        {TIPOS.map(t => (
-          <div
-            key={t.id}
-            onClick={() => setFiltroTipo(prev => prev === t.id ? 'todos' : t.id)}
-            style={{
-              background: filtroTipo === t.id ? t.corBg : 'var(--ws-glass-bg)',
-              border: filtroTipo === t.id ? `1px solid ${t.cor}` : '1px solid rgba(15,39,68,0.12)',
-              borderRadius: 12, padding: '16px 14px',
-              cursor: 'pointer', backdropFilter: 'blur(12px)',
-              transition: 'all 0.15s',
-              boxShadow: filtroTipo === t.id ? `0 2px 8px ${t.corBg}` : '0 1px 3px rgba(14,20,42,0.04)',
-            }}
-          >
-            <div style={{ fontSize: 22, marginBottom: 8 }}>{t.emoji}</div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: filtroTipo === t.id ? t.cor : 'var(--ws-text-2)', marginBottom: 4, lineHeight: 1.3 }}>
-              {t.label}
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: filtroTipo === t.id ? t.cor : 'var(--ws-text-1)' }}>
-              {contagemPorTipo[t.id] ?? 0}
-            </div>
-          </div>
-        ))}
       </div>
 
       {/* Filtro + busca */}
@@ -515,7 +485,8 @@ export default function CanaisOmnichannelPage() {
             )}
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', whiteSpace: 'nowrap' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(15,39,68,0.10)', background: 'rgba(62,91,255,0.04)' }}>
                 {['Nome', 'Tipo', 'Cliente', 'Número', 'Conectado em', 'Status', 'Ações'].map(h => (
@@ -534,6 +505,7 @@ export default function CanaisOmnichannelPage() {
               {filtrados.map(c => {
                 const info = tipoInfo(c.tipo)
                 const badge = getChannelBadge(c)
+                const tel = formatarTelefoneBR(c.numero_telefone) ?? c.numero_telefone
                 return (
                   <tr
                     key={c.id}
@@ -560,10 +532,10 @@ export default function CanaisOmnichannelPage() {
                       {workspaceNome(c.workspace_id)}
                     </td>
                     <td style={{ padding: '14px 18px' }}>
-                      {c.numero_telefone ? (
+                      {tel ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--ws-text-1)' }}>
                           <Smartphone size={13} style={{ color: 'var(--ws-green)' }} />
-                          {c.numero_telefone}
+                          {tel}
                         </span>
                       ) : (
                         <span style={{ fontSize: 12, color: 'var(--ws-text-3)' }}>—</span>
@@ -668,6 +640,7 @@ export default function CanaisOmnichannelPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
