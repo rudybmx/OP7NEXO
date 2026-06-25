@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { MessageCircle } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useConversas, type V2Filtros } from '@/hooks/use-conversas'
@@ -35,6 +36,17 @@ export function PaginaAtendimento() {
   const { workspaceAtual, workspaces, loading: workspaceLoading } = useWorkspace()
   const workspaceResolvido = !workspaceLoading && (workspaceAtual !== null || workspaces.length === 0)
   const [conversaAtivaId, setConversaAtivaId] = useState<string | null>(null)
+  // Deep-link: a conversa selecionada é refletida na URL (?conversa=<id>) — abre via link de
+  // notificação, sobrevive a F5 e é compartilhável. Lê o param (reativo) e abre a conversa.
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const conversaParam = searchParams.get('conversa')
+  useEffect(() => {
+    if (conversaParam && conversaParam !== conversaAtivaId) {
+      setConversaAtivaId(conversaParam)
+    }
+  }, [conversaParam, conversaAtivaId])
   const [painelAberto, setPainelAberto] = useState(false)
   const [filtroAtivo, setFiltroAtivo] = useState<string>('todas')
   const [busca, setBusca] = useState('')
@@ -221,6 +233,9 @@ export function PaginaAtendimento() {
     }
     const conversa = conversas.find(c => c.id === id)
     setConversaAtivaId(id)
+    // Reflete a conversa na URL (deep-link / sobrevive a F5 / compartilhável). replace
+    // (não push) p/ não poluir o histórico de back/forward.
+    router.replace(`${pathname}?conversa=${id}`, { scroll: false })
     // Marcar como lida ao abrir — some na hora (otimista) e limpa no servidor
     if (conversa && (conversa.naoLidas > 0 || conversa.marcadaNaoLida)) {
       marcarLidaLocal(id)
@@ -230,7 +245,7 @@ export function PaginaAtendimento() {
     if (AI_HANDOFF_ENABLED && conversa && !conversa.responsavelId && conversa.status === 'nova') {
       setMostrarModalAssumir(true)
     }
-  }, [conversas, conversaEfemeraId, marcarLido, marcarLidaLocal])
+  }, [conversas, conversaEfemeraId, marcarLido, marcarLidaLocal, router, pathname])
 
   const handleAbandonarEfemera = useCallback(() => {
     if (!conversaEfemeraId) return
