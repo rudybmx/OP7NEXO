@@ -483,7 +483,7 @@ def process_evolution_message(
                 "mensagem_nova",
                 titulo=sender_name or "Nova mensagem",
                 mensagem=preview or "Enviou uma mensagem",
-                link=f"/atendimento?conversa={conversa_id}",
+                link=f"/crm/atendimento/conversas?conversa={conversa_id}",
                 entidade=("conversa", conversa_id),
                 dedupe_key=f"mensagem_nova:{conversa_id}",
                 payload={"contato": sender_name, "canal_id": str(canal_id) if canal_id else None},
