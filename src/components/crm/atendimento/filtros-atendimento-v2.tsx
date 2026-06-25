@@ -1,9 +1,18 @@
 'use client'
 
 import type { CSSProperties } from 'react'
+import { Phone, User, Eye, ChevronDown, Archive } from 'lucide-react'
 import type { WhatsappCanal } from '@/hooks/use-whatsapp-canais'
 import type { AgenteApi } from '@/hooks/use-agentes-disponiveis'
 import { getCanalProviderLabel } from '@/lib/whatsapp-canal'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from '@/components/ui/dropdown-menu'
 
 /** Estado dos filtros V2 (server-side). Sentinelas 'todas'/'todos'/'' = sem filtro. */
 export interface FiltrosV2State {
@@ -47,8 +56,129 @@ const TIPOS = [
   { id: 'diretas', label: 'Diretas' },
 ]
 
-/** Barra de filtros V2 do CRM atendimento (3 dropdowns + 2 linhas de pills).
- *  Controlada; a persistência fica no orquestrador (usePersistedState). */
+const ACOMPANHAMENTOS = [
+  { id: '', label: 'Acompanhamento: todos' },
+  { id: 'em_atendimento', label: 'Em atendimento' },
+  { id: 'sem_resposta', label: 'Sem resposta' },
+]
+
+const dropIconBtn = (ativo: boolean): CSSProperties => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 3,
+  padding: '6px 8px',
+  borderRadius: 10,
+  cursor: 'pointer',
+  border: ativo ? '1px solid rgba(29, 158, 117, 0.24)' : '1px solid rgba(15, 23, 42, 0.08)',
+  background: ativo ? 'rgba(37, 211, 102, 0.16)' : 'rgba(255, 255, 255, 0.88)',
+  color: ativo ? '#1D9E75' : 'var(--ws-text-2)',
+  boxShadow: ativo ? '0 4px 10px rgba(29, 158, 117, 0.10)' : 'none',
+})
+
+interface FiltrosDropdownsV2Props {
+  valor: FiltrosV2State
+  onChange: (next: FiltrosV2State) => void
+  canais: WhatsappCanal[]
+  canalSelecionadoId: string
+  onCanalChange: (id: string) => void
+  agentes: AgenteApi[]
+}
+
+/** Os 3 filtros (número · responsável · acompanhamento) como botões-ícone com popover (desktop).
+ *  Vivem na icon-row do header; mesma lógica/handlers dos selects (que ficam só no mobile, em
+ *  FiltrosAtendimentoV2). Fica verde quando o filtro está ativo (≠ valor padrão). */
+export function FiltrosDropdownsV2({
+  valor,
+  onChange,
+  canais,
+  canalSelecionadoId,
+  onCanalChange,
+  agentes,
+}: FiltrosDropdownsV2Props) {
+  const set = (patch: Partial<FiltrosV2State>) => onChange({ ...valor, ...patch })
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {canais.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              style={dropIconBtn(canalSelecionadoId !== 'todos')}
+              title="Filtrar por número"
+              aria-label="Filtrar por número"
+            >
+              <Phone size={15} />
+              <ChevronDown size={9} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-56">
+            <DropdownMenuLabel>Número</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={canalSelecionadoId} onValueChange={onCanalChange}>
+              <DropdownMenuRadioItem value="todos">Todos os números</DropdownMenuRadioItem>
+              {canais.map(canal => (
+                <DropdownMenuRadioItem key={canal.id} value={canal.id}>
+                  {canal.tipo === 'webhook'
+                    ? `${getCanalProviderLabel(canal)} · ${canal.nome}`
+                    : `${canal.nome}${canal.numero_telefone ? ` · ${canal.numero_telefone}` : ''}`}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            style={dropIconBtn(valor.responsavelId !== '')}
+            title="Filtrar por responsável"
+            aria-label="Filtrar por responsável"
+          >
+            <User size={15} />
+            <ChevronDown size={9} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-56">
+          <DropdownMenuLabel>Responsável</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={valor.responsavelId} onValueChange={v => set({ responsavelId: v })}>
+            <DropdownMenuRadioItem value="">Todos os responsáveis</DropdownMenuRadioItem>
+            {agentes.map(agente => (
+              <DropdownMenuRadioItem key={agente.id} value={agente.id}>{agente.nome}</DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            style={dropIconBtn(valor.acompanhamento !== '')}
+            title="Filtrar por acompanhamento"
+            aria-label="Filtrar por acompanhamento"
+          >
+            <Eye size={15} />
+            <ChevronDown size={9} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-56">
+          <DropdownMenuLabel>Acompanhamento</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={valor.acompanhamento} onValueChange={v => set({ acompanhamento: v })}>
+            {ACOMPANHAMENTOS.map(o => (
+              <DropdownMenuRadioItem key={o.id || 'todos'} value={o.id}>{o.label}</DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
+/** Barra de filtros V2 do CRM atendimento.
+ *  Desktop: só as 2 linhas de pills (os dropdowns vão p/ o header via FiltrosDropdownsV2).
+ *  Mobile: selects nativos + pills (inalterado — melhor UX touch). */
 export function FiltrosAtendimentoV2({
   valor,
   onChange,
@@ -86,8 +216,9 @@ export function FiltrosAtendimentoV2({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
-      {/* Dropdowns: Canal · Responsável · Acompanhamento */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+      {/* Dropdowns (mobile-only): no desktop vão p/ a icon-row do header via <FiltrosDropdownsV2 /> */}
+      {isMobile && (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
         {canais.length > 0 && (
           <select
             value={canalSelecionadoId}
@@ -127,6 +258,7 @@ export function FiltrosAtendimentoV2({
           <option value="sem_resposta">Sem resposta</option>
         </select>
       </div>
+      )}
 
       {/* Linha 1 — escopo (inerte sob view de arquivadas) */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -144,7 +276,7 @@ export function FiltrosAtendimentoV2({
       </div>
 
       {/* Linha 2 — tipo (exclusivo) + estado (toggles) */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {TIPOS.map(opcao => (
           <button
             key={opcao.id}
@@ -158,14 +290,37 @@ export function FiltrosAtendimentoV2({
         <button type="button" onClick={() => set({ naoLidas: !valor.naoLidas })} style={pill(valor.naoLidas)}>
           Não lidas
         </button>
-        {/* Arquivadas = view terminal: ao ligar, reseta escopo p/ 'todas' (coerência c/ precedência do backend) */}
-        <button
-          type="button"
-          onClick={() => set({ arquivadas: !valor.arquivadas, escopo: !valor.arquivadas ? 'todas' : valor.escopo })}
-          style={pill(valor.arquivadas)}
-        >
-          Arquivadas
-        </button>
+        {/* Arquivadas = view terminal: ao ligar, reseta escopo p/ 'todas' (coerência c/ precedência do backend).
+            Desktop: botão-ícone ancorado à direita. Mobile: pill de texto (inalterado). */}
+        {isMobile ? (
+          <button
+            type="button"
+            onClick={() => set({ arquivadas: !valor.arquivadas, escopo: !valor.arquivadas ? 'todas' : valor.escopo })}
+            style={pill(valor.arquivadas)}
+          >
+            Arquivadas
+          </button>
+        ) : (
+          <button
+            type="button"
+            title="Arquivadas"
+            aria-label="Arquivadas"
+            onClick={() => set({ arquivadas: !valor.arquivadas, escopo: !valor.arquivadas ? 'todas' : valor.escopo })}
+            style={{
+              ...pill(valor.arquivadas),
+              marginLeft: 'auto',
+              width: 26,
+              height: 26,
+              minHeight: 26,
+              padding: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Archive size={15} />
+          </button>
+        )}
       </div>
     </div>
   )
