@@ -105,11 +105,63 @@ def _diretrizes_workspace(db: Session, workspace_id) -> str:
         return ""
 
 
+_AJUSTES_TABELA_PRESENTE: bool | None = None
+_AJUSTES_FEW_SHOT_LIMITE = 6
+_AJUSTES_MAX_CHARS = 400
+
+
+def _ajustes_few_shot(db: Session, agente_id) -> str:
+    """Sugestões de 'resposta melhor' aprovadas pela equipe (Fase 2) injetadas como few-shot no
+    system prompt. Calibram TOM e CONSISTÊNCIA — NÃO são correção de conteúdo por situação (os
+    exemplos não carregam a mensagem-gatilho do cliente). Mesma tolerância a falha de
+    _diretrizes_workspace: tabela ausente (janela de deploy) / query ruim → rollback + "" (nunca
+    envenena a transação nem derruba o reply). Teto de recência p/ não inchar o prompt. Cache por
+    processo. Gate de curadoria = `ativo` (admin desliga deletando na Central, Fase 2)."""
+    global _AJUSTES_TABELA_PRESENTE
+    if _AJUSTES_TABELA_PRESENTE is None:
+        try:
+            _AJUSTES_TABELA_PRESENTE = sa_inspect(db.get_bind()).has_table(
+                "agente_ajustes_resposta"
+            )
+        except Exception:  # noqa: BLE001 — na dúvida, trata como ausente (degrada p/ "")
+            _AJUSTES_TABELA_PRESENTE = False
+    if not _AJUSTES_TABELA_PRESENTE:
+        return ""
+    try:
+        rows = db.execute(
+            text(
+                "SELECT resposta_original, resposta_sugerida FROM agente_ajustes_resposta "
+                "WHERE agente_id = CAST(:ag AS uuid) AND ativo = true "
+                "ORDER BY criado_em DESC LIMIT :lim"
+            ),
+            {"ag": str(agente_id), "lim": _AJUSTES_FEW_SHOT_LIMITE},
+        ).all()
+    except Exception as exc:  # noqa: BLE001 — ajustes nunca derrubam a geração
+        log.info("[ajustes] leitura falhou agente=%s: %s", agente_id, exc)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return ""
+    exemplos: list[str] = []
+    for original, sugerida in rows:
+        sug = (sugerida or "").strip()[:_AJUSTES_MAX_CHARS]
+        if not sug:
+            continue
+        orig = (original or "").strip()[:_AJUSTES_MAX_CHARS]
+        if orig:
+            exemplos.append(f"- Em vez de «{orig}», prefira: «{sug}»")
+        else:
+            exemplos.append(f"- Exemplo de resposta ideal: «{sug}»")
+    return "\n".join(exemplos)
+
+
 def _montar_system(
     agente: Agente,
     prompt: str,
     rag_chunks: list[str] | None = None,
     diretrizes_ws: str | None = None,
+    ajustes_few_shot: str | None = None,
 ) -> str:
     partes = [prompt.strip() or "Você é um assistente de atendimento prestativo e objetivo."]
     if diretrizes_ws and diretrizes_ws.strip():
@@ -130,6 +182,12 @@ def _montar_system(
         partes.append(
             "Use as informações abaixo, da base de conhecimento, para responder quando relevantes "
             f"(se não cobrirem a pergunta, diga que vai verificar):\n{bloco}"
+        )
+    if ajustes_few_shot and ajustes_few_shot.strip():
+        partes.append(
+            "EXEMPLOS DE RESPOSTAS IDEAIS (aprovadas pela equipe — referência de tom e conteúdo; "
+            "adapte ao contexto, não copie literalmente nem mencione algo que o cliente não "
+            "perguntou):\n" + ajustes_few_shot.strip()
         )
     partes.append(
         'Responda SEMPRE em JSON válido com as chaves exatas: '
@@ -159,17 +217,21 @@ def gerar_resposta(db: Session, agente: Agente, mensagem: str, historico: list |
     """Gera a resposta do agente para uma mensagem. NÃO grava nada, NÃO envia.
 
     Retorna {resposta, score_confianca, intent, tokens_input, tokens_output, modelo}.
-    JSON malformado do LLM → score 0 (sinaliza handoff). RAG/few-shot entram nas fases 3-4.
+    JSON malformado do LLM → score 0 (sinaliza handoff). RAG ativo; as sugestões aprovadas pela
+    equipe (Fase 2) entram como few-shot via _ajustes_few_shot (calibram tom/consistência).
     """
     prompt = _prompt_efetivo(db, agente)
     diretrizes = _diretrizes_workspace(db, agente.workspace_id)
+    ajustes = _ajustes_few_shot(db, agente.id)
     from app.services import embedding_service
 
     rag_chunks = embedding_service.retrieve(db, agente.id, mensagem)
     content, usage = llm_client_service.chamar_json(
         db,
         agente,
-        _montar_system(agente, prompt, rag_chunks, diretrizes_ws=diretrizes),
+        _montar_system(
+            agente, prompt, rag_chunks, diretrizes_ws=diretrizes, ajustes_few_shot=ajustes
+        ),
         _montar_user(mensagem, historico),
     )
     tokens_input = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
