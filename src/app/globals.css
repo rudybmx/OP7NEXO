@@ -537,16 +537,16 @@ body {
   color: #eaf1ff;
 }
 
-/* Pattern de fundo do chat — multiply some no dark, vira soft-light claro */
+/* Pattern de fundo do chat — SVG sutil (dots navy + "+" azul), variante por tema */
 .atd-chat-pattern {
-  opacity: 0.065;
-  mix-blend-mode: multiply;
-  filter: saturate(0.8);
+  background-image: url('/chat-pattern.svg');
+  background-repeat: repeat;
+  background-size: 44px 44px;
+  opacity: 0.5;
 }
 .dark .atd-chat-pattern {
-  opacity: 0.10;
-  mix-blend-mode: soft-light;
-  filter: none;
+  background-image: url('/chat-pattern-dark.svg');
+  opacity: 0.45;
 }
 
 /* ============================================

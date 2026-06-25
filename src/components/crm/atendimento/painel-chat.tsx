@@ -13,7 +13,6 @@ import { useAuth } from '@/hooks/use-auth'
 import { ModalSugerirResposta } from './modal-sugerir-resposta'
 
 const AI_HANDOFF_ENABLED = false
-const CHAT_PATTERN_URL = 'https://pub-db8ed4fb33634589a6ce5fb07e85cb46.r2.dev/logo/op7_dash_odc/Pattern%20OP7.svg'
 
 interface PainelChatProps {
   conversa: ConversaApi
@@ -539,10 +538,6 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
     position: 'absolute',
     inset: 0,
     pointerEvents: 'none',
-    backgroundImage: `url(${CHAT_PATTERN_URL})`,
-    backgroundRepeat: 'repeat',
-    backgroundPosition: 'center top',
-    backgroundSize: '440px auto',
   }
 
   return (
