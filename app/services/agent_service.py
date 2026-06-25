@@ -204,6 +204,16 @@ def _montar_system(
             "adapte ao contexto, não copie literalmente nem mencione algo que o cliente não "
             "perguntou):\n" + ajustes_few_shot.strip()
         )
+    if agente.codigo_responsavel:
+        # Transferência p/ humano (gatilho LLM): o worker transfere quando intent=="transferir_humano".
+        # Opt-in (só quando há responsável). Barra-alta p/ não transferir à toa em modelo pequeno.
+        partes.append(
+            "TRANSFERÊNCIA PARA UM ATENDENTE HUMANO: se o cliente pedir EXPLICITAMENTE para falar "
+            "com um atendente/humano, ou se o assunto estiver claramente FORA do que você atende, "
+            'defina "intent": "transferir_humano" (exatamente esse valor) e escreva em "resposta" '
+            "uma despedida curta avisando que vai passar para um atendente. Na dúvida, responda "
+            'normalmente e NÃO use esse intent — use "transferir_humano" só nesse caso.'
+        )
     partes.append(
         'Responda SEMPRE em JSON válido com as chaves exatas: '
         '"resposta" (string, o texto a enviar ao cliente), '

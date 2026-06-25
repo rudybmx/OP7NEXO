@@ -22,6 +22,15 @@
 > handoff só marca `ai_escalado` (comportamento antigo). Transferência por agente: `actor_user_id`
 > nulo, `payload.source='agente.handoff'`.
 
+> **Transferência por pedido do cliente (gatilho LLM, 2026-06):** o worker transfere quando o
+> agente devolve `intent=="transferir_humano"` (em `processar_reply`: `_enviar_e_persistir` o aviso
+> ao cliente + `_handoff(motivo="transferencia")` que roteia). `_montar_system` **injeta a
+> instrução** (defina `intent="transferir_humano"` quando o cliente pedir humano / fora de escopo)
+> **só quando o agente tem `codigo_responsavel`** (opt-in; sem responsável o bloco não entra e a
+> feature não dispara). **Responsável** = usuários com `pode_atender_canais=true` no workspace
+> (mesma fonte da transferência manual `/api/whatsapp/agentes`); `_validate_responsavel` valida isso
+> por SQL cru (a coluna não está no model SQLAlchemy de `users`).
+
 ## O QUE É O SISTEMA
 
 SaaS de Marketing + CRM multi-tenant. Cada cliente é um **workspace**. O produto gerencia campanhas de Meta Ads, canais de comunicação (WhatsApp via Evolution API) e dados de performance.

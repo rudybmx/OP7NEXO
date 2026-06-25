@@ -94,16 +94,31 @@ def _validate_provider(provider_id: str | None, db: Session) -> uuid.UUID | None
     return pid
 
 
-def _validate_responsavel(codigo_responsavel: str | None, db: Session) -> uuid.UUID | None:
-    """Humano que recebe o handoff (Fase 4). "" / None => sem responsável (limpa o campo)."""
+def _validate_responsavel(
+    codigo_responsavel: str | None, workspace_id: uuid.UUID, db: Session
+) -> uuid.UUID | None:
+    """Humano que recebe o handoff/transferência. "" / None => sem responsável (limpa o campo).
+    Valida que o usuário pode ATENDER canais NESTE workspace — mesma regra da transferência manual
+    (`/api/whatsapp/agentes`): `pode_atender_canais=true` + `workspace_id`. `pode_atender_canais`
+    existe no banco mas NÃO no model SQLAlchemy de `users` → SQL cru."""
     if not codigo_responsavel:
         return None
     try:
         uid = uuid.UUID(codigo_responsavel)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="codigo_responsavel inválido")
-    if not db.query(User.id).filter(User.id == uid).first():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Usuário responsável não encontrado")
+    ok = db.execute(
+        text(
+            "SELECT 1 FROM users WHERE id = :id AND ativo = true "
+            "AND pode_atender_canais = true AND workspace_id = :ws"
+        ),
+        {"id": str(uid), "ws": str(workspace_id)},
+    ).first()
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Usuário responsável não pode atender canais neste workspace",
+        )
     return uid
 
 
@@ -332,7 +347,7 @@ def criar_agente(
         mensagem_abertura=payload.mensagem_abertura,
         objetivo=payload.objetivo,
         tempo_followup_min=payload.tempo_followup_min,
-        codigo_responsavel=_validate_responsavel(payload.codigo_responsavel, db),
+        codigo_responsavel=_validate_responsavel(payload.codigo_responsavel, workspace_id, db),
     )
     db.add(agente)
     db.flush()  # obtém agente.id
@@ -380,7 +395,7 @@ def atualizar_agente(
         agente.provider_id = _validate_provider(payload.provider_id, db)
     if payload.codigo_responsavel is not None:
         # "" limpa o responsável; uuid define; ausente (None) => não mexe
-        agente.codigo_responsavel = _validate_responsavel(payload.codigo_responsavel, db)
+        agente.codigo_responsavel = _validate_responsavel(payload.codigo_responsavel, workspace_id, db)
     for campo in (
         "nome",
         "descricao",
