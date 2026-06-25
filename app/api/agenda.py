@@ -1,8 +1,10 @@
 """API da Agenda nativa (Fase 1).
 
 CRUD de agendas/horários/bloqueios/agendamentos + disponibilidade + overview (KPIs) +
-agendamentos por contato (caixa do Atendimento). Multi-tenant: toda rota resolve e filtra por
-`workspace_id` (padrão de `app/api/followups.py`). Espelha `op7nexo-front/src/types/agenda.ts`.
+agendamentos por contato (caixa do Atendimento). Multi-tenant: rotas com escopo de criação/listagem
+resolvem `workspace_id` (padrão de `app/api/followups.py`); rotas by-id carregam a entidade e checam
+acesso via `verificar_acesso_workspace` (funciona p/ platform_admin e usuários com 1+ workspaces).
+Espelha `op7nexo-front/src/types/agenda.ts`.
 """
 from __future__ import annotations
 
@@ -192,6 +194,7 @@ class AgendamentoOut(BaseModel):
 
 # ─────────────────────────── Helpers ───────────────────────────
 def _resolve_workspace(workspace_filter, requested: uuid.UUID | None, usuario: User, db: Session) -> uuid.UUID:
+    """Resolve o workspace para rotas de criação/listagem (que aceitam workspace_id explícito)."""
     if requested:
         verificar_acesso_workspace(usuario, requested, db)
         return requested
@@ -208,16 +211,27 @@ def _resolve_workspace(workspace_filter, requested: uuid.UUID | None, usuario: U
 
 
 def _get_agenda_or_404(db: Session, agenda_id: uuid.UUID, ws_id: uuid.UUID) -> Agenda:
+    """Agenda dentro de um workspace já resolvido (usado em fluxos de criação)."""
     agenda = db.query(Agenda).filter(Agenda.id == agenda_id, Agenda.workspace_id == ws_id).first()
     if not agenda:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agenda não encontrada")
     return agenda
 
 
-def _get_agendamento_or_404(db: Session, ag_id: uuid.UUID, ws_id: uuid.UUID) -> Agendamento:
-    obj = db.query(Agendamento).filter(Agendamento.id == ag_id, Agendamento.workspace_id == ws_id).first()
+def _agenda_autorizada(db: Session, agenda_id: uuid.UUID, usuario: User) -> Agenda:
+    """Carrega a agenda por id e valida acesso (rotas by-id; funciona p/ platform_admin)."""
+    agenda = db.query(Agenda).filter(Agenda.id == agenda_id).first()
+    if not agenda:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agenda não encontrada")
+    verificar_acesso_workspace(usuario, agenda.workspace_id, db)
+    return agenda
+
+
+def _agendamento_autorizado(db: Session, ag_id: uuid.UUID, usuario: User) -> Agendamento:
+    obj = db.query(Agendamento).filter(Agendamento.id == ag_id).first()
     if not obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agendamento não encontrado")
+    verificar_acesso_workspace(usuario, obj.workspace_id, db)
     return obj
 
 
@@ -267,11 +281,9 @@ def editar_agenda(
     agenda_id: uuid.UUID,
     data: AgendaUpdate,
     usuario: User = Depends(get_usuario_atual),
-    workspace_filter=Depends(get_workspace_atual),
     db: Session = Depends(get_db),
 ):
-    ws_id = _resolve_workspace(workspace_filter, None, usuario, db)
-    agenda = _get_agenda_or_404(db, agenda_id, ws_id)
+    agenda = _agenda_autorizada(db, agenda_id, usuario)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(agenda, field, value)
     db.commit()
@@ -283,11 +295,9 @@ def editar_agenda(
 def desativar_agenda(
     agenda_id: uuid.UUID,
     usuario: User = Depends(get_usuario_atual),
-    workspace_filter=Depends(get_workspace_atual),
     db: Session = Depends(get_db),
 ):
-    ws_id = _resolve_workspace(workspace_filter, None, usuario, db)
-    agenda = _get_agenda_or_404(db, agenda_id, ws_id)
+    agenda = _agenda_autorizada(db, agenda_id, usuario)
     agenda.ativo = False
     db.commit()
     return {"id": str(agenda.id), "ativo": False}
@@ -298,11 +308,9 @@ def desativar_agenda(
 def listar_horarios(
     agenda_id: uuid.UUID,
     usuario: User = Depends(get_usuario_atual),
-    workspace_filter=Depends(get_workspace_atual),
     db: Session = Depends(get_db),
 ):
-    ws_id = _resolve_workspace(workspace_filter, None, usuario, db)
-    _get_agenda_or_404(db, agenda_id, ws_id)
+    _agenda_autorizada(db, agenda_id, usuario)
     return (
         db.query(AgendaHorario)
         .filter(AgendaHorario.agenda_id == agenda_id)
@@ -316,15 +324,13 @@ def salvar_horarios(
     agenda_id: uuid.UUID,
     data: HorariosPutIn,
     usuario: User = Depends(get_usuario_atual),
-    workspace_filter=Depends(get_workspace_atual),
     db: Session = Depends(get_db),
 ):
-    ws_id = _resolve_workspace(workspace_filter, None, usuario, db)
-    _get_agenda_or_404(db, agenda_id, ws_id)
+    agenda = _agenda_autorizada(db, agenda_id, usuario)
     db.query(AgendaHorario).filter(AgendaHorario.agenda_id == agenda_id).delete()
     novos = [
         AgendaHorario(
-            workspace_id=ws_id,
+            workspace_id=agenda.workspace_id,
             agenda_id=agenda_id,
             dia_semana=h.dia_semana,
             ativo=h.ativo,
@@ -396,15 +402,12 @@ def criar_bloqueio(
 def remover_bloqueio(
     bloqueio_id: uuid.UUID,
     usuario: User = Depends(get_usuario_atual),
-    workspace_filter=Depends(get_workspace_atual),
     db: Session = Depends(get_db),
 ):
-    ws_id = _resolve_workspace(workspace_filter, None, usuario, db)
-    bloqueio = db.query(AgendaBloqueio).filter(
-        AgendaBloqueio.id == bloqueio_id, AgendaBloqueio.workspace_id == ws_id
-    ).first()
+    bloqueio = db.query(AgendaBloqueio).filter(AgendaBloqueio.id == bloqueio_id).first()
     if not bloqueio:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bloqueio não encontrado")
+    verificar_acesso_workspace(usuario, bloqueio.workspace_id, db)
     db.delete(bloqueio)
     db.commit()
     return {"id": str(bloqueio_id), "removido": True}
@@ -492,11 +495,9 @@ def editar_agendamento(
     agendamento_id: uuid.UUID,
     data: AgendamentoUpdate,
     usuario: User = Depends(get_usuario_atual),
-    workspace_filter=Depends(get_workspace_atual),
     db: Session = Depends(get_db),
 ):
-    ws_id = _resolve_workspace(workspace_filter, None, usuario, db)
-    obj = _get_agendamento_or_404(db, agendamento_id, ws_id)
+    obj = _agendamento_autorizado(db, agendamento_id, usuario)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(obj, field, value)
     try:
@@ -513,11 +514,9 @@ def atualizar_status_agendamento(
     agendamento_id: uuid.UUID,
     data: StatusUpdate,
     usuario: User = Depends(get_usuario_atual),
-    workspace_filter=Depends(get_workspace_atual),
     db: Session = Depends(get_db),
 ):
-    ws_id = _resolve_workspace(workspace_filter, None, usuario, db)
-    obj = _get_agendamento_or_404(db, agendamento_id, ws_id)
+    obj = _agendamento_autorizado(db, agendamento_id, usuario)
     return svc_atualizar_status(
         db,
         obj,
@@ -532,11 +531,9 @@ def atualizar_status_agendamento(
 def cancelar_agendamento(
     agendamento_id: uuid.UUID,
     usuario: User = Depends(get_usuario_atual),
-    workspace_filter=Depends(get_workspace_atual),
     db: Session = Depends(get_db),
 ):
-    ws_id = _resolve_workspace(workspace_filter, None, usuario, db)
-    obj = _get_agendamento_or_404(db, agendamento_id, ws_id)
+    obj = _agendamento_autorizado(db, agendamento_id, usuario)
     return svc_cancelar(db, obj, cancelado_por=str(usuario.id))
 
 
@@ -623,7 +620,7 @@ def overview(
         "compareceu_semana": compareceu_semana,
         "taxa_comparecimento": taxa,
         "por_origem": por_origem,
-        # split Web vs IA (web = paciente/manual; ia = agente)
+        # split Web vs IA (web = paciente/manual/api; ia = agente)
         "por_canal": {
             "ia": por_origem.get("agente", 0),
             "web": por_origem.get("paciente", 0) + por_origem.get("manual", 0) + por_origem.get("api", 0),
