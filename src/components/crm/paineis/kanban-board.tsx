@@ -155,7 +155,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
                 <span style={{
                   fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 9999,
                   background: isWipExceeded ? 'rgba(255,92,141,0.12)' : 'var(--ws-surface-2)',
-                  color: isWipExceeded ? '#c2004f' : 'var(--ws-text-2)',
+                  color: isWipExceeded ? 'var(--ws-text-1)' : 'var(--ws-text-2)',
                   border: isWipExceeded ? '1px solid rgba(255,92,141,0.20)' : 'none',
                 }}>
                   {cards.length}{coluna.limite ? `/${coluna.limite}` : ''}
@@ -180,7 +180,7 @@ export function KanbanBoardComp({ board, reordenavel, onCardClick, onBoardChange
             </div>
 
             {isWipExceeded && (
-              <div style={{ fontSize: 10, color: '#c2004f', background: 'rgba(255,92,141,0.06)', border: '1px solid rgba(255,92,141,0.15)', borderRadius: 6, padding: '4px 8px', marginBottom: 8, textAlign: 'center', fontWeight: 500 }}>
+              <div style={{ fontSize: 10, color: 'var(--ws-text-1)', background: 'rgba(255,92,141,0.06)', border: '1px solid rgba(255,92,141,0.15)', borderRadius: 6, padding: '4px 8px', marginBottom: 8, textAlign: 'center', fontWeight: 500 }}>
                 Limite WIP excedido ({cards.length}/{coluna.limite})
               </div>
             )}
