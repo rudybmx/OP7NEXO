@@ -771,6 +771,14 @@ def marcar_conversa_lida(
     c.marcada_nao_lida = False
     db.commit()
     db.refresh(c)
+    # Fecha o loop de agregação: marca a notificação "mensagem_nova" desta conversa como
+    # lida p/ este usuário → a próxima mensagem volta a gerar uma notificação nova. Best-effort.
+    try:
+        from app.services.notificacoes import marcar_lida_por_entidade
+
+        marcar_lida_por_entidade(db, usuario, c.workspace_id, "conversa", str(conversa_id))
+    except Exception:
+        pass
     return _conversa_out(c)
 
 
