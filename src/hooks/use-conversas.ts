@@ -53,6 +53,7 @@ export interface MensagemApi {
   participantName?: string | null
   isMentioned?: boolean
   mentionedJids?: string[]
+  mentionedNames?: Record<string, string>  // { "<dígitos do @lid/número>": "<nome do contato>" }
   quotedText?: string | null
   quotedAuthor?: string | null
   quotedRemoteJid?: string | null

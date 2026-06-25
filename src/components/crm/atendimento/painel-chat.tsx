@@ -363,15 +363,22 @@ function renderMidiaError(kind: string | null | undefined, isEntrada: boolean, i
   )
 }
 
-// Destaca @menções (@<número>) no corpo da mensagem em dourado
-function renderConteudoComMencoes(texto: string) {
+// Destaca @menções no corpo da mensagem em dourado. Em grupos a menção vem como
+// @<LID> (número grande); se o backend resolveu o nome do contato (mentionedNames),
+// mostra @Nome; senão mantém @<número> (fallback).
+function renderConteudoComMencoes(texto: string, mentionedNames?: Record<string, string>) {
   const parts = texto.split(/(@\d{6,})/g)
   if (parts.length === 1) return texto
-  return parts.map((parte, i) =>
-    /^@\d{6,}$/.test(parte)
-      ? <span key={i} style={{ color: '#c9a84c', fontWeight: 600 }}>{parte}</span>
-      : parte
-  )
+  return parts.map((parte, i) => {
+    const m = /^@(\d{6,})$/.exec(parte)
+    if (!m) return parte
+    const nome = mentionedNames?.[m[1]]
+    return (
+      <span key={i} style={{ color: '#c9a84c', fontWeight: 600 }}>
+        {nome ? `@${nome}` : parte}
+      </span>
+    )
+  })
 }
 
 // Rótulo amigável do tipo da mensagem citada quando não há texto (ex.: foto, áudio)
@@ -978,7 +985,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         // Suprimir placeholders de mídia quando media_kind conhecido: "[mídia]", "mídia", "(mídia)"
                         const isMidiaText = msg.mediaKind != null && /^[\[(]?(mídia|midia)[\])]?$/i.test(body)
                         if (!msg.conteudo || (temMidia && isPlaceholder) || isMidiaText) return null
-                        return <div style={{ whiteSpace: 'pre-wrap' }}>{renderConteudoComMencoes(msg.conteudo)}</div>
+                        return <div style={{ whiteSpace: 'pre-wrap' }}>{renderConteudoComMencoes(msg.conteudo, msg.mentionedNames)}</div>
                       })()}
                       <div style={{
                         fontSize: 10,

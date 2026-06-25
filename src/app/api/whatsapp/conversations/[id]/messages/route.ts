@@ -31,6 +31,7 @@ interface BackendMensagemRow {
   participant_name?: string | null
   is_mentioned?: boolean | null
   mentioned_jids?: string[] | null
+  mentioned_names?: Record<string, string> | null
   quoted_message_id?: string | null
   quoted_remote_jid?: string | null
   quoted_message_type?: string | null
@@ -85,6 +86,7 @@ interface MensagemRespostaRow {
   participantName: string | null
   isMentioned: boolean
   mentionedJids: string[]
+  mentionedNames: Record<string, string>
   quotedText: string | null
   quotedAuthor: string | null
   quotedRemoteJid: string | null
@@ -183,6 +185,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         participantName: row.participant_name || null,
         isMentioned: row.is_mentioned || false,
         mentionedJids: row.mentioned_jids || [],
+        mentionedNames: row.mentioned_names || {},
         quotedText: row.quoted_text ?? null,
         quotedAuthor: null,
         quotedRemoteJid: row.quoted_remote_jid ?? null,
