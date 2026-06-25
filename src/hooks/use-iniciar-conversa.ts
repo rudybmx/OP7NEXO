@@ -14,7 +14,7 @@ export interface ConversaIniciada {
 }
 
 interface UseIniciarConversaReturn {
-  iniciar: (numero: string) => Promise<ConversaIniciada | null>
+  iniciar: (numero: string, canalId?: string) => Promise<ConversaIniciada | null>
   isIniciando: boolean
   error: string | null
 }
@@ -28,7 +28,7 @@ export function useIniciarConversa(workspaceId?: string | null): UseIniciarConve
   const [isIniciando, setIsIniciando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const iniciar = useCallback(async (numero: string): Promise<ConversaIniciada | null> => {
+  const iniciar = useCallback(async (numero: string, canalId?: string): Promise<ConversaIniciada | null> => {
     if (!numero || numero.trim().length < 10) {
       setError('Número inválido. Digite o DDD + número (mínimo 10 dígitos).')
       return null
@@ -53,6 +53,7 @@ export function useIniciarConversa(workspaceId?: string | null): UseIniciarConve
         body: JSON.stringify({
           numero: numero.trim(),
           workspace_id: workspaceId,
+          ...(canalId ? { canal_id: canalId } : {}),
         }),
       })
       if (!res.ok) {

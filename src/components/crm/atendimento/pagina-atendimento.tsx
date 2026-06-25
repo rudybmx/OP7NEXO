@@ -318,8 +318,8 @@ export function PaginaAtendimento() {
     }
   }, [conversaAtivaId, resolver, refetch, refetchMensagens])
 
-  const handleIniciarConversa = useCallback(async (numero: string) => {
-    const conversa = await iniciarConversa(numero)
+  const handleIniciarConversa = useCallback(async (numero: string, canalId?: string) => {
+    const conversa = await iniciarConversa(numero, canalId)
     if (conversa) {
       setNovaConversaAberta(false)
       setConversaAtivaId(conversa.id)

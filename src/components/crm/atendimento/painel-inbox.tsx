@@ -50,7 +50,7 @@ interface PainelInboxProps {
   onRefetch: () => void
   onIniciarConversa?: () => void
   onToggleNovaConversa?: () => void
-  onCriarConversa?: (numero: string) => Promise<void>
+  onCriarConversa?: (numero: string, canalId?: string) => Promise<void>
   onClicarAreaVazia?: () => void
   onMarcarNaoLido?: (conversaId: string) => void
   onToggleFavorita?: (conversaId: string) => void
@@ -261,23 +261,28 @@ function PainelNovaConversaInline({
   onCancelar,
   isCriando,
   erro,
+  canais = [],
   isMobile = false,
 }: {
-  onCriarConversa: (numero: string) => Promise<void>
+  onCriarConversa: (numero: string, canalId?: string) => Promise<void>
   onCancelar: () => void
   isCriando?: boolean
   erro?: string | null
+  canais?: WhatsappCanal[]
   isMobile?: boolean
 }) {
   const [numero, setNumero] = useState('')
+  const [canalId, setCanalId] = useState('')
   const { contato, isLoading: isBuscando, notFound } = useBuscarContatoPorNumero(numero)
   const digits = numero.replace(/\D/g, '')
   const podeAbrir = digits.length >= 10
+  // Canal de envio: usa o escolhido; se não escolheu, cai no 1º (default). Vazio = backend decide.
+  const canalEfetivo = canalId || (canais.length >= 1 ? canais[0].id : '')
 
   const handleSubmit = useCallback(() => {
     if (!podeAbrir || isCriando) return
-    onCriarConversa(digits)
-  }, [digits, podeAbrir, isCriando, onCriarConversa])
+    onCriarConversa(digits, canalEfetivo || undefined)
+  }, [digits, podeAbrir, isCriando, onCriarConversa, canalEfetivo])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSubmit()
@@ -365,6 +370,34 @@ function PainelNovaConversaInline({
 
       {erro && (
         <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 8 }}>⚠ {erro}</div>
+      )}
+
+      {canais.length > 1 && (
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--ws-text-3)', marginBottom: 4 }}>Canal de envio</label>
+          <select
+            value={canalEfetivo}
+            onChange={e => setCanalId(e.target.value)}
+            disabled={isCriando}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: isMobile ? '11px 12px' : '8px 12px',
+              borderRadius: 8,
+              background: 'var(--ws-surface)',
+              border: '1px solid var(--ws-glass-border)',
+              color: 'var(--ws-text-1)',
+              fontSize: isMobile ? 16 : 13,
+              outline: 'none',
+            }}
+          >
+            {canais.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.nome}{c.numero_telefone ? ` · ${formatarTelefoneBR(c.numero_telefone) ?? c.numero_telefone}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -873,6 +906,7 @@ export function PainelInbox({
             onCancelar={onToggleNovaConversa}
             isCriando={isCriandoConversa}
             erro={erroIniciarConversa}
+            canais={canais}
             isMobile={isMobile}
           />
         )}
