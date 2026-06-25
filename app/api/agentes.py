@@ -18,6 +18,7 @@ from app.core.database import get_db
 from app.core.deps import exigir_platform_admin
 from app.models.agente import (
     Agente,
+    AgenteAjusteResposta,
     AgenteBaseConhecimento,
     AgenteCanal,
     AgenteDiretrizesWorkspace,
@@ -37,6 +38,7 @@ from app.schemas.agente import (
     CanalVinculadoOut,
     DiretrizesIn,
     DiretrizesOut,
+    AjusteRespostaOut,
     HabilidadeIn,
     HabilidadeOut,
     BaseConhecimentoIn,
@@ -496,6 +498,63 @@ def salvar_diretrizes(
     db.commit()
     db.refresh(row)
     return DiretrizesOut(diretrizes=row.diretrizes, atualizado_em=row.atualizado_em)
+
+
+# ── ajustes de resposta (feedback de qualidade — curadoria na Central do agente) ──
+@router.get("/workspaces/{workspace_id}/agentes/{agente_id}/ajustes", response_model=list[AjusteRespostaOut])
+def listar_ajustes(
+    workspace_id: uuid.UUID,
+    agente_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    """Sugestões de resposta salvas para o agente (curadoria; treino futuro)."""
+    _get_workspace_or_404(workspace_id, db)
+    agente = _get_agente_or_404(workspace_id, agente_id, db)
+    rows = (
+        db.query(AgenteAjusteResposta)
+        .filter(AgenteAjusteResposta.agente_id == agente.id, AgenteAjusteResposta.ativo.is_(True))
+        .order_by(AgenteAjusteResposta.criado_em.desc())
+        .all()
+    )
+    return [
+        AjusteRespostaOut(
+            id=str(a.id),
+            agente_id=str(a.agente_id),
+            conversa_id=str(a.conversa_id) if a.conversa_id else None,
+            mensagem_id=str(a.mensagem_id) if a.mensagem_id else None,
+            resposta_original=a.resposta_original,
+            resposta_sugerida=a.resposta_sugerida,
+            categoria=a.categoria,
+            autor_nome=None,
+            criado_em=a.criado_em,
+        )
+        for a in rows
+    ]
+
+
+@router.delete(
+    "/workspaces/{workspace_id}/agentes/{agente_id}/ajustes/{ajuste_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remover_ajuste(
+    workspace_id: uuid.UUID,
+    agente_id: uuid.UUID,
+    ajuste_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(exigir_platform_admin),
+):
+    _get_workspace_or_404(workspace_id, db)
+    agente = _get_agente_or_404(workspace_id, agente_id, db)
+    aj = (
+        db.query(AgenteAjusteResposta)
+        .filter(AgenteAjusteResposta.id == ajuste_id, AgenteAjusteResposta.agente_id == agente.id)
+        .first()
+    )
+    if aj:
+        db.delete(aj)
+        db.commit()
+    return None
 
 
 def _fetch_url_texto(url: str) -> str:

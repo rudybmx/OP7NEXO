@@ -224,6 +224,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-25) — Inteligência de IA: feedback de qualidade (Fase 2)
+- Tabela `agente_ajustes_resposta` (migration **097**): admin/supervisor sugere uma "resposta melhor" na tela de conversas → salva na Central do agente p/ curadoria + treino futuro (few-shot, **ainda NÃO injetado** — "melhorar depois"). `POST /conversas/{id}/ajuste-resposta` (CRM, `get_usuario_atual` + `eh_supervisor`; resolve o agente pelo canal da conversa). Curadoria: `GET`/`DELETE /workspaces/{ws}/agentes/{id}/ajustes` (platform_admin). Schemas `AjusteRespostaIn`/`AjusteRespostaOut`. Front: ícone sutil na bolha do agente (só admin) + modal (shadcn Dialog) + lista no drawer do agente.
+
 ### ✅ Implementado (2026-06-25) — Inteligência de IA sobre conversas (Fase 1: análise)
 - `agent_service.analisar_conversa(db, agente, conversa_id)` roda análise com o **modelo do agente**
   (`chamar_json`) → `{resumo, temperatura (quente/morno/frio), temperatura_score 0-100, interesse,

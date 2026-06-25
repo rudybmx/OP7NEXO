@@ -1,4 +1,5 @@
 from app.models.agente.agente import Agente
+from app.models.agente.agente_ajuste_resposta import AgenteAjusteResposta
 from app.models.agente.agente_base_conhecimento import AgenteBaseConhecimento
 from app.models.agente.agente_canal import AgenteCanal
 from app.models.agente.agente_diretrizes_workspace import AgenteDiretrizesWorkspace
@@ -12,6 +13,7 @@ from app.models.agente.llm_provider_token import LlmProviderToken
 
 __all__ = [
     "Agente",
+    "AgenteAjusteResposta",
     "AgenteBaseConhecimento",
     "AgenteCanal",
     "AgenteDiretrizesWorkspace",

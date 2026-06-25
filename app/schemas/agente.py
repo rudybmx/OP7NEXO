@@ -105,6 +105,27 @@ class DiretrizesOut(BaseModel):
     atualizado_em: datetime | None = None
 
 
+class AjusteRespostaIn(BaseModel):
+    """Sugestão de resposta melhor (feita na tela de conversas pelo admin/supervisor)."""
+
+    mensagem_id: str | None = None
+    resposta_original: str = Field(default="", max_length=8000)
+    resposta_sugerida: str = Field(min_length=1, max_length=8000)
+    categoria: str | None = Field(default=None, max_length=60)
+
+
+class AjusteRespostaOut(BaseModel):
+    id: str
+    agente_id: str
+    conversa_id: str | None
+    mensagem_id: str | None
+    resposta_original: str
+    resposta_sugerida: str
+    categoria: str | None
+    autor_nome: str | None = None
+    criado_em: datetime | None = None
+
+
 class ToggleIn(BaseModel):
     status: StatusAgente
 

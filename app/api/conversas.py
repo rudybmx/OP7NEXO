@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
 from app.models.canal_entrada import CanalEntrada
+from app.models.agente import AgenteAjusteResposta
 from app.models.crm import Contato, Conversa, CrmEtiqueta
 from app.models.user import RoleUsuario, User
+from app.schemas.agente import AjusteRespostaIn, AjusteRespostaOut
 from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
 from app.services.whatsapp_crm_persistence import record_assignment_event
 from app.services.crm_escopo import aplicar_teto_conversas, eh_supervisor, pode_transferir, pode_ver_conversa
@@ -972,6 +974,51 @@ def transferir_conversa(
     db.commit()
     db.refresh(c)
     return _conversa_out(c)
+
+
+@router.post("/{conversa_id}/ajuste-resposta", response_model=AjusteRespostaOut, status_code=status.HTTP_201_CREATED)
+def sugerir_ajuste_resposta(
+    conversa_id: uuid.UUID,
+    data: AjusteRespostaIn,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    """Admin/supervisor sugere uma resposta melhor para uma mensagem do agente. Fica salvo
+    na Central do agente (resolvido pelo canal da conversa) para curadoria e treino futuro."""
+    c = _get_conversa_or_404(conversa_id, db, workspace_filter)
+    verificar_acesso_workspace(usuario, c.workspace_id, db)
+    if not eh_supervisor(usuario):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para sugerir ajustes")
+    from app.services.agent_service import _agente_ativo_do_canal
+
+    agente = _agente_ativo_do_canal(db, c.canal_id)
+    if agente is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Esta conversa não tem um agente configurado no canal")
+    aj = AgenteAjusteResposta(
+        workspace_id=c.workspace_id,
+        agente_id=agente.id,
+        conversa_id=c.id,
+        mensagem_id=(uuid.UUID(data.mensagem_id) if data.mensagem_id else None),
+        resposta_original=(data.resposta_original or ""),
+        resposta_sugerida=data.resposta_sugerida.strip(),
+        categoria=(data.categoria or None),
+        autor_id=usuario.id,
+    )
+    db.add(aj)
+    db.commit()
+    db.refresh(aj)
+    return AjusteRespostaOut(
+        id=str(aj.id),
+        agente_id=str(aj.agente_id),
+        conversa_id=str(aj.conversa_id) if aj.conversa_id else None,
+        mensagem_id=str(aj.mensagem_id) if aj.mensagem_id else None,
+        resposta_original=aj.resposta_original,
+        resposta_sugerida=aj.resposta_sugerida,
+        categoria=aj.categoria,
+        autor_nome=usuario.nome,
+        criado_em=aj.criado_em,
+    )
 
 
 @router.post("/{conversa_id}/reabrir", response_model=ConversaOut)
