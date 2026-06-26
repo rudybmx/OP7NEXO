@@ -144,17 +144,26 @@ def tools_para_workspace(db: Session, workspace_id: uuid.UUID) -> tuple[list[dic
         .order_by(AgendaServico.nome.asc())
         .all()
     )
-    linhas = ["", "## Agenda — você pode consultar e marcar dentro da conversa.", regra, "", "Agendas disponíveis:"]
+    linhas = [
+        "",
+        "## AGENDA — você marca/consulta agendamentos usando FERRAMENTAS (tool-calling).",
+        "REGRA CRÍTICA: sempre que o cliente falar em horário, agendar, marcar, remarcar, cancelar ou "
+        "confirmar consulta, você DEVE CHAMAR a ferramenta apropriada (consultar_disponibilidade, "
+        "criar_agendamento, reagendar_agendamento, cancelar_agendamento, buscar_agendamentos_contato) "
+        "ANTES de responder. É PROIBIDO dizer 'vou verificar', 'um momento', 'deixa eu checar' ou "
+        "inventar horários sem antes chamar a ferramenta e usar o resultado dela. Primeiro a ferramenta, "
+        "depois a resposta ao cliente com base no que ela retornou.",
+        regra,
+        "",
+        "Agendas disponíveis:",
+    ]
     for a in agendas:
         linhas.append(f"- {a.nome} ({a.tipo})")
     if servicos:
         linhas.append("Serviços (com duração):")
         for s in servicos:
             linhas.append(f"- {s.nome} ({s.duracao_minutos} min)")
-    linhas.append(
-        "Use as ferramentas de agenda para horários reais; nunca invente disponibilidade. "
-        "O telefone do cliente já é o da conversa — não peça."
-    )
+    linhas.append("O telefone do cliente já é o da conversa — não peça.")
     return TOOLS_SCHEMA, "\n".join(linhas)
 
 

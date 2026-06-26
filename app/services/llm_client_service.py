@@ -86,20 +86,21 @@ def chamar_com_tools(
     messages: list[dict],
     tools: list[dict] | None = None,
     tool_choice: str = "auto",
+    forcar_json: bool = False,
 ):
     """Chama o LLM com a lista completa de mensagens (e tools, se houver).
 
     Retorna (message, usage): `message` é o objeto da resposta (tem `.content` e
-    `.tool_calls`) — o chamador roda o loop de tool-calling. Mantém o
-    `response_format=json_object` para a resposta FINAL textual seguir o contrato JSON.
+    `.tool_calls`) — o chamador roda o loop de tool-calling. `forcar_json` deve ficar
+    FALSE no loop de agenda: o `response_format=json_object` + a instrução de JSON do
+    prompt fazem modelos menores (ex. deepseek) gerar a resposta-JSON em vez de chamar a
+    ferramenta. Sem JSON forçado, o modelo chama as tools e responde em texto natural.
     """
     r = resolver(db, agente)
     client = OpenAI(api_key=r.api_key, base_url=r.base_url)
-    kw: dict = {
-        "model": r.model,
-        "response_format": {"type": "json_object"},
-        "messages": messages,
-    }
+    kw: dict = {"model": r.model, "messages": messages}
+    if forcar_json:
+        kw["response_format"] = {"type": "json_object"}
     if tools:
         kw["tools"] = tools
         kw["tool_choice"] = tool_choice

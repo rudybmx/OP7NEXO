@@ -28,9 +28,9 @@ Dar ao agente de WhatsApp (Central de Agentes) a capacidade de **consultar e mar
 ## Loop agêntico
 - `chamar_json` é estendido p/ aceitar `tools` + `messages` (lista completa) e retornar a **mensagem** (content + tool_calls).
 - Em `gerar_resposta`: se há tools disponíveis, monta `messages=[system, user]` e itera (máx **5** iterações):
-  1. chama o LLM com `tools=` + `tool_choice="auto"` (+ `response_format=json_object` mantido p/ a resposta final).
+  1. chama o LLM com `tools=` + `tool_choice="auto"`, **SEM `response_format=json_object`** (`forcar_json=False`) e com o system em **`modo_tools`** (instrução de TEXTO, não de JSON). ★Sem isso, modelos menores (deepseek) geram a resposta-JSON em vez de chamar a tool — obedecem a instrução de JSON. (Validado: deepseek-v4-flash + gpt-4o-mini ambos agendam.)
   2. se `message.tool_calls`: executa cada uma (executor), anexa `assistant`(tool_calls) + `tool`(result) às messages, continua.
-  3. se não: `message.content` é o JSON final `{resposta, score_confianca, intent, nome_cliente}` → parse como hoje.
+  3. se não: `message.content` é a resposta final em **TEXTO natural** → vira `resposta` (score 0.9, intent "agenda"). Sem tools (workspace sem agenda), o caminho JSON antigo é intacto (incl. captura de `nome_cliente`).
 - **Cap + fallback**: estourou 5 iterações → última resposta textual vira `resposta` com score moderado; erro no loop → `handoff` (motivo `erro_llm`), igual ao caminho atual. Contrato de retorno de `gerar_resposta` **inalterado**.
 - Tools só entram quando o workspace tem ≥1 agenda com `agente_agendamento != 'desativado'` (senão, caminho atual sem tools — zero regressão).
 

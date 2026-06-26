@@ -165,6 +165,7 @@ def _montar_system(
     contato_nome: str | None = None,
     resumo_conversa: str | None = None,
     bloco_agenda: str | None = None,
+    modo_tools: bool = False,
 ) -> str:
     partes = [prompt.strip() or "Você é um assistente de atendimento prestativo e objetivo."]
     if diretrizes_ws and diretrizes_ws.strip():
@@ -225,16 +226,26 @@ def _montar_system(
         )
     if bloco_agenda and bloco_agenda.strip():
         partes.append(bloco_agenda.strip())
-    partes.append(
-        'Responda SEMPRE em JSON válido com as chaves exatas: '
-        '"resposta" (string, o texto a enviar ao cliente), '
-        '"score_confianca" (número de 0 a 1 = sua confiança na resposta), '
-        '"intent" (string curta com a intenção detectada) e '
-        '"nome_cliente" (string): se o cliente DECLAROU o próprio nome nesta conversa '
-        '(ex.: "meu nome é Ana", "sou o João", "aqui é a Maria"), coloque o nome informado; '
-        'caso contrário, ou se for nome de OUTRA pessoa (ex.: agendamento para um terceiro), '
-        'retorne "". NUNCA invente nem deduza o nome.'
-    )
+    if modo_tools:
+        # Com ferramentas ativas: NÃO forçar JSON (confunde modelos menores e suprime o
+        # tool-calling). O modelo chama as tools e responde ao cliente em TEXTO natural.
+        partes.append(
+            "IMPORTANTE: quando o cliente falar de horários, marcar, remarcar ou cancelar, CHAME a "
+            "ferramenta apropriada (não apenas descreva que vai fazer, não diga 'um momento'). Sua "
+            "resposta final ao cliente deve ser uma mensagem em TEXTO natural, curta e cordial, "
+            "baseada no que as ferramentas retornaram."
+        )
+    else:
+        partes.append(
+            'Responda SEMPRE em JSON válido com as chaves exatas: '
+            '"resposta" (string, o texto a enviar ao cliente), '
+            '"score_confianca" (número de 0 a 1 = sua confiança na resposta), '
+            '"intent" (string curta com a intenção detectada) e '
+            '"nome_cliente" (string): se o cliente DECLAROU o próprio nome nesta conversa '
+            '(ex.: "meu nome é Ana", "sou o João", "aqui é a Maria"), coloque o nome informado; '
+            'caso contrário, ou se for nome de OUTRA pessoa (ex.: agendamento para um terceiro), '
+            'retorne "". NUNCA invente nem deduza o nome.'
+        )
     return "\n\n".join(partes)
 
 
@@ -317,6 +328,7 @@ def gerar_resposta(
     system = _montar_system(
         agente, prompt, rag_chunks, diretrizes_ws=diretrizes, ajustes_few_shot=ajustes,
         contato_nome=contato_nome, resumo_conversa=resumo_conversa, bloco_agenda=bloco_agenda,
+        modo_tools=bool(tools),
     )
     user = _montar_user(mensagem, historico)
 
@@ -370,15 +382,22 @@ def gerar_resposta(
         tokens_output = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
 
     nome_cliente = None
-    try:
-        data = json.loads(content)
-        resposta = str(data.get("resposta") or "").strip()
-        score = max(0.0, min(1.0, float(data.get("score_confianca"))))
-        intent_raw = data.get("intent")
-        intent = str(intent_raw) if intent_raw is not None else None
-        nome_cliente = _validar_nome_cliente(data.get("nome_cliente"))
-    except (json.JSONDecodeError, TypeError, ValueError):
-        resposta, score, intent = "", 0.0, "parse_error"
+    if tools:
+        # Modo ferramentas: a resposta final ao cliente é TEXTO natural (não JSON).
+        # Concluiu o loop (chamou/avaliou tools) → confiança alta p/ enviar direto.
+        resposta = (content or "").strip()
+        score = 0.9 if resposta else 0.0
+        intent = "agenda"
+    else:
+        try:
+            data = json.loads(content)
+            resposta = str(data.get("resposta") or "").strip()
+            score = max(0.0, min(1.0, float(data.get("score_confianca"))))
+            intent_raw = data.get("intent")
+            intent = str(intent_raw) if intent_raw is not None else None
+            nome_cliente = _validar_nome_cliente(data.get("nome_cliente"))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            resposta, score, intent = "", 0.0, "parse_error"
 
     return {
         "resposta": resposta,
