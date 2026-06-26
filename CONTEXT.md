@@ -1,7 +1,17 @@
 # OP7NEXO — Context de Arquitetura e Negócio
 
-> Atualizado: 2026-06-24
+> Atualizado: 2026-06-26
 > Mantenha este arquivo atualizado conforme o sistema evolui.
+
+> **Menção @LID→nome no autor da citação e na prévia da lista (2026-06):** a máquina que resolve
+> `@<LID>`→nome do contato em `GET /mensagens` (`app/api/mensagens.py`: `_resolver_nomes_mencoes`
+> + `_lid_phone_map` + `_nome_mencao`; ponte Evolution LID→telefone via `groupData.Participants`
+> do payload) agora também resolve **(1)** o AUTOR da mensagem citada — novo campo `quoted_author`
+> no `MensagemOut` via `_nome_quoted_author`/`_candidatos_quoted` no MESMO batch (antes só vinha
+> `quoted_remote_jid` cru → front exibia `+<LID>`); e **(2)** a PRÉVIA da lista (`ultima_mensagem`)
+> em `GET /conversas` (`_resolver_mencoes_preview` importa as funções de `mensagens.py`; +1 query
+> batch da última msg só quando a prévia tem `@`). Tudo no read-path (corrige histórico, sem
+> migration). Front: `quotedAuthor` mapeado no route handler; prévia já chega resolvida.
 
 > **Link público de conexão (2026-06):** o admin gera `POST /canais/{id}/link-conexao` e envia
 > ao cliente; endpoints públicos sem auth `/public/conectar/{token}` (info/iniciar/status/parear)

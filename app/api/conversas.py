@@ -18,6 +18,16 @@ from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
 from app.services.whatsapp_crm_persistence import aplicar_transferencia, record_assignment_event
 from app.services.crm_escopo import aplicar_teto_conversas, eh_supervisor, pode_transferir, pode_ver_conversa
 from app.services import evolution as evo_service, waha_service
+# Reuso da máquina de resolução de menções (@LID→nome) de /mensagens p/ resolver
+# também a prévia (ultima_mensagem) na lista de conversas (mesma ponte LID→telefone).
+from app.api.mensagens import (
+    _MENTION_RE,
+    _lid_phone_map,
+    _mention_digits,
+    _nome_mencao,
+    _phone_jid_variants,
+    _resolver_nomes_mencoes,
+)
 
 router = APIRouter(prefix="/conversas", tags=["conversas"])
 
@@ -230,7 +240,7 @@ def _get_conversa_or_404(
     return c
 
 
-def _conversa_out(c: Conversa) -> ConversaOut:
+def _conversa_out(c: Conversa, ultima_mensagem_override: str | None = None) -> ConversaOut:
     return ConversaOut(
         id=str(c.id),
         workspace_id=str(c.workspace_id),
@@ -241,7 +251,7 @@ def _conversa_out(c: Conversa) -> ConversaOut:
         status=c.status,
         nao_lidas=c.nao_lidas,
         marcada_nao_lida=getattr(c, "marcada_nao_lida", False),
-        ultima_mensagem=c.ultima_mensagem,
+        ultima_mensagem=ultima_mensagem_override if ultima_mensagem_override is not None else c.ultima_mensagem,
         ultima_direcao=c.ultima_direcao,
         ultima_msg_at=c.ultima_msg_at,
         responsavel_id=str(c.responsavel_id) if c.responsavel_id else None,
@@ -289,6 +299,51 @@ def _conversa_out(c: Conversa) -> ConversaOut:
             if getattr(e, "ativo", True)
         ],
     )
+
+
+def _reescrever_preview(texto: str, lid2phone: dict[str, str], name_by_jid: dict[str, str]) -> str:
+    """Troca cada @<dígitos> da prévia pelo nome resolvido (mantém o número se não resolver)."""
+    def _repl(mt):
+        nome = _nome_mencao(mt.group(1), lid2phone, name_by_jid)
+        return f"@{nome}" if nome else mt.group(0)
+    return _MENTION_RE.sub(_repl, texto)
+
+
+def _resolver_mencoes_preview(
+    db: Session, workspace_id: uuid.UUID, conversas: list[Conversa]
+) -> dict[str, str]:
+    """{conversa_id: prévia com @LID→nome}. Reusa a máquina de /mensagens. Só toca
+    conversas cuja prévia tem menção; +1 query batch p/ o payload da última msg
+    (ponte Evolution LID→telefone do groupData) e +1 p/ os nomes dos contatos."""
+    alvo = [c for c in conversas if c.ultima_mensagem and _mention_digits(c.ultima_mensagem)]
+    if not alvo:
+        return {}
+    rows = (
+        db.query(Mensagem.conversa_id, Mensagem.payload)
+        .filter(Mensagem.conversa_id.in_([c.id for c in alvo]), Mensagem.ativo.is_(True))
+        .order_by(Mensagem.conversa_id, Mensagem.criado_em.desc())
+        .distinct(Mensagem.conversa_id)
+        .all()
+    )
+    payload_por_conv = {str(cid): payload for cid, payload in rows}
+    lid2phone_por_conv = {
+        str(c.id): _lid_phone_map(payload_por_conv.get(str(c.id))) for c in alvo
+    }
+    candidatos: list[str] = []
+    for c in alvo:
+        lid2phone = lid2phone_por_conv[str(c.id)]
+        for d in _mention_digits(c.ultima_mensagem):
+            candidatos.append(f"{d}@lid")
+            phone = lid2phone.get(d)
+            if phone:
+                candidatos.extend(_phone_jid_variants(phone))
+    name_by_jid = _resolver_nomes_mencoes(db, workspace_id, candidatos)
+    return {
+        str(c.id): _reescrever_preview(
+            c.ultima_mensagem, lid2phone_por_conv[str(c.id)], name_by_jid
+        )
+        for c in alvo
+    }
 
 
 @router.get("", response_model=list[ConversaOut])
@@ -409,7 +464,10 @@ def listar_conversas(
 
     q = q.order_by(Conversa.fixada.desc(), Conversa.ultima_msg_at.desc().nullslast())
     total = q.offset(offset).limit(limit).all()
-    return [_conversa_out(c) for c in total]
+    # Resolve @<LID/número> nas prévias (mesma máquina de /mensagens). Custo extra
+    # só quando alguma prévia da página tem menção.
+    preview_overrides = _resolver_mencoes_preview(db, workspace_target, total)
+    return [_conversa_out(c, preview_overrides.get(str(c.id))) for c in total]
 
 
 @router.post("", response_model=ConversaOut, status_code=status.HTTP_201_CREATED)

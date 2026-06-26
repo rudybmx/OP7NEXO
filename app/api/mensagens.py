@@ -61,6 +61,9 @@ class MensagemOut(BaseModel):
     quoted_remote_jid: str | None = None
     quoted_message_type: str | None = None
     quoted_text: str | None = None
+    # Nome do autor da msg citada, resolvido no read-path (LID/telefone → nome).
+    # Antes só vinha o jid cru em quoted_remote_jid → front exibia +<LID>.
+    quoted_author: str | None = None
     midias: list[dict] = []
     ativo: bool
     criado_em: datetime
@@ -227,6 +230,51 @@ def _nome_mencao(d: str, lid2phone: dict[str, str], nome_por_jid: dict[str, str]
     return None
 
 
+def _candidatos_quoted(m: Mensagem) -> list[str]:
+    """Jids candidatos p/ resolver o AUTOR da mensagem citada — entram no MESMO
+    batch das menções. Cobre o jid cru + <LID>@lid (WAHA) + telefone (Evolution)."""
+    jid = getattr(m, "quoted_remote_jid", None)
+    if not jid:
+        return []
+    cands: list[str] = [jid]
+    d = re.sub(r"\D", "", jid.split("@", 1)[0])
+    if d:
+        cands.append(f"{d}@lid")
+        phone = _lid_phone_map(m.payload).get(d)
+        if phone:
+            cands.extend(_phone_jid_variants(phone))
+    return cands
+
+
+def _nome_quoted_author(
+    jid: str | None, lid2phone: dict[str, str], nome_por_jid: dict[str, str]
+) -> str | None:
+    """Nome do autor da mensagem citada a partir do JID cru (telefone@ ou <LID>@lid).
+    Reusa a MESMA ponte das menções; fallback ao telefone formatado. None quando não
+    há como melhorar o número cru (front mantém o fallback atual)."""
+    if not jid:
+        return None
+    nome = nome_por_jid.get(jid)  # match direto (telefone@s.whatsapp.net ou <lid>@lid)
+    if nome:
+        return nome
+    d = re.sub(r"\D", "", jid.split("@", 1)[0])
+    if not d:
+        return None
+    nome = nome_por_jid.get(f"{d}@lid")  # WAHA (contato por LID)
+    if nome:
+        return nome
+    phone = lid2phone.get(d)  # Evolution: LID→telefone→contato
+    if phone:
+        for cand in _phone_jid_variants(phone):
+            nome = nome_por_jid.get(cand)
+            if nome:
+                return nome
+        return _format_phone_display(phone)
+    if jid.endswith("@s.whatsapp.net"):  # já é telefone, sem contato → formata o número
+        return _format_phone_display(d)
+    return None
+
+
 def _derive_media_fields(m: Mensagem) -> dict:
     # 1. Preferir dados da midia já salva
     for media in (m.midias or []):
@@ -341,6 +389,7 @@ def _mensagem_out(m: Mensagem, name_by_jid: dict[str, str] | None = None) -> Men
     mf = _derive_media_fields(m)
     jids = _derive_mentioned_jids(m)
     mentioned_names: dict[str, str] = {}
+    quoted_author: str | None = None
     if name_by_jid is not None:
         # Resolve a partir do TEXTO (@<dígitos>) — funciona p/ WAHA e Evolution.
         # No Evolution o contato é por telefone: a ponte LID→telefone vem do
@@ -350,6 +399,8 @@ def _mensagem_out(m: Mensagem, name_by_jid: dict[str, str] | None = None) -> Men
             nome = _nome_mencao(d, lid2phone, name_by_jid)
             if nome:
                 mentioned_names[d] = nome
+        # Mesma máquina p/ o autor da mensagem citada (antes vinha cru como @LID).
+        quoted_author = _nome_quoted_author(getattr(m, "quoted_remote_jid", None), lid2phone, name_by_jid)
     return MensagemOut(
         id=str(m.id),
         workspace_id=str(m.workspace_id),
@@ -389,6 +440,7 @@ def _mensagem_out(m: Mensagem, name_by_jid: dict[str, str] | None = None) -> Men
         quoted_remote_jid=getattr(m, "quoted_remote_jid", None),
         quoted_message_type=getattr(m, "quoted_message_type", None),
         quoted_text=getattr(m, "quoted_text", None),
+        quoted_author=quoted_author,
         midias=_dedup_midias(m.midias or []),
         ativo=m.ativo,
         criado_em=m.criado_em,
@@ -438,7 +490,7 @@ def listar_mensagens(
     # Resolve nomes das menções (@<LID/número>) em 1 query batch, escopo do ws.
     # Candidatos = <LID>@lid (WAHA) + <telefone>@s.whatsapp.net (Evolution, via
     # ponte LID→telefone do groupData.Participants).
-    candidatos = [c for m in total for c in _candidatos_mencao(m)]
+    candidatos = [c for m in total for c in (_candidatos_mencao(m) + _candidatos_quoted(m))]
     name_by_jid = _resolver_nomes_mencoes(db, workspace_target, candidatos)
     return [_mensagem_out(m, name_by_jid) for m in total]
 
