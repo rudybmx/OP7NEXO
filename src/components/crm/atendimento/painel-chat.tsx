@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, Clock, FileText, PlayCircle, AlertCircle, User, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, ChevronDown, Clock, FileText, PlayCircle, AlertCircle, User, Sparkles } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -25,6 +25,8 @@ interface PainelChatProps {
   /** Quando presente (mobile drill-down), exibe a seta "voltar" no header. */
   onVoltar?: () => void
   isMobile?: boolean
+  /** P3: responder/citar uma mensagem (abre a barra de resposta no compositor). */
+  onReply?: (msg: MensagemApi) => void
 }
 
 function formatarData(valor?: string | null) {
@@ -548,7 +550,7 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpen
   )
 }
 
-export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, onVoltar, isMobile = false }: PainelChatProps) {
+export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, onVoltar, isMobile = false, onReply }: PainelChatProps) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const { user } = useAuth()
   const isAdmin = !!user && user.role !== 'company_agent'
@@ -956,7 +958,8 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         ? (conversa.isGroup ? participantLabel : (msg.remetenteNome || 'Contato'))
                         : (isIA ? 'IA Agente' : 'Atendente')}
                     </div>
-                    <div className={isOut ? 'atd-bubble-out' : undefined} style={{
+                    <div className={`atd-bubble-reply${isOut ? ' atd-bubble-out' : ''}`} style={{
+                      position: 'relative',
                       padding: '10px 14px 9px',
                       borderRadius: isEntrada ? '0 16px 16px 16px' : '16px 0 16px 16px',
                       fontSize: 13,
@@ -969,6 +972,29 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                       overflowWrap: 'anywhere',
                       minWidth: 120,
                     }}>
+                      {onReply && (
+                        <button
+                          type="button"
+                          className="atd-reply-chevron"
+                          title="Responder"
+                          aria-label="Responder"
+                          onClick={() => onReply(msg)}
+                          style={{
+                            position: 'absolute',
+                            top: 2,
+                            right: 4,
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'inherit',
+                            cursor: 'pointer',
+                            padding: 2,
+                            lineHeight: 0,
+                            borderRadius: 4,
+                          }}
+                        >
+                          <ChevronDown size={15} />
+                        </button>
+                      )}
                       {(msg.quotedText || msg.quotedMessageId) && (
                         <div
                           role={msg.quotedMessageId ? 'button' : undefined}

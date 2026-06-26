@@ -20,6 +20,7 @@ export interface EnviarMensagemOptions {
   filename?: string
   tipo?: 'image' | 'audio' | 'video' | 'document'
   caption?: string | null
+  quotedMessageId?: string | null  // P3: id interno da msg citada (reply)
 }
 
 function getToken(): string | null {
@@ -106,6 +107,7 @@ export function useEnviarMensagem(): UseEnviarMensagemReturn {
           tipo: tipo || undefined,
           media_url: mediaUrl || undefined,
           caption: captionEnviada || undefined,
+          quoted_message_id: options?.quotedMessageId || undefined,
         }),
       })
       if (!res.ok) {

@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { MessageCircle } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
-import { useConversas, type V2Filtros } from '@/hooks/use-conversas'
+import { useConversas, type V2Filtros, type MensagemApi } from '@/hooks/use-conversas'
 import { useMensagens } from '@/hooks/use-mensagens'
 import { useEnviarMensagem } from '@/hooks/use-enviar-mensagem'
 import { useAssumirConversa } from '@/hooks/use-assumir-conversa'
@@ -36,6 +36,7 @@ export function PaginaAtendimento() {
   const { workspaceAtual, workspaces, loading: workspaceLoading } = useWorkspace()
   const workspaceResolvido = !workspaceLoading && (workspaceAtual !== null || workspaces.length === 0)
   const [conversaAtivaId, setConversaAtivaId] = useState<string | null>(null)
+  const [replyingTo, setReplyingTo] = useState<MensagemApi | null>(null)  // P3: msg sendo respondida (citação)
   // Deep-link: a conversa selecionada é refletida na URL (?conversa=<id>) — abre via link de
   // notificação, sobrevive a F5 e é compartilhável. Lê o param (reativo) e abre a conversa.
   const router = useRouter()
@@ -300,6 +301,7 @@ export function PaginaAtendimento() {
       canalId: conversaAtiva.canalId || (canalSelecionadoId === 'todos' ? undefined : canalSelecionadoId),
       ...options,
       caption: captionParaEnvio,
+      quotedMessageId: replyingTo?.id || undefined,
     })
 
     if (ok) {
@@ -309,12 +311,13 @@ export function PaginaAtendimento() {
       if (!isAudioMedia) {
         setTextoMensagem('')
       }
+      setReplyingTo(null)
       refetchMensagens()
       refetch()
     } else {
       removerMensagemLocal(idOtimista)
     }
-  }, [textoMensagem, conversaAtiva, conversaEfemeraId, enviar, refetchMensagens, refetch, addMensagemLocal, removerMensagemLocal, workspaceAtual, canalSelecionadoId])
+  }, [textoMensagem, conversaAtiva, conversaEfemeraId, enviar, refetchMensagens, refetch, addMensagemLocal, removerMensagemLocal, workspaceAtual, canalSelecionadoId, replyingTo])
 
   const handleTransferir = useCallback(async (novoResponsavelId: string, novaEquipeId?: string) => {
     if (!conversaAtivaId) return
@@ -528,6 +531,7 @@ export function PaginaAtendimento() {
               mensagensEndRef={mensagensEndRef}
               onVoltar={isMobile ? () => setConversaAtivaId(null) : undefined}
               isMobile={isMobile}
+              onReply={setReplyingTo}
             />
             <InputMensagem
               valor={textoMensagem}
@@ -537,6 +541,8 @@ export function PaginaAtendimento() {
               conversa={conversaAtiva}
               erro={erroEnvio}
               isMobile={isMobile}
+              replyingTo={replyingTo}
+              onClearReply={() => setReplyingTo(null)}
             />
           </>
         )}

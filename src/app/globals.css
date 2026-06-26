@@ -537,6 +537,22 @@ body {
   color: #eaf1ff;
 }
 
+/* P3: chevron "Responder" no canto da bolha — aparece no hover (estilo WhatsApp) */
+.atd-reply-chevron {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.atd-bubble-reply:hover .atd-reply-chevron {
+  opacity: 0.6;
+}
+.atd-reply-chevron:hover {
+  opacity: 1 !important;
+}
+@media (hover: none) {
+  /* touch: sempre visível e discreto */
+  .atd-reply-chevron { opacity: 0.5; }
+}
+
 /* Pattern de fundo do chat — ícones de redes/mensageria em outline (azul da brand), variante por tema */
 .atd-chat-pattern {
   background-image: url('/chat-pattern.svg?v=3');

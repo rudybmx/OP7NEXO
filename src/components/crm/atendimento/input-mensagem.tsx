@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
 import { FileAudio, FileText, Image, Mic, Pause, Play, Plus, Send, Video, X } from 'lucide-react'
-import type { ConversaApi } from '@/hooks/use-conversas'
+import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { Switch } from '@/components/ui/switch'
 import { useAtualizarConversa } from '@/hooks/use-atualizar-conversa'
 import {
@@ -29,13 +29,16 @@ interface InputMensagemProps {
   conversa: ConversaApi
   erro?: string | null
   isMobile?: boolean
+  /** P3: mensagem sendo respondida (citação). Mostra a barra "Respondendo a …". */
+  replyingTo?: MensagemApi | null
+  onClearReply?: () => void
 }
 
 const DOCUMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,text/plain,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const AUDIO_ACCEPT = 'audio/*'
 const VIDEO_ACCEPT = 'video/*'
 
-export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa, erro, isMobile = false }: InputMensagemProps) {
+export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa, erro, isMobile = false, replyingTo, onClearReply }: InputMensagemProps) {
   const documentInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
@@ -509,6 +512,38 @@ export function InputMensagem({ valor, onChange, onEnviar, isEnviando, conversa,
             {agenteAtivo ? 'Agente IA respondendo' : 'Agente IA desligado'}
           </span>
         </div>
+        {replyingTo && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 10px',
+            marginBottom: 6,
+            borderLeft: '3px solid #c9a84c',
+            background: 'rgba(201,168,76,0.10)',
+            borderRadius: 6,
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#c9a84c' }}>
+                Respondendo a {replyingTo.direcao === 'saida' ? 'você' : (replyingTo.remetenteNome || 'contato')}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ws-text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {replyingTo.conteudo && replyingTo.conteudo.trim() && replyingTo.conteudo.trim() !== '[mídia]'
+                  ? replyingTo.conteudo.trim()
+                  : 'Mídia'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClearReply}
+              aria-label="Cancelar resposta"
+              title="Cancelar resposta"
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ws-text-2)', padding: 4, lineHeight: 0, borderRadius: 4 }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
         <div style={composerRowStyle}>
           <input
             ref={documentInputRef}

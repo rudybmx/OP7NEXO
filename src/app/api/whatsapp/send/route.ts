@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     if (access instanceof Response) return access
 
     const payload = await request.json()
-    const { conversa_id, number, text, tipo, media_url, caption, canal_id } = payload
+    const { conversa_id, number, text, tipo, media_url, caption, canal_id, quoted_message_id } = payload
     const workspaceIdBody = normalizeWorkspaceId(typeof payload?.workspace_id === 'string' ? payload.workspace_id : null)
 
     if ((!conversa_id && !number) || (!text && !media_url)) {
@@ -136,6 +136,7 @@ export async function POST(request: NextRequest) {
         tipo: tipo || (media_url ? 'document' : 'texto'),
         media_url: media_url || null,
         caption: caption || null,
+        quoted_message_id: quoted_message_id || null,
       }),
       cache: 'no-store',
     })

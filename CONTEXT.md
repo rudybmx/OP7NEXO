@@ -217,6 +217,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-26) — CRM Atendimento: responder/citar mensagem (P3, estilo WhatsApp)
+- Cada bolha (`painel-chat.tsx`) ganhou um **chevron "Responder"** (lucide `ChevronDown`) no canto superior, que aparece no hover (CSS `.atd-reply-chevron`/`.atd-bubble-reply` em `globals.css`). Clicar → `onReply(msg)` → estado `replyingTo` em `pagina-atendimento.tsx` → **barra "Respondendo a … {preview}"** acima do compositor (`input-mensagem.tsx`, props `replyingTo`/`onClearReply`, X p/ cancelar). Ao enviar, `handleEnviar` passa `quotedMessageId=replyingTo.id` → `use-enviar-mensagem` (`quoted_message_id` no body) → proxy `send/route.ts` repassa → backend cita no provider (Evolution `quoted`/WAHA `reply_to`) e grava `quoted_*`. `replyingTo` limpa no sucesso. Backend confirmado ao vivo (WAHA reply_to → citação real). Par da API em `api/production`.
+
 ### ✅ Implementado (2026-06-26) — CRM Atendimento: clicar na citação rola até a mensagem original (P2)
 - A prévia de citação na bolha (`painel-chat.tsx`) ficou **clicável**: ao clicar, rola até a mensagem original e dá um destaque breve (outline dourado ~1.6s). Casa o `quotedMessageId` (wa-id da msg citada) com o **`evolutionMsgId`** da própria mensagem, exposto agora no proxy `messages/route.ts` (`evolution_msg_id` → `evolutionMsgId`) e gravado como `data-wamid` na bolha; helper `scrollToQuoted` faz `querySelector([data-wamid])` + `scrollIntoView`. No-op se a original não está na janela carregada. **Front-only** (o backend já servia `evolution_msg_id` + `quoted_*`). Próximo: P3 (responder/quoted reply via provider).
 
