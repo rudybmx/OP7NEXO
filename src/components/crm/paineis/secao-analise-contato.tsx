@@ -45,10 +45,10 @@ export function SecaoAnaliseContato({
   const temConteudo = Boolean(data?.resumo_ia || sentimento || score != null || perfilEntradas.length)
 
   return (
-    <div className="rounded-lg border border-border bg-muted/30 p-3">
+    <div className="rounded-lg bg-muted/50 p-3">
       <div className="mb-2 flex items-center gap-1.5">
         <Sparkles className="size-3.5 text-primary" />
-        <span className="ds-kpi-label text-primary">Análise IA</span>
+        <span className="text-xs font-medium uppercase tracking-wide text-primary">Análise IA</span>
         {isLoading && !data && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
         <div className="ml-auto flex items-center gap-1.5">
           {sentimento && (

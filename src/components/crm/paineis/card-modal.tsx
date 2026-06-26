@@ -20,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 export interface AgenteOpcao {
   id: string
@@ -42,6 +43,12 @@ interface CardModalProps {
 }
 
 const SEM = '__none__'
+
+function iniciais(nome?: string | null): string {
+  if (!nome) return '?'
+  const p = nome.trim().split(/\s+/)
+  return ((p[0]?.[0] ?? '') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase() || '?'
+}
 
 export function CardModal({
   card,
@@ -100,7 +107,6 @@ export function CardModal({
   const cardId = card.id
   const vencido = isVencido(card.dataVencimento)
 
-  // valor do select de responsável: a:<id> | u:<id> | SEM
   const responsavelValue =
     card.responsavelTipo === 'agente' && card.responsavelAgenteId
       ? `a:${card.responsavelAgenteId}`
@@ -109,13 +115,9 @@ export function CardModal({
         : SEM
 
   function escolherResponsavel(v: string) {
-    if (v === SEM) {
-      onAtualizar(cardId, { responsavel_user_id: null, responsavel_agente_id: null })
-    } else if (v.startsWith('a:')) {
-      onAtualizar(cardId, { responsavel_agente_id: v.slice(2) })
-    } else if (v.startsWith('u:')) {
-      onAtualizar(cardId, { responsavel_user_id: v.slice(2) })
-    }
+    if (v === SEM) onAtualizar(cardId, { responsavel_user_id: null, responsavel_agente_id: null })
+    else if (v.startsWith('a:')) onAtualizar(cardId, { responsavel_agente_id: v.slice(2) })
+    else if (v.startsWith('u:')) onAtualizar(cardId, { responsavel_user_id: v.slice(2) })
   }
 
   function salvarTitulo() {
@@ -146,118 +148,123 @@ export function CardModal({
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
       <DialogContent
-        className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-[920px]"
+        className="flex max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[900px]"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">Detalhe do card</DialogTitle>
 
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-border px-6 py-4">
+        <div className="flex items-start justify-between gap-3 border-b px-6 py-4">
           <Textarea
             value={titulo}
             onChange={(e) => setTitulo(e.target.value)}
             onBlur={salvarTitulo}
             rows={1}
-            className="resize-none border-0 px-0 text-lg font-semibold shadow-none focus-visible:ring-0"
+            className="min-h-9 resize-none border-0 bg-transparent px-0 py-1 text-base font-semibold shadow-none focus-visible:ring-0 dark:bg-transparent"
             placeholder="Nome do card"
           />
           <div className="flex shrink-0 gap-1">
-            <button
-              onClick={() => onExcluir(cardId)}
-              title="Excluir card"
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-            >
+            <Button variant="ghost" size="icon" onClick={() => onExcluir(cardId)} title="Excluir card" className="text-muted-foreground hover:text-destructive">
               <Trash2 className="size-4" />
-            </button>
-            <button
-              onClick={onFechar}
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onFechar} title="Fechar" className="text-muted-foreground">
               <X className="size-4" />
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Corpo 2 colunas */}
-        <div className="grid max-h-[calc(92vh-64px)] grid-cols-1 overflow-y-auto md:grid-cols-[1fr_300px]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[1fr_280px]">
           {/* ESQUERDA — conteúdo */}
-          <div className="min-w-0 space-y-4 border-border p-6 md:border-r">
+          <div className="min-w-0 space-y-5 p-6">
             {/* Contato */}
             {(card.nome || card.telefone || card.contatoId) && (
-              <div className="rounded-lg border border-border bg-card p-3">
-                <div className="ds-kpi-label mb-1.5 text-muted-foreground">Contato</div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Contato
+                </div>
                 <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-foreground">
-                      {card.nome ?? 'Sem nome'}
-                    </div>
-                    {card.telefone && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Phone className="size-3" /> {formatarTelefone(card.telefone)}
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <Avatar className="size-9">
+                      <AvatarFallback className="bg-primary/15 text-xs font-semibold text-primary">
+                        {iniciais(card.nome)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-foreground">
+                        {card.nome ?? 'Sem nome'}
                       </div>
-                    )}
+                      {card.telefone && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Phone className="size-3" /> {formatarTelefone(card.telefone)}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {card.contatoId && (
-                    <Link
-                      href={`/crm/atendimento/contatos?contato_id=${card.contatoId}`}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-primary transition-colors hover:bg-primary/5"
-                    >
-                      Ver cadastro <ExternalLink className="size-3" />
-                    </Link>
+                    <Button asChild variant="outline" size="xs" className="shrink-0">
+                      <Link href={`/crm/atendimento/contatos?contato_id=${card.contatoId}`}>
+                        Ver cadastro <ExternalLink className="size-3" />
+                      </Link>
+                    </Button>
                   )}
                 </div>
               </div>
             )}
 
-            {/* Análise IA (dado real do contato) */}
+            {/* Análise IA */}
             <SecaoAnaliseContato contatoId={card.contatoId} ativo={aberto} />
 
             {/* Descrição */}
             <div>
-              <div className="ds-kpi-label mb-1.5 text-muted-foreground">Descrição</div>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Descrição
+              </div>
               <Textarea
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
                 onBlur={salvarDescricao}
                 placeholder="Adicionar descrição..."
                 rows={4}
-                className="text-sm"
+                className="resize-none text-sm"
               />
             </div>
 
-            {/* Comentários — linha do tempo imutável */}
+            {/* Histórico (timeline imutável) */}
             <div>
-              <div className="ds-kpi-label mb-2 flex items-center gap-1.5 text-muted-foreground">
+              <div className="mb-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 <MessageCircle className="size-3.5" /> Histórico
-                {comentarios.length > 0 && ` (${comentarios.length})`}
+                {comentarios.length > 0 && <span className="text-muted-foreground/70">· {comentarios.length}</span>}
               </div>
 
               {comentarios.length > 0 ? (
-                <ol className="relative mb-4 space-y-3 border-l border-border pl-4">
+                <ol className="mb-4 space-y-4">
                   {comentarios.map((c) => (
-                    <li key={c.id} className="relative">
-                      <span className="absolute -left-[21px] top-1 size-2.5 rounded-full border-2 border-background bg-primary" />
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-xs font-semibold text-foreground">
-                          {c.autor_nome ?? 'Usuário'}
-                        </span>
-                        <span className="text-micro text-muted-foreground">
-                          {formatarDataHora(c.criado_em)}
-                        </span>
+                    <li key={c.id} className="flex gap-3">
+                      <Avatar className="mt-0.5 size-7 shrink-0">
+                        <AvatarFallback className="bg-muted text-[10px] font-semibold text-foreground">
+                          {iniciais(c.autor_nome)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-sm font-medium text-foreground">{c.autor_nome ?? 'Usuário'}</span>
+                          <span className="text-micro text-muted-foreground">{formatarDataHora(c.criado_em)}</span>
+                        </div>
+                        <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                          {c.texto}
+                        </p>
                       </div>
-                      <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                        {c.texto}
-                      </p>
                     </li>
                   ))}
                 </ol>
               ) : (
                 <p className="mb-3 text-xs text-muted-foreground">
-                  Sem registros ainda. Comentários ficam permanentes (não podem ser apagados).
+                  Sem registros ainda. O histórico é permanente — comentários não podem ser apagados.
                 </p>
               )}
 
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col items-end gap-2">
                 <Textarea
                   value={comentarioTexto}
                   onChange={(e) => setComentarioTexto(e.target.value)}
@@ -266,10 +273,10 @@ export function CardModal({
                   }}
                   placeholder="Registrar no histórico... (Ctrl+Enter para enviar)"
                   rows={2}
-                  className="text-sm"
+                  className="resize-none text-sm"
                 />
                 {comentarioTexto.trim() && (
-                  <Button size="sm" className="self-start" onClick={enviarComentario}>
+                  <Button size="sm" onClick={enviarComentario}>
                     Registrar
                   </Button>
                 )}
@@ -278,11 +285,10 @@ export function CardModal({
           </div>
 
           {/* DIREITA — propriedades */}
-          <div className="space-y-4 bg-muted/20 p-6">
-            {/* Status */}
+          <div className="space-y-4 border-t p-6 md:border-l md:border-t-0">
             <Prop label="Status">
               <Select value={card.status} onValueChange={(v) => onAtualizar(cardId, { fase_id: v })}>
-                <SelectTrigger className="h-8 w-full">
+                <SelectTrigger className="h-9 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -298,10 +304,9 @@ export function CardModal({
               </Select>
             </Prop>
 
-            {/* Responsável: pessoas + agentes */}
             <Prop label="Responsável">
               <Select value={responsavelValue} onValueChange={escolherResponsavel}>
-                <SelectTrigger className="h-8 w-full">
+                <SelectTrigger className="h-9 w-full">
                   <SelectValue placeholder="Sem responsável" />
                 </SelectTrigger>
                 <SelectContent>
@@ -336,13 +341,12 @@ export function CardModal({
               </Select>
             </Prop>
 
-            {/* Prioridade */}
             <Prop label="Prioridade">
               <Select
                 value={card.prioridade ?? SEM}
                 onValueChange={(v) => onAtualizar(cardId, { prioridade: v === SEM ? null : v })}
               >
-                <SelectTrigger className="h-8 w-full">
+                <SelectTrigger className="h-9 w-full">
                   <SelectValue placeholder="Sem prioridade" />
                 </SelectTrigger>
                 <SelectContent>
@@ -358,38 +362,41 @@ export function CardModal({
               </Select>
             </Prop>
 
-            {/* Vencimento */}
             <Prop label="Vencimento">
-              <div className="flex items-center gap-2">
-                <Calendar className={`size-3.5 ${vencido ? 'text-destructive' : 'text-muted-foreground'}`} />
+              <div className="relative">
+                <Calendar
+                  className={`pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 ${
+                    vencido ? 'text-destructive' : 'text-muted-foreground'
+                  }`}
+                />
                 <Input
                   type="date"
                   value={card.dataVencimento ?? ''}
                   onChange={(e) => onAtualizar(cardId, { data_vencimento: e.target.value || null })}
-                  className={`h-8 w-full ${vencido ? 'text-destructive' : ''}`}
+                  className={`h-9 w-full pl-8 ${vencido ? 'border-destructive/40 text-destructive' : ''}`}
                 />
               </div>
-              {vencido && <span className="mt-1 block text-micro font-semibold text-destructive">VENCIDO</span>}
+              {vencido && <span className="mt-1 block text-micro font-semibold text-destructive">Vencido</span>}
             </Prop>
 
             {/* Campos custom */}
             {(card.camposCustom ?? []).map((campo) => (
               <Prop key={campo.id} label={campo.nome}>
                 {campo.tipo === 'checkbox' ? (
-                  <input
-                    type="checkbox"
-                    defaultChecked={Boolean(campo.valor)}
-                    onChange={(e) => onSalvarValores(cardId, [{ campo_id: campo.id, valor: e.target.checked }])}
-                    className="size-4 accent-[var(--primary)]"
-                  />
+                  <label className="flex h-9 items-center">
+                    <input
+                      type="checkbox"
+                      defaultChecked={Boolean(campo.valor)}
+                      onChange={(e) => onSalvarValores(cardId, [{ campo_id: campo.id, valor: e.target.checked }])}
+                      className="size-4 accent-[var(--primary)]"
+                    />
+                  </label>
                 ) : campo.tipo === 'select' ? (
                   <Select
                     value={campo.valor != null ? String(campo.valor) : SEM}
-                    onValueChange={(v) =>
-                      onSalvarValores(cardId, [{ campo_id: campo.id, valor: v === SEM ? null : v }])
-                    }
+                    onValueChange={(v) => onSalvarValores(cardId, [{ campo_id: campo.id, valor: v === SEM ? null : v }])}
                   >
-                    <SelectTrigger className="h-8 w-full">
+                    <SelectTrigger className="h-9 w-full">
                       <SelectValue placeholder="—" />
                     </SelectTrigger>
                     <SelectContent>
@@ -407,7 +414,7 @@ export function CardModal({
                     defaultValue={campo.valor != null ? String(campo.valor) : ''}
                     onBlur={(e) => onSalvarValores(cardId, [{ campo_id: campo.id, valor: e.target.value }])}
                     placeholder="Valor..."
-                    className="h-8 w-full"
+                    className="h-9 w-full"
                   />
                 )}
               </Prop>
@@ -425,19 +432,21 @@ export function CardModal({
                     if (e.key === 'Escape') setShowNovoCampo(false)
                   }}
                   placeholder="Nome do campo..."
-                  className="h-8"
+                  className="h-9"
                 />
                 <Button size="sm" variant="secondary" onClick={adicionarCampo}>
                   OK
                 </Button>
               </div>
             ) : (
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowNovoCampo(true)}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-primary"
+                className="h-8 px-2 text-muted-foreground hover:text-foreground"
               >
-                <Plus className="size-3" /> Adicionar campo
-              </button>
+                <Plus className="size-3.5" /> Adicionar campo
+              </Button>
             )}
           </div>
         </div>
@@ -448,8 +457,8 @@ export function CardModal({
 
 function Prop({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <div className="ds-kpi-label mb-1 text-muted-foreground">{label}</div>
+    <div className="space-y-1.5">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
       {children}
     </div>
   )
