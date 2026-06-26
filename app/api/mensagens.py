@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime
 
@@ -11,6 +12,7 @@ from app.models.crm import Contato, Conversa, Mensagem
 from app.models.user import User
 from app.services.whatsapp_media import infer_media_type
 from app.services.whatsapp_normalizer import _extract_mentions, payload_message, payload_root
+from app.services.whatsapp_crm_persistence import _format_phone_display
 from app.services.crm_escopo import pode_ver_conversa
 
 router = APIRouter(prefix="/mensagens", tags=["mensagens"])
@@ -140,6 +142,91 @@ def _resolver_nomes_mencoes(
     return out
 
 
+_MENTION_RE = re.compile(r"@(\d{6,})")
+
+
+def _mention_digits(conteudo: str | None) -> list[str]:
+    """Dígitos das menções (@<dígitos>) no texto — é exatamente o que o front
+    renderiza. Provider-agnóstico: não depende do `_extract_mentions`, que não
+    pega o payload do Evolution-go (`mentionedJID` maiúsculo + aninhado)."""
+    if not conteudo:
+        return []
+    return list(dict.fromkeys(_MENTION_RE.findall(conteudo)))
+
+
+def _lid_phone_map(payload) -> dict[str, str]:
+    """{dígitos do LID: dígitos do telefone} a partir de `data.groupData.Participants`
+    (payload Evolution-go). Vazio quando ausente (ex.: WAHA). Permite a ponte
+    LID→telefone→contato, já que no Evolution o contato é keyed por telefone."""
+    if not isinstance(payload, dict):
+        return {}
+    try:
+        root = payload_root(payload)
+        grupo = root.get("groupData") or root.get("groupMetadata") or {}
+        parts = grupo.get("Participants") or grupo.get("participants") or []
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    for p in parts if isinstance(parts, list) else []:
+        if not isinstance(p, dict):
+            continue
+        lid = str(p.get("LID") or p.get("JID") or p.get("jid") or p.get("id") or "")
+        phone = str(
+            p.get("PhoneNumber") or p.get("phoneNumber") or p.get("phone_number") or p.get("phone_jid") or ""
+        )
+        lid_d = re.sub(r"\D", "", lid.split("@", 1)[0])
+        phone_d = re.sub(r"\D", "", phone)
+        if lid_d and phone_d:
+            out.setdefault(lid_d, phone_d)
+    return out
+
+
+def _phone_jid_variants(phone_digits: str) -> list[str]:
+    """Candidatos `<telefone>@s.whatsapp.net` cobrindo a variação do 9º dígito BR
+    (o telefone do groupData pode vir com/sem o 9 vs. o que está em contatos)."""
+    d = phone_digits
+    if not d:
+        return []
+    cands = [f"{d}@s.whatsapp.net"]
+    if d.startswith("55"):
+        if len(d) == 12:  # 55 + DDD + 8 → insere o 9
+            cands.append(f"{d[:4]}9{d[4:]}@s.whatsapp.net")
+        elif len(d) == 13 and d[4] == "9":  # 55 + DDD + 9 + 8 → remove o 9
+            cands.append(f"{d[:4]}{d[5:]}@s.whatsapp.net")
+    return cands
+
+
+def _candidatos_mencao(m: Mensagem) -> list[str]:
+    """Jids candidatos de contato p/ resolver as menções desta msg (batch query)."""
+    digits = _mention_digits(m.conteudo)
+    if not digits:
+        return []
+    lid2phone = _lid_phone_map(m.payload)
+    cands: list[str] = []
+    for d in digits:
+        cands.append(f"{d}@lid")  # WAHA: contato keyed por LID
+        phone = lid2phone.get(d)
+        if phone:  # Evolution: contato keyed por telefone
+            cands.extend(_phone_jid_variants(phone))
+    return cands
+
+
+def _nome_mencao(d: str, lid2phone: dict[str, str], nome_por_jid: dict[str, str]) -> str | None:
+    """Resolve um dígito de menção → nome do contato (por @lid OU por telefone),
+    com fallback ao telefone formatado. None se não há como melhorar o número cru."""
+    nome = nome_por_jid.get(f"{d}@lid")  # 1) WAHA (contato por LID)
+    if nome:
+        return nome
+    phone = lid2phone.get(d)  # 2) Evolution: LID→telefone→contato
+    if phone:
+        for cand in _phone_jid_variants(phone):
+            nome = nome_por_jid.get(cand)
+            if nome:
+                return nome
+        return _format_phone_display(phone)  # 3) fallback: telefone formatado
+    return None
+
+
 def _derive_media_fields(m: Mensagem) -> dict:
     # 1. Preferir dados da midia já salva
     for media in (m.midias or []):
@@ -254,12 +341,15 @@ def _mensagem_out(m: Mensagem, name_by_jid: dict[str, str] | None = None) -> Men
     mf = _derive_media_fields(m)
     jids = _derive_mentioned_jids(m)
     mentioned_names: dict[str, str] = {}
-    if name_by_jid and jids:
-        for j in jids:
-            nome = name_by_jid.get(j)
+    if name_by_jid is not None:
+        # Resolve a partir do TEXTO (@<dígitos>) — funciona p/ WAHA e Evolution.
+        # No Evolution o contato é por telefone: a ponte LID→telefone vem do
+        # groupData.Participants do próprio payload (ver _nome_mencao).
+        lid2phone = _lid_phone_map(m.payload)
+        for d in _mention_digits(m.conteudo):
+            nome = _nome_mencao(d, lid2phone, name_by_jid)
             if nome:
-                # chave = parte antes do @ (o que aparece como @<dígitos> no texto)
-                mentioned_names[j.split("@", 1)[0]] = nome
+                mentioned_names[d] = nome
     return MensagemOut(
         id=str(m.id),
         workspace_id=str(m.workspace_id),
@@ -346,8 +436,10 @@ def listar_mensagens(
     q = q.order_by(Mensagem.criado_em.desc())
     total = q.offset(offset).limit(limit).all()
     # Resolve nomes das menções (@<LID/número>) em 1 query batch, escopo do ws.
-    todos_jids = [j for m in total for j in _derive_mentioned_jids(m)]
-    name_by_jid = _resolver_nomes_mencoes(db, workspace_target, todos_jids)
+    # Candidatos = <LID>@lid (WAHA) + <telefone>@s.whatsapp.net (Evolution, via
+    # ponte LID→telefone do groupData.Participants).
+    candidatos = [c for m in total for c in _candidatos_mencao(m)]
+    name_by_jid = _resolver_nomes_mencoes(db, workspace_target, candidatos)
     return [_mensagem_out(m, name_by_jid) for m in total]
 
 

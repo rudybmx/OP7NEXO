@@ -258,6 +258,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-26) — Atendimento: menção em grupo Evolution resolve nome (fix do P1)
+- Bug: em canais **Evolution**, menção `@<LID>` em grupo aparecia como número cru (P1 só funcionava no WAHA). Dois furos: (1) `_extract_mentions` não pega o payload Evolution (`Message.extendedTextMessage.contextInfo.mentionedJID`, maiúsculo) → `mentioned_jids=[]`; (2) o contato Evolution é keyed por **telefone** (`<tel>@s.whatsapp.net`), não por `@lid`. Fix (BACKEND-ONLY, `app/api/mensagens.py`): a resolução agora parte do **texto** (`_mention_digits`, `@\d{6,}` no `conteudo` — à prova de provider) e usa `data.groupData.Participants[]` do payload p/ a ponte **LID→telefone** (`_lid_phone_map`), buscando o contato por `@lid` (WAHA) OU `<tel>@s.whatsapp.net` (Evolution, com variante do 9º dígito via `_phone_jid_variants`), com **fallback ao telefone formatado** (`_format_phone_display`). Workspace-scoped mantido. Front inalterado (já consome `mentioned_names`).
+
 ### ✅ Implementado (2026-06-26) — Atendimento: responder mensagem (quoted reply) via provider
 - `EnviarMensagemIn` ganhou `quoted_message_id` (id INTERNO da nossa `Mensagem` citada). `enviar_mensagem_canal` (Evolution) e `_enviar_mensagem_waha` resolvem a msg citada via `_resolver_msg_citada()` → `evolution_msg_id`(wa-id) + `participant_jid`/`remote_jid`/`message_type`/`conteudo`/`from_me`, e citam no provider: **Evolution** `evo_service.enviar_mensagem_texto/midia(..., quoted={messageId, participant})`; **WAHA** `waha_service.enviar_mensagem_texto/midia(..., reply_to=<id serializado>)` onde reply_to = `{true|false}_{chat_id}_{waid}[_{participantLid p/ grupo}]` (formato NOWEB confirmado ao vivo). Ambos INSERTs gravam `quoted_*` na nova msg (a resposta exibe a própria citação + funciona com o scroll P2). Sem citação, `quoted/reply_to=None` (envio normal).
 
