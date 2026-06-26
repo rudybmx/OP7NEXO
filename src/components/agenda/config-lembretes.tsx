@@ -467,7 +467,7 @@ function PanelEdicao({
         </div>
 
         {/* Footer */}
-        <DialogFooter className="border-t border-border">
+        <DialogFooter className="border-t border-border sm:flex-row sm:justify-end">
           <Button variant="ghost" onClick={onFechar}>Cancelar</Button>
           <Button
             onClick={() => onSalvar({ ...localData, tem_midia: mostraMidia })}

@@ -182,7 +182,7 @@ export function ConfigServicos() {
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="sm:flex-row sm:justify-end">
             <Button variant="ghost" onClick={() => setIsPanelOpen(false)}>Cancelar</Button>
             <Button onClick={handleAdd}>Salvar serviço</Button>
           </DialogFooter>
