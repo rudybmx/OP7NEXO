@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   startOfWeek,
@@ -13,10 +13,8 @@ import {
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
-  Calendar,
   ChevronLeft,
   ChevronRight,
-  LayoutList,
   CalendarDays,
   CalendarRange,
   Plus,
@@ -26,10 +24,6 @@ import {
   Eye,
   EyeOff,
   Pencil,
-  TrendingUp,
-  UserCheck,
-  UserX,
-  BarChart2,
 } from 'lucide-react'
 
 import { tabAtiva, tabInativa } from '@/lib/utils'
@@ -42,113 +36,8 @@ import { CalendarioMes } from '@/components/agenda/calendario-mes'
 import { ListaAgendamentos } from '@/components/agenda/lista-agendamentos'
 import { ModalAgendamento } from '@/components/agenda/modal-agendamento'
 import { ModalAgenda } from '@/components/agenda/modal-agenda'
-
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
-interface KpiCardProps {
-  label: string
-  value: string | number
-  delta?: string
-  deltaPositivo?: boolean
-  icon: React.ReactNode
-  accentColor: string
-}
-
-function KpiCard({ label, value, delta, deltaPositivo, icon, accentColor }: KpiCardProps) {
-  return (
-    <div
-      style={{
-        position: 'relative',
-        background: 'var(--ws-glass-bg)',
-        border: '1px solid var(--ws-glass-border)',
-        borderRadius: 'var(--ws-radius-lg)',
-        backdropFilter: 'blur(16px)',
-        boxShadow: 'var(--ws-glass-shadow)',
-        padding: '12px 14px',
-        flex: 1,
-        minWidth: 0,
-        overflow: 'hidden',
-      }}
-    >
-      {/* brilho no topo */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 1,
-          background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.8),transparent)',
-          pointerEvents: 'none',
-        }}
-      />
-      {/* accent strip */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: 3,
-          bottom: 0,
-          background: accentColor,
-          borderRadius: '4px 0 0 4px',
-        }}
-      />
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div
-            style={{
-              fontSize: 10,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              color: 'var(--ws-text-3)',
-              marginBottom: 6,
-              fontWeight: 600,
-            }}
-          >
-            {label}
-          </div>
-          <div
-            style={{
-              fontSize: 20,
-              fontWeight: 500,
-              color: 'var(--ws-text-1)',
-              lineHeight: 1.2,
-            }}
-          >
-            {value}
-          </div>
-          {delta && (
-            <div
-              style={{
-                fontSize: 11,
-                marginTop: 4,
-                color: deltaPositivo ? 'var(--ws-green)' : 'var(--ws-coral)',
-                fontWeight: 600,
-              }}
-            >
-              {delta}
-            </div>
-          )}
-        </div>
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            background: `${accentColor}18`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          {icon}
-        </div>
-      </div>
-    </div>
-  )
-}
+import { DashboardAgenda } from '@/components/agenda/dashboard-agenda'
+import { GestaoAgendas } from '@/components/agenda/gestao-agendas'
 
 // ─── View Tab ─────────────────────────────────────────────────────────────────
 interface ViewTabProps {
@@ -179,15 +68,26 @@ function ViewTab({ view, current, label, icon, onClick }: ViewTabProps) {
 }
 
 // ─── Página principal ─────────────────────────────────────────────────────────
+type SecaoAgenda = 'visao-geral' | 'calendario' | 'agendamentos' | 'agendas'
+
 export default function AgendaPage() {
   const router = useRouter()
 
   // ─── Estado de view e navegação temporal ───────────────────────────────────
-  // View inicial derivada da sub-rota (/agendamentos → lista; /calendario|demais → semana).
-  // Cada sub-rota remonta a página (segmentos distintos), então o initializer re-roda.
+  // Seção ativa derivada da sub-rota — em RENDER (reativo via usePathname), NÃO em useState.
+  // Todas as sub-rotas re-exportam ESTA mesma página no mesmo slot, então a navegação soft
+  // (clique na sidebar) PRESERVA a instância: o initializer de um useState NÃO re-roda.
+  // Por isso o conteúdo é dirigido por `secao` (reativo), não por estado guardado.
   const pathname = usePathname()
-  const viewInicial: CalendarioView = pathname?.endsWith('/agendamentos') ? 'lista' : 'semana'
-  const [view, setView] = useState<CalendarioView>(viewInicial)
+  const secao: SecaoAgenda = pathname?.endsWith('/calendario')
+    ? 'calendario'
+    : pathname?.endsWith('/agendamentos')
+      ? 'agendamentos'
+      : pathname?.endsWith('/agendas')
+        ? 'agendas'
+        : 'visao-geral'
+  // `view` só controla o toggle Semana/Mês DENTRO do Calendário.
+  const [view, setView] = useState<CalendarioView>('semana')
   const [dataReferencia, setDataReferencia] = useState(new Date())
   const [buscaCliente, setBuscaCliente] = useState('')
   const [filtroStatus, setFiltroStatus] = useState<AgendamentoStatus[]>([])
@@ -219,9 +119,16 @@ export default function AgendaPage() {
   } = useAgendamentos()
 
   // ─── Agendas visíveis (checkbox na sidebar) ────────────────────────────────
-  const [agendasVisiveis, setAgendasVisiveis] = useState<string[]>(
-    agendas.map((a) => a.id)
-  )
+  const [agendasVisiveis, setAgendasVisiveis] = useState<string[]>([])
+  // Semeia "todas visíveis" UMA vez quando as agendas carregam (fetch é async → o
+  // initializer do useState rodou com agendas=[]). Ref evita brigar com o toggle do usuário.
+  const agendasSemeadas = useRef(false)
+  useEffect(() => {
+    if (!agendasSemeadas.current && agendas.length > 0) {
+      setAgendasVisiveis(agendas.map((a) => a.id))
+      agendasSemeadas.current = true
+    }
+  }, [agendas])
 
   const toggleVisibilidadeAgenda = useCallback((id: string) => {
     setAgendasVisiveis((prev) =>
@@ -315,50 +222,28 @@ export default function AgendaPage() {
   return (
     <div style={{ background: 'var(--ws-page-bg)', minHeight: '100%', padding: '24px' }}>
 
-      {/* ── KPIs ── */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 12,
-          marginBottom: 20,
-          flexWrap: 'wrap',
-        }}
-      >
-        <KpiCard
-          label="Agendamentos Hoje"
-          value={kpis.agendamentosHoje}
-          delta="vs. ontem"
-          deltaPositivo
-          icon={<Calendar size={16} color="var(--ws-blue)" />}
-          accentColor="var(--ws-blue)"
+      {/* ── Visão Geral: dashboard de métricas ── */}
+      {secao === 'visao-geral' && (
+        <DashboardAgenda
+          kpis={kpis}
+          agendamentos={agendamentos}
+          agendas={agendas}
+          onNovoAgendamento={() => abrirNovoAgendamento()}
+          onAbrirAgendamento={abrirEditarAgendamento}
         />
-        <KpiCard
-          label="Confirmados"
-          value={kpis.confirmadosHoje}
-          delta={`de ${kpis.agendamentosHoje} hoje`}
-          deltaPositivo={kpis.confirmadosHoje >= kpis.agendamentosHoje / 2}
-          icon={<UserCheck size={16} color="var(--ws-green)" />}
-          accentColor="var(--ws-green)"
-        />
-        <KpiCard
-          label="Faltas (semana)"
-          value={kpis.faltasSemana}
-          delta={kpis.faltasSemana > 2 ? 'Acima da média' : 'Dentro da meta'}
-          deltaPositivo={kpis.faltasSemana <= 2}
-          icon={<UserX size={16} color="var(--ws-coral)" />}
-          accentColor="var(--ws-coral)"
-        />
-        <KpiCard
-          label="Taxa Comparecimento"
-          value={`${kpis.taxaComparecimento}%`}
-          delta={kpis.taxaComparecimento >= 80 ? '▲ Meta atingida' : '▼ Abaixo da meta'}
-          deltaPositivo={kpis.taxaComparecimento >= 80}
-          icon={<BarChart2 size={16} color="var(--ws-gold)" />}
-          accentColor="var(--ws-gold)"
-        />
-      </div>
+      )}
 
-      {/* ── Layout principal: sidebar esquerda + conteúdo ── */}
+      {/* ── Agendas: gestão (cards) ── */}
+      {secao === 'agendas' && (
+        <GestaoAgendas
+          agendas={agendas}
+          onNova={() => abrirModalAgenda()}
+          onEditar={(a) => abrirModalAgenda(a)}
+        />
+      )}
+
+      {/* ── Calendário / Agendamentos: sidebar de agendas + conteúdo ── */}
+      {(secao === 'calendario' || secao === 'agendamentos') && (
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
 
         {/* ── Sidebar de agendas ── */}
@@ -669,7 +554,9 @@ export default function AgendaPage() {
               }}
             />
 
-            {/* Tabs de view */}
+            {/* Tabs Semana/Mês + navegação temporal — só no Calendário */}
+            {secao === 'calendario' && (
+            <>
             <div style={{ display: 'flex', alignItems: 'stretch' }}>
               <ViewTab
                 view="semana"
@@ -683,13 +570,6 @@ export default function AgendaPage() {
                 current={view}
                 label="Mês"
                 icon={<CalendarRange size={14} />}
-                onClick={setView}
-              />
-              <ViewTab
-                view="lista"
-                current={view}
-                label="Lista"
-                icon={<LayoutList size={14} />}
                 onClick={setView}
               />
             </div>
@@ -769,6 +649,8 @@ export default function AgendaPage() {
                 Hoje
               </button>
             </div>
+            </>
+            )}
 
             {/* Spacer */}
             <div style={{ flex: 1 }} />
@@ -854,18 +736,14 @@ export default function AgendaPage() {
               overflow: 'hidden',
             }}
           >
-            {view === 'semana' && (
-              <CalendarioSemana
+            {secao === 'agendamentos' ? (
+              <ListaAgendamentos
                 agendamentos={agendamentos}
                 agendas={agendas}
-                agendasVisiveis={agendasVisiveis}
-                semanaAtual={dataReferencia}
-                onSemanaChange={setDataReferencia}
                 onAgendamentoClick={abrirEditarAgendamento}
-                onSlotClick={abrirNovoAgendamento}
+                onStatusChange={atualizarStatus}
               />
-            )}
-            {view === 'mes' && (
+            ) : view === 'mes' ? (
               <CalendarioMes
                 agendamentos={agendamentos}
                 agendas={agendas}
@@ -878,18 +756,21 @@ export default function AgendaPage() {
                 }}
                 onAgendamentoClick={abrirEditarAgendamento}
               />
-            )}
-            {view === 'lista' && (
-              <ListaAgendamentos
+            ) : (
+              <CalendarioSemana
                 agendamentos={agendamentos}
                 agendas={agendas}
+                agendasVisiveis={agendasVisiveis}
+                semanaAtual={dataReferencia}
+                onSemanaChange={setDataReferencia}
                 onAgendamentoClick={abrirEditarAgendamento}
-                onStatusChange={atualizarStatus}
+                onSlotClick={abrirNovoAgendamento}
               />
             )}
           </div>
         </div>
       </div>
+      )}
 
       {/* ── Overlay + Modais deslizantes ── */}
 
