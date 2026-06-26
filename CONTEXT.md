@@ -217,6 +217,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-26) — Agenda: lembretes religados à API (Fase 4 front)
+- `src/hooks/use-lembretes.ts` religado do mock (`MOCK_LEMBRETES`) ao `/agenda/lembretes` via `api-client` (fetch condicional no `workspaceAtual`), **mantendo a assinatura** (`listarLembretes(agendaId)`, `salvarLembrete`, `excluirLembrete`, `alternarStatus`) — `config-lembretes.tsx` (aba Lembretes em Opções Gerais) não muda. Busca todos os lembretes do workspace; `listarLembretes` filtra por `agenda_id` exato (null = "Padrão (todas)"/global). `salvarLembrete` POST/PATCH; `alternarStatus` PATCH otimista. Backend = Fase 4 (api/production, scan no worker + `confirmar_presenca`). v1 só WhatsApp.
+
 ### ✅ Implementado (2026-06-26) — CRM Atendimento: participantes do grupo no header (Fase 3)
 - No header do chat, quando é grupo, mostra uma linha com os **nomes dos participantes** (`participantName` distintos das mensagens carregadas — quem apareceu na conversa), truncada com `title` (lista completa no hover). Front-only (`painel-chat.tsx`, `useMemo`). ⚠️ Mostra quem **apareceu** na janela carregada, não a lista completa de membros (silenciosos) — p/ a lista completa precisaria de endpoint backend (groupData.Participants Evolution; ver [[op7nexo-midia-upload-403-fix]]).
 
