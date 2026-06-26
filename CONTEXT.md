@@ -217,6 +217,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-26) — CRM Atendimento: participantes do grupo no header (Fase 3)
+- No header do chat, quando é grupo, mostra uma linha com os **nomes dos participantes** (`participantName` distintos das mensagens carregadas — quem apareceu na conversa), truncada com `title` (lista completa no hover). Front-only (`painel-chat.tsx`, `useMemo`). ⚠️ Mostra quem **apareceu** na janela carregada, não a lista completa de membros (silenciosos) — p/ a lista completa precisaria de endpoint backend (groupData.Participants Evolution; ver [[op7nexo-midia-upload-403-fix]]).
+
 ### ✅ Implementado (2026-06-26) — CRM Atendimento: nome+avatar do remetente na bolha (Fase 2)
 - Bolha de ENTRADA (grupo e 1:1) ganhou **avatar pequeno** (28px, absoluto no canto sup-esq, `paddingLeft:36`) + **nome do remetente em negrito com cor por pessoa** (`hashColor` em `src/lib/hash-color.ts`, novo; extraído de `lista-view.tsx`). Avatar: foto via `resolveAvatarSrc(contato.avatarUrl)` no 1:1; **iniciais coloridas** (`getAvatarFallback`) no grupo (avatar de participante não é enriquecido hoje). Cor por `participantJid` (grupo) ou nome. Saída inalterada. Front-only (`painel-chat.tsx`).
 

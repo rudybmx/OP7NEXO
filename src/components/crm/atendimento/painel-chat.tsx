@@ -603,6 +603,14 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
     }
   }, [conversa?.id, mensagens, firstUnreadId, mensagensEndRef])
 
+  // Participantes do grupo que aparecem na conversa (nomes distintos), p/ o header.
+  const participantesGrupo = useMemo(() => {
+    if (!conversa.isGroup) return [] as string[]
+    const nomes = mensagens
+      .filter(m => m.direcao === 'entrada' && m.participantName && m.participantName.trim())
+      .map(m => m.participantName!.trim())
+    return Array.from(new Set(nomes))
+  }, [conversa.isGroup, mensagens])
   const titulo = formatHeaderTitle(conversa)
   const telefone = formatarTelefoneBR(conversa.contato.telefone || conversa.remoteJid)
   const avatarSrc = resolveAvatarSrc(conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato.avatarUrl) : conversa.contato.avatarUrl)
@@ -787,6 +795,14 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                 </span>
               )}
             </div>
+            {conversa.isGroup && participantesGrupo.length > 0 && (
+              <div
+                title={participantesGrupo.join(', ')}
+                style={{ fontSize: 11, color: 'var(--ws-text-3)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%', lineHeight: 1.3 }}
+              >
+                {participantesGrupo.join(', ')}
+              </div>
+            )}
           </div>
         </div>
 
