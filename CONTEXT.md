@@ -217,6 +217,9 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-26) — CRM Atendimento: nome+avatar do remetente na bolha (Fase 2)
+- Bolha de ENTRADA (grupo e 1:1) ganhou **avatar pequeno** (28px, absoluto no canto sup-esq, `paddingLeft:36`) + **nome do remetente em negrito com cor por pessoa** (`hashColor` em `src/lib/hash-color.ts`, novo; extraído de `lista-view.tsx`). Avatar: foto via `resolveAvatarSrc(contato.avatarUrl)` no 1:1; **iniciais coloridas** (`getAvatarFallback`) no grupo (avatar de participante não é enriquecido hoje). Cor por `participantJid` (grupo) ou nome. Saída inalterada. Front-only (`painel-chat.tsx`).
+
 ### ✅ Implementado (2026-06-26) — CRM Atendimento: fix clique-trava + scroll WhatsApp (Fase 1)
 - **Bug clique não troca de conversa** (`pagina-atendimento.tsx`): o effect do deep-link (`?conversa=`) tinha `conversaAtivaId` nas deps → ao clicar, `router.replace` assíncrono fazia o effect reverter a seleção p/ o `conversaParam` antigo (loop "abrindo a mesma", F5 resolvia). Fix: deps = `[conversaParam]` só.
 - **Scroll ao abrir estilo WhatsApp**: removido o `scrollIntoView({smooth})` em `[mensagens]`; agora o `PainelChat` ancora ao abrir — na **1ª não-lida** (snapshot de `naoLidas` em `handleSelectConversa` ANTES de marcar lido via `unreadSnapRef`→`unreadCount`; `firstUnreadId` = a unreadCount-ésima de entrada do fim; bolha tem `data-msg-id`, `querySelector`+`scrollIntoView({block:'start'})`) ou **cola no final** (`block:'end'`), com re-âncora (rAF+timeouts) p/ mídia. Msg nova só rola ao fim se perto do fim (180px). `scrollContainerRef` no container.

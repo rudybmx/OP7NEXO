@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react'
 import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, ChevronDown, Clock, FileText, PlayCircle, AlertCircle, User, Sparkles } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { resolveAvatarSrc } from '@/lib/avatar-src'
+import { hashColor } from '@/lib/hash-color'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { CardRastreamento } from './card-rastreamento'
 import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
@@ -979,6 +980,14 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                   : isIA
                     ? 'var(--ws-glass-bg)'
                     : 'var(--ws-text-2)'
+                // Remetente (estilo grupo/WhatsApp): nome em negrito + cor por pessoa + avatar
+                const senderNome = isEntrada
+                  ? (conversa.isGroup ? participantLabel : (msg.remetenteNome || conversa.contato.nome || 'Contato'))
+                  : (isIA ? 'IA Agente' : 'Atendente')
+                const senderCor = hashColor(msg.participantJid || senderNome)
+                const senderAvatar = isEntrada
+                  ? resolveAvatarSrc(conversa.isGroup ? null : conversa.contato.avatarUrl)
+                  : null
                 return (
                   <div
                     key={msg.id}
@@ -991,19 +1000,44 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                       flexDirection: 'column',
                       gap: 4,
                       marginBottom: 12,
+                      position: 'relative',
+                      paddingLeft: isEntrada ? 36 : 0,
                     }}
                   >
+                    {isEntrada && (
+                      <div style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        width: 28,
+                        height: 28,
+                        borderRadius: '50%',
+                        overflow: 'hidden',
+                        background: senderCor,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#fff',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        flexShrink: 0,
+                      }}>
+                        {senderAvatar ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={senderAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : getAvatarFallback(senderNome)}
+                      </div>
+                    )}
                     <div style={{
-                      fontSize: 9,
-                      color: 'var(--ws-text-3)',
+                      fontSize: isEntrada ? 11 : 9,
+                      fontWeight: isEntrada ? 700 : 400,
+                      color: isEntrada ? senderCor : 'var(--ws-text-3)',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 4,
                       justifyContent: isEntrada ? 'flex-start' : 'flex-end',
                     }}>
-                      {isEntrada
-                        ? (conversa.isGroup ? participantLabel : (msg.remetenteNome || 'Contato'))
-                        : (isIA ? 'IA Agente' : 'Atendente')}
+                      {senderNome}
                     </div>
                     <div className={`atd-bubble-reply${isOut ? ' atd-bubble-out' : ''}`} style={{
                       position: 'relative',
