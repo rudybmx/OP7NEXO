@@ -1,40 +1,19 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Download, KeyRound, Loader2, Pencil, Plus, Power, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { WSTable, WSTableActions, WSTableShell, wsTableCellStyle, wsTableHeadStyle } from '@/components/ui/ws-table'
 import { useAuth } from '@/hooks/use-auth'
 import { useWorkspace } from '@/lib/workspace-context'
-import api from '@/lib/api-client'
-import { type AgenteInput, type HorarioItem, useAgentes } from '@/hooks/use-agentes'
+import { useAgentes } from '@/hooks/use-agentes'
 import { type LlmProvider, useLlmProviders } from '@/hooks/use-llm-providers'
 import { useDiretrizes } from '@/hooks/use-diretrizes'
-import { useAjustesResposta, type AjusteResposta } from '@/hooks/use-ajustes-resposta'
-import { useAgentesDisponiveis } from '@/hooks/use-agentes-disponiveis'
-import { BaseConhecimentoManager } from '@/components/admin/central-agentes/BaseConhecimentoManager'
 import { UsoDashboard } from '@/components/admin/central-agentes/UsoDashboard'
+import { Field, inputCls, inputStyle, Section } from '@/components/admin/central-agentes/form-ui'
 
 type Aba = 'agentes' | 'providers' | 'uso' | 'diretrizes'
-type CanalLite = { id: string; nome: string; tipo?: string | null }
-
-const DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
-const TONS = ['', 'formal', 'informal', 'tecnico', 'amigavel']
-
-const inputCls = 'w-full rounded-lg px-3 py-2 text-sm outline-none border'
-const inputStyle: React.CSSProperties = { borderColor: 'var(--ws-glass-border)', background: 'var(--card)', color: 'var(--ws-text-1)' }
-const labelCls = 'block text-xs font-medium mb-1 uppercase tracking-wide'
-const labelStyle: React.CSSProperties = { color: 'var(--ws-text-2)', letterSpacing: '0.04em' }
-
-function emptyForm(): AgenteInput {
-  return {
-    nome: '', descricao: '', provider_id: null, modelo: null, status: 'inativo', tom: '',
-    idiomas: [], blacklist_topicos: [], threshold_confianca: 0.7, debounce_segundos: 40,
-    limite_tokens_dia: null, alerta_threshold_pct: 80, mensagem_abertura: '', objetivo: '', tempo_followup_min: null, codigo_responsavel: '', horario_modo: 'dentro', canais: [],
-    horarios: [], prompt: '',
-  }
-}
 
 function StatusChip({ status }: { status: string }) {
   const ativo = status === 'ativo'
@@ -52,115 +31,21 @@ function StatusChip({ status }: { status: string }) {
 }
 
 export default function CentralAgentesPage() {
+  const router = useRouter()
   const { user } = useAuth()
   const { workspaceAtual, workspaces, setWorkspaceAtual } = useWorkspace()
   const [aba, setAba] = useState<Aba>('agentes')
 
   const ws = workspaceAtual
-  const { agentes, carregando, carregar, criar, atualizar, alternarStatus, excluir, obter } = useAgentes(ws)
+  const { agentes, carregando, carregar, alternarStatus, excluir } = useAgentes(ws)
   const providersHook = useLlmProviders()
-  const { providers, carregar: carregarProviders } = providersHook
-
-  const [canais, setCanais] = useState<CanalLite[]>([])
-
-  // form de agente (Sheet)
-  const [drawer, setDrawer] = useState(false)
-  const [editId, setEditId] = useState<string | null>(null)
-  const [form, setForm] = useState<AgenteInput>(emptyForm())
-  const [salvando, setSalvando] = useState(false)
-  const [publicando, setPublicando] = useState(false)
-  const { listar: listarAjustes, remover: removerAjuste } = useAjustesResposta()
-  // Responsáveis = quem pode atender canais no workspace (mesma fonte da transferência manual).
-  const { agentes: atendentes } = useAgentesDisponiveis(ws ?? undefined)
-  const [ajustes, setAjustes] = useState<AjusteResposta[]>([])
+  const { carregar: carregarProviders } = providersHook
 
   useEffect(() => { carregarProviders() }, [carregarProviders])
   useEffect(() => { carregar() }, [carregar])
-  useEffect(() => {
-    if (!ws) { setCanais([]); return }
-    api.get<CanalLite[]>(`/workspaces/${ws}/canais`).then(setCanais).catch(() => setCanais([]))
-  }, [ws])
 
   const isAdmin = user?.role === 'platform_admin'
-  const modelosDoProvider = useMemo(
-    () => providers.find((p) => p.id === form.provider_id)?.modelos.filter((m) => m.ativo) ?? [],
-    [providers, form.provider_id],
-  )
-
-  const setF = useCallback(<K extends keyof AgenteInput>(k: K, v: AgenteInput[K]) => setForm((f) => ({ ...f, [k]: v })), [])
-
-  function abrirNovo() {
-    setEditId(null)
-    setForm(emptyForm())
-    setAjustes([])
-    setDrawer(true)
-  }
-
-  async function abrirEditar(id: string) {
-    setEditId(id)
-    setDrawer(true)
-    try {
-      const a = await obter(id)
-      setForm({
-        nome: a.nome, descricao: a.descricao ?? '', provider_id: a.provider_id, modelo: a.modelo,
-        status: a.status === 'ativo' ? 'ativo' : 'inativo', tom: a.tom ?? '', idiomas: a.idiomas,
-        blacklist_topicos: a.blacklist_topicos, threshold_confianca: a.threshold_confianca,
-        debounce_segundos: a.debounce_segundos, limite_tokens_dia: a.limite_tokens_dia,
-        alerta_threshold_pct: a.alerta_threshold_pct, mensagem_abertura: a.mensagem_abertura ?? '', objetivo: a.objetivo ?? '', tempo_followup_min: a.tempo_followup_min ?? null, codigo_responsavel: a.codigo_responsavel ?? '', horario_modo: a.horario_modo === 'fora' ? 'fora' : 'dentro',
-        canais: a.canais.map((c) => c.canal_id), prompt: a.prompt_draft ?? '',
-        horarios: a.horarios.map((h) => ({ dia_semana: h.dia_semana, hora_inicio: h.hora_inicio, hora_fim: h.hora_fim, ativo: h.ativo })),
-      })
-      if (ws) {
-        try { setAjustes(await listarAjustes(ws, id)) } catch { setAjustes([]) }
-      }
-    } catch (e: any) {
-      toast.error(e?.message || 'Erro ao carregar agente')
-      setDrawer(false)
-    }
-  }
-
-  async function onRemoverAjuste(id: string) {
-    if (!ws || !editId) return
-    try {
-      await removerAjuste(ws, editId, id)
-      setAjustes((l) => l.filter((a) => a.id !== id))
-      toast.success('Sugestão removida')
-    } catch (e: any) {
-      toast.error(e?.message || 'Erro ao remover')
-    }
-  }
-
-  async function publicarPrompt() {
-    if (!ws || !editId) return
-    setPublicando(true)
-    try {
-      await atualizar(editId, { prompt: form.prompt })
-      await api.post(`/workspaces/${ws}/agentes/${editId}/publicar`)
-      toast.success('Prompt publicado')
-    } catch (e: any) {
-      toast.error(e?.message || 'Erro ao publicar')
-    } finally {
-      setPublicando(false)
-    }
-  }
-
-  async function salvar() {
-    if (!ws) return
-    if (!form.nome.trim()) { toast.error('Nome é obrigatório'); return }
-    setSalvando(true)
-    try {
-      const payload: AgenteInput = { ...form, descricao: form.descricao || null, tom: form.tom || null, mensagem_abertura: form.mensagem_abertura || null, objetivo: form.objetivo || null }
-      if (editId) await atualizar(editId, payload)
-      else await criar(payload)
-      toast.success(editId ? 'Agente atualizado' : 'Agente criado')
-      setDrawer(false)
-      carregar()
-    } catch (e: any) {
-      toast.error(e?.message || 'Erro ao salvar')
-    } finally {
-      setSalvando(false)
-    }
-  }
+  const wsQuery = ws ? `?ws=${ws}` : ''
 
   async function toggle(id: string, status: string) {
     try {
@@ -180,24 +65,6 @@ export default function CentralAgentesPage() {
     } catch (e: any) {
       toast.error(e?.message || 'Erro ao excluir')
     }
-  }
-
-  function toggleCanal(id: string) {
-    setForm((f) => {
-      const set = new Set(f.canais ?? [])
-      set.has(id) ? set.delete(id) : set.add(id)
-      return { ...f, canais: [...set] }
-    })
-  }
-
-  function addHorario() {
-    setForm((f) => ({ ...f, horarios: [...(f.horarios ?? []), { dia_semana: 0, hora_inicio: '08:00', hora_fim: '18:00', ativo: true }] }))
-  }
-  function setHorario(i: number, patch: Partial<HorarioItem>) {
-    setForm((f) => ({ ...f, horarios: (f.horarios ?? []).map((h, idx) => (idx === i ? { ...h, ...patch } : h)) }))
-  }
-  function delHorario(i: number) {
-    setForm((f) => ({ ...f, horarios: (f.horarios ?? []).filter((_, idx) => idx !== i) }))
   }
 
   if (!isAdmin) {
@@ -243,8 +110,8 @@ export default function CentralAgentesPage() {
           ws={ws}
           agentes={agentes}
           carregando={carregando}
-          onNovo={abrirNovo}
-          onEditar={abrirEditar}
+          onNovo={() => router.push(`/admin/central-agentes/novo${wsQuery}`)}
+          onEditar={(id) => router.push(`/admin/central-agentes/${id}/editar${wsQuery}`)}
           onToggle={toggle}
           onRemover={remover}
         />
@@ -252,250 +119,7 @@ export default function CentralAgentesPage() {
       {aba === 'providers' && <ProvidersTab hook={providersHook} />}
       {aba === 'diretrizes' && <DiretrizesTab ws={ws} />}
       {aba === 'uso' && <UsoDashboard workspaceId={ws} />}
-
-      {/* Drawer de criação/edição de agente */}
-      <Sheet open={drawer} onOpenChange={(o) => !o && setDrawer(false)}>
-        <SheetContent side="right" style={{ width: 'min(640px, 100vw)', maxWidth: '100vw', overflowY: 'auto' }}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="ds-section-title">{editId ? 'Editar agente' : 'Novo agente'}</h2>
-            <button onClick={() => setDrawer(false)} aria-label="Fechar"><X size={18} /></button>
-          </div>
-
-          <div className="space-y-4">
-            <Section titulo="Identidade">
-              <Field label="Nome">
-                <input className={inputCls} style={inputStyle} value={form.nome} onChange={(e) => setF('nome', e.target.value)} />
-              </Field>
-              <Field label="Descrição">
-                <input className={inputCls} style={inputStyle} value={form.descricao ?? ''} onChange={(e) => setF('descricao', e.target.value)} />
-              </Field>
-              <Field label="Tom / persona">
-                <select className={inputCls} style={inputStyle} value={form.tom ?? ''} onChange={(e) => setF('tom', e.target.value)}>
-                  {TONS.map((t) => <option key={t} value={t}>{t || '— nenhum —'}</option>)}
-                </select>
-              </Field>
-            </Section>
-
-            <Section titulo="Modelo">
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Provider">
-                  <select className={inputCls} style={inputStyle} value={form.provider_id ?? ''} onChange={(e) => { setF('provider_id', e.target.value || null); setF('modelo', null) }}>
-                    <option value="">— selecione —</option>
-                    {providers.filter((p) => p.ativo).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-                  </select>
-                </Field>
-                <Field label="Modelo">
-                  <select className={inputCls} style={inputStyle} value={form.modelo ?? ''} onChange={(e) => setF('modelo', e.target.value || null)} disabled={!form.provider_id}>
-                    <option value="">— selecione —</option>
-                    {modelosDoProvider.map((m) => <option key={m.id} value={m.nome_modelo}>{m.label_display || m.nome_modelo}</option>)}
-                  </select>
-                </Field>
-              </div>
-            </Section>
-
-            <Section titulo="Canais">
-              {canais.length === 0 ? (
-                <p className="text-xs" style={{ color: 'var(--ws-text-2)' }}>Nenhum canal neste workspace.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {canais.map((c) => {
-                    const sel = (form.canais ?? []).includes(c.id)
-                    return (
-                      <button
-                        key={c.id}
-                        onClick={() => toggleCanal(c.id)}
-                        className="rounded-full px-3 py-1 text-xs font-medium border"
-                        style={{
-                          borderColor: sel ? '#c9a84c' : 'var(--ws-glass-border)',
-                          background: sel ? 'rgba(201,168,76,0.12)' : 'transparent',
-                          color: sel ? '#c9a84c' : 'var(--ws-text-2)',
-                        }}
-                      >
-                        {c.nome}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </Section>
-
-            <Section titulo="Prompt do sistema (rascunho)">
-              <textarea className={inputCls} style={{ ...inputStyle, minHeight: 120, resize: 'vertical' }} value={form.prompt ?? ''} onChange={(e) => setF('prompt', e.target.value)} placeholder="Você é o assistente de atendimento da empresa…" />
-              {editId ? (
-                <div className="flex items-center gap-2 mt-2">
-                  <button onClick={publicarPrompt} disabled={publicando} className="px-3 py-1.5 text-xs font-medium rounded-lg border" style={{ borderColor: 'var(--ws-glass-border)', color: 'var(--ws-text-1)' }}>
-                    {publicando ? 'Publicando…' : 'Publicar versão'}
-                  </button>
-                  <span className="text-xs" style={{ color: 'var(--ws-text-2)' }}>salva o rascunho e cria uma versão publicada</span>
-                </div>
-              ) : (
-                <p className="text-xs mt-1" style={{ color: 'var(--ws-text-2)' }}>Salve o agente para publicar versões do prompt.</p>
-              )}
-            </Section>
-
-            <Section titulo="Base de conhecimento (RAG)">
-              {editId ? (
-                <BaseConhecimentoManager workspaceId={ws} agenteId={editId} />
-              ) : (
-                <p className="text-xs" style={{ color: 'var(--ws-text-2)' }}>Salve o agente primeiro para indexar documentos/FAQs.</p>
-              )}
-            </Section>
-
-            <Section titulo="Horários de funcionamento">
-              <div className="mb-3">
-                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--ws-text-2)' }}>O agente responde:</label>
-                <select className={inputCls} style={inputStyle} value={form.horario_modo ?? 'dentro'} onChange={(e) => setF('horario_modo', e.target.value as 'dentro' | 'fora')}>
-                  <option value="dentro">Dentro do horário abaixo</option>
-                  <option value="fora">Fora do horário abaixo (plantão — noites e fins de semana)</option>
-                </select>
-                <p className="text-xs mt-1" style={{ color: 'var(--ws-text-2)' }}>
-                  Horários no fuso de <strong>Brasília (UTC-3)</strong>. Sem nenhum horário definido, o agente responde <strong>sempre (24/7)</strong>. No modo plantão, cadastre o horário comercial abaixo — o agente atende automaticamente fora dele (noites e fins de semana).
-                </p>
-              </div>
-              <div className="space-y-2">
-                {(form.horarios ?? []).map((h, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <select className={inputCls} style={{ ...inputStyle, width: 90 }} value={h.dia_semana} onChange={(e) => setHorario(i, { dia_semana: Number(e.target.value) })}>
-                      {DIAS.map((d, idx) => <option key={idx} value={idx}>{d}</option>)}
-                    </select>
-                    <input type="time" className={inputCls} style={{ ...inputStyle, width: 120 }} value={h.hora_inicio} onChange={(e) => setHorario(i, { hora_inicio: e.target.value })} />
-                    <input type="time" className={inputCls} style={{ ...inputStyle, width: 120 }} value={h.hora_fim} onChange={(e) => setHorario(i, { hora_fim: e.target.value })} />
-                    <button onClick={() => delHorario(i)} aria-label="Remover horário"><Trash2 size={16} style={{ color: 'var(--ws-coral)' }} /></button>
-                  </div>
-                ))}
-                <button onClick={addHorario} className="text-xs font-medium" style={{ color: 'var(--ws-blue)' }}>+ Adicionar horário</button>
-              </div>
-            </Section>
-
-            <Section titulo="Handoff & Limites">
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Threshold de confiança (0–1)">
-                  <input type="number" step="0.05" min={0} max={1} className={inputCls} style={inputStyle} value={form.threshold_confianca ?? 0.7} onChange={(e) => setF('threshold_confianca', Number(e.target.value))} />
-                </Field>
-                <Field label="Debounce (segundos)">
-                  <input type="number" min={0} max={3600} className={inputCls} style={inputStyle} value={form.debounce_segundos ?? 40} onChange={(e) => setF('debounce_segundos', Number(e.target.value))} />
-                </Field>
-                <Field label="Limite de tokens/dia">
-                  <input type="number" min={0} className={inputCls} style={inputStyle} value={form.limite_tokens_dia ?? ''} onChange={(e) => setF('limite_tokens_dia', e.target.value === '' ? null : Number(e.target.value))} />
-                </Field>
-                <Field label="Alerta de consumo (%)">
-                  <input type="number" min={0} max={100} className={inputCls} style={inputStyle} value={form.alerta_threshold_pct ?? 80} onChange={(e) => setF('alerta_threshold_pct', Number(e.target.value))} />
-                </Field>
-              </div>
-            </Section>
-
-            <Section titulo="Mensagem de abertura">
-              <input className={inputCls} style={inputStyle} value={form.mensagem_abertura ?? ''} onChange={(e) => setF('mensagem_abertura', e.target.value)} />
-            </Section>
-
-            <Section titulo="Objetivo do agente">
-              <textarea
-                className={inputCls}
-                style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }}
-                value={form.objetivo ?? ''}
-                onChange={(e) => setF('objetivo', e.target.value)}
-                placeholder="Ex.: Agendar uma consulta/avaliação para o lead. Guia a análise de interesse na tela de conversas."
-              />
-            </Section>
-
-            <Section titulo="Followup automático">
-              <Field label="Tempo sem resposta do lead para entrar em followup (minutos)">
-                <input
-                  type="number"
-                  min={0}
-                  className={inputCls}
-                  style={inputStyle}
-                  value={form.tempo_followup_min ?? ''}
-                  onChange={(e) => setF('tempo_followup_min', e.target.value === '' ? null : Number(e.target.value))}
-                  placeholder="vazio ou 0 = desligado · ex.: 1440 = 1 dia"
-                />
-              </Field>
-            </Section>
-
-            <Section titulo="Transferência para humano">
-              <Field label="Responsável que assume a conversa quando a IA faz handoff">
-                <select
-                  className={inputCls}
-                  style={inputStyle}
-                  value={form.codigo_responsavel ?? ''}
-                  onChange={(e) => setF('codigo_responsavel', e.target.value)}
-                >
-                  <option value="">Nenhum — só marca como escalado (sem rotear)</option>
-                  {atendentes.map((u) => (
-                    <option key={u.id} value={u.id}>{u.nome}</option>
-                  ))}
-                </select>
-              </Field>
-              {atendentes.length === 0 && (
-                <p className="text-xs mt-1" style={{ color: 'var(--ws-danger, #c80010)' }}>
-                  Nenhum usuário com permissão de atender canais neste workspace — habilite
-                  &ldquo;atender canais&rdquo; em algum usuário para poder escolher um responsável.
-                </p>
-              )}
-              <p className="text-xs mt-1" style={{ color: 'var(--ws-text-3)' }}>
-                Definido: quando o agente não consegue responder (baixa confiança, erro…) ou quando o
-                cliente pede um atendente, a conversa é atribuída a essa pessoa, a IA desliga e a
-                thread ganha uma nota com o resumo. Vazio = comportamento atual.
-              </p>
-            </Section>
-
-            {editId && (
-              <Section titulo={`Ajustes de resposta salvos${ajustes.length ? ` (${ajustes.length})` : ''}`}>
-                {ajustes.length === 0 ? (
-                  <p className="text-sm" style={{ color: 'var(--ws-text-2)' }}>
-                    Nenhuma sugestão ainda. Use o ícone ✨ no rodapé das mensagens do agente, na tela de conversas.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {ajustes.map((a) => (
-                      <div key={a.id} style={{ border: '1px solid var(--ws-glass-border)', borderRadius: 8, padding: 8 }}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div style={{ minWidth: 0 }}>
-                            {a.categoria && <span className="text-xs font-medium" style={{ color: '#3E5BFF' }}>{a.categoria}</span>}
-                            <p className="text-sm" style={{ color: 'var(--ws-text-1)', margin: '2px 0 0', whiteSpace: 'pre-wrap' }}>{a.resposta_sugerida}</p>
-                            {a.resposta_original && (
-                              <p className="text-xs" style={{ color: 'var(--ws-text-3)', margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>Era: {a.resposta_original}</p>
-                            )}
-                          </div>
-                          <button type="button" onClick={() => onRemoverAjuste(a.id)} title="Remover" style={{ color: 'var(--ws-coral)', background: 'transparent', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Section>
-            )}
-          </div>
-
-          <div className="flex justify-end gap-2 mt-6">
-            <button onClick={() => setDrawer(false)} className="px-4 py-2 text-sm rounded-lg border" style={{ borderColor: 'var(--ws-glass-border)', color: 'var(--ws-text-2)' }}>Cancelar</button>
-            <button onClick={salvar} disabled={salvando} className="px-4 py-2 text-sm rounded-lg font-medium inline-flex items-center gap-2" style={{ background: '#c9a84c', color: '#1a1205' }}>
-              {salvando && <Loader2 size={15} className="animate-spin" />}{editId ? 'Salvar' : 'Criar agente'}
-            </button>
-          </div>
-        </SheetContent>
-      </Sheet>
     </div>
-  )
-}
-
-function Section({ titulo, children }: { titulo: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl p-4" style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)' }}>
-      <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--ws-text-1)' }}>{titulo}</h3>
-      <div className="space-y-3">{children}</div>
-    </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className={labelCls} style={labelStyle}>{label}</span>
-      {children}
-    </label>
   )
 }
 
