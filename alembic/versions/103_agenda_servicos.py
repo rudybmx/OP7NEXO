@@ -4,16 +4,18 @@ Serviço por agenda (agenda_id NULL = serviço do workspace, vale p/ todas as ag
 duracao_minutos guia o slot/disponibilidade. agendamentos ganha servico_id (FK nullable)
 mantendo `servico` text como snapshot do nome.
 
-Revision ID: 102
-Revises: 101
+(Renumerado de 102 -> 103 por colisão: outro agente já tinha revision 102 = contato_nome_confirmado.)
+
+Revision ID: 103
+Revises: 102
 Create Date: 2026-06-26
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "102"
-down_revision = "101"
+revision = "103"
+down_revision = "102"
 branch_labels = None
 depends_on = None
 
