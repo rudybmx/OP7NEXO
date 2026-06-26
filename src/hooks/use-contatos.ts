@@ -73,6 +73,11 @@ export function useContatos(
       if (tag) params.set('tag', tag)
 
       const res = await fetch(`/api/whatsapp/contacts?${params.toString()}`)
+      if (res.status === 403) {
+        setContatos([])
+        setError('Você não tem permissão para acessar os contatos. Fale com um administrador.')
+        return
+      }
       if (!res.ok) throw new Error('Erro ao carregar contatos')
 
       const data = await res.json()

@@ -730,6 +730,13 @@ export function PaginaContatos() {
         </button>
       </div>
 
+      {/* Banner de erro (ex.: 403 — sem permissão para a tela de contatos) */}
+      {error && (
+        <div style={{ marginBottom: 20, padding: '12px 16px', borderRadius: 'var(--ws-radius-md)' as unknown as number, background: 'rgba(255,92,141,0.08)', border: '1px solid rgba(255,92,141,0.25)', color: '#c2004f', fontSize: 13, fontWeight: 500 }}>
+          {error}
+        </div>
+      )}
+
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
         {STATS.map(s => (
