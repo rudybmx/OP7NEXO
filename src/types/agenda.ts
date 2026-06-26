@@ -75,6 +75,7 @@ export interface Agendamento {
   data_hora_fim: string    // ISO datetime
   // Classificação
   servico?: string
+  servico_id?: string
   observacoes?: string
   // Controle
   status: AgendamentoStatus

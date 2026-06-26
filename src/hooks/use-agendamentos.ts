@@ -27,6 +27,7 @@ export interface CriarAgendamentoInput {
   data_hora_inicio: string
   data_hora_fim: string
   servico?: string
+  servico_id?: string
   observacoes?: string
   origem: AgendamentoOrigem
   criado_por?: string

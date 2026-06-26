@@ -5,13 +5,14 @@ import { X, Calendar, Clock, User, Phone, Mail, Trash2, Check, AlertCircle, Chev
 import { format, parseISO, addMinutes, startOfDay, isBefore, isValid, setHours, setMinutes, parse } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
-import { 
-  Agenda, 
-  Agendamento, 
-  AgendamentoStatus, 
-  STATUS_LABELS, 
-  STATUS_COLORS 
+import {
+  Agenda,
+  Agendamento,
+  AgendamentoStatus,
+  STATUS_LABELS,
+  STATUS_COLORS
 } from '@/types/agenda'
+import { useServicos } from '@/hooks/use-servicos'
 
 interface ModalAgendamentoProps {
   aberto: boolean
@@ -72,6 +73,10 @@ export function ModalAgendamento({
   const [status, setStatus] = useState<AgendamentoStatus>('agendado')
   const [motivoCancelamento, setMotivoCancelamento] = useState('')
   const [controleAberto, setControleAberto] = useState(false)
+  const [servicoId, setServicoId] = useState('')
+
+  // Serviços do catálogo da agenda selecionada (+ os do workspace, agenda_id null)
+  const { servicos } = useServicos(agendaId)
 
   // Sincroniza estados com agendamentoInicial ao abrir
   useEffect(() => {
@@ -90,6 +95,7 @@ export function ModalAgendamento({
         setDuracao(diff)
         
         setServico(agendamentoInicial.servico || '')
+        setServicoId(agendamentoInicial.servico_id || '')
         setObservacoes(agendamentoInicial.observacoes || '')
         setStatus(agendamentoInicial.status)
         setMotivoCancelamento(agendamentoInicial.cancelamento_motivo || '')
@@ -104,6 +110,7 @@ export function ModalAgendamento({
         setHora(horaInicial || '09:00')
         setDuracao(30)
         setServico('')
+        setServicoId('')
         setObservacoes('')
         setStatus('agendado')
         setMotivoCancelamento('')
@@ -168,6 +175,7 @@ export function ModalAgendamento({
       data_hora_inicio: dataHoraInicio.toISOString(),
       data_hora_fim: dataHoraFim.toISOString(),
       servico,
+      servico_id: servicoId || undefined,
       observacoes,
       status,
       cancelamento_motivo: status === 'cancelado' ? motivoCancelamento : undefined,
@@ -362,6 +370,32 @@ export function ModalAgendamento({
             </InputWrapper>
           </div>
 
+          {servicos.length > 0 && (
+            <InputWrapper label="Serviço (catálogo)">
+              <select
+                value={servicoId}
+                onChange={(e) => {
+                  const sv = servicos.find((s) => s.id === e.target.value)
+                  setServicoId(e.target.value)
+                  if (sv) {
+                    setServico(sv.nome)
+                    setDuracao(sv.duracao_minutos)
+                  }
+                }}
+                style={selectStyle}
+                className="focus:border-[var(--ws-blue)]"
+              >
+                <option value="" style={{ background: '#1a1a1a' }}>— escolher do catálogo —</option>
+                {servicos.map((s) => (
+                  <option key={s.id} value={s.id} style={{ background: '#1a1a1a' }}>
+                    {s.nome} ({s.duracao_minutos} min{s.preco != null ? ` · R$ ${Number(s.preco).toFixed(2)}` : ''})
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-3 pointer-events-none opacity-50" />
+            </InputWrapper>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <InputWrapper label="Duração" icon={Clock}>
               <select 
@@ -384,7 +418,7 @@ export function ModalAgendamento({
                 type="text" 
                 placeholder="Ex: Avaliação"
                 value={servico}
-                onChange={(e) => setServico(e.target.value)}
+                onChange={(e) => { setServico(e.target.value); setServicoId('') }}
                 style={{ ...inputStyle, paddingLeft: '12px' }}
                 className="focus:border-[var(--ws-blue)]"
               />
