@@ -12,6 +12,18 @@
 > anti-hijack no webhook `process_evolution_connection_event`. Front: `/conectar/[token]`.
 > Spec: `docs/specs/link-conexao-publico/`.
 
+> **Canal Oficial Meta / WhatsApp Cloud API (`tipo='whatsapp_oficial'`, 2026-06):** conexão
+> MANUAL por System User Token (`config.phone_number_id`/`waba_id`/`access_token`; sem QR).
+> `_conectar_whatsapp_oficial` valida credenciais + `subscribed_apps` e seta
+> `evolution_instance_id = phone_number_id` (instance único por canal). Webhook Graph API v23.0 em
+> `GET/POST /webhook/meta/{token}` (challenge texto puro + HMAC `X-Hub-Signature-256` via
+> `META_APP_SECRET`). Inbound `_processar_mensagem_meta` espelha o pipeline canônico: persiste
+> contato/conversa/mensagem (escopo `workspace_id`+`canal_id`), Kanban em SAVEPOINT, e enfileira
+> `agente_reply`+`conversa_analise` + notificação `mensagem_nova` (IA responde igual Evolution; o
+> agente vincula-se por `canal_id` via `agente_canais`). Envio de texto/template (erro 131047 →
+> 409 fora-da-janela-24h) e `enviar_digitando`. PENDENTE: mídia (in/out) e Embedded Signup (Fase 2,
+> stub no front, depende de App Review). Requer `META_APP_SECRET` no env (senão HMAC fail-open).
+
 > **Transferência IA→humano (Fase 4, 2026-06):** o agente tem `agentes.codigo_responsavel`
 > (FK users, migration 099). Quando definido, no **handoff** (`agent_service._handoff`, worker) a
 > conversa é roteada para esse humano e ganha uma mensagem interna `remetente_tipo='sistema'` com
