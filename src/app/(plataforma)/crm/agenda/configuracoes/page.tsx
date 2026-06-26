@@ -5,15 +5,17 @@ import { tabAtiva, tabInativa } from '@/lib/utils'
 import { ConfigHorarios } from '@/components/agenda/config-horarios'
 import { ConfigBloqueios } from '@/components/agenda/config-bloqueios'
 import { ConfigLembretes } from '@/components/agenda/config-lembretes'
-import { Settings, Clock, ShieldAlert, Bell } from 'lucide-react'
+import { ConfigServicos } from '@/components/agenda/config-servicos'
+import { Settings, Clock, ShieldAlert, Bell, ClipboardList } from 'lucide-react'
 
-type TabId = 'horarios' | 'bloqueios' | 'lembretes'
+type TabId = 'horarios' | 'servicos' | 'bloqueios' | 'lembretes'
 
 export default function ConfigAgendaPage() {
   const [activeTab, setActiveTab] = useState<TabId>('horarios')
 
   const TABS = [
     { id: 'horarios', label: 'Horários', icon: Clock },
+    { id: 'servicos', label: 'Serviços', icon: ClipboardList },
     { id: 'bloqueios', label: 'Bloqueios', icon: ShieldAlert },
     { id: 'lembretes', label: 'Lembretes', icon: Bell },
   ] as const
@@ -60,6 +62,7 @@ export default function ConfigAgendaPage() {
         {/* Content */}
         <div className="flex-1 min-h-0">
           {activeTab === 'horarios' && <ConfigHorarios />}
+          {activeTab === 'servicos' && <ConfigServicos />}
           {activeTab === 'bloqueios' && <ConfigBloqueios />}
           {activeTab === 'lembretes' && <ConfigLembretes />}
         </div>
