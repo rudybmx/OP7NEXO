@@ -57,6 +57,7 @@ interface BackendConversaRow {
     observacoes?: string | null
   } | null
   etiquetas?: Array<{ id: string; nome: string; cor: string }> | null
+  contato_etiquetas?: Array<{ id: string; nome: string; cor: string }> | null
 }
 
 function iso(value: Date | string | null | undefined) {
@@ -307,6 +308,7 @@ export async function GET(request: NextRequest) {
         utmSource: row.contato_utm_source || null,
         utmMedium: row.contato_utm_medium || null,
         primeiraConversaAt: iso(row.contato_primeira_conversa_at),
+        etiquetas: row.contato_etiquetas ?? [],
       },
       equipe: row.equipe_id
         ? { id: row.equipe_id, nome: row.equipe_nome, membrosCount: 0 }

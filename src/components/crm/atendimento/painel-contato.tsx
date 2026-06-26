@@ -3,7 +3,9 @@
 import { useState } from 'react'
 import { CalendarClock, Phone, User, Users, MessageSquare, X } from 'lucide-react'
 import type { ConversaApi } from '@/hooks/use-conversas'
+import type { Etiqueta } from '@/hooks/use-etiquetas'
 import { TermometroLead } from './termometro-lead'
+import { EtiquetasContato } from './etiquetas-contato'
 import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { useCrmFollowups } from '@/hooks/use-crm-followups'
 import { useAgendamentosContato } from '@/hooks/use-agendamentos-contato'
@@ -16,6 +18,12 @@ interface PainelContatoProps {
   onAtualizar?: () => void
   onTogglePainel?: () => void
   isMobile?: boolean
+  etiquetasWorkspace?: Etiqueta[]
+  onAplicarEtiquetaContato?: (contatoId: string, etiquetaId: string) => Promise<boolean>
+  onRemoverEtiquetaContato?: (contatoId: string, etiquetaId: string) => Promise<boolean>
+  onCriarEtiqueta?: (nome: string, cor: string) => Promise<Etiqueta | null>
+  onEditarEtiqueta?: (id: string, patch: { nome?: string; cor?: string }) => Promise<Etiqueta | null>
+  onExcluirEtiqueta?: (id: string) => Promise<boolean>
 }
 
 function InfoRow({ label, valor, icon }: { label: string; valor?: string | null; icon?: React.ReactNode }) {
@@ -48,7 +56,7 @@ function formatDateTimeLocal(value: Date) {
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`
 }
 
-export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePainel, isMobile = false }: PainelContatoProps) {
+export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePainel, isMobile = false, etiquetasWorkspace = [], onAplicarEtiquetaContato, onRemoverEtiquetaContato, onCriarEtiqueta, onEditarEtiqueta, onExcluirEtiqueta }: PainelContatoProps) {
   const [expandido, setExpandido] = useState(true)
   const [followupNota, setFollowupNota] = useState('')
   const [followupDueAt, setFollowupDueAt] = useState(() => {
@@ -253,24 +261,20 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
           </div>
         </div>
 
-        {/* Tags */}
-        <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--ws-divider)', marginBottom: 16 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ws-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Tags</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {conversa.tags.length ? conversa.tags.map(tag => (
-              <span key={tag} style={{
-                fontSize: 10,
-                padding: '2px 8px',
-                borderRadius: 999,
-                background: 'rgba(255,255,255,0.05)',
-                color: 'var(--ws-text-2)',
-                border: '1px solid var(--ws-glass-border)',
-              }}>{tag}</span>
-            )) : (
-              <span style={{ fontSize: 11, color: 'var(--ws-text-3)' }}>Sem tags</span>
-            )}
-          </div>
-        </div>
+        {/* Etiquetas do contato */}
+        {onAplicarEtiquetaContato && onRemoverEtiquetaContato && onCriarEtiqueta && onEditarEtiqueta && onExcluirEtiqueta ? (
+          <EtiquetasContato
+            contatoId={conversa.contato.id}
+            etiquetasContato={conversa.contato.etiquetas ?? []}
+            etiquetasWorkspace={etiquetasWorkspace}
+            onAplicar={onAplicarEtiquetaContato}
+            onRemover={onRemoverEtiquetaContato}
+            onCriar={onCriarEtiqueta}
+            onEditar={onEditarEtiqueta}
+            onExcluir={onExcluirEtiqueta}
+            onAtualizar={onAtualizar}
+          />
+        ) : null}
 
         {/* Equipe */}
         {conversa.equipe && (

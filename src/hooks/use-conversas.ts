@@ -20,6 +20,7 @@ export interface ContatoApi {
   utmSource?: string | null
   utmMedium?: string | null
   primeiraConversaAt?: string | null
+  etiquetas?: Array<{ id: string; nome: string; cor: string }>
 }
 
 export interface EquipeApi {

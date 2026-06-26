@@ -76,5 +76,60 @@ export function useEtiquetas(workspaceId?: string | null) {
     }
   }, [])
 
-  return { etiquetas, isLoading, aplicar, remover, criar }
+  const aplicarContato = useCallback(async (contatoId: string, etiquetaId: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/whatsapp/contatos/${contatoId}/etiquetas/${etiquetaId}`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  }, [])
+
+  const removerContato = useCallback(async (contatoId: string, etiquetaId: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/whatsapp/contatos/${contatoId}/etiquetas/${etiquetaId}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  }, [])
+
+  const editar = useCallback(async (id: string, patch: { nome?: string; cor?: string }): Promise<Etiqueta | null> => {
+    try {
+      const res = await fetch(`/api/whatsapp/etiquetas/${id}`, {
+        method: 'PUT',
+        headers: authHeaders(true),
+        body: JSON.stringify(patch),
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      const atualizada = data.etiqueta as Etiqueta
+      setEtiquetas(prev => prev.map(e => (e.id === id ? { ...e, ...atualizada } : e)).sort((a, b) => a.nome.localeCompare(b.nome)))
+      return atualizada
+    } catch {
+      return null
+    }
+  }, [])
+
+  const excluir = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/whatsapp/etiquetas/${id}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      })
+      if (!res.ok) return false
+      setEtiquetas(prev => prev.filter(e => e.id !== id))
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
+  return { etiquetas, isLoading, aplicar, remover, criar, aplicarContato, removerContato, editar, excluir }
 }

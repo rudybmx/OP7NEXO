@@ -129,7 +129,16 @@ export function PaginaAtendimento() {
   const { iniciar: iniciarConversa, isIniciando, error: erroIniciar } = useIniciarConversa(workspaceAtual)
   const { marcarLido, marcarNaoLido } = useMarcarLido()
   const { atualizar: atualizarConversa } = useAtualizarConversa()
-  const { etiquetas, aplicar: aplicarEtiqueta, remover: removerEtiqueta } = useEtiquetas(workspaceAtual)
+  const {
+    etiquetas,
+    aplicar: aplicarEtiqueta,
+    remover: removerEtiqueta,
+    aplicarContato: aplicarEtiquetaContato,
+    removerContato: removerEtiquetaContato,
+    criar: criarEtiqueta,
+    editar: editarEtiqueta,
+    excluir: excluirEtiqueta,
+  } = useEtiquetas(workspaceAtual)
 
   const mensagensEndRef = useRef<HTMLDivElement>(null)
   // Snapshot do nº de não-lidas NO MOMENTO de abrir cada conversa (capturado antes de
@@ -402,6 +411,12 @@ export function PaginaAtendimento() {
     refetch()
   }, [removerEtiqueta, refetch])
 
+  // Criar etiqueta no painel do contato injeta o workspace atual.
+  const handleCriarEtiqueta = useCallback(
+    (nome: string, cor: string) => criarEtiqueta(workspaceAtual ?? '', nome, cor),
+    [criarEtiqueta, workspaceAtual],
+  )
+
   const handleResolverPeloMenu = useCallback((conversaId: string) => {
     setConversaAtivaId(conversaId)
     setMostrarModalResolver(true)
@@ -591,6 +606,12 @@ export function PaginaAtendimento() {
             workspaceId={workspaceAtual ?? undefined}
             onAtualizar={refetch}
             onTogglePainel={() => setPainelAberto(false)}
+            etiquetasWorkspace={etiquetas}
+            onAplicarEtiquetaContato={aplicarEtiquetaContato}
+            onRemoverEtiquetaContato={removerEtiquetaContato}
+            onCriarEtiqueta={handleCriarEtiqueta}
+            onEditarEtiqueta={editarEtiqueta}
+            onExcluirEtiqueta={excluirEtiqueta}
           />
         </div>
       )}
@@ -623,6 +644,12 @@ export function PaginaAtendimento() {
               onAtualizar={refetch}
               onTogglePainel={() => setPainelAberto(false)}
               isMobile={isMobile}
+              etiquetasWorkspace={etiquetas}
+              onAplicarEtiquetaContato={aplicarEtiquetaContato}
+              onRemoverEtiquetaContato={removerEtiquetaContato}
+              onCriarEtiqueta={handleCriarEtiqueta}
+              onEditarEtiqueta={editarEtiqueta}
+              onExcluirEtiqueta={excluirEtiqueta}
             />
           </div>
         </>
