@@ -122,6 +122,10 @@ class PainelCard(Base):
     responsavel_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # Responsável pode ser um agente de IA (mutuamente exclusivo com responsavel_user_id).
+    responsavel_agente_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agentes.id", ondelete="SET NULL"), nullable=True
+    )
     origem_agente: Mapped[str | None] = mapped_column(String(120), nullable=True)
     data_vencimento: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Campos de lead (preenchidos pelas automações de canal).
@@ -151,6 +155,9 @@ class PainelCard(Base):
     fase: Mapped["PainelFase"] = relationship(lazy="select")
     responsavel: Mapped["User | None"] = relationship(  # type: ignore[name-defined]
         foreign_keys=[responsavel_user_id], lazy="select"
+    )
+    responsavel_agente: Mapped["Agente | None"] = relationship(  # type: ignore[name-defined]
+        foreign_keys=[responsavel_agente_id], lazy="select"
     )
     valores: Mapped[list["PainelCardValor"]] = relationship(
         back_populates="card", lazy="select", cascade="all, delete-orphan",

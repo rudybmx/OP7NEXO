@@ -91,6 +91,7 @@ class CardUpdate(BaseModel):
     descricao: str | None = None
     prioridade: str | None = None
     responsavel_user_id: uuid.UUID | None = None
+    responsavel_agente_id: uuid.UUID | None = None
     data_vencimento: datetime | None = None
     nome: str | None = None
     telefone: str | None = None
@@ -159,6 +160,8 @@ def _card_out(card: PainelCard, *, detalhe: bool = False) -> dict:
         "prioridade": card.prioridade,
         "responsavel_user_id": str(card.responsavel_user_id) if card.responsavel_user_id else None,
         "responsavel_nome": card.responsavel.nome if card.responsavel else None,
+        "responsavel_agente_id": str(card.responsavel_agente_id) if card.responsavel_agente_id else None,
+        "responsavel_agente_nome": card.responsavel_agente.nome if card.responsavel_agente else None,
         "origem_agente": card.origem_agente,
         "data_vencimento": card.data_vencimento,
         "nome": card.nome,
@@ -320,14 +323,25 @@ def atualizar_card(
         card.telefone = data.telefone
     if data.resumo_conversa is not None:
         card.resumo_conversa = data.resumo_conversa
-    responsavel_mudou = "responsavel_user_id" in data.model_fields_set
-    if responsavel_mudou:
+    # Responsável é UM só: setar usuário limpa o agente e vice-versa.
+    if "responsavel_user_id" in data.model_fields_set:
         card.responsavel_user_id = data.responsavel_user_id
+        if data.responsavel_user_id is not None:
+            card.responsavel_agente_id = None
         # Espelha no atendimento (card -> conversa).
         if card.conversa_id:
             conversa = db.get(Conversa, card.conversa_id)
             if conversa:
                 conversa.responsavel_id = data.responsavel_user_id
+    if "responsavel_agente_id" in data.model_fields_set:
+        card.responsavel_agente_id = data.responsavel_agente_id
+        if data.responsavel_agente_id is not None:
+            card.responsavel_user_id = None
+            # Agente assume o card -> desvincula responsável humano da conversa.
+            if card.conversa_id:
+                conversa = db.get(Conversa, card.conversa_id)
+                if conversa:
+                    conversa.responsavel_id = None
     db.commit()
     db.refresh(card)
     return _card_out(card, detalhe=True)
