@@ -343,6 +343,12 @@ def gerar_resposta(
     # Multi-clínica (Fase 6): escopa as agendas às vinculadas ao agente. Vazio = todas (fallback).
     agenda_ids = {l.agenda_id for l in (agente.agendas or [])} or None
     tools, bloco_agenda = agente_tools.tools_para_workspace(db, agente.workspace_id, agenda_ids)
+    if modo_proativo:
+        # Reengajamento é UMA geração de abertura — NÃO o loop agêntico de tool-calling. Desligar as
+        # tools evita: (1) múltiplas rodadas do modelo de raciocínio estourarem o Cloudflare 100s no
+        # endpoint síncrono; (2) o caminho de texto-livre (sem JSON) que esvazia `resposta`/`score`;
+        # (3) agendamento acidental no meio do "empurrão". Mantém o caminho JSON testado.
+        tools = []
     system = _montar_system(
         agente, prompt, rag_chunks, diretrizes_ws=diretrizes, ajustes_few_shot=ajustes,
         contato_nome=contato_nome, resumo_conversa=resumo_conversa, bloco_agenda=bloco_agenda,
