@@ -58,9 +58,9 @@ docs/specs/[nome-feature]/
 
 ### Workflow obrigatório
 1. Verifique se spec existe: `find docs/specs/ -name "spec.md" | xargs grep -l "[keyword]" 2>/dev/null`
-2. Se não existir: crie a pasta e execute `/speckit.specify` para gerar `spec.md`
-3. Execute `/speckit.plan` para gerar `plan.md`
-4. Execute `/speckit.tasks` para gerar `tasks.md`
+2. Se não existir: crie a pasta e execute `/speckit-specify` para gerar `spec.md`
+3. Execute `/speckit-plan` para gerar `plan.md`
+4. Execute `/speckit-tasks` para gerar `tasks.md`
 5. Só implemente depois que spec + plan + tasks estiverem sem perguntas em aberto
 6. Se a implementação mudar comportamento: atualize `spec.md` no mesmo trabalho
 
@@ -72,7 +72,7 @@ Regras:
 ## REGRAS DE CÓDIGO
 
 ### Antes de criar qualquer coisa
-1. **Verifique se já existe** — use o grafo: `query_graph "hook para X"` ou `grep -r "funcionalidade" src/`
+1. **Verifique se já existe** — use o grafo: `graphify query "hook para X"` ou `grep -r "funcionalidade" src/`
 2. **Identifique o padrão existente** — leia 1 arquivo similar antes de criar novo
 3. **Siga a convenção do projeto** — nomes, estrutura de pastas, imports
 
@@ -80,22 +80,25 @@ Regras:
 - Hooks em `src/hooks/use-[recurso].ts`
 - Componentes de página em `src/app/[rota]/page.tsx`
 - Componentes reutilizáveis em `src/components/`
-- UI primitivos: Radix UI + Tailwind (nunca instalar nova lib de UI sem checar se Radix já cobre)
+- UI primitivos: **shadcn/ui** (Radix + Tailwind) + **lucide-react**; nunca HeroUI/react-icons; nunca instalar nova lib de UI sem checar se shadcn/Radix já cobre
 - Dropdowns/Selects: padrão Radix com scroll (ver `filtros-criativos.tsx` como referência)
 - Sempre usar `workspace_id` do contexto de autenticação
 
-### Padrões obrigatórios (op7nexo-api)
-- Rotas em `src/routes/[modulo]/[recurso].ts`
-- Migrations numeradas sequencialmente: `0XX_descricao.sql`
-- Sempre filtrar por `workspace_id` em queries multi-tenant
-- Soft delete padrão: campo `ativo BOOLEAN DEFAULT true`
-- Após qualquer migration: `lock-deploy bash /root/deploy.sh api`
+### Padrões obrigatórios (op7nexo-api) — Python/FastAPI
+- Stack: **FastAPI + SQLAlchemy 2.0** (estilo `Mapped[...]` + `mapped_column`) + **Alembic** + PostgreSQL
+- Endpoints/routers em `app/api/[modulo].py` (cada arquivo: `router = APIRouter(prefix="/modulo")` + `@router.get/post/put/delete`)
+- Lógica de negócio em `app/services/[funcionalidade].py` (ex.: `meta_sync.py`, `agenda/`)
+- Migrations Alembic em `alembic/versions/NNN_descricao.py` (sequencial; ex.: `074_sync_jobs_scheduling.py`); aplicadas **no boot** (o `lifespan` da app roda `alembic upgrade head`)
+- Multi-tenant: `workspace_id: Mapped[uuid.UUID]` (FK `workspaces.id`); SEMPRE `.filter(Model.workspace_id == ...)` + `verificar_acesso_workspace(...)`
+- Soft delete padrão: coluna `ativo: Mapped[bool]` default `True`; `DELETE` faz `ativo=False`; filtrar `.filter(Model.ativo.is_(True))`
+- Relações m2m: tipar `Mapped[list["X"]]` (sem o tipo vira `uselist=False` → bug 500 na 1ª associação)
+- Deploy: `lock-deploy bash /root/deploy.sh api`. O **worker é container separado** → `lock-deploy bash /root/deploy.sh worker` ao mudar automação/scheduler (o `both` NÃO inclui worker)
 
 ## FLUXO DE ENTREGA
 
 Para cada tarefa:
 1. Leia o CONTEXT.md, o grafo e as specs relevantes
-2. Identifique arquivos afetados (use `get_neighbors` no grafo)
+2. Identifique arquivos afetados (use `graphify query "..."`, `graphify explain "..."` ou `graphify path "A" "B"` no grafo)
 3. Implemente seguindo padrões
 4. Teste com curl (backend) ou verifique build (frontend)
 5. Reporte: o que foi feito, arquivos modificados, como testar
@@ -110,16 +113,18 @@ Após qualquer implementação concluída, execute em sequência:
 cd /root/op7nexo-api && graphify update .
 cd /root/op7nexo-front && graphify update .
 ```
-Use `--update` — re-extrai apenas arquivos modificados (cache SHA256, sem custo de tokens para código). Rode apenas o(s) projeto(s) com arquivos modificados.
+O `graphify update .` re-extrai apenas arquivos modificados (cache SHA256, sem custo de tokens para código). Rode apenas o(s) projeto(s) com arquivos modificados.
 
 ### 2. Atualizar spec
 Se a implementação mudou comportamento, atualize a spec correspondente em `docs/specs/` no mesmo trabalho.
 
 ### 3. Commit + Push no GitHub
 ```bash
-git add -A
+# DENTRO DO WORKTREE ISOLADO (/root/wt/api-<id>) — não no tree compartilhado
+git add app/caminho/arquivo.py alembic/versions/NNN_*.py   # GRANULAR — nunca git add -A (ver COMMITS)
 git commit -m "tipo: descrição clara do que foi feito"
-git push
+git push origin agent/<id>
+# Depois liberar em api/production (ver ISOLAMENTO POR AGENTE)
 ```
 Use Conventional Commits: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`.
 
@@ -138,15 +143,19 @@ TOKEN=$(curl -s -X POST https://api.op7franquia.com.br/auth/login \
 # Deploy (USAR SEMPRE SOB lock-deploy — nunca docker compose up direto)
 lock-deploy bash /root/deploy.sh api        # só API
 lock-deploy bash /root/deploy.sh front      # só front
-lock-deploy bash /root/deploy.sh both       # ambos em sequência
+lock-deploy bash /root/deploy.sh worker     # só worker (automações CRM + scheduler + scan agenda/lembretes)
+lock-deploy bash /root/deploy.sh both       # api+front em sequência (NÃO inclui worker)
 
 # Logs
 cd /root/op7nexo-api && docker compose logs -f --tail=50
 cd /root/op7nexo-front && docker compose logs -f --tail=50
 
 # Graphify
-graphify src/ docs/ --update   # incremental (só arquivos modificados)
-graphify src/ docs/            # rebuild completo (primeiro run ou >24h)
+graphify update .              # incremental (re-extrai só os modificados; sem custo de LLM)
+graphify update . --force      # após refactor que apagou código (sobrescreve mesmo com menos nós)
+graphify query "<pergunta>"    # consulta BFS no grafo
+graphify explain "<conceito>"  # explica um nó e seus vizinhos
+graphify path "A" "B"          # caminho mais curto entre dois nós
 ```
 
 ## DEPLOY — REGRA OBRIGATÓRIA (lock-deploy)
@@ -157,7 +166,8 @@ graphify src/ docs/            # rebuild completo (primeiro run ou >24h)
 ```bash
 lock-deploy bash /root/deploy.sh api    # deploy da API
 lock-deploy bash /root/deploy.sh front  # deploy do front
-lock-deploy bash /root/deploy.sh both   # os dois em sequência (não paralelo)
+lock-deploy bash /root/deploy.sh worker # deploy do worker (automações CRM + scheduler)
+lock-deploy bash /root/deploy.sh both   # api+front em sequência (NÃO inclui worker)
 
 # Qualquer outro comando de deploy também vai sob o lock, ex.:
 lock-deploy docker compose -f /root/op7nexo-api/docker-compose.yml up -d --build
@@ -185,17 +195,20 @@ lock-deploy docker compose -f /root/op7nexo-api/docker-compose.yml up -d --build
 - **Push ao concluir cada ajuste** — nada não-commitado fica seguro no tree compartilhado (outro agente reverte/flipa).
 - **NUNCA `git push --force`** em branch de produção/compartilhada. Se o push for rejeitado, faça `git pull --rebase` e re-push (ou pare e reporte) — jamais `--force`.
 
-## ISOLAMENTO POR AGENTE (R4 — recomendado)
+## ISOLAMENTO POR AGENTE (R4 — OBRIGATÓRIO)
 
-Para não brigar pelo working tree compartilhado (que flipa de branch entre agentes) e dar rastreabilidade, cada sessão deve trabalhar num **worktree próprio**:
+> **Por quê:** vários agentes rodam em paralelo no mesmo sistema. Sem isolamento, commits diretos em `/root/op7nexo-api` se misturam, a branch em checkout flipa entre sessões, e é impossível auditar "qual agente fez o quê". O hook `pre-commit` **BLOQUEIA** commits no tree compartilhado para reforçar esta regra.
+
+Cada sessão trabalha num **worktree próprio**:
 
 ```bash
 bash /root/agent-worktree.sh api <id-sessao>
-# -> cria /root/wt/api-<id-sessao> na branch agent/<id-sessao>,
+# -> cria /root/wt/api-<id-sessao> na branch agent/<id-sessao> (base: origin/api/production),
 #    com identidade git "Rudy (agente <id-sessao>)" (log/reflog auditáveis).
 ```
-- Trabalhe **dentro de `/root/wt/...`**, não em `/root/op7nexo-api` (esse fica para leitura/deploy).
-- Ao concluir: commit granular + push da `agent/<id>`; para liberar em produção, faça merge/ff na branch de produção (ver `deploy.env`) e `git push`, então `lock-deploy bash /root/deploy.sh api`.
+- Trabalhe **dentro de `/root/wt/...`**, NUNCA em `/root/op7nexo-api` (esse fica para leitura/deploy).
+- Ao concluir: commit granular + `git push origin agent/<id>`; para liberar em produção, faça merge/ff na branch de produção (ver `deploy.env`) e `git push`, então `lock-deploy bash /root/deploy.sh api`.
+- **Escape** (sessão única, sem outros agentes, escopo claro): `ALLOW_SHARED_COMMIT=1 git -C /root/op7nexo-api commit -m "..."`.
 
 ## CONTEXT7 — DOCUMENTAÇÃO ATUALIZADA
 
