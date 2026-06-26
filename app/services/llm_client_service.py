@@ -78,3 +78,32 @@ def chamar_json(db: Session, agente: Agente, system: str, user: str) -> tuple[st
     content = resp.choices[0].message.content or "{}"
     usage = resp.usage.model_dump() if getattr(resp, "usage", None) else {}
     return content, usage
+
+
+def chamar_com_tools(
+    db: Session,
+    agente: Agente,
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    tool_choice: str = "auto",
+):
+    """Chama o LLM com a lista completa de mensagens (e tools, se houver).
+
+    Retorna (message, usage): `message` é o objeto da resposta (tem `.content` e
+    `.tool_calls`) — o chamador roda o loop de tool-calling. Mantém o
+    `response_format=json_object` para a resposta FINAL textual seguir o contrato JSON.
+    """
+    r = resolver(db, agente)
+    client = OpenAI(api_key=r.api_key, base_url=r.base_url)
+    kw: dict = {
+        "model": r.model,
+        "response_format": {"type": "json_object"},
+        "messages": messages,
+    }
+    if tools:
+        kw["tools"] = tools
+        kw["tool_choice"] = tool_choice
+    resp = client.chat.completions.create(**kw)
+    msg = resp.choices[0].message
+    usage = resp.usage.model_dump() if getattr(resp, "usage", None) else {}
+    return msg, usage

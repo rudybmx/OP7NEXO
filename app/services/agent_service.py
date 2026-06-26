@@ -164,6 +164,7 @@ def _montar_system(
     ajustes_few_shot: str | None = None,
     contato_nome: str | None = None,
     resumo_conversa: str | None = None,
+    bloco_agenda: str | None = None,
 ) -> str:
     partes = [prompt.strip() or "Você é um assistente de atendimento prestativo e objetivo."]
     if diretrizes_ws and diretrizes_ws.strip():
@@ -222,6 +223,8 @@ def _montar_system(
             "uma despedida curta avisando que vai passar para um atendente. Na dúvida, responda "
             'normalmente e NÃO use esse intent — use "transferir_humano" só nesse caso.'
         )
+    if bloco_agenda and bloco_agenda.strip():
+        partes.append(bloco_agenda.strip())
     partes.append(
         'Responda SEMPRE em JSON válido com as chaves exatas: '
         '"resposta" (string, o texto a enviar ao cliente), '
@@ -293,6 +296,7 @@ def gerar_resposta(
     historico: list | None = None,
     contato_nome: str | None = None,
     resumo_conversa: str | None = None,
+    telefone_contato: str | None = None,
 ) -> dict:
     """Gera a resposta do agente para uma mensagem. NÃO grava nada, NÃO envia.
 
@@ -306,19 +310,64 @@ def gerar_resposta(
     diretrizes = _diretrizes_workspace(db, agente.workspace_id)
     ajustes = _ajustes_few_shot(db, agente.id)
     from app.services import embedding_service
+    from app.services.agenda import agente_tools
 
     rag_chunks = embedding_service.retrieve(db, agente.id, mensagem)
-    content, usage = llm_client_service.chamar_json(
-        db,
-        agente,
-        _montar_system(
-            agente, prompt, rag_chunks, diretrizes_ws=diretrizes, ajustes_few_shot=ajustes,
-            contato_nome=contato_nome, resumo_conversa=resumo_conversa,
-        ),
-        _montar_user(mensagem, historico),
+    tools, bloco_agenda = agente_tools.tools_para_workspace(db, agente.workspace_id)
+    system = _montar_system(
+        agente, prompt, rag_chunks, diretrizes_ws=diretrizes, ajustes_few_shot=ajustes,
+        contato_nome=contato_nome, resumo_conversa=resumo_conversa, bloco_agenda=bloco_agenda,
     )
-    tokens_input = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
-    tokens_output = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+    user = _montar_user(mensagem, historico)
+
+    tokens_input = tokens_output = 0
+    if tools:
+        # Loop agêntico: o modelo chama as ferramentas da agenda e os resultados realimentam o LLM.
+        messages: list[dict] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        content = "{}"
+        for _ in range(6):  # até 5 rodadas de tool + a resposta final
+            msg, usage = llm_client_service.chamar_com_tools(db, agente, messages, tools=tools)
+            tokens_input += int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+            tokens_output += int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+            tool_calls = getattr(msg, "tool_calls", None)
+            if not tool_calls:
+                content = msg.content or "{}"
+                break
+            messages.append({
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": [
+                    {"id": tc.id, "type": "function",
+                     "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                    for tc in tool_calls
+                ],
+            })
+            for tc in tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                resultado = agente_tools.executar_tool(
+                    db, workspace_id=agente.workspace_id, telefone=telefone_contato,
+                    nome=tc.function.name, args=args,
+                )
+                messages.append({
+                    "role": "tool", "tool_call_id": tc.id,
+                    "content": json.dumps(resultado, ensure_ascii=False),
+                })
+        else:
+            # Estourou o cap ainda querendo tools: força uma resposta final SEM ferramentas.
+            msg, usage = llm_client_service.chamar_com_tools(db, agente, messages, tools=None)
+            tokens_input += int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+            tokens_output += int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+            content = msg.content or "{}"
+    else:
+        content, usage = llm_client_service.chamar_json(db, agente, system, user)
+        tokens_input = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+        tokens_output = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
 
     nome_cliente = None
     try:
@@ -1066,7 +1115,8 @@ def processar_reply(db: Session, payload: dict) -> None:
 
     try:
         res = gerar_resposta(
-            db, agente, ultima_msg, historico, contato_nome=contato_nome, resumo_conversa=resumo_conversa
+            db, agente, ultima_msg, historico, contato_nome=contato_nome, resumo_conversa=resumo_conversa,
+            telefone_contato=(re.sub(r"\D", "", conversa.remote_jid or "") or None),
         )
     except llm_client_service.LLMConfigError as exc:
         log.warning("[agente] config LLM inválida agente=%s: %s", agente.id, exc)
