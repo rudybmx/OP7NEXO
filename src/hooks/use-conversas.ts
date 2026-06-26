@@ -72,9 +72,9 @@ export interface MensagemMidiaApi {
   caption?: string | null
   storageStatus?: string | null
   durationSeconds?: number | null
-  // snake_case porque o backend NÃO converte as keys de midias[] para camelCase.
-  // Status da transcrição do áudio: pendente|processando|pronto|sem_fala|erro|nao_transcrito.
-  transcricao_status?: string | null
+  // Status da transcrição do áudio (camelCase — convertido pelo proxy
+  // /api/whatsapp/conversations/[id]/messages): pendente|processando|pronto|sem_fala|erro|nao_transcrito.
+  transcricaoStatus?: string | null
 }
 
 export interface ConversaApi {

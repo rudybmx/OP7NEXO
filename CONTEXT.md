@@ -512,6 +512,17 @@ Para nova feature: `/speckit.specify [nome]` → cria `spec.md`, depois `/specki
   abre `EventSource` → evento é puro sinal → `mutate` re-busca (polling vira fallback), reconecta
   ao trocar workspace. Página: switch "Ativo" por tipo (config) + ícone `Wifi` p/ canal reconectado.
 
+## Transcrição de áudio na bolha (chevron)
+
+- Bolha de áudio: chevron + ícone (rodapé, ao lado do horário) reflete `midias[].transcricaoStatus`
+  ("Transcrevendo…" / "Ver transcrição"); clica → expande a transcrição (`conteudo`) inline. O texto
+  do áudio deixa de aparecer solto na bolha. Arquivo: `painel-chat.tsx`.
+- ⚠️ As `midias[]` chegam ao front pelo PROXY `src/app/api/whatsapp/conversations/[id]/messages/route.ts`
+  (NÃO direto da API `/mensagens`), que converte snake→camel. Campo novo (`transcricaoStatus`) tem que ser
+  repassado LÁ também, senão o front não o vê — foi o bug do chevron sumido (pego no Playwright).
+- Backend correlato: migration 108 + serviço `audio_transcription` (api). O agente entende o áudio porque
+  a transcrição vira o `conteudo` da mensagem.
+
 ---
 
 ## COMO ATUALIZAR ESTE ARQUIVO

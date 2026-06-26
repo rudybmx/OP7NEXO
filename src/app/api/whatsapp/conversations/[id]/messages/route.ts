@@ -47,6 +47,7 @@ interface BackendMensagemRow {
     filename?: string | null
     caption?: string | null
     storage_status?: string | null
+    transcricao_status?: string | null
     duration_seconds?: number | null
   }>
 }
@@ -82,6 +83,7 @@ interface MensagemRespostaRow {
     filename: string | null
     caption: string | null
     storageStatus: string | null
+    transcricaoStatus: string | null
     durationSeconds: number | null
   }>
   participantJid: string | null
@@ -159,6 +161,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         filename: media.filename || null,
         caption: media.caption || null,
         storageStatus: media.storage_status || null,
+        transcricaoStatus: media.transcricao_status || null,
         durationSeconds: media.duration_seconds || null,
       }))
       return {

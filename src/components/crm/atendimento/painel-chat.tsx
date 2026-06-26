@@ -1220,7 +1220,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         {(() => {
                           const audioMidia = (msg.midias ?? []).find(m => m.tipo === 'audio')
                           if (!audioMidia) return null
-                          const st = (audioMidia as { transcricao_status?: string | null }).transcricao_status
+                          const st = (audioMidia as { transcricaoStatus?: string | null }).transcricaoStatus
                           const aberta = transcricaoAberta === msg.id
                           if (st === 'pronto') {
                             return (
