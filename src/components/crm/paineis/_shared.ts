@@ -31,5 +31,29 @@ export function formatarData(iso?: string): string {
   })
 }
 
+/** Timestamp completo (data + hora) — para a timeline de comentários. */
+export function formatarDataHora(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/** Telefone BR para exibição: +55 (11) 99999-9999 quando possível. */
+export function formatarTelefone(tel?: string | null): string {
+  if (!tel) return ''
+  const d = tel.replace(/\D/g, '')
+  const n = d.startsWith('55') ? d.slice(2) : d
+  if (n.length === 11) return `(${n.slice(0, 2)}) ${n.slice(2, 7)}-${n.slice(7)}`
+  if (n.length === 10) return `(${n.slice(0, 2)}) ${n.slice(2, 6)}-${n.slice(6)}`
+  return tel
+}
+
 /** Paleta de cores para fases novas. */
 export const CORES_FASE = ['#64748b', '#006EFF', '#f59e0b', '#a855f7', '#16a34a', '#ef4444', '#06b6d4']

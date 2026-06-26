@@ -73,9 +73,13 @@ function mapCard(card: CardApi, defs: CampoApi[] = []): KanbanCard {
     titulo: card.titulo,
     descricao: card.descricao ?? undefined,
     status: card.fase_id,
-    responsavel: card.responsavel_nome ?? undefined,
+    responsavel: card.responsavel_agente_nome ?? card.responsavel_nome ?? undefined,
     responsavelUserId: card.responsavel_user_id,
-    responsavelInitials: card.responsavel_nome ? iniciais(card.responsavel_nome) : undefined,
+    responsavelAgenteId: card.responsavel_agente_id,
+    responsavelTipo: card.responsavel_agente_id ? 'agente' : card.responsavel_user_id ? 'usuario' : null,
+    responsavelInitials: (card.responsavel_agente_nome ?? card.responsavel_nome)
+      ? iniciais(card.responsavel_agente_nome ?? card.responsavel_nome)
+      : undefined,
     prioridade: normPrioridade(card.prioridade),
     dataVencimento: card.data_vencimento ? card.data_vencimento.slice(0, 10) : undefined,
     tags: [],
@@ -114,6 +118,7 @@ export interface CardPatch {
   descricao?: string | null
   prioridade?: string | null
   responsavel_user_id?: string | null
+  responsavel_agente_id?: string | null
   data_vencimento?: string | null
   fase_id?: string
 }

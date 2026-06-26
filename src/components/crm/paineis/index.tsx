@@ -7,8 +7,6 @@ import {
   List,
   Search,
   Plus,
-  Columns3,
-  Maximize2,
   Lock,
   Unlock,
   ChevronDown,
@@ -21,6 +19,7 @@ import {
 import type { KanbanCard } from '@/types/kanban'
 import { useWorkspace } from '@/lib/workspace-context'
 import { usePaineis } from '@/hooks/use-paineis'
+import { useAgentesDisponiveis } from '@/hooks/use-agentes-disponiveis'
 import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { KanbanBoardComp } from './kanban-board'
 import { ListaView } from './lista-view'
@@ -46,11 +45,11 @@ import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 type Visualizacao = 'kanban' | 'lista'
-type ModoModal = 'lateral' | 'central'
 
 export function PaineisCRM() {
   const { workspaceAtual } = useWorkspace()
   const p = usePaineis(workspaceAtual)
+  const { agentes } = useAgentesDisponiveis(workspaceAtual ?? undefined)
   const {
     boards,
     boardId,
@@ -63,7 +62,6 @@ export function PaineisCRM() {
   } = p
 
   const [visualizacao, setVisualizacao] = usePersistedState<Visualizacao>('paineis:visualizacao', 'kanban')
-  const [modoModal, setModoModal] = usePersistedState<ModoModal>('paineis:modoModal', 'lateral')
   const [reordenavel, setReordenavel] = useState(false)
   const [busca, setBusca] = useState('')
 
@@ -244,22 +242,6 @@ export function PaineisCRM() {
             />
           </div>
 
-          {/* Modo do modal */}
-          <ToggleGroup
-            type="single"
-            value={modoModal}
-            onValueChange={(v) => v && setModoModal(v as ModoModal)}
-            variant="outline"
-            size="sm"
-          >
-            <ToggleGroupItem value="lateral" aria-label="Abrir lateral">
-              <Columns3 className="size-3.5" />
-            </ToggleGroupItem>
-            <ToggleGroupItem value="central" aria-label="Abrir central">
-              <Maximize2 className="size-3.5" />
-            </ToggleGroupItem>
-          </ToggleGroup>
-
           {/* Cadeado de reordenação (UI local) */}
           <Button
             variant={reordenavel ? 'secondary' : 'outline'}
@@ -378,8 +360,8 @@ export function PaineisCRM() {
         card={modalAberto ? cardSelecionado : null}
         colunas={board?.colunas ?? []}
         responsaveis={responsaveis}
+        agentes={agentes.map((a) => ({ id: a.id, nome: a.nome }))}
         aberto={modalAberto && !!cardSelecionado}
-        modo={modoModal}
         onFechar={fecharModal}
         onAtualizar={(cardId, patch) =>
           comErro(() => Promise.resolve(p.atualizarCard(cardId, patch)), 'Erro ao salvar card.')

@@ -22,8 +22,10 @@ export interface KanbanCard {
   titulo: string
   descricao?: string
   status: string // id da fase (= coluna)
-  responsavel?: string // nome de exibição
-  responsavelUserId?: string | null // id para PUT
+  responsavel?: string // nome de exibição (usuário ou agente)
+  responsavelUserId?: string | null // id do usuário para PUT
+  responsavelAgenteId?: string | null // id do agente para PUT
+  responsavelTipo?: 'usuario' | 'agente' | null
   responsavelInitials?: string
   prioridade?: Prioridade
   dataVencimento?: string
@@ -112,6 +114,8 @@ export interface CardApi {
   prioridade: string | null
   responsavel_user_id: string | null
   responsavel_nome: string | null
+  responsavel_agente_id: string | null
+  responsavel_agente_nome: string | null
   origem_agente: boolean | null
   data_vencimento: string | null
   nome: string | null

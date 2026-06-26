@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import {
   Search, Plus, Filter, ArrowUpDown, ChevronDown,
   X, Phone, Mail, Tag, User, Calendar, Check,
@@ -665,6 +665,21 @@ export function PaginaContatos() {
   function abrirCriar() { setModal({ aberto: true, modo: 'criar', contato: null }) }
   function abrirEditar(c: Contato) { setModal({ aberto: true, modo: 'editar', contato: c }) }
   function abrirVer(c: Contato) { setModal({ aberto: true, modo: 'ver', contato: c }) }
+
+  // Deep-link: /crm/atendimento/contatos?contato_id=<id> abre o cadastro automaticamente
+  // (usado pelo link "Ver cadastro" do card de painel). Abre uma única vez.
+  const deepLinkAbertoRef = useRef(false)
+  useEffect(() => {
+    if (deepLinkAbertoRef.current || contatos.length === 0) return
+    if (typeof window === 'undefined') return
+    const alvo = new URLSearchParams(window.location.search).get('contato_id')
+    if (!alvo) return
+    const c = contatos.find((ct) => ct.id === alvo)
+    if (c) {
+      deepLinkAbertoRef.current = true
+      abrirVer(c)
+    }
+  }, [contatos])
   function fecharModal() { setModal(m => ({ ...m, aberto: false })) }
 
   function salvarContato(dados: Partial<Contato>) {
