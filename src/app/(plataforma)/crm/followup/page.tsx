@@ -16,7 +16,9 @@ import {
   Inbox,
   Loader2,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { useFollowup } from '@/hooks/use-followup'
+import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { FollowupLead, FiltrosFollowup, LeadOrigem, LeadStatusFechamento } from '@/types/followup'
 import { Button } from '@/components/ui/button'
 import { FollowupKpis } from '@/components/followup/followup-kpis'
@@ -62,7 +64,8 @@ export default function FollowupPage() {
     refetch,
   } = useFollowup()
 
-  const [filtros, setFiltros] = useState<FiltrosFollowup>({
+  // Filtros persistidos (Nielsen #6: sobrevivem a F5).
+  const [filtros, setFiltros] = usePersistedState<FiltrosFollowup>('crm:followup:filtros', {
     status: 'todos',
     status_fechamento: 'todos',
     temperatura: 'todos',
@@ -351,7 +354,7 @@ export default function FollowupPage() {
                     return (
                       <button
                         key={opt.key}
-                        onClick={() => atualizarStatusFechamento(leadAtual.id, opt.key)}
+                        onClick={() => { atualizarStatusFechamento(leadAtual.id, opt.key); toast.success(`Fechamento: ${opt.label}`) }}
                         className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold transition-all border"
                         style={{
                           background: ativo ? `${opt.color}20` : 'rgba(255,255,255,0.04)',
