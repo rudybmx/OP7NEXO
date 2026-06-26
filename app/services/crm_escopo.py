@@ -37,3 +37,40 @@ def pode_ver_conversa(usuario: User, conversa: Conversa) -> bool:
 def pode_transferir(usuario: User, conversa: Conversa) -> bool:
     """Atendente transfere só as dele; supervisor transfere qualquer uma."""
     return eh_supervisor(usuario) or conversa.responsavel_id == usuario.id
+
+
+# ─── Contatos (mesma regra de teto, por responsável / "teve conversa") ───────────
+def aplicar_teto_contatos(query, usuario: User):
+    """Restringe a query de contatos ao teto do usuário. company_agent só vê os DELE:
+    onde é o responsável do contato OU teve alguma conversa atribuída a ele com esse
+    contato ('no qual ele teve conversa'). Supervisores não sofrem filtro."""
+    if eh_supervisor(usuario):
+        return query
+    from sqlalchemy import or_, select
+    from app.models.crm.contato import Contato
+    suas_conversas = select(Conversa.contato_id).where(Conversa.responsavel_id == usuario.id)
+    return query.filter(
+        or_(Contato.responsavel_id == usuario.id, Contato.id.in_(suas_conversas))
+    )
+
+
+def pode_ver_contato(usuario: User, contato, db=None) -> bool:
+    """company_agent vê um contato se é o responsável dele OU teve conversa com ele."""
+    if eh_supervisor(usuario):
+        return True
+    if getattr(contato, "responsavel_id", None) == usuario.id:
+        return True
+    if db is not None:
+        existe = (
+            db.query(Conversa.id)
+            .filter(Conversa.contato_id == contato.id, Conversa.responsavel_id == usuario.id)
+            .first()
+        )
+        return existe is not None
+    return False
+
+
+def pode_acessar_tela_contatos(usuario: User) -> bool:
+    """Gate da tela de contatos: supervisores/admins sempre; company_agent só com a
+    flag `pode_acessar_crm` ligada."""
+    return eh_supervisor(usuario) or bool(getattr(usuario, "pode_acessar_crm", False))

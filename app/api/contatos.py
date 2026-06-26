@@ -12,8 +12,24 @@ from app.models.crm import Contato, Conversa
 from app.models.user import User
 from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
 from app.services.whatsapp_crm_persistence import record_assignment_event
+from app.services.crm_escopo import aplicar_teto_contatos, pode_acessar_tela_contatos, pode_ver_contato
 
-router = APIRouter(prefix="/contatos", tags=["contatos"])
+
+def exigir_acesso_contatos(usuario: User = Depends(get_usuario_atual)) -> User:
+    """Gate da tela de contatos (aplicado a todo o router): supervisores/admins sempre;
+    company_agent só com `pode_acessar_crm`. 403 caso contrário."""
+    if not pode_acessar_tela_contatos(usuario):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sem permissão para acessar a tela de contatos",
+        )
+    return usuario
+
+
+router = APIRouter(
+    prefix="/contatos", tags=["contatos"],
+    dependencies=[Depends(exigir_acesso_contatos)],
+)
 
 
 class ContatoOut(BaseModel):
@@ -221,6 +237,9 @@ def listar_contatos(
         else:
             q = q.filter(Contato.workspace_id == workspace_filter)
 
+    # teto: company_agent só vê os contatos dele (responsável OU teve conversa); admins, todos
+    q = aplicar_teto_contatos(q, usuario)
+
     if busca:
         q = q.filter(
             Contato.nome.ilike(f"%{busca}%")
@@ -331,6 +350,8 @@ def detalhar_contato(
 ):
     c = _get_contato_or_404(contato_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
+    if not pode_ver_contato(usuario, c, db):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contato não encontrado")
 
     from app.models.crm import Conversa
     conversation_count = (
@@ -356,6 +377,8 @@ def atualizar_contato(
 ):
     c = _get_contato_or_404(contato_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
+    if not pode_ver_contato(usuario, c, db):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contato não encontrado")
 
     update_data = data.model_dump(exclude_unset=True)
     if "responsavel_id" in update_data and update_data["responsavel_id"] is not None:
@@ -386,6 +409,8 @@ def atribuir_contato(
     """Atribui um responsável ao contato e propaga para conversas ativas."""
     c = _get_contato_or_404(contato_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
+    if not pode_ver_contato(usuario, c, db):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contato não encontrado")
 
     old_responsavel_id = c.responsavel_id
     c.responsavel_id = responsavel_id
@@ -442,6 +467,8 @@ def desativar_contato(
 ):
     c = _get_contato_or_404(contato_id, db, workspace_filter)
     verificar_acesso_workspace(usuario, c.workspace_id, db)
+    if not pode_ver_contato(usuario, c, db):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contato não encontrado")
     c.ativo = False
     c.deleted_at = datetime.utcnow()
     db.commit()
