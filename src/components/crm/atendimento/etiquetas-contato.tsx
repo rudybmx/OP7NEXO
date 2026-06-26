@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, X, Pencil, Trash2, Check, Tag } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import type { Etiqueta } from '@/hooks/use-etiquetas'
@@ -34,43 +34,66 @@ export function EtiquetasContato({
   const [editando, setEditando] = useState<EtiquetaModalValor | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const aplicadas = new Set(etiquetasContato.map((e) => e.id))
+  // Estado local otimista: reflete o chip na hora e cobre tanto a conversa da
+  // lista (atualiza via refetch) quanto a avulsa/deep-link (sem refetch próprio).
+  const [aplicadasLista, setAplicadasLista] = useState<Array<{ id: string; nome: string; cor: string }>>(etiquetasContato)
+  useEffect(() => {
+    // Re-sincroniza quando o contato muda ou o backend devolve a verdade.
+    setAplicadasLista(etiquetasContato)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contatoId, etiquetasContato.map((e) => e.id).join(',')])
+
+  const aplicadas = new Set(aplicadasLista.map((e) => e.id))
 
   async function toggle(etiquetaId: string) {
     if (busy) return
     setBusy(true)
-    const ok = aplicadas.has(etiquetaId)
-      ? await onRemover(contatoId, etiquetaId)
-      : await onAplicar(contatoId, etiquetaId)
+    if (aplicadas.has(etiquetaId)) {
+      const ok = await onRemover(contatoId, etiquetaId)
+      if (ok) setAplicadasLista((prev) => prev.filter((e) => e.id !== etiquetaId))
+    } else {
+      const ok = await onAplicar(contatoId, etiquetaId)
+      const et = etiquetasWorkspace.find((e) => e.id === etiquetaId)
+      if (ok && et) setAplicadasLista((prev) => [...prev, { id: et.id, nome: et.nome, cor: et.cor }])
+    }
     setBusy(false)
-    if (ok) onAtualizar?.()
+    onAtualizar?.()
   }
 
   async function removerChip(etiquetaId: string) {
     if (busy) return
     setBusy(true)
     const ok = await onRemover(contatoId, etiquetaId)
+    if (ok) setAplicadasLista((prev) => prev.filter((e) => e.id !== etiquetaId))
     setBusy(false)
-    if (ok) onAtualizar?.()
+    onAtualizar?.()
   }
 
   async function excluirEtiqueta(et: Etiqueta) {
     if (!window.confirm(`Excluir a etiqueta "${et.nome}"? Ela será removida de todos os contatos e conversas.`)) return
     const ok = await onExcluir(et.id)
-    if (ok) onAtualizar?.()
+    if (ok) {
+      setAplicadasLista((prev) => prev.filter((e) => e.id !== et.id))
+      onAtualizar?.()
+    }
   }
 
   async function salvarModal(dados: { nome: string; cor: string }) {
     if (editando) {
       const r = await onEditar(editando.id, dados)
-      if (r) { onAtualizar?.(); return { ok: true } }
+      if (r) {
+        setAplicadasLista((prev) => prev.map((e) => (e.id === r.id ? { ...e, nome: r.nome, cor: r.cor } : e)))
+        onAtualizar?.()
+        return { ok: true }
+      }
       return { ok: false, erro: 'Não foi possível salvar (nome já existe?)' }
     }
     const r = await onCriar(dados.nome, dados.cor)
     if (r) {
       // aplica automaticamente a etiqueta recém-criada ao contato
       const ok = await onAplicar(contatoId, r.id)
-      if (ok) onAtualizar?.()
+      if (ok) setAplicadasLista((prev) => [...prev, { id: r.id, nome: r.nome, cor: r.cor }])
+      onAtualizar?.()
       return { ok: true }
     }
     return { ok: false, erro: 'Não foi possível criar (nome já existe?)' }
@@ -83,7 +106,7 @@ export function EtiquetasContato({
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-        {etiquetasContato.map((et) => (
+        {aplicadasLista.map((et) => (
           <span
             key={et.id}
             style={{
@@ -201,7 +224,7 @@ export function EtiquetasContato({
           </PopoverContent>
         </Popover>
 
-        {etiquetasContato.length === 0 && etiquetasWorkspace.length === 0 && (
+        {aplicadasLista.length === 0 && etiquetasWorkspace.length === 0 && (
           <span style={{ fontSize: 11, color: 'var(--ws-text-3)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <Tag size={11} /> Sem etiquetas
           </span>
