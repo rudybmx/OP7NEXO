@@ -37,6 +37,7 @@ interface BackendMensagemRow {
   quoted_remote_jid?: string | null
   quoted_message_type?: string | null
   quoted_text?: string | null
+  quoted_author?: string | null
   midias?: Array<{
     id: string
     tipo?: string | null
@@ -190,7 +191,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         mentionedNames: row.mentioned_names || {},
         evolutionMsgId: row.evolution_msg_id ?? null,
         quotedText: row.quoted_text ?? null,
-        quotedAuthor: null,
+        quotedAuthor: row.quoted_author ?? null,
         quotedRemoteJid: row.quoted_remote_jid ?? null,
         quotedMessageId: row.quoted_message_id ?? null,
         quotedMessageType: row.quoted_message_type ?? null,

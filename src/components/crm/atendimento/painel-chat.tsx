@@ -12,6 +12,7 @@ import { getCanalBadgeLabel } from '@/lib/whatsapp-canal'
 import { formatarTelefoneBR } from '@/lib/formatar'
 import { useAuth } from '@/hooks/use-auth'
 import { ModalSugerirResposta } from './modal-sugerir-resposta'
+import { toast } from 'sonner'
 
 const AI_HANDOFF_ENABLED = false
 
@@ -406,15 +407,15 @@ function quotedPreview(msg: MensagemApi): string {
 
 // P2: ao clicar numa citação, rola até a mensagem original (casa data-wamid com o
 // wa-id citado) e dá um destaque breve. No-op se a original não está na página.
-function scrollToQuoted(wamid: string | null | undefined) {
-  if (!wamid || typeof document === 'undefined') return
+function scrollToQuoted(wamid: string | null | undefined): boolean {
+  if (!wamid || typeof document === 'undefined') return false
   let el: HTMLElement | null = null
   try {
     el = document.querySelector(`[data-wamid="${CSS.escape(wamid)}"]`)
   } catch {
     el = null
   }
-  if (!el) return
+  if (!el) return false
   el.scrollIntoView({ behavior: 'smooth', block: 'center' })
   el.style.outline = '2px solid #c9a84c'
   el.style.outlineOffset = '3px'
@@ -422,6 +423,20 @@ function scrollToQuoted(wamid: string | null | undefined) {
     el!.style.outline = ''
     el!.style.outlineOffset = ''
   }, 1600)
+  return true
+}
+
+// Clique na citação: rola até a original; se ela não está carregada (conversa longa —
+// o backend serve ~120 msgs), AVISA em vez de não fazer nada (antes era no-op silencioso).
+function irParaMensagemCitada(wamid: string | null | undefined, mensagens: MensagemApi[]) {
+  if (!wamid) return
+  if (scrollToQuoted(wamid)) return
+  const carregada = mensagens.some(m => m.evolutionMsgId === wamid)
+  toast.info(
+    carregada
+      ? 'Não consegui rolar até a mensagem citada.'
+      : 'A mensagem citada é mais antiga e ainda não está carregada nesta conversa.',
+  )
 }
 
 // Autor da citação: nome (quando resolvido) ou número do JID citado
@@ -1137,8 +1152,8 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                           role={msg.quotedMessageId ? 'button' : undefined}
                           tabIndex={msg.quotedMessageId ? 0 : undefined}
                           title={msg.quotedMessageId ? 'Ir para a mensagem citada' : undefined}
-                          onClick={msg.quotedMessageId ? () => scrollToQuoted(msg.quotedMessageId) : undefined}
-                          onKeyDown={msg.quotedMessageId ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); scrollToQuoted(msg.quotedMessageId) } } : undefined}
+                          onClick={msg.quotedMessageId ? () => irParaMensagemCitada(msg.quotedMessageId, mensagens) : undefined}
+                          onKeyDown={msg.quotedMessageId ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); irParaMensagemCitada(msg.quotedMessageId, mensagens) } } : undefined}
                           style={{
                           borderLeft: '3px solid #c9a84c',
                           background: isEntrada ? 'var(--ws-glass-bg)' : 'rgba(255,255,255,0.14)',
