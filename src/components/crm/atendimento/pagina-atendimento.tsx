@@ -19,6 +19,7 @@ import { useWhatsappCanais } from '@/hooks/use-whatsapp-canais'
 import { useMarcarLido } from '@/hooks/use-marcar-lido'
 import { useAtualizarConversa } from '@/hooks/use-atualizar-conversa'
 import { useEtiquetas } from '@/hooks/use-etiquetas'
+import { useConversaUnica } from '@/hooks/use-conversa-unica'
 import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { useBreakpoint } from '@/hooks/use-mobile'
 import { PainelInbox } from './painel-inbox'
@@ -106,7 +107,15 @@ export function PaginaAtendimento() {
   )
   const { equipes } = useEquipes(workspaceAtual ?? undefined, workspaceResolvido)
   const { agentes } = useAgentesDisponiveis(workspaceAtual ?? undefined, workspaceResolvido)
-  const conversaAtiva = useMemo(() => conversas.find(c => c.id === conversaAtivaId), [conversas, conversaAtivaId])
+  const conversaNaLista = useMemo(() => conversas.find(c => c.id === conversaAtivaId), [conversas, conversaAtivaId])
+  // Fallback p/ deep-link de conversa FORA do inbox carregado (ex.: lead frio do Follow-up):
+  // busca a conversa única só quando ela não está na lista. Não afeta o fluxo normal.
+  const { conversa: conversaAvulsa } = useConversaUnica(
+    conversaAtivaId && !conversaNaLista ? conversaAtivaId : null,
+    workspaceAtual ?? undefined,
+    workspaceResolvido,
+  )
+  const conversaAtiva = conversaNaLista ?? conversaAvulsa ?? undefined
   const { mensagens, refetch: refetchMensagens, addMensagemLocal, removerMensagemLocal } = useMensagens(
     conversaAtivaId ?? undefined,
     workspaceAtual ?? undefined,
