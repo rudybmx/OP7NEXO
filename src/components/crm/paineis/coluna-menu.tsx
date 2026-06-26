@@ -1,30 +1,29 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { MoreHorizontal, Edit2, Plus, Filter, ArrowUpDown, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Edit2, Plus, Trash2, Lock } from 'lucide-react'
 import type { KanbanColuna } from '@/types/kanban'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
 
 interface ColunaMenuProps {
   coluna: KanbanColuna
+  bloqueado?: boolean
   onRenomear: (novoNome: string) => void
   onNovoCard: () => void
   onExcluir: () => void
 }
 
-export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: ColunaMenuProps) {
-  const [aberto, setAberto] = useState(false)
+export function ColunaMenu({ coluna, bloqueado, onRenomear, onNovoCard, onExcluir }: ColunaMenuProps) {
   const [renomeando, setRenomeando] = useState(false)
   const [novoNome, setNovoNome] = useState(coluna.nome)
-  const menuRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setAberto(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [])
 
   useEffect(() => {
     if (renomeando && inputRef.current) {
@@ -34,98 +33,62 @@ export function ColunaMenu({ coluna, onRenomear, onNovoCard, onExcluir }: Coluna
   }, [renomeando])
 
   function confirmarRename() {
-    if (novoNome.trim()) onRenomear(novoNome.trim())
+    const nome = novoNome.trim()
+    if (nome && nome !== coluna.nome) onRenomear(nome)
     setRenomeando(false)
-    setAberto(false)
   }
 
   if (renomeando) {
     return (
-      <input
+      <Input
         ref={inputRef}
         value={novoNome}
-        onChange={e => setNovoNome(e.target.value)}
-        onKeyDown={e => {
+        onChange={(e) => setNovoNome(e.target.value)}
+        onKeyDown={(e) => {
           if (e.key === 'Enter') confirmarRename()
-          if (e.key === 'Escape') { setRenomeando(false); setNovoNome(coluna.nome) }
+          if (e.key === 'Escape') {
+            setRenomeando(false)
+            setNovoNome(coluna.nome)
+          }
         }}
         onBlur={confirmarRename}
-        style={{
-          fontSize: 12, fontWeight: 600, color: 'var(--ws-text-1)',
-          background: 'var(--ws-surface)', border: '1px solid rgba(0,110,255,0.40)',
-          borderRadius: 6, padding: '2px 6px', outline: 'none', width: 130,
-          fontFamily: 'inherit',
-        }}
+        className="h-7 w-32 text-sm font-semibold"
       />
     )
   }
 
-  return (
-    <div ref={menuRef} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setAberto(v => !v)}
-        style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--ws-text-2)', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center',
-          transition: 'all 150ms',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'var(--ws-glass-bg)'; e.currentTarget.style.color = 'var(--ws-text-1)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--ws-text-2)' }}
-      >
-        <MoreHorizontal size={14} />
-      </button>
+  // Fase fixa: só permite criar card (sem renomear/excluir).
+  const podeRenomear = !coluna.fixa
+  const podeExcluir = !coluna.fixa && !bloqueado
 
-      {aberto && (
-        <div style={{
-          position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 200,
-          background: 'var(--ws-surface)',
-          border: '1px solid var(--ws-glass-border)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderRadius: 10,
-          boxShadow: 'var(--ws-glass-shadow-lg)',
-          minWidth: 180,
-          overflow: 'hidden',
-          padding: '4px 0',
-        }}>
-          {[
-            { icon: Plus, label: 'Novo card', action: () => { onNovoCard(); setAberto(false) } },
-            { icon: Edit2, label: 'Renomear', action: () => { setRenomeando(true); setAberto(false) } },
-            { icon: ArrowUpDown, label: 'Ordenar', action: () => setAberto(false) },
-            { icon: Filter, label: 'Filtrar', action: () => setAberto(false) },
-          ].map(item => (
-            <button
-              key={item.label}
-              onClick={item.action}
-              style={{
-                width: '100%', textAlign: 'left', padding: '8px 14px',
-                fontSize: 12, background: 'none', border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ws-text-1)',
-                transition: 'background 100ms',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,110,255,0.06)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'none'}
-            >
-              <item.icon size={13} style={{ color: 'var(--ws-text-2)' }} />
-              {item.label}
-            </button>
-          ))}
-          <div style={{ height: 1, background: 'var(--ws-divider)', margin: '4px 0' }} />
-          <button
-            onClick={() => { if (confirm(`Excluir coluna "${coluna.nome}"?`)) { onExcluir(); setAberto(false) } }}
-            style={{
-              width: '100%', textAlign: 'left', padding: '8px 14px',
-              fontSize: 12, background: 'none', border: 'none', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 8, color: '#FF5C8D',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,92,141,0.06)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'none'}
-          >
-            <Trash2 size={13} />
-            Excluir coluna
-          </button>
-        </div>
-      )}
-    </div>
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="flex items-center rounded-md p-1 text-muted-foreground outline-none transition-colors hover:bg-muted/60 hover:text-foreground">
+        <MoreHorizontal className="size-3.5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem onSelect={onNovoCard}>
+          <Plus className="size-3.5" /> Novo card
+        </DropdownMenuItem>
+        {podeRenomear && (
+          <DropdownMenuItem onSelect={() => setRenomeando(true)}>
+            <Edit2 className="size-3.5" /> Renomear
+          </DropdownMenuItem>
+        )}
+        {coluna.fixa && (
+          <DropdownMenuItem disabled>
+            <Lock className="size-3.5" /> Fase fixa
+          </DropdownMenuItem>
+        )}
+        {podeExcluir && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={onExcluir}>
+              <Trash2 className="size-3.5" /> Excluir fase
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

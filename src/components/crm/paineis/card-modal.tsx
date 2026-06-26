@@ -1,440 +1,389 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { X, Calendar, User, Flag, MessageCircle, Plus, Trash2, ExternalLink, ChevronDown } from 'lucide-react'
-import type { KanbanCard, KanbanColuna, Prioridade, CampoCustom, Comentario } from '@/types/kanban'
+import { useState, useEffect, useCallback } from 'react'
+import { Calendar, Flag, MessageCircle, Plus, Trash2, X } from 'lucide-react'
+import type { CardApi, KanbanCard, KanbanColuna, Prioridade, ResponsavelApi } from '@/types/kanban'
+import type { CardPatch } from '@/hooks/use-paineis'
+import { PRIORIDADE_CONFIG, PRIORIDADES, isVencido, formatarData } from './_shared'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
 
 interface CardModalProps {
   card: KanbanCard | null
   colunas: KanbanColuna[]
+  responsaveis: ResponsavelApi[]
   aberto: boolean
   modo?: 'lateral' | 'central'
   onFechar: () => void
-  onAtualizar: (card: KanbanCard) => void
-  onExcluir: (cardId: string) => void
+  onAtualizar: (cardId: string, patch: CardPatch) => Promise<void> | void
+  onExcluir: (cardId: string) => Promise<void> | void
+  onComentar: (cardId: string, texto: string) => Promise<void> | void
+  onSalvarValores: (cardId: string, valores: { campo_id: string; valor: unknown }[]) => Promise<void> | void
+  onCriarCampo: (nome: string, tipo: string) => Promise<void> | void
+  obterCard: (cardId: string) => Promise<CardApi>
 }
 
-const PRIORIDADE_CONFIG: Record<Prioridade, { label: string; cor: string; bg: string; border: string }> = {
-  baixa:   { label: 'Baixa',   cor: '#8892b0', bg: 'rgba(136,146,176,0.12)', border: 'rgba(136,146,176,0.25)' },
-  media:   { label: 'Média',   cor: '#EF9F27', bg: 'rgba(239,159,39,0.12)',  border: 'rgba(239,159,39,0.25)' },
-  alta:    { label: 'Alta',    cor: '#FF5C8D', bg: 'rgba(255,92,141,0.12)',  border: 'rgba(255,92,141,0.25)' },
-  urgente: { label: 'Urgente', cor: '#FF3B3B', bg: 'rgba(255,59,59,0.12)',   border: 'rgba(255,59,59,0.25)' },
-}
+const SEM_RESPONSAVEL = '__none__'
 
-const USUARIOS_MOCK = ['Ana Lima', 'Carlos Melo', 'Beatriz Costa', 'Rudy Bermúdez', 'Marcelo Santos']
-
-function hashColor(str: string) {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash)
-  const hue = Math.abs(hash) % 360
-  return `hsl(${hue}, 55%, 45%)`
-}
-
-function formatarData(iso: string) {
-  if (!iso) return ''
-  const d = new Date(iso + 'T12:00:00')
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function isVencido(iso?: string) {
-  if (!iso) return false
-  return new Date(iso + 'T23:59:59') < new Date()
-}
-
-export function CardModal({ card, colunas, aberto, modo = 'lateral', onFechar, onAtualizar, onExcluir }: CardModalProps) {
-  const [local, setLocal] = useState<KanbanCard | null>(null)
+export function CardModal({
+  card,
+  colunas,
+  responsaveis,
+  aberto,
+  modo = 'lateral',
+  onFechar,
+  onAtualizar,
+  onExcluir,
+  onComentar,
+  onSalvarValores,
+  onCriarCampo,
+  obterCard,
+}: CardModalProps) {
+  const [titulo, setTitulo] = useState('')
+  const [descricao, setDescricao] = useState('')
   const [comentarioTexto, setComentarioTexto] = useState('')
-  const [showPrioridade, setShowPrioridade] = useState(false)
-  const [showStatus, setShowStatus] = useState(false)
-  const [showResponsavel, setShowResponsavel] = useState(false)
-  const [showNovoCampo, setShowNovoCampo] = useState(false)
   const [novoCampoNome, setNovoCampoNome] = useState('')
-  const titleRef = useRef<HTMLTextAreaElement>(null)
+  const [showNovoCampo, setShowNovoCampo] = useState(false)
+  const [comentarios, setComentarios] = useState<CardApi['comentarios']>([])
 
+  // Sincroniza estado local ao abrir/trocar card.
   useEffect(() => {
-    if (card) setLocal({ ...card, comentarios: card.comentarios ?? [], camposCustom: card.camposCustom ?? [] })
+    if (card) {
+      setTitulo(card.titulo)
+      setDescricao(card.descricao ?? '')
+      setComentarios(card.comentarios?.map((c) => ({
+        id: c.id,
+        autor_user_id: null,
+        autor_nome: c.autor,
+        texto: c.texto,
+        criado_em: c.criadoEm,
+      })) ?? [])
+    }
   }, [card])
 
+  // Carrega o detalhe (comentários) ao abrir.
   useEffect(() => {
-    if (aberto && titleRef.current) titleRef.current.focus()
-  }, [aberto])
+    if (!aberto || !card) return
+    let cancelado = false
+    obterCard(card.id)
+      .then((detalhe) => {
+        if (!cancelado) setComentarios(detalhe.comentarios ?? [])
+      })
+      .catch(() => {})
+    return () => {
+      cancelado = true
+    }
+  }, [aberto, card, obterCard])
 
-  if (!aberto || !local) return null
+  const refrescarComentarios = useCallback(
+    async (cardId: string) => {
+      try {
+        const detalhe = await obterCard(cardId)
+        setComentarios(detalhe.comentarios ?? [])
+      } catch {
+        /* noop */
+      }
+    },
+    [obterCard],
+  )
 
-  function salvar(patch: Partial<KanbanCard>) {
-    if (!local) return
-    const atualizado = { ...local, ...patch, atualizadoEm: new Date().toISOString().slice(0, 10) }
-    setLocal(atualizado)
-    onAtualizar(atualizado)
+  if (!card) return null
+  const cardId = card.id
+  const coluna = colunas.find((c) => c.id === card.status)
+  const vencido = isVencido(card.dataVencimento)
+
+  function salvarTitulo() {
+    const t = titulo.trim()
+    if (t && t !== card!.titulo) onAtualizar(cardId, { titulo: t })
   }
 
-  function adicionarComentario() {
-    if (!comentarioTexto.trim() || !local) return
-    const novo: Comentario = {
-      id: `cm-${Date.now()}`, autor: 'Você', avatarInitials: 'VC',
-      texto: comentarioTexto.trim(), criadoEm: new Date().toISOString().slice(0, 10),
-    }
-    salvar({ comentarios: [...(local.comentarios ?? []), novo] })
+  function salvarDescricao() {
+    if (descricao !== (card!.descricao ?? '')) onAtualizar(cardId, { descricao: descricao || null })
+  }
+
+  async function enviarComentario() {
+    const texto = comentarioTexto.trim()
+    if (!texto) return
     setComentarioTexto('')
+    await onComentar(cardId, texto)
+    await refrescarComentarios(cardId)
   }
 
   function adicionarCampo() {
-    if (!novoCampoNome.trim() || !local) return
-    const novo: CampoCustom = { id: `cf-${Date.now()}`, nome: novoCampoNome.trim(), tipo: 'texto', valor: '' }
-    salvar({ camposCustom: [...(local.camposCustom ?? []), novo] })
+    const nome = novoCampoNome.trim()
+    if (!nome) {
+      setShowNovoCampo(false)
+      return
+    }
+    onCriarCampo(nome, 'texto')
     setNovoCampoNome('')
     setShowNovoCampo(false)
   }
 
-  function removerCampo(id: string) {
-    if (!local) return
-    salvar({ camposCustom: (local.camposCustom ?? []).filter(c => c.id !== id) })
+  function salvarValorCampo(campoId: string, valor: unknown) {
+    onSalvarValores(cardId, [{ campo_id: campoId, valor }])
   }
 
-  const coluna = colunas.find(c => c.id === local.status)
-  const vencido = isVencido(local.dataVencimento)
-
-  const glassBase: React.CSSProperties = {
-    background: 'var(--ws-glass-bg)',
-    border: '1px solid var(--ws-glass-border)',
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
-  }
-
-  const dropdownStyle: React.CSSProperties = {
-    position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 200,
-    ...glassBase,
-    borderRadius: 10,
-    boxShadow: 'var(--ws-glass-shadow-lg)',
-    minWidth: 160,
-    overflow: 'hidden',
-  }
-
-  const isCentral = modo === 'central'
-
-  return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 100,
-        background: isCentral ? 'rgba(14,20,42,0.55)' : 'transparent',
-        backdropFilter: isCentral ? 'blur(4px)' : 'none',
-        display: 'flex',
-        alignItems: isCentral ? 'center' : 'stretch',
-        justifyContent: isCentral ? 'center' : 'flex-end',
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onFechar() }}
-    >
-      <div style={{
-        width: isCentral ? 680 : 520,
-        maxWidth: '95vw',
-        height: isCentral ? 'auto' : '100vh',
-        maxHeight: isCentral ? '92vh' : '100vh',
-        overflowY: 'auto',
-        background: 'var(--ws-surface)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid var(--ws-glass-border)',
-        borderRadius: isCentral ? 16 : '16px 0 0 16px',
-        boxShadow: 'var(--ws-glass-shadow-lg)',
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        animation: isCentral ? 'fadeIn 150ms ease' : 'slideIn 200ms ease',
-      }}>
-        {/* Shine line */}
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--ws-glass-border), transparent)' }} />
-
-        {/* Header */}
-        <div style={{ padding: '20px 24px 0', position: 'relative' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12 }}>
-            <textarea
-              ref={titleRef}
-              value={local.titulo}
-              onChange={e => setLocal(l => l ? { ...l, titulo: e.target.value } : l)}
-              onBlur={e => salvar({ titulo: e.target.value })}
-              style={{
-                flex: 1, fontSize: 20, fontWeight: 700, color: 'var(--ws-text-1)',
-                background: 'transparent', border: 'none', outline: 'none',
-                resize: 'none', lineHeight: 1.3, fontFamily: 'inherit',
-                minHeight: 28,
-              }}
-              rows={2}
-            />
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-              <button
-                onClick={() => { if (confirm('Excluir este card?')) { onExcluir(local.id); onFechar() } }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FF5C8D', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                title="Excluir card"
-              ><Trash2 size={14} /></button>
-              <button onClick={onFechar} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ws-text-2)', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center' }}>
-                <X size={16} />
-              </button>
-            </div>
-          </div>
-
-          {/* Propriedades */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 16, borderBottom: '1px solid var(--ws-divider)' }}>
-
-            {/* Status */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, color: 'var(--ws-text-2)', width: 110, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Status</span>
-              <div style={{ position: 'relative' }}>
-                <button
-                  onClick={() => setShowStatus(v => !v)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
-                    ...glassBase, borderRadius: 8, cursor: 'pointer', fontSize: 12, color: 'var(--ws-text-1)',
-                    boxShadow: 'var(--ws-glass-shadow-sm)',
-                  }}
-                >
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: coluna?.cor ?? '#8892b0', flexShrink: 0 }} />
-                  {coluna?.nome ?? local.status}
-                  <ChevronDown size={10} style={{ color: 'var(--ws-text-2)' }} />
-                </button>
-                {showStatus && (
-                  <div style={dropdownStyle}>
-                    {colunas.map(c => (
-                      <button key={c.id} onClick={() => { salvar({ status: c.id }); setShowStatus(false) }}
-                        style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ws-text-1)' }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,110,255,0.06)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                      >
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.cor }} />
-                        {c.nome}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Responsável */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, color: 'var(--ws-text-2)', width: 110, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Responsável</span>
-              <div style={{ position: 'relative' }}>
-                <button
-                  onClick={() => setShowResponsavel(v => !v)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
-                    ...glassBase, borderRadius: 8, cursor: 'pointer', fontSize: 12, color: 'var(--ws-text-1)',
-                    boxShadow: 'var(--ws-glass-shadow-sm)',
-                  }}
-                >
-                  {local.responsavel ? (
-                    <>
-                      <div style={{ width: 18, height: 18, borderRadius: '50%', background: hashColor(local.responsavel), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, color: 'white', fontWeight: 700 }}>
-                        {local.responsavelInitials}
-                      </div>
-                      {local.responsavel}
-                    </>
-                  ) : (
-                    <><User size={12} style={{ color: 'var(--ws-text-2)' }} /> Sem responsável</>
-                  )}
-                  <ChevronDown size={10} style={{ color: 'var(--ws-text-2)' }} />
-                </button>
-                {showResponsavel && (
-                  <div style={dropdownStyle}>
-                    <button onClick={() => { salvar({ responsavel: undefined, responsavelInitials: undefined }); setShowResponsavel(false) }}
-                      style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ws-text-2)' }}>
-                      Sem responsável
-                    </button>
-                    {USUARIOS_MOCK.map(u => {
-                      const initials = u.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
-                      return (
-                        <button key={u} onClick={() => { salvar({ responsavel: u, responsavelInitials: initials }); setShowResponsavel(false) }}
-                          style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ws-text-1)' }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,110,255,0.06)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                        >
-                          <div style={{ width: 18, height: 18, borderRadius: '50%', background: hashColor(u), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, color: 'white', fontWeight: 700 }}>{initials}</div>
-                          {u}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Prioridade */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, color: 'var(--ws-text-2)', width: 110, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Prioridade</span>
-              <div style={{ position: 'relative' }}>
-                <button
-                  onClick={() => setShowPrioridade(v => !v)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
-                    background: local.prioridade ? PRIORIDADE_CONFIG[local.prioridade].bg : 'var(--ws-glass-bg)',
-                    border: `1px solid ${local.prioridade ? PRIORIDADE_CONFIG[local.prioridade].border : 'var(--ws-glass-border)'}`,
-                    backdropFilter: 'blur(10px)', borderRadius: 8, cursor: 'pointer',
-                    fontSize: 12, fontWeight: 500,
-                    color: local.prioridade ? PRIORIDADE_CONFIG[local.prioridade].cor : '#8892b0',
-                  }}
-                >
-                  <Flag size={11} />
-                  {local.prioridade ? PRIORIDADE_CONFIG[local.prioridade].label : 'Sem prioridade'}
-                  <ChevronDown size={10} />
-                </button>
-                {showPrioridade && (
-                  <div style={dropdownStyle}>
-                    {(Object.keys(PRIORIDADE_CONFIG) as Prioridade[]).map(p => (
-                      <button key={p} onClick={() => { salvar({ prioridade: p }); setShowPrioridade(false) }}
-                        style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, color: PRIORIDADE_CONFIG[p].cor, fontWeight: 500 }}
-                        onMouseEnter={e => e.currentTarget.style.background = PRIORIDADE_CONFIG[p].bg}
-                        onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                      >
-                        <Flag size={11} /> {PRIORIDADE_CONFIG[p].label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Data de vencimento */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, color: 'var(--ws-text-2)', width: 110, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Vencimento</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Calendar size={12} style={{ color: vencido ? '#FF5C8D' : 'var(--ws-text-2)' }} />
-                <input
-                  type="date"
-                  value={local.dataVencimento ?? ''}
-                  onChange={e => salvar({ dataVencimento: e.target.value || undefined })}
-                  style={{
-                    background: 'transparent', border: 'none', outline: 'none',
-                    fontSize: 12, color: vencido ? '#FF5C8D' : 'var(--ws-text-1)',
-                    fontFamily: 'inherit', cursor: 'pointer',
-                  }}
-                />
-                {vencido && <span style={{ fontSize: 10, color: '#FF5C8D', fontWeight: 600 }}>VENCIDO</span>}
-              </div>
-            </div>
-
-            {/* Campos custom */}
-            {(local.camposCustom ?? []).map(campo => (
-              <div key={campo.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, color: 'var(--ws-text-2)', width: 110, flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{campo.nome}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }}>
-                  <input
-                    type="text"
-                    value={String(campo.valor ?? '')}
-                    onChange={e => {
-                      const novos = (local.camposCustom ?? []).map(c => c.id === campo.id ? { ...c, valor: e.target.value } : c)
-                      salvar({ camposCustom: novos })
-                    }}
-                    placeholder="Valor..."
-                    style={{
-                      flex: 1, fontSize: 12, color: 'var(--ws-text-1)', background: 'var(--ws-surface-2)',
-                      border: '1px solid var(--ws-glass-border)', borderRadius: 6, padding: '4px 8px',
-                      outline: 'none', fontFamily: 'inherit',
-                    }}
-                  />
-                  <button onClick={() => removerCampo(campo.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#FF5C8D', padding: 2, display: 'flex' }}>
-                    <X size={12} />
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {/* Adicionar campo */}
-            {showNovoCampo ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, color: 'var(--ws-text-2)', width: 110, flexShrink: 0 }} />
-                <div style={{ display: 'flex', gap: 6, flex: 1 }}>
-                  <input
-                    autoFocus type="text" value={novoCampoNome}
-                    onChange={e => setNovoCampoNome(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') adicionarCampo(); if (e.key === 'Escape') setShowNovoCampo(false) }}
-                    placeholder="Nome do campo..."
-                    style={{ flex: 1, fontSize: 12, color: 'var(--ws-text-1)', background: 'var(--ws-surface-2)', border: '1px solid rgba(0,110,255,0.40)', borderRadius: 6, padding: '4px 8px', outline: 'none', fontFamily: 'inherit' }}
-                  />
-                  <button onClick={adicionarCampo} style={{ padding: '4px 10px', background: 'rgba(0,110,255,0.12)', border: '1px solid rgba(0,110,255,0.25)', borderRadius: 6, fontSize: 11, color: '#006EFF', cursor: 'pointer', fontWeight: 600 }}>OK</button>
-                  <button onClick={() => setShowNovoCampo(false)} style={{ padding: '4px 8px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ws-text-2)', fontSize: 11 }}>✕</button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowNovoCampo(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ws-text-2)', alignSelf: 'flex-start', marginLeft: 118 }}
-              >
-                <Plus size={12} /> Adicionar campo
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Corpo / Descrição */}
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--ws-divider)' }}>
-          <div style={{ fontSize: 11, color: 'var(--ws-text-2)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 8 }}>Descrição</div>
-          <textarea
-            value={local.descricao ?? ''}
-            onChange={e => setLocal(l => l ? { ...l, descricao: e.target.value } : l)}
-            onBlur={e => salvar({ descricao: e.target.value })}
-            placeholder="Adicionar descrição..."
-            rows={4}
-            style={{
-              width: '100%', fontSize: 13, color: 'var(--ws-text-1)', lineHeight: 1.6,
-              background: 'var(--ws-surface-2)', border: '1px solid transparent',
-              borderRadius: 8, padding: '10px 12px', outline: 'none', resize: 'vertical',
-              fontFamily: 'inherit', boxSizing: 'border-box',
-              transition: 'border-color 150ms',
-            }}
-            onFocus={e => e.target.style.borderColor = 'rgba(0,110,255,0.30)'}
-          />
-        </div>
-
-        {/* Comentários */}
-        <div style={{ padding: '16px 24px', flex: 1 }}>
-          <div style={{ fontSize: 11, color: 'var(--ws-text-2)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <MessageCircle size={12} /> Comentários {(local.comentarios ?? []).length > 0 && `(${local.comentarios!.length})`}
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
-            {(local.comentarios ?? []).map(c => (
-              <div key={c.id} style={{ display: 'flex', gap: 10 }}>
-                <div style={{ width: 28, height: 28, borderRadius: '50%', background: hashColor(c.autor), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'white', fontWeight: 700, flexShrink: 0 }}>
-                  {c.avatarInitials}
-                </div>
-                <div style={{ flex: 1, background: 'var(--ws-surface-2)', border: '1px solid var(--ws-glass-border)', borderRadius: 8, padding: '8px 12px' }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ws-text-1)', marginBottom: 3 }}>{c.autor} <span style={{ fontWeight: 400, color: 'var(--ws-text-2)' }}>· {formatarData(c.criadoEm)}</span></div>
-                  <div style={{ fontSize: 12, color: 'var(--ws-text-2)', lineHeight: 1.5 }}>{c.texto}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: hashColor('Você'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'white', fontWeight: 700, flexShrink: 0 }}>VC</div>
-            <div style={{ flex: 1 }}>
-              <textarea
-                value={comentarioTexto}
-                onChange={e => setComentarioTexto(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) adicionarComentario() }}
-                placeholder="Adicionar comentário... (Ctrl+Enter para enviar)"
-                rows={2}
-                style={{
-                  width: '100%', fontSize: 12, color: 'var(--ws-text-1)', background: 'var(--ws-surface-2)',
-                  border: '1px solid var(--ws-glass-border)', borderRadius: 8, padding: '8px 10px',
-                  outline: 'none', resize: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
-                }}
-                onFocus={e => e.target.style.borderColor = 'rgba(0,110,255,0.30)'}
-                onBlur={e => e.target.style.borderColor = 'var(--ws-glass-border)'}
-              />
-              {comentarioTexto.trim() && (
-                <button onClick={adicionarComentario}
-                  style={{ marginTop: 6, padding: '5px 14px', background: 'linear-gradient(135deg, #006EFF, #0047cc)', border: 'none', borderRadius: 6, fontSize: 11, color: 'white', cursor: 'pointer', fontWeight: 600 }}>
-                  Comentar
-                </button>
-              )}
-            </div>
-          </div>
+  const Conteudo = (
+    <div className="flex h-full flex-col overflow-y-auto">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 px-6 pt-6">
+        <Textarea
+          value={titulo}
+          onChange={(e) => setTitulo(e.target.value)}
+          onBlur={salvarTitulo}
+          rows={2}
+          className="resize-none border-0 px-0 text-lg font-semibold shadow-none focus-visible:ring-0"
+          placeholder="Título do card"
+        />
+        <div className="flex shrink-0 gap-1">
+          <button
+            onClick={() => onExcluir(cardId)}
+            title="Excluir card"
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+          </button>
+          <button
+            onClick={onFechar}
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
         </div>
       </div>
 
-      <style>{`
-        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        @keyframes fadeIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
-      `}</style>
+      {/* Propriedades */}
+      <div className="flex flex-col gap-3 border-b border-border px-6 pb-5 pt-4">
+        {/* Status */}
+        <PropRow label="Status">
+          <Select
+            value={card.status}
+            onValueChange={(v) => onAtualizar(cardId, { fase_id: v })}
+          >
+            <SelectTrigger className="h-8 w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {colunas.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  <span className="flex items-center gap-2">
+                    <span className="size-2 rounded-full" style={{ background: c.cor }} />
+                    {c.nome}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </PropRow>
+
+        {/* Responsável */}
+        <PropRow label="Responsável">
+          <Select
+            value={card.responsavelUserId ?? SEM_RESPONSAVEL}
+            onValueChange={(v) =>
+              onAtualizar(cardId, { responsavel_user_id: v === SEM_RESPONSAVEL ? null : v })
+            }
+          >
+            <SelectTrigger className="h-8 w-56">
+              <SelectValue placeholder="Sem responsável" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SEM_RESPONSAVEL}>Sem responsável</SelectItem>
+              {responsaveis.map((u) => (
+                <SelectItem key={u.id} value={u.id}>
+                  {u.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </PropRow>
+
+        {/* Prioridade */}
+        <PropRow label="Prioridade">
+          <Select
+            value={card.prioridade ?? SEM_RESPONSAVEL}
+            onValueChange={(v) =>
+              onAtualizar(cardId, { prioridade: v === SEM_RESPONSAVEL ? null : v })
+            }
+          >
+            <SelectTrigger className="h-8 w-56">
+              <SelectValue placeholder="Sem prioridade" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SEM_RESPONSAVEL}>Sem prioridade</SelectItem>
+              {PRIORIDADES.map((p) => (
+                <SelectItem key={p} value={p}>
+                  <span className="flex items-center gap-2">
+                    <Flag className="size-3" /> {PRIORIDADE_CONFIG[p].label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </PropRow>
+
+        {/* Vencimento */}
+        <PropRow label="Vencimento">
+          <div className="flex items-center gap-2">
+            <Calendar className={`size-3.5 ${vencido ? 'text-destructive' : 'text-muted-foreground'}`} />
+            <Input
+              type="date"
+              value={card.dataVencimento ?? ''}
+              onChange={(e) => onAtualizar(cardId, { data_vencimento: e.target.value || null })}
+              className={`h-8 w-44 ${vencido ? 'text-destructive' : ''}`}
+            />
+            {vencido && <span className="text-micro font-semibold text-destructive">VENCIDO</span>}
+          </div>
+        </PropRow>
+
+        {/* Campos custom */}
+        {(card.camposCustom ?? []).map((campo) => (
+          <PropRow key={campo.id} label={campo.nome}>
+            {campo.tipo === 'checkbox' ? (
+              <input
+                type="checkbox"
+                defaultChecked={Boolean(campo.valor)}
+                onChange={(e) => salvarValorCampo(campo.id, e.target.checked)}
+                className="size-4 accent-[var(--primary)]"
+              />
+            ) : (
+              <Input
+                type={campo.tipo === 'numero' ? 'number' : campo.tipo === 'data' ? 'date' : 'text'}
+                defaultValue={campo.valor != null ? String(campo.valor) : ''}
+                onBlur={(e) => salvarValorCampo(campo.id, e.target.value)}
+                placeholder="Valor..."
+                className="h-8 w-56"
+              />
+            )}
+          </PropRow>
+        ))}
+
+        {/* Adicionar campo */}
+        {showNovoCampo ? (
+          <div className="flex items-center gap-2 pl-[120px]">
+            <Input
+              autoFocus
+              value={novoCampoNome}
+              onChange={(e) => setNovoCampoNome(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') adicionarCampo()
+                if (e.key === 'Escape') setShowNovoCampo(false)
+              }}
+              placeholder="Nome do campo..."
+              className="h-8 w-44"
+            />
+            <Button size="sm" variant="secondary" onClick={adicionarCampo}>
+              OK
+            </Button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowNovoCampo(true)}
+            className="ml-[120px] flex items-center gap-1.5 self-start text-xs text-muted-foreground transition-colors hover:text-primary"
+          >
+            <Plus className="size-3" /> Adicionar campo
+          </button>
+        )}
+      </div>
+
+      {/* Descrição */}
+      <div className="border-b border-border px-6 py-4">
+        <div className="ds-kpi-label mb-2 text-muted-foreground">Descrição</div>
+        <Textarea
+          value={descricao}
+          onChange={(e) => setDescricao(e.target.value)}
+          onBlur={salvarDescricao}
+          placeholder="Adicionar descrição..."
+          rows={4}
+          className="text-sm"
+        />
+      </div>
+
+      {/* Comentários */}
+      <div className="flex-1 px-6 py-4">
+        <div className="ds-kpi-label mb-3 flex items-center gap-1.5 text-muted-foreground">
+          <MessageCircle className="size-3.5" /> Comentários
+          {(comentarios ?? []).length > 0 && ` (${comentarios!.length})`}
+        </div>
+
+        <div className="mb-4 flex flex-col gap-2.5">
+          {(comentarios ?? []).map((c) => (
+            <div key={c.id} className="flex gap-2.5">
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">
+                {(c.autor_nome ?? 'U').slice(0, 2).toUpperCase()}
+              </div>
+              <div className="flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2">
+                <div className="mb-0.5 text-xs font-semibold text-foreground">
+                  {c.autor_nome ?? 'Usuário'}{' '}
+                  <span className="font-normal text-muted-foreground">· {formatarData(c.criado_em?.slice(0, 10))}</span>
+                </div>
+                <div className="text-sm leading-relaxed text-muted-foreground">{c.texto}</div>
+              </div>
+            </div>
+          ))}
+          {(comentarios ?? []).length === 0 && (
+            <div className="text-xs text-muted-foreground">Nenhum comentário ainda.</div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Textarea
+            value={comentarioTexto}
+            onChange={(e) => setComentarioTexto(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarComentario()
+            }}
+            placeholder="Adicionar comentário... (Ctrl+Enter para enviar)"
+            rows={2}
+            className="text-sm"
+          />
+          {comentarioTexto.trim() && (
+            <Button size="sm" className="self-start" onClick={enviarComentario}>
+              Comentar
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  if (modo === 'central') {
+    return (
+      <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
+        <DialogContent className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-[680px]" showCloseButton={false}>
+          <DialogTitle className="sr-only">Detalhe do card</DialogTitle>
+          {Conteudo}
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  return (
+    <Sheet open={aberto} onOpenChange={(o) => !o && onFechar()}>
+      <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-[520px]" showCloseButton={false}>
+        <SheetTitle className="sr-only">Detalhe do card</SheetTitle>
+        {Conteudo}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function PropRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="ds-kpi-label w-[108px] shrink-0 truncate text-muted-foreground">{label}</span>
+      {children}
     </div>
   )
 }

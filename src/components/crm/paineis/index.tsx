@@ -1,268 +1,470 @@
 'use client'
 
 import { useState } from 'react'
-import { LayoutGrid, List, Search, Plus, Columns3, Maximize2, Lock, Unlock, ChevronDown, Check } from 'lucide-react'
-import type { KanbanCard, KanbanBoard } from '@/types/kanban'
+import { toast } from 'sonner'
+import {
+  LayoutGrid,
+  List,
+  Search,
+  Plus,
+  Columns3,
+  Maximize2,
+  Lock,
+  Unlock,
+  ChevronDown,
+  Check,
+  Bot,
+  Sparkles,
+  Loader2,
+  AlertCircle,
+} from 'lucide-react'
+import type { KanbanCard } from '@/types/kanban'
+import { useWorkspace } from '@/lib/workspace-context'
+import { usePaineis } from '@/hooks/use-paineis'
+import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { KanbanBoardComp } from './kanban-board'
 import { ListaView } from './lista-view'
 import { CardModal } from './card-modal'
-import { KANBAN_MOCK } from '@/lib/kanban-mock-data'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 type Visualizacao = 'kanban' | 'lista'
 type ModoModal = 'lateral' | 'central'
 
-// Seed de múltiplos boards
-const BOARDS_INICIAIS: KanbanBoard[] = [
-  KANBAN_MOCK,
-  {
-    ...KANBAN_MOCK,
-    id: 'board-2', nome: 'Prospecção Ativa',
-    cards: KANBAN_MOCK.cards.slice(0, 3).map(c => ({ ...c, id: c.id + '-b2' })),
-  },
-  {
-    ...KANBAN_MOCK,
-    id: 'board-3', nome: 'Onboarding Clientes',
-    cards: KANBAN_MOCK.cards.slice(2, 5).map(c => ({ ...c, id: c.id + '-b3' })),
-  },
-]
-
 export function PaineisCRM() {
-  const [boards, setBoards] = useState<KanbanBoard[]>(BOARDS_INICIAIS)
-  const [boardAtivoId, setBoardAtivoId] = useState(BOARDS_INICIAIS[0].id)
-  const [visualizacao, setVisualizacao] = useState<Visualizacao>('kanban')
-  const [cardSelecionado, setCardSelecionado] = useState<KanbanCard | null>(null)
-  const [modalAberto, setModalAberto] = useState(false)
-  const [modoModal, setModoModal] = useState<ModoModal>('lateral')
+  const { workspaceAtual } = useWorkspace()
+  const p = usePaineis(workspaceAtual)
+  const {
+    boards,
+    boardId,
+    setBoardId,
+    board,
+    responsaveis,
+    isLoading,
+    error,
+    extrairMensagem,
+  } = p
+
+  const [visualizacao, setVisualizacao] = usePersistedState<Visualizacao>('paineis:visualizacao', 'kanban')
+  const [modoModal, setModoModal] = usePersistedState<ModoModal>('paineis:modoModal', 'lateral')
   const [reordenavel, setReordenavel] = useState(false)
   const [busca, setBusca] = useState('')
-  const [seletorBoardAberto, setSeletorBoardAberto] = useState(false)
 
-  const board = boards.find(b => b.id === boardAtivoId) ?? boards[0]
+  const [cardSelecionadoId, setCardSelecionadoId] = useState<string | null>(null)
+  const [modalAberto, setModalAberto] = useState(false)
 
-  function atualizarBoard(novoBoard: KanbanBoard) {
-    setBoards(bs => bs.map(b => b.id === novoBoard.id ? novoBoard : b))
+  const [novoPainelAberto, setNovoPainelAberto] = useState(false)
+  const [novoPainelNome, setNovoPainelNome] = useState('')
+  const [confirmacao, setConfirmacao] = useState<{ msg: string; resolve: (b: boolean) => void } | null>(null)
+
+  const resumoAtivo = boards.find((b) => b.id === boardId)
+  const cardSelecionado: KanbanCard | null =
+    (board?.cards.find((c) => c.id === cardSelecionadoId) ?? null)
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+  function pedirConfirmacao(msg: string): Promise<boolean> {
+    return new Promise((resolve) => setConfirmacao({ msg, resolve }))
+  }
+
+  async function comErro<T>(fn: () => Promise<T>, fallback: string): Promise<T | undefined> {
+    try {
+      return await fn()
+    } catch (e) {
+      toast.error(extrairMensagem(e, fallback))
+      return undefined
+    }
   }
 
   function abrirCard(card: KanbanCard) {
-    setCardSelecionado(card); setModalAberto(true)
+    setCardSelecionadoId(card.id)
+    setModalAberto(true)
+  }
+  function fecharModal() {
+    setModalAberto(false)
+    setCardSelecionadoId(null)
   }
 
-  function atualizarCard(cardAtualizado: KanbanCard) {
-    atualizarBoard({ ...board, cards: board.cards.map(c => c.id === cardAtualizado.id ? cardAtualizado : c) })
-    setCardSelecionado(cardAtualizado)
+  // ── ações ──────────────────────────────────────────────────────────────
+  async function criarPainel() {
+    const nome = novoPainelNome.trim()
+    if (!nome) return
+    await comErro(async () => {
+      await p.criarPainel(nome)
+      toast.success(`Painel "${nome}" criado.`)
+    }, 'Erro ao criar painel.')
+    setNovoPainelNome('')
+    setNovoPainelAberto(false)
   }
 
-  function excluirCard(cardId: string) {
-    atualizarBoard({ ...board, cards: board.cards.filter(c => c.id !== cardId) })
+  async function excluirPainel() {
+    if (!resumoAtivo || resumoAtivo.sistema) return
+    if (!(await pedirConfirmacao(`Excluir o painel "${resumoAtivo.nome}"?`))) return
+    await comErro(async () => {
+      await p.excluirPainel(resumoAtivo.id)
+      toast.success('Painel excluído.')
+    }, 'Erro ao excluir painel.')
   }
 
-  function novoCard() {
-    const coluna = board.colunas[0]
-    if (!coluna) return
-    const novo: KanbanCard = {
-      id: `card-${Date.now()}`, titulo: 'Novo card',
-      status: coluna.id, criadoEm: new Date().toISOString().slice(0, 10),
-      atualizadoEm: new Date().toISOString().slice(0, 10), ordem: 999,
-      comentarios: [], camposCustom: [], tags: [],
+  async function novoCard() {
+    if (!board || board.colunas.length === 0) return
+    const primeira = [...board.colunas].sort((a, b) => a.ordem - b.ordem)[0]
+    const novo = await comErro(
+      () => Promise.resolve(p.criarCard(primeira.id, 'Novo card')),
+      'Erro ao criar card.',
+    )
+    if (novo) {
+      setCardSelecionadoId(novo.id)
+      setModalAberto(true)
     }
-    atualizarBoard({ ...board, cards: [...board.cards, novo] })
-    setCardSelecionado(novo); setModalAberto(true)
   }
 
-  function novoBoard() {
-    const nome = prompt('Nome do novo painel:')
-    if (!nome?.trim()) return
-    const novo: KanbanBoard = {
-      id: `board-${Date.now()}`, nome: nome.trim(),
-      colunas: KANBAN_MOCK.colunas.map(c => ({ ...c })),
-      cards: [],
-    }
-    setBoards(bs => [...bs, novo])
-    setBoardAtivoId(novo.id)
-    setSeletorBoardAberto(false)
-  }
+  // filtros de busca
+  const cardsFiltrados =
+    board && busca
+      ? board.cards.filter((c) => c.titulo.toLowerCase().includes(busca.toLowerCase()))
+      : (board?.cards ?? [])
 
-  const boardFiltrado = busca
-    ? { ...board, cards: board.cards.filter(c => c.titulo.toLowerCase().includes(busca.toLowerCase())) }
-    : board
+  // ── render: estados ────────────────────────────────────────────────────
+  if (!workspaceAtual) {
+    return (
+      <div className="p-8 text-sm text-muted-foreground">Selecione um workspace para ver os painéis.</div>
+    )
+  }
 
   return (
-    <div style={{ padding: '24px 32px', fontFamily: 'var(--font-sans-base)' }}>
-
+    <div className="p-6 md:px-8" style={{ fontFamily: 'var(--font-sans-base)' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+        {/* Seletor de painel */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger className="flex items-center gap-1.5 outline-none">
+                <h1 className="ds-page-title truncate text-foreground">{resumoAtivo?.nome ?? 'Painéis'}</h1>
+                <ChevronDown className="size-4 text-muted-foreground" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-60">
+                {boards.map((b) => (
+                  <DropdownMenuItem key={b.id} onSelect={() => setBoardId(b.id)}>
+                    {b.id === boardId ? (
+                      <Check className="size-3.5 text-primary" />
+                    ) : (
+                      <span className="size-3.5" />
+                    )}
+                    <span className="flex-1 truncate">{b.nome}</span>
+                    {b.sistema && <Sparkles className="size-3 text-primary" />}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setNovoPainelAberto(true)}>
+                  <Plus className="size-3.5" /> Novo painel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
-        {/* Seletor de painel (multi-board) */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={() => setSeletorBoardAberto(v => !v)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-            }}
-          >
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ws-text-1)', letterSpacing: '-0.02em', margin: 0 }}>
-              {board.nome}
-            </h1>
-            <ChevronDown size={16} style={{ color: 'var(--ws-text-3)', marginTop: 2, transition: 'transform 150ms', transform: seletorBoardAberto ? 'rotate(180deg)' : 'none' }} />
-          </button>
-          <p style={{ fontSize: 13, color: 'var(--ws-text-3)', margin: '4px 0 0' }}>
-            {board.cards.length} cards · {board.colunas.length} colunas
-          </p>
-
-          {/* Dropdown de painéis */}
-          {seletorBoardAberto && (
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, marginTop: 8, zIndex: 200,
-              background: 'var(--ws-surface)', border: '1px solid var(--ws-glass-border)',
-              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-              borderRadius: 12, boxShadow: 'var(--ws-glass-shadow-lg)',
-              minWidth: 240, overflow: 'hidden', padding: '6px 0',
-            }}>
-              {boards.map(b => (
-                <button
-                  key={b.id}
-                  onClick={() => { setBoardAtivoId(b.id); setSeletorBoardAberto(false) }}
-                  style={{
-                    width: '100%', textAlign: 'left', padding: '9px 14px',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    fontSize: 13, color: b.id === boardAtivoId ? '#006EFF' : 'var(--ws-text-1)',
-                    fontWeight: b.id === boardAtivoId ? 500 : 400,
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,110,255,0.06)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                >
-                  {b.id === boardAtivoId && <Check size={12} style={{ color: '#006EFF', flexShrink: 0 }} />}
-                  {b.id !== boardAtivoId && <div style={{ width: 12 }} />}
-                  {b.nome}
-                  <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ws-text-2)' }}>{b.cards.length}</span>
-                </button>
-              ))}
-              <div style={{ height: 1, background: 'var(--ws-divider)', margin: '4px 0' }} />
+          {/* Sub-linha: metadados + flags do painel */}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {board && (
+              <span>
+                {board.cards.length} cards · {board.colunas.length} fases
+              </span>
+            )}
+            {resumoAtivo?.sistema && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-micro font-semibold text-primary">
+                <Bot className="size-3" /> Sistema
+              </span>
+            )}
+            {resumoAtivo && (
+              <span className="inline-flex items-center gap-1.5">
+                <Switch
+                  checked={resumoAtivo.automacao_ativa}
+                  onCheckedChange={(v) =>
+                    comErro(() => Promise.resolve(p.toggleAutomacao(resumoAtivo.id, v)), 'Erro ao alterar automação.')
+                  }
+                  className="scale-75"
+                  aria-label="Automação"
+                />
+                Automação
+              </span>
+            )}
+            {resumoAtivo && (
               <button
-                onClick={novoBoard}
-                style={{ width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#006EFF' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,110,255,0.06)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                onClick={() =>
+                  comErro(
+                    () => Promise.resolve(p.toggleBloqueio(resumoAtivo.id, !resumoAtivo.bloqueado)),
+                    'Erro ao alterar bloqueio.',
+                  )
+                }
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-micro font-medium transition-colors ${
+                  resumoAtivo.bloqueado
+                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+                title={resumoAtivo.bloqueado ? 'Estrutura de fases bloqueada' : 'Estrutura de fases liberada'}
               >
-                <Plus size={13} /> Novo painel
+                {resumoAtivo.bloqueado ? <Lock className="size-3" /> : <Unlock className="size-3" />}
+                {resumoAtivo.bloqueado ? 'Fases bloqueadas' : 'Fases livres'}
               </button>
-            </div>
-          )}
+            )}
+            {!resumoAtivo?.sistema && resumoAtivo && (
+              <button onClick={excluirPainel} className="text-micro text-muted-foreground hover:text-destructive">
+                Excluir painel
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Controles */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {/* Busca */}
-          <div style={{ position: 'relative' }}>
-            <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ws-text-3)', pointerEvents: 'none' }} />
-            <input
-              type="text" placeholder="Buscar..." value={busca}
-              onChange={e => setBusca(e.target.value)}
-              style={{ height: 32, paddingLeft: 30, paddingRight: 12, background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)', backdropFilter: 'blur(10px)', borderRadius: 'var(--ws-radius-md)', fontSize: 12, color: 'var(--ws-text-1)', outline: 'none', width: 180, boxShadow: 'var(--ws-glass-shadow-sm)', fontFamily: 'inherit' }}
-              onFocus={e => { e.target.style.borderColor = 'rgba(0,110,255,0.50)'; e.target.style.boxShadow = '0 0 0 3px rgba(0,110,255,0.12)' }}
-              onBlur={e => { e.target.style.borderColor = 'var(--ws-glass-border)'; e.target.style.boxShadow = 'var(--ws-glass-shadow-sm)' }}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="h-8 w-44 pl-8 text-sm"
             />
           </div>
 
-          {/* Toggle group: modo modal + cadeado + visualização */}
-          <div style={{ display: 'inline-flex', background: 'var(--ws-surface-2)', border: '1px solid var(--ws-glass-border)', borderRadius: 10, padding: 3, gap: 2, alignItems: 'center' }}>
-            {/* Modo modal */}
-            {([['lateral', Columns3, 'Abrir lateral'], ['central', Maximize2, 'Abrir central']] as const).map(([modo, Icon, title]) => (
-              <button key={modo} onClick={() => setModoModal(modo)} title={title}
-                style={{ padding: '4px 8px', borderRadius: 7, border: 'none', cursor: 'pointer', background: modoModal === modo ? 'var(--ws-surface)' : 'transparent', color: modoModal === modo ? '#006EFF' : 'var(--ws-text-3)', transition: 'all 150ms', display: 'flex', alignItems: 'center', boxShadow: modoModal === modo ? '0 2px 8px rgba(14,20,42,0.10)' : 'none' }}>
-                <Icon size={13} />
-              </button>
-            ))}
-
-            {/* Separador */}
-            <div style={{ width: 1, height: 18, background: 'var(--ws-divider)', margin: '0 2px' }} />
-
-            {/* Cadeado de reordenação */}
-            <button
-              onClick={() => setReordenavel(v => !v)}
-              title={reordenavel ? 'Bloquear ordem (drag off)' : 'Desbloquear para reordenar (drag on)'}
-              style={{
-                padding: '4px 8px', borderRadius: 7, border: 'none', cursor: 'pointer',
-                background: reordenavel ? 'rgba(239,159,39,0.15)' : 'transparent',
-                color: reordenavel ? '#EF9F27' : 'var(--ws-text-3)',
-                transition: 'all 150ms', display: 'flex', alignItems: 'center',
-                boxShadow: reordenavel ? '0 2px 8px rgba(239,159,39,0.20)' : 'none',
-              }}
-            >
-              {reordenavel ? <Unlock size={13} /> : <Lock size={13} />}
-            </button>
-
-            {/* Separador */}
-            <div style={{ width: 1, height: 18, background: 'var(--ws-divider)', margin: '0 2px' }} />
-
-            {/* Visualização */}
-            {([['kanban', LayoutGrid, 'Kanban'], ['lista', List, 'Lista']] as const).map(([view, Icon, label]) => (
-              <button key={view} onClick={() => setVisualizacao(view)}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, background: visualizacao === view ? 'var(--ws-surface)' : 'transparent', color: visualizacao === view ? '#006EFF' : 'var(--ws-text-3)', fontWeight: visualizacao === view ? 500 : 400, transition: 'all 150ms', boxShadow: visualizacao === view ? '0 2px 8px rgba(14,20,42,0.10)' : 'none' }}>
-                <Icon size={13} /> {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Novo card */}
-          <button
-            onClick={novoCard}
-            style={{ height: 32, padding: '0 14px', background: 'linear-gradient(135deg, #006EFF, #0047cc)', border: 'none', borderRadius: 'var(--ws-radius-md)', fontSize: 12, fontWeight: 600, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 12px rgba(0,110,255,0.35)', transition: 'all 150ms' }}
-            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,110,255,0.50)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-            onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,110,255,0.35)'; e.currentTarget.style.transform = 'translateY(0)' }}
+          {/* Modo do modal */}
+          <ToggleGroup
+            type="single"
+            value={modoModal}
+            onValueChange={(v) => v && setModoModal(v as ModoModal)}
+            variant="outline"
+            size="sm"
           >
-            <Plus size={14} /> Novo card
-          </button>
+            <ToggleGroupItem value="lateral" aria-label="Abrir lateral">
+              <Columns3 className="size-3.5" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="central" aria-label="Abrir central">
+              <Maximize2 className="size-3.5" />
+            </ToggleGroupItem>
+          </ToggleGroup>
+
+          {/* Cadeado de reordenação (UI local) */}
+          <Button
+            variant={reordenavel ? 'secondary' : 'outline'}
+            size="sm"
+            onClick={() => setReordenavel((v) => !v)}
+            title={reordenavel ? 'Travar arrasto' : 'Liberar arrasto'}
+          >
+            {reordenavel ? <Unlock className="size-3.5" /> : <Lock className="size-3.5" />}
+          </Button>
+
+          {/* Visualização */}
+          <ToggleGroup
+            type="single"
+            value={visualizacao}
+            onValueChange={(v) => v && setVisualizacao(v as Visualizacao)}
+            variant="outline"
+            size="sm"
+          >
+            <ToggleGroupItem value="kanban" aria-label="Kanban">
+              <LayoutGrid className="size-3.5" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="lista" aria-label="Lista">
+              <List className="size-3.5" />
+            </ToggleGroupItem>
+          </ToggleGroup>
+
+          <Button size="sm" onClick={novoCard} disabled={!board || board.colunas.length === 0}>
+            <Plus className="size-3.5" /> Novo card
+          </Button>
         </div>
       </div>
 
-      {/* Stats rápidos */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {board.colunas.map(coluna => {
-          const count = board.cards.filter(c => c.status === coluna.id).length
-          return (
-            <div key={coluna.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)', backdropFilter: 'blur(10px)', borderRadius: 8, boxShadow: 'var(--ws-glass-shadow-sm)' }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: coluna.cor }} />
-              <span style={{ fontSize: 11, color: 'var(--ws-text-2)' }}>{coluna.nome}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ws-text-1)' }}>{count}</span>
+      {/* Stats por fase */}
+      {board && (
+        <div className="mb-5 flex flex-wrap gap-2">
+          {[...board.colunas]
+            .sort((a, b) => a.ordem - b.ordem)
+            .map((coluna) => {
+              const count = board.cards.filter((c) => c.status === coluna.id).length
+              return (
+                <div
+                  key={coluna.id}
+                  className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 shadow-sm"
+                >
+                  <span className="size-1.5 rounded-full" style={{ background: coluna.cor }} />
+                  <span className="text-xs text-muted-foreground">{coluna.nome}</span>
+                  <span className="text-xs font-semibold text-foreground">{count}</span>
+                </div>
+              )
+            })}
+          {reordenavel && (
+            <div className="flex items-center gap-1.5 rounded-md border border-amber-500/25 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+              <Unlock className="size-3" /> Modo reordenação ativo — arraste cards e fases
             </div>
-          )
-        })}
-        {reordenavel && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'rgba(239,159,39,0.08)', border: '1px solid rgba(239,159,39,0.25)', borderRadius: 8, fontSize: 11, color: 'var(--ws-text-1)', fontWeight: 500 }}>
-            <Unlock size={11} /> Modo reordenação ativo — arraste cards e colunas
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      {/* Board / Lista */}
-      {visualizacao === 'kanban' ? (
+      {/* Corpo */}
+      {isLoading && !board ? (
+        <div className="flex items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Carregando painéis…
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center gap-2 py-20 text-center text-sm text-destructive">
+          <AlertCircle className="size-5" />
+          {extrairMensagem(error, 'Erro ao carregar painéis.')}
+          <Button variant="outline" size="sm" onClick={() => p.refetch()}>
+            Tentar novamente
+          </Button>
+        </div>
+      ) : !board ? (
+        <div className="py-20 text-center text-sm text-muted-foreground">Nenhum painel encontrado.</div>
+      ) : visualizacao === 'kanban' ? (
         <KanbanBoardComp
-          board={boardFiltrado}
+          colunas={board.colunas}
+          cards={cardsFiltrados}
+          bloqueado={board.bloqueado}
           reordenavel={reordenavel}
           onCardClick={abrirCard}
-          onBoardChange={atualizarBoard}
+          onCriarCard={(faseId, titulo) =>
+            comErro(() => Promise.resolve(p.criarCard(faseId, titulo)), 'Erro ao criar card.')
+          }
+          onMoverCard={(cardId, faseId, ordem) =>
+            comErro(() => Promise.resolve(p.moverCard(cardId, faseId, ordem)), 'Erro ao mover card.')
+          }
+          onReordenarFases={(ordem) =>
+            comErro(() => Promise.resolve(p.reordenarFases(ordem)), 'Erro ao reordenar fases.')
+          }
+          onCriarFase={(nome) => comErro(() => Promise.resolve(p.criarFase(nome)), 'Erro ao criar fase.')}
+          onRenomearFase={(faseId, nome) =>
+            comErro(() => Promise.resolve(p.atualizarFase(faseId, { nome })), 'Erro ao renomear fase.')
+          }
+          onExcluirFase={async (faseId) => {
+            if (!(await pedirConfirmacao('Excluir esta fase? Mova os cards antes.'))) return
+            await comErro(() => Promise.resolve(p.excluirFase(faseId)), 'Erro ao excluir fase.')
+          }}
         />
       ) : (
         <ListaView
-          board={boardFiltrado}
+          colunas={board.colunas}
+          cards={cardsFiltrados}
           reordenavel={reordenavel}
           onCardClick={abrirCard}
-          onBoardChange={atualizarBoard}
+          onCriarCard={(faseId, titulo) =>
+            comErro(() => Promise.resolve(p.criarCard(faseId, titulo)), 'Erro ao criar card.')
+          }
+          onMoverCard={(cardId, faseId, ordem) =>
+            comErro(() => Promise.resolve(p.moverCard(cardId, faseId, ordem)), 'Erro ao mover card.')
+          }
         />
       )}
 
+      {/* Modal do card */}
       <CardModal
-        card={cardSelecionado}
-        colunas={board.colunas}
-        aberto={modalAberto}
+        card={modalAberto ? cardSelecionado : null}
+        colunas={board?.colunas ?? []}
+        responsaveis={responsaveis}
+        aberto={modalAberto && !!cardSelecionado}
         modo={modoModal}
-        onFechar={() => { setModalAberto(false); setCardSelecionado(null) }}
-        onAtualizar={atualizarCard}
-        onExcluir={excluirCard}
+        onFechar={fecharModal}
+        onAtualizar={(cardId, patch) =>
+          comErro(() => Promise.resolve(p.atualizarCard(cardId, patch)), 'Erro ao salvar card.')
+        }
+        onExcluir={async (cardId) => {
+          if (!(await pedirConfirmacao('Excluir este card?'))) return
+          await comErro(() => Promise.resolve(p.excluirCard(cardId)), 'Erro ao excluir card.')
+          fecharModal()
+        }}
+        onComentar={(cardId, texto) =>
+          comErro(() => Promise.resolve(p.comentar(cardId, texto)), 'Erro ao comentar.')
+        }
+        onSalvarValores={(cardId, valores) =>
+          comErro(() => Promise.resolve(p.salvarValores(cardId, valores)), 'Erro ao salvar campo.')
+        }
+        onCriarCampo={(nome, tipo) =>
+          comErro(() => Promise.resolve(p.criarCampo(nome, tipo)), 'Erro ao criar campo.')
+        }
+        obterCard={p.obterCard}
       />
+
+      {/* Dialog: novo painel */}
+      <Dialog open={novoPainelAberto} onOpenChange={setNovoPainelAberto}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo painel</DialogTitle>
+            <DialogDescription>Crie um painel kanban personalizado para este workspace.</DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={novoPainelNome}
+            onChange={(e) => setNovoPainelNome(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') criarPainel()
+            }}
+            placeholder="Nome do painel"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNovoPainelAberto(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={criarPainel} disabled={!novoPainelNome.trim()}>
+              Criar painel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: confirmação destrutiva reutilizável */}
+      <Dialog
+        open={!!confirmacao}
+        onOpenChange={(o) => {
+          if (!o && confirmacao) {
+            confirmacao.resolve(false)
+            setConfirmacao(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirmar</DialogTitle>
+            <DialogDescription>{confirmacao?.msg}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                confirmacao?.resolve(false)
+                setConfirmacao(null)
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                confirmacao?.resolve(true)
+                setConfirmacao(null)
+              }}
+            >
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
