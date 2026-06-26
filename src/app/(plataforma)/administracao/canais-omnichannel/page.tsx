@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Plus, Search, Link2, Smartphone, Calendar, Pencil, Trash2, PowerOff } from 'lucide-react'
+import { Loader2, Plus, Search, Link2, Smartphone, Calendar, Pencil, Trash2, PowerOff, Copy, Check, QrCode } from 'lucide-react'
 import { AlertDialog } from 'radix-ui'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
@@ -25,7 +25,8 @@ const FILTROS: { id: TipoCanal; label: string }[] = [
 const CONN_BADGE: Record<string, { label: string; bg: string; color: string; hint?: string }> = {
   connected:    { label: 'Conectado',    bg: 'rgba(15,168,86,0.15)',  color: 'var(--ws-green)' },
   connecting:   { label: 'Conectando',   bg: 'rgba(245,158,11,0.15)', color: '#F59E0B' },
-  disconnected: { label: 'Desconectado', bg: 'rgba(163,45,45,0.15)',  color: '#a32d2d' },
+  disconnected: { label: 'Desconectado', bg: 'rgba(163,45,45,0.15)',  color: '#a32d2d',
+    hint: 'Ainda não conectado ao WhatsApp. Gere o link de conexão (botão "Link") para enviar ao cliente, ou use "Conectar" em Editar para escanear o QR Code. O status administrativo (Ativo/Inativo) é separado e fica em Editar.' },
   failed:       { label: 'Falha / Conflito', bg: 'rgba(163,45,45,0.18)', color: '#a32d2d',
     hint: 'A sessão caiu após estar conectada. Causa provável: o número está vinculado em outra ferramenta de WhatsApp (conflito) ou foi desconectado no celular. Reconecte pelo QR; se cair de novo, verifique vínculos externos do número.' },
 }
@@ -99,6 +100,11 @@ export default function CanaisOmnichannelPage() {
   const [excluindoId, setExcluindoId] = useState<string | null>(null)
   const [inativandoId, setInativandoId] = useState<string | null>(null)
   const [gerandoLinkId, setGerandoLinkId] = useState<string | null>(null)
+  // Modal "Link de conexão do cliente"
+  const [linkModalCanal, setLinkModalCanal] = useState<Canal | null>(null)
+  const [linkData, setLinkData] = useState<{ link: string; token: string; expira_em: string } | null>(null)
+  const [linkErro, setLinkErro] = useState<string | null>(null)
+  const [linkCopiado, setLinkCopiado] = useState(false)
   const [confirmExcluir, setConfirmExcluir] = useState<Canal | null>(null)
   const [confirmInativar, setConfirmInativar] = useState<Canal | null>(null)
 
@@ -245,18 +251,69 @@ export default function CanaisOmnichannelPage() {
     }
   }
 
+  // Cópia robusta: usa a Clipboard API quando disponível (e em contexto seguro),
+  // com fallback para textarea + execCommand. Nunca lança (o uso direto de
+  // navigator.clipboard.writeText estoura síncrono quando clipboard é indefinido).
+  async function copiarTexto(texto: string): Promise<boolean> {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(texto)
+        return true
+      }
+    } catch {
+      // cai no fallback abaixo
+    }
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = texto
+      ta.setAttribute('readonly', '')
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      return ok
+    } catch {
+      return false
+    }
+  }
+
+  // Abre o modal e dispara a geração do link (token público de conexão).
+  async function abrirLinkConexao(canal: Canal) {
+    setLinkModalCanal(canal)
+    setLinkData(null)
+    setLinkErro(null)
+    setLinkCopiado(false)
+    await gerarLinkConexao(canal)
+  }
+
   async function gerarLinkConexao(canal: Canal) {
     setGerandoLinkId(canal.id)
+    setLinkErro(null)
     try {
       const resp = await api.post<{ token: string; link: string; expira_em: string }>(
         `/canais/${canal.id}/link-conexao`,
       )
-      await navigator.clipboard.writeText(resp.link).catch(() => {})
-      toast.success('Link de conexão copiado!', { description: resp.link })
+      setLinkData(resp)
     } catch (err: unknown) {
-      toast.error(errorMessage(err, 'Erro ao gerar link de conexão'))
+      setLinkErro(errorMessage(err, 'Não foi possível gerar o link. Tente novamente.'))
     } finally {
       setGerandoLinkId(null)
+    }
+  }
+
+  async function copiarLinkConexao() {
+    if (!linkData) return
+    const ok = await copiarTexto(linkData.link)
+    if (ok) {
+      setLinkCopiado(true)
+      setTimeout(() => setLinkCopiado(false), 2000)
+      toast.success('Link copiado!')
+    } else {
+      toast.error('Não foi possível copiar automaticamente. Selecione e copie o link manualmente.')
     }
   }
 
@@ -616,7 +673,7 @@ export default function CanaisOmnichannelPage() {
                         </button>
                         {['whatsapp_evolution', 'whatsapp_waha'].includes(c.tipo) && (
                           <button
-                            onClick={() => gerarLinkConexao(c)}
+                            onClick={() => abrirLinkConexao(c)}
                             disabled={gerandoLinkId === c.id}
                             title="Gerar link para o cliente conectar"
                             style={{
@@ -743,6 +800,102 @@ export default function CanaisOmnichannelPage() {
                   }}
                 >Excluir</button>
               </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+
+      {/* Dialog: Link de conexão do cliente */}
+      <AlertDialog.Root
+        open={!!linkModalCanal}
+        onOpenChange={open => { if (!open) { setLinkModalCanal(null); setLinkData(null); setLinkErro(null) } }}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000 }} />
+          <AlertDialog.Content style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            background: 'var(--card)', border: '1px solid var(--ws-glass-border)',
+            borderRadius: 12, padding: 24, zIndex: 1001, maxWidth: 460, width: '90vw',
+          }}>
+            <AlertDialog.Title style={{ margin: 0, fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+              Link de conexão {linkModalCanal ? `— ${linkModalCanal.nome}` : ''}
+            </AlertDialog.Title>
+            <AlertDialog.Description style={{ margin: 0, fontSize: 14, color: 'var(--ws-text-2)', marginBottom: 16 }}>
+              Envie este link ao cliente. Ao abrir, ele verá o QR Code para conectar o WhatsApp — sem precisar de login.
+            </AlertDialog.Description>
+
+            {gerandoLinkId && gerandoLinkId === linkModalCanal?.id ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 0', fontSize: 14, color: 'var(--ws-text-2)' }}>
+                <Loader2 size={16} className="animate-spin" /> Gerando link…
+              </div>
+            ) : linkErro ? (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{
+                  background: 'rgba(163,45,45,0.12)', border: '1px solid rgba(163,45,45,0.35)',
+                  borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#a32d2d', marginBottom: 12,
+                }}>
+                  {linkErro}
+                </div>
+                <button
+                  onClick={() => linkModalCanal && gerarLinkConexao(linkModalCanal)}
+                  style={{
+                    background: 'var(--primary, #006EFF)', border: 'none', color: '#fff',
+                    borderRadius: 6, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontWeight: 500,
+                  }}
+                >Tentar novamente</button>
+              </div>
+            ) : linkData ? (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <input
+                    readOnly
+                    value={linkData.link}
+                    onFocus={e => e.currentTarget.select()}
+                    style={{
+                      flex: 1, minWidth: 0, fontSize: 13, padding: '8px 10px',
+                      borderRadius: 6, border: '1px solid var(--ws-glass-border)',
+                      background: 'var(--ws-bg-2, transparent)', color: 'var(--ws-text-1)',
+                    }}
+                  />
+                  <button
+                    onClick={copiarLinkConexao}
+                    title="Copiar link"
+                    style={{
+                      background: 'transparent', border: '1px solid var(--ws-glass-border)',
+                      borderRadius: 6, padding: '0 12px', fontSize: 13, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
+                      color: linkCopiado ? 'var(--ws-green)' : 'var(--ws-text-2)',
+                    }}
+                  >
+                    {linkCopiado ? <Check size={14} /> : <Copy size={14} />}
+                    {linkCopiado ? 'Copiado' : 'Copiar'}
+                  </button>
+                </div>
+                <button
+                  onClick={() => window.open(linkData.link, '_blank', 'noopener,noreferrer')}
+                  style={{
+                    width: '100%', background: 'var(--primary, #006EFF)', border: 'none', color: '#fff',
+                    borderRadius: 6, padding: '10px 16px', fontSize: 14, cursor: 'pointer', fontWeight: 500,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                  }}
+                >
+                  <QrCode size={16} /> Abrir QR em nova guia
+                </button>
+                {linkData.expira_em && (
+                  <p style={{ margin: '12px 0 0', fontSize: 12, color: 'var(--ws-text-3, var(--ws-text-2))' }}>
+                    O link expira em {new Date(linkData.expira_em).toLocaleString('pt-BR')}.
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <AlertDialog.Cancel asChild>
+                <button style={{
+                  background: 'transparent', border: '1px solid var(--ws-glass-border)',
+                  borderRadius: 6, padding: '6px 16px', fontSize: 13, cursor: 'pointer',
+                }}>Fechar</button>
+              </AlertDialog.Cancel>
             </div>
           </AlertDialog.Content>
         </AlertDialog.Portal>
