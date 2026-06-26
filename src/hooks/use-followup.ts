@@ -39,18 +39,26 @@ export function useFollowup() {
   // Filtro client-side da tabela. `status` mira engajamento (status_followup:
   // ativo/respondeu) OU desfecho (status_fechamento: ganho/perca/...).
   const listarLeads = (filtros: FiltrosFollowup) => {
-    return leads.filter(lead => {
-      const matchStatus =
-        filtros.status === 'todos' ||
-        lead.status_followup === filtros.status ||
-        lead.status_fechamento === (filtros.status as unknown as LeadStatusFechamento)
-      const matchTemperatura = filtros.temperatura === 'todos' || lead.temperatura === filtros.temperatura
-      const matchOrigem = filtros.origem === 'todos' || lead.origem === filtros.origem
-      const matchBusca = !filtros.busca ||
-        lead.nome?.toLowerCase().includes(filtros.busca.toLowerCase()) ||
-        lead.telefone.includes(filtros.busca)
-      return matchStatus && matchTemperatura && matchOrigem && matchBusca
-    })
+    return leads
+      .filter(lead => {
+        const matchStatus =
+          filtros.status === 'todos' ||
+          lead.status_followup === filtros.status ||
+          lead.status_fechamento === (filtros.status as unknown as LeadStatusFechamento)
+        const matchTemperatura = filtros.temperatura === 'todos' || lead.temperatura === filtros.temperatura
+        const matchOrigem = filtros.origem === 'todos' || lead.origem === filtros.origem
+        const matchAgente = !filtros.agente_id || lead.agente_id === filtros.agente_id
+        const matchBusca = !filtros.busca ||
+          lead.nome?.toLowerCase().includes(filtros.busca.toLowerCase()) ||
+          lead.telefone.includes(filtros.busca)
+        return matchStatus && matchTemperatura && matchOrigem && matchAgente && matchBusca
+      })
+      // Urgência: quem está há mais tempo sem responder (ultimo_contato mais antigo) primeiro.
+      .sort((a, b) => {
+        const ta = a.ultimo_contato ? new Date(a.ultimo_contato).getTime() : Infinity
+        const tb = b.ultimo_contato ? new Date(b.ultimo_contato).getTime() : Infinity
+        return ta - tb
+      })
   }
 
   const getLead = (id: string) => leads.find(l => l.id === id)
@@ -70,6 +78,12 @@ export function useFollowup() {
   const metricas = useMemo(() => {
     const total = leads.length
     const ganhos = leads.filter(l => l.status_fechamento === 'ganho').length
+    // Tempo médio que os leads estão sem responder (agora − último envio nosso).
+    const agora = Date.now()
+    const esperas = leads
+      .map(l => (l.ultimo_contato ? agora - new Date(l.ultimo_contato).getTime() : null))
+      .filter((x): x is number => x !== null && x >= 0)
+    const tempo_medio_ms = esperas.length ? esperas.reduce((a, b) => a + b, 0) / esperas.length : 0
     return {
       ativos: leads.filter(l => l.status_followup === 'ativo').length,
       vencidos: leads.filter(l => l.status_followup === 'vencido').length,
@@ -79,6 +93,7 @@ export function useFollowup() {
       total,
       taxa_conversao: total > 0 ? (ganhos / total) * 100 : 0,
       responderam: leads.filter(l => l.status_followup === 'respondeu').length,
+      tempo_medio_ms,
     }
   }, [leads])
 

@@ -5,7 +5,8 @@ import {
   Zap,
   MessageCircle,
   TrendingUp,
-  BarChart2
+  BarChart2,
+  Clock
 } from 'lucide-react'
 
 interface FollowupKpisProps {
@@ -18,7 +19,20 @@ interface FollowupKpisProps {
     total: number
     taxa_conversao: number
     responderam: number
+    tempo_medio_ms: number
   }
+}
+
+// "1d 6h" / "3h 20m" / "—". Humaniza ms de espera.
+function humanizarDuracao(ms: number): string {
+  if (!ms || ms < 60000) return '—'
+  const min = Math.floor(ms / 60000)
+  const d = Math.floor(min / 1440)
+  const h = Math.floor((min % 1440) / 60)
+  const m = min % 60
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
 }
 
 export function FollowupKpis({ metricas }: FollowupKpisProps) {
@@ -27,23 +41,33 @@ export function FollowupKpis({ metricas }: FollowupKpisProps) {
     if (tx >= 15) return 'var(--ws-gold)'
     return 'var(--ws-coral)'
   }
+  const getTempoColor = (ms: number) => {
+    const dias = ms / 86400000
+    if (dias >= 3) return 'var(--ws-coral)'
+    if (dias >= 1) return 'var(--ws-gold)'
+    return 'var(--ws-green)'
+  }
 
-  const kpis = [
+  type Kpi = { label: string; value: number | string; icon: any; color: string; sub: string; total: number; isPercentage?: boolean; progressOverride?: number }
+  const kpis: Kpi[] = [
     { label: 'EM FOLLOW-UP', value: metricas.ativos, icon: Zap, color: 'var(--ws-green)', sub: 'aguardando retorno', total: metricas.total },
     { label: 'RESPONDERAM', value: metricas.responderam, icon: MessageCircle, color: 'var(--ws-blue)', sub: 'voltaram a responder', total: metricas.total },
     { label: 'GANHOS', value: metricas.ganhos, icon: TrendingUp, color: 'var(--ws-green)', sub: 'convertidos', total: metricas.total },
-    { label: 'TAXA CONV.', value: `${metricas.taxa_conversao.toFixed(1)}%`, icon: BarChart2, color: getTaxaColor(metricas.taxa_conversao), sub: 'ganhos / total leads', total: 100, isPercentage: true }
+    { label: 'TAXA CONV.', value: `${metricas.taxa_conversao.toFixed(1)}%`, icon: BarChart2, color: getTaxaColor(metricas.taxa_conversao), sub: 'ganhos / total leads', total: 100, isPercentage: true },
+    { label: 'TEMPO MÉDIO', value: humanizarDuracao(metricas.tempo_medio_ms), icon: Clock, color: getTempoColor(metricas.tempo_medio_ms), sub: 'sem responder', total: 100, progressOverride: Math.min(100, (metricas.tempo_medio_ms / 604800000) * 100) },
   ]
 
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: 'repeat(4, 1fr)',
+      gridTemplateColumns: 'repeat(5, 1fr)',
       gap: 12,
       marginBottom: 24,
     }}>
       {kpis.map((kpi, i) => {
-        const progress = kpi.isPercentage
+        const progress = kpi.progressOverride !== undefined
+          ? kpi.progressOverride
+          : kpi.isPercentage
           ? parseFloat(String(kpi.value))
           : (Number(kpi.value) / (kpi.total || 1)) * 100
 

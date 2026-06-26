@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import Link from 'next/link'
 import {
   Search,
@@ -19,6 +19,8 @@ import {
 import { toast } from 'sonner'
 import { useFollowup } from '@/hooks/use-followup'
 import { usePersistedState } from '@/hooks/use-estado-persistido'
+import { useWorkspace } from '@/lib/workspace-context'
+import { useAgentesDisponiveis } from '@/hooks/use-agentes-disponiveis'
 import { FollowupLead, FiltrosFollowup, LeadOrigem, LeadStatusFechamento } from '@/types/followup'
 import { Button } from '@/components/ui/button'
 import { FollowupKpis } from '@/components/followup/followup-kpis'
@@ -53,6 +55,18 @@ const FECHAMENTO_OPCOES: { key: LeadStatusFechamento, label: string, color: stri
   { key: 'em_aberto', label: 'Em aberto', color: 'var(--ws-text-2)' },
 ]
 
+// Estilo dos selects de filtro (consistente com a busca da tela; tela é legado glass --ws-*).
+const FILTRO_SELECT_STYLE: React.CSSProperties = {
+  background: 'var(--ws-surface-2)',
+  border: '1px solid var(--ws-glass-border)',
+  borderRadius: 'var(--ws-radius-md)',
+  color: 'var(--ws-text-1)',
+  fontSize: 12,
+  padding: '7px 10px',
+  outline: 'none',
+  cursor: 'pointer',
+}
+
 export default function FollowupPage() {
   const {
     leads,
@@ -63,6 +77,14 @@ export default function FollowupPage() {
     error,
     refetch,
   } = useFollowup()
+
+  const { workspaceAtual, workspaces, loading: workspaceLoading } = useWorkspace()
+  const workspaceResolvido = !workspaceLoading && (workspaceAtual !== null || workspaces.length === 0)
+  const { agentes } = useAgentesDisponiveis(workspaceAtual ?? undefined, workspaceResolvido)
+  const agenteMap = useMemo(
+    () => Object.fromEntries(agentes.map(a => [a.id, { nome: a.nome, avatar_url: a.avatar_url }])),
+    [agentes],
+  )
 
   // Filtros persistidos (Nielsen #6: sobrevivem a F5).
   const [filtros, setFiltros] = usePersistedState<FiltrosFollowup>('crm:followup:filtros', {
@@ -207,6 +229,42 @@ export default function FollowupPage() {
               </button>
             ))}
           </div>
+
+          {/* Separador */}
+          <div style={{ width: 1, height: 20, background: 'var(--ws-divider)' }} />
+
+          {/* Dropdowns de filtro */}
+          <select
+            value={filtros.temperatura || 'todos'}
+            onChange={(e) => setFiltros(f => ({ ...f, temperatura: e.target.value as FiltrosFollowup['temperatura'] }))}
+            style={FILTRO_SELECT_STYLE}
+          >
+            <option value="todos">Temperatura: todas</option>
+            <option value="quente">Quente</option>
+            <option value="morno">Morno</option>
+            <option value="frio">Frio</option>
+          </select>
+          <select
+            value={filtros.origem}
+            onChange={(e) => setFiltros(f => ({ ...f, origem: e.target.value as FiltrosFollowup['origem'] }))}
+            style={FILTRO_SELECT_STYLE}
+          >
+            <option value="todos">Origem: todas</option>
+            <option value="meta_ads">Meta Ads</option>
+            <option value="google_ads">Google Ads</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="indicacao">Indicação</option>
+            <option value="organico">Orgânico</option>
+            <option value="offline">Presencial</option>
+          </select>
+          <select
+            value={filtros.agente_id}
+            onChange={(e) => setFiltros(f => ({ ...f, agente_id: e.target.value }))}
+            style={FILTRO_SELECT_STYLE}
+          >
+            <option value="">Agente: todos</option>
+            {agentes.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+          </select>
         </div>
 
         {/* Estados: erro / carregando / vazio / tabela */}
@@ -247,6 +305,7 @@ export default function FollowupPage() {
             leads={leadsFiltrados}
             onLeadClick={handleLeadClick}
             onStatusFechamentoChange={atualizarStatusFechamento}
+            agenteMap={agenteMap}
           />
         )}
       </div>
@@ -374,7 +433,7 @@ export default function FollowupPage() {
             {/* Ação: abrir a conversa no Atendimento */}
             {leadAtual.session_id ? (
               <Link
-                href={`/crm/atendimento?session=${leadAtual.session_id}`}
+                href={`/crm/atendimento/conversas?conversa=${leadAtual.session_id}`}
                 className="mt-12 w-full inline-flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-semibold text-white"
                 style={{
                   background: 'linear-gradient(135deg,var(--ws-blue),var(--ws-purple))',

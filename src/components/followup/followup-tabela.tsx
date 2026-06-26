@@ -12,8 +12,11 @@ import {
   MoreHorizontal,
   Search,
   Briefcase,
-  Music
+  Music,
+  Clock
 } from 'lucide-react'
+import { formatDistanceToNow, parseISO } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 import {
   FollowupLead,
   LeadStatusFechamento,
@@ -25,6 +28,7 @@ import { toast } from 'sonner'
 import {
   Avatar,
   AvatarFallback,
+  AvatarImage,
 } from '@/components/ui/avatar'
 import {
   Tooltip,
@@ -38,8 +42,19 @@ interface FollowupTabelaProps {
   leads: FollowupLead[]
   onLeadClick: (lead: FollowupLead) => void
   onStatusFechamentoChange: (id: string, status: LeadStatusFechamento) => void
+  /** Mapa agente_id → {nome, avatar} para exibir o nome do agente (não o UUID). */
+  agenteMap?: Record<string, { nome: string; avatar_url?: string | null }>
   /** @deprecated temperatura é leitura da IA; mantido opcional p/ o sandbox followup-2. */
   onTemperaturaChange?: (id: string, temp: LeadTemperatura) => void
+}
+
+// Tempo desde nosso último envio (= há quanto o lead está sem responder) + cor de urgência.
+function tempoSemResponder(iso?: string | null): { label: string; cor: string } | null {
+  if (!iso) return null
+  const d = parseISO(iso)
+  const horas = (Date.now() - d.getTime()) / 3600000
+  const cor = horas >= 24 ? 'var(--ws-coral)' : horas >= 6 ? 'var(--ws-gold)' : 'var(--ws-text-2)'
+  return { label: formatDistanceToNow(d, { locale: ptBR }), cor }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,6 +215,7 @@ export function FollowupTabela({
   leads,
   onLeadClick,
   onStatusFechamentoChange,
+  agenteMap,
 }: FollowupTabelaProps) {
   const [pagina, setPagina] = useState(1)
   const itensPorPagina = 20
@@ -316,15 +332,16 @@ export function FollowupTabela({
         pointerEvents:'none', zIndex: 10 }} />
 
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left min-w-[860px]">
+        <table className="w-full border-collapse text-left min-w-[1000px]">
           <thead>
             <tr style={{ background: 'var(--ws-surface-2)' }}>
               <th className="px-5 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)]">Lead</th>
               <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)]">Origem</th>
+              <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)]">Sem responder há</th>
               <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)]">Status</th>
               <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)]">Fechamento</th>
               <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)]">Temp.</th>
-              <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)] text-center">Agente</th>
+              <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)]">Agente</th>
               <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-[var(--ws-text-3)] text-right">Ações</th>
             </tr>
           </thead>
@@ -343,7 +360,7 @@ export function FollowupTabela({
                         <span className="text-[13px] font-bold text-[var(--ws-text-1)]">{lead.nome || 'Sem Nome'}</span>
                         {lead.session_id && (
                           <Link
-                            href={`/crm/atendimento?session=${lead.session_id}`}
+                            href={`/crm/atendimento/conversas?conversa=${lead.session_id}`}
                             onClick={(e) => e.stopPropagation()}
                             className="text-[var(--ws-blue)] hover:scale-110 transition-transform"
                           >
@@ -373,6 +390,21 @@ export function FollowupTabela({
                   <OrigemBadge origem={lead.origem} />
                 </td>
 
+                {/* SEM RESPONDER HÁ */}
+                <td className="px-4 py-3">
+                  {(() => {
+                    const t = tempoSemResponder(lead.ultimo_contato)
+                    return t ? (
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <Clock size={11} style={{ color: t.cor }} />
+                        <span className="text-[11px] font-medium" style={{ color: t.cor }}>{t.label}</span>
+                      </div>
+                    ) : (
+                      <span className="text-[var(--ws-text-3)] text-[11px]">—</span>
+                    )
+                  })()}
+                </td>
+
                 {/* STATUS */}
                 <td className="px-4 py-3">
                   <StatusBadge status={lead.status_followup} />
@@ -390,22 +422,22 @@ export function FollowupTabela({
 
                 {/* AGENTE */}
                 <td className="px-4 py-3">
-                  <div className="flex justify-center">
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Avatar className="w-7 h-7 border border-white/10 ring-1 ring-black/5" style={{ backgroundColor: getAgentColor(lead.agente_id) }}>
-                            <AvatarFallback className="text-[10px] font-bold text-white bg-transparent">
-                              {lead.agente_id?.substring(0, 2).toUpperCase() || 'IA'}
-                            </AvatarFallback>
-                          </Avatar>
-                        </TooltipTrigger>
-                        <TooltipContent className="text-[10px] bg-slate-900">
-                          Agente: {lead.agente_id || 'Automação'}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
+                  {(() => {
+                    const ag = lead.agente_id ? agenteMap?.[lead.agente_id] : undefined
+                    const nome = ag?.nome || (lead.agente_id ? 'Agente' : 'Automação')
+                    const iniciais = (ag?.nome || (lead.agente_id ? 'AG' : 'IA')).substring(0, 2).toUpperCase()
+                    return (
+                      <div className="flex items-center gap-2">
+                        <Avatar className="w-7 h-7 border border-white/10 ring-1 ring-black/5 shrink-0" style={{ backgroundColor: getAgentColor(lead.agente_id) }}>
+                          {ag?.avatar_url ? <AvatarImage src={ag.avatar_url} alt={nome} /> : null}
+                          <AvatarFallback className="text-[10px] font-bold text-white bg-transparent">
+                            {iniciais}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-[11px] text-[var(--ws-text-2)] font-medium truncate max-w-[120px]">{nome}</span>
+                      </div>
+                    )
+                  })()}
                 </td>
 
                 {/* ACOES */}
