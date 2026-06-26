@@ -324,7 +324,9 @@ def gerar_resposta(
     from app.services.agenda import agente_tools
 
     rag_chunks = embedding_service.retrieve(db, agente.id, mensagem)
-    tools, bloco_agenda = agente_tools.tools_para_workspace(db, agente.workspace_id)
+    # Multi-clínica (Fase 6): escopa as agendas às vinculadas ao agente. Vazio = todas (fallback).
+    agenda_ids = {l.agenda_id for l in (agente.agendas or [])} or None
+    tools, bloco_agenda = agente_tools.tools_para_workspace(db, agente.workspace_id, agenda_ids)
     system = _montar_system(
         agente, prompt, rag_chunks, diretrizes_ws=diretrizes, ajustes_few_shot=ajustes,
         contato_nome=contato_nome, resumo_conversa=resumo_conversa, bloco_agenda=bloco_agenda,
@@ -364,7 +366,7 @@ def gerar_resposta(
                     args = {}
                 resultado = agente_tools.executar_tool(
                     db, workspace_id=agente.workspace_id, telefone=telefone_contato,
-                    nome=tc.function.name, args=args,
+                    nome=tc.function.name, args=args, agenda_ids=agenda_ids,
                 )
                 messages.append({
                     "role": "tool", "tool_call_id": tc.id,

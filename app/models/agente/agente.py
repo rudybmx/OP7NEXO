@@ -50,6 +50,9 @@ class Agente(Base):
     canais: Mapped[list["AgenteCanal"]] = relationship(
         back_populates="agente", lazy="select", cascade="all, delete-orphan"
     )
+    agendas: Mapped[list["AgenteAgenda"]] = relationship(
+        back_populates="agente", lazy="select", cascade="all, delete-orphan"
+    )
     prompts: Mapped[list["AgentePrompt"]] = relationship(
         back_populates="agente", lazy="select", cascade="all, delete-orphan"
     )

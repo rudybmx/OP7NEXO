@@ -117,23 +117,32 @@ _NOMES_TOOLS = {t["function"]["name"] for t in TOOLS_SCHEMA}
 
 
 # ─── Gate + contexto p/ o system prompt ─────────────────────────────────────────
-def _agendas_agendaveis(db: Session, workspace_id: uuid.UUID) -> list[Agenda]:
-    """Agendas ativas do workspace cuja autonomia permite o agente agendar."""
-    return (
-        db.query(Agenda)
-        .filter(
-            Agenda.workspace_id == workspace_id,
-            Agenda.ativo.is_(True),
-            Agenda.agente_agendamento != "desativado",
-        )
-        .order_by(Agenda.nome.asc())
-        .all()
+def _agendas_agendaveis(
+    db: Session, workspace_id: uuid.UUID, agenda_ids: set[uuid.UUID] | None = None
+) -> list[Agenda]:
+    """Agendas ativas do workspace cuja autonomia permite o agente agendar.
+
+    `agenda_ids` (Fase 6, multi-clínica): se vier, restringe às agendas vinculadas ao agente.
+    None/vazio = todas do workspace (fallback compatível: agente sem vínculo atende todas).
+    """
+    q = db.query(Agenda).filter(
+        Agenda.workspace_id == workspace_id,
+        Agenda.ativo.is_(True),
+        Agenda.agente_agendamento != "desativado",
     )
+    if agenda_ids:
+        q = q.filter(Agenda.id.in_(agenda_ids))
+    return q.order_by(Agenda.nome.asc()).all()
 
 
-def tools_para_workspace(db: Session, workspace_id: uuid.UUID) -> tuple[list[dict], str | None]:
-    """(schemas, bloco_de_contexto) se houver agenda agendável; senão ([], None)."""
-    agendas = _agendas_agendaveis(db, workspace_id)
+def tools_para_workspace(
+    db: Session, workspace_id: uuid.UUID, agenda_ids: set[uuid.UUID] | None = None
+) -> tuple[list[dict], str | None]:
+    """(schemas, bloco_de_contexto) se houver agenda agendável; senão ([], None).
+
+    `agenda_ids` restringe às agendas vinculadas ao agente (multi-clínica); None = todas.
+    """
+    agendas = _agendas_agendaveis(db, workspace_id, agenda_ids)
     if not agendas:
         return [], None
 
@@ -146,9 +155,14 @@ def tools_para_workspace(db: Session, workspace_id: uuid.UUID) -> tuple[list[dic
     else:
         regra = "Em geral confirme o horário com o cliente antes de gravar; algumas agendas permitem marcar direto."
 
+    ids_no_escopo = {a.id for a in agendas}
     servicos = (
         db.query(AgendaServico)
-        .filter(AgendaServico.workspace_id == workspace_id, AgendaServico.ativo.is_(True))
+        .filter(
+            AgendaServico.workspace_id == workspace_id,
+            AgendaServico.ativo.is_(True),
+            or_(AgendaServico.agenda_id.in_(ids_no_escopo), AgendaServico.agenda_id.is_(None)),
+        )
         .order_by(AgendaServico.nome.asc())
         .all()
     )
@@ -184,9 +198,15 @@ def _parse_dt_local(valor: str, fuso: str) -> datetime:
     return dt.replace(tzinfo=ZoneInfo(fuso))
 
 
-def _resolver_agenda(db: Session, workspace_id: uuid.UUID, nome: str | None) -> Agenda | list[Agenda]:
-    """Agenda agendável pelo nome; se nome None e só houver uma, devolve-a; se ambíguo, devolve a lista."""
-    agendas = _agendas_agendaveis(db, workspace_id)
+def _resolver_agenda(
+    db: Session, workspace_id: uuid.UUID, nome: str | None, agenda_ids: set[uuid.UUID] | None = None
+) -> Agenda | list[Agenda]:
+    """Agenda agendável pelo nome; se nome None e só houver uma, devolve-a; se ambíguo, devolve a lista.
+
+    `agenda_ids` restringe ao escopo do agente (multi-clínica) — a resolução ('Dr. Gumercindo')
+    casa só dentro das agendas vinculadas.
+    """
+    agendas = _agendas_agendaveis(db, workspace_id, agenda_ids)
     if not agendas:
         return []
     if nome:
@@ -223,24 +243,24 @@ def _resolver_servico(db: Session, workspace_id: uuid.UUID, agenda_id: uuid.UUID
     return contidos[0] if len(contidos) == 1 else None
 
 
-def _agendamentos_futuros_do_contato(db: Session, workspace_id: uuid.UUID, tel_norm: str | None) -> list[Agendamento]:
+def _agendamentos_futuros_do_contato(
+    db: Session, workspace_id: uuid.UUID, tel_norm: str | None, agenda_ids: set[uuid.UUID] | None = None
+) -> list[Agendamento]:
     if not tel_norm:
         return []
-    return (
-        db.query(Agendamento)
-        .filter(
-            Agendamento.workspace_id == workspace_id,
-            Agendamento.ativo.is_(True),
-            Agendamento.status.in_(STATUS_OCUPANTES),
-            Agendamento.data_hora_inicio >= datetime.now(timezone.utc),
-            or_(
-                Agendamento.cliente_telefone_normalizado == tel_norm,
-                Agendamento.agendado_por_telefone_normalizado == tel_norm,
-            ),
-        )
-        .order_by(Agendamento.data_hora_inicio.asc())
-        .all()
+    q = db.query(Agendamento).filter(
+        Agendamento.workspace_id == workspace_id,
+        Agendamento.ativo.is_(True),
+        Agendamento.status.in_(STATUS_OCUPANTES),
+        Agendamento.data_hora_inicio >= datetime.now(timezone.utc),
+        or_(
+            Agendamento.cliente_telefone_normalizado == tel_norm,
+            Agendamento.agendado_por_telefone_normalizado == tel_norm,
+        ),
     )
+    if agenda_ids:  # multi-clínica: o agente só mexe nos agendamentos das suas agendas
+        q = q.filter(Agendamento.agenda_id.in_(agenda_ids))
+    return q.order_by(Agendamento.data_hora_inicio.asc()).all()
 
 
 def _fmt_local(dt: datetime, fuso: str) -> dict:
@@ -264,24 +284,30 @@ def _match_ref(ags: list[Agendamento], ref: str | None, fuso: str) -> Agendament
 
 
 # ─── Executor ───────────────────────────────────────────────────────────────────
-def executar_tool(db: Session, *, workspace_id: uuid.UUID, telefone: str | None, nome: str, args: dict) -> dict:
-    """Executa uma tool. Retorna um dict JSON-serializável (resultado p/ realimentar o modelo)."""
+def executar_tool(
+    db: Session, *, workspace_id: uuid.UUID, telefone: str | None, nome: str, args: dict,
+    agenda_ids: set[uuid.UUID] | None = None,
+) -> dict:
+    """Executa uma tool. Retorna um dict JSON-serializável (resultado p/ realimentar o modelo).
+
+    `agenda_ids` = escopo do agente (multi-clínica); None = todas as agendas do workspace.
+    """
     if nome not in _NOMES_TOOLS:
         return {"erro": f"ferramenta desconhecida: {nome}"}
     tel_norm = canonical_phone_digits(telefone)
     try:
         if nome == "consultar_disponibilidade":
-            return _tool_consultar(db, workspace_id, args)
+            return _tool_consultar(db, workspace_id, args, agenda_ids)
         if nome == "buscar_agendamentos_contato":
-            return _tool_buscar(db, workspace_id, tel_norm)
+            return _tool_buscar(db, workspace_id, tel_norm, agenda_ids)
         if nome == "criar_agendamento":
-            return _tool_criar(db, workspace_id, telefone, args)
+            return _tool_criar(db, workspace_id, telefone, args, agenda_ids)
         if nome == "reagendar_agendamento":
-            return _tool_reagendar(db, workspace_id, tel_norm, args)
+            return _tool_reagendar(db, workspace_id, tel_norm, args, agenda_ids)
         if nome == "cancelar_agendamento":
-            return _tool_cancelar(db, workspace_id, tel_norm, args)
+            return _tool_cancelar(db, workspace_id, tel_norm, args, agenda_ids)
         if nome == "confirmar_presenca":
-            return _tool_confirmar(db, workspace_id, tel_norm)
+            return _tool_confirmar(db, workspace_id, tel_norm, agenda_ids)
     except agendamento_svc.AgendaError as exc:
         return {"erro": str(exc)}
     except Exception as exc:  # noqa: BLE001 — não envenenar a transação do agente
@@ -293,8 +319,8 @@ def executar_tool(db: Session, *, workspace_id: uuid.UUID, telefone: str | None,
     return {"erro": "ferramenta não tratada"}
 
 
-def _exigir_agenda(db, workspace_id, nome) -> tuple[Agenda | None, dict | None]:
-    ag = _resolver_agenda(db, workspace_id, nome)
+def _exigir_agenda(db, workspace_id, nome, agenda_ids=None) -> tuple[Agenda | None, dict | None]:
+    ag = _resolver_agenda(db, workspace_id, nome, agenda_ids)
     if isinstance(ag, Agenda):
         return ag, None
     opcoes = [a.nome for a in ag]
@@ -303,8 +329,8 @@ def _exigir_agenda(db, workspace_id, nome) -> tuple[Agenda | None, dict | None]:
     return None, {"erro": "Há mais de uma agenda; pergunte ao cliente qual.", "agendas": opcoes}
 
 
-def _tool_consultar(db: Session, workspace_id, args: dict) -> dict:
-    ag, err = _exigir_agenda(db, workspace_id, args.get("agenda_nome"))
+def _tool_consultar(db: Session, workspace_id, args: dict, agenda_ids=None) -> dict:
+    ag, err = _exigir_agenda(db, workspace_id, args.get("agenda_nome"), agenda_ids)
     if err:
         return err
     data_str = (args.get("data") or "").strip()
@@ -327,8 +353,8 @@ def _tool_consultar(db: Session, workspace_id, args: dict) -> dict:
     }
 
 
-def _tool_buscar(db: Session, workspace_id, tel_norm: str | None) -> dict:
-    ags = _agendamentos_futuros_do_contato(db, workspace_id, tel_norm)
+def _tool_buscar(db: Session, workspace_id, tel_norm: str | None, agenda_ids=None) -> dict:
+    ags = _agendamentos_futuros_do_contato(db, workspace_id, tel_norm, agenda_ids)
     proximos = []
     for a in ags:
         f = _fmt_local(a.data_hora_inicio, a.agenda.fuso_horario if a.agenda else "America/Sao_Paulo")
@@ -336,8 +362,8 @@ def _tool_buscar(db: Session, workspace_id, tel_norm: str | None) -> dict:
     return {"proximos": proximos, "total": len(proximos)}
 
 
-def _tool_criar(db: Session, workspace_id, telefone: str | None, args: dict) -> dict:
-    ag, err = _exigir_agenda(db, workspace_id, args.get("agenda_nome"))
+def _tool_criar(db: Session, workspace_id, telefone: str | None, args: dict, agenda_ids=None) -> dict:
+    ag, err = _exigir_agenda(db, workspace_id, args.get("agenda_nome"), agenda_ids)
     if err:
         return err
     if not args.get("cliente_nome"):
@@ -375,8 +401,8 @@ def _tool_criar(db: Session, workspace_id, telefone: str | None, args: dict) -> 
     return {"ok": True, "agendamento": {**_fmt_local(novo.data_hora_inicio, ag.fuso_horario), "servico": novo.servico, "agenda": ag.nome}}
 
 
-def _tool_reagendar(db: Session, workspace_id, tel_norm: str | None, args: dict) -> dict:
-    ags = _agendamentos_futuros_do_contato(db, workspace_id, tel_norm)
+def _tool_reagendar(db: Session, workspace_id, tel_norm: str | None, args: dict, agenda_ids=None) -> dict:
+    ags = _agendamentos_futuros_do_contato(db, workspace_id, tel_norm, agenda_ids)
     if not ags:
         return {"erro": "o cliente não tem agendamento futuro para remarcar"}
     fuso = ags[0].agenda.fuso_horario if ags[0].agenda else "America/Sao_Paulo"
@@ -392,8 +418,8 @@ def _tool_reagendar(db: Session, workspace_id, tel_norm: str | None, args: dict)
     return {"ok": True, "de": _fmt_local(alvo.data_hora_inicio, fuso), "para": _fmt_local(novo.data_hora_inicio, fuso)}
 
 
-def _tool_cancelar(db: Session, workspace_id, tel_norm: str | None, args: dict) -> dict:
-    ags = _agendamentos_futuros_do_contato(db, workspace_id, tel_norm)
+def _tool_cancelar(db: Session, workspace_id, tel_norm: str | None, args: dict, agenda_ids=None) -> dict:
+    ags = _agendamentos_futuros_do_contato(db, workspace_id, tel_norm, agenda_ids)
     if not ags:
         return {"erro": "o cliente não tem agendamento futuro para cancelar"}
     fuso = ags[0].agenda.fuso_horario if ags[0].agenda else "America/Sao_Paulo"
@@ -404,8 +430,8 @@ def _tool_cancelar(db: Session, workspace_id, tel_norm: str | None, args: dict) 
     return {"ok": True, "cancelado": _fmt_local(alvo.data_hora_inicio, fuso)}
 
 
-def _tool_confirmar(db: Session, workspace_id, tel_norm: str | None) -> dict:
-    ags = _agendamentos_futuros_do_contato(db, workspace_id, tel_norm)
+def _tool_confirmar(db: Session, workspace_id, tel_norm: str | None, agenda_ids=None) -> dict:
+    ags = _agendamentos_futuros_do_contato(db, workspace_id, tel_norm, agenda_ids)
     if not ags:
         return {"erro": "o cliente não tem agendamento futuro para confirmar"}
     alvo = ags[0]

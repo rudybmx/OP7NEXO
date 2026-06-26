@@ -48,6 +48,11 @@ class CanalVinculadoOut(BaseModel):
     ativo: bool
 
 
+class AgendaVinculadaOut(BaseModel):
+    agenda_id: str
+    agenda_nome: str | None
+
+
 class AgenteIn(BaseModel):
     nome: str = Field(min_length=1, max_length=120)
     descricao: str | None = None
@@ -69,6 +74,7 @@ class AgenteIn(BaseModel):
     horario_modo: Literal["dentro", "fora"] = "dentro"  # 'fora' = plantão (responde fora das janelas)
     # Vínculos opcionais na criação
     canais: list[str] = Field(default_factory=list)  # canal_ids
+    agendas: list[str] = Field(default_factory=list)  # agenda_ids (vazio = atende todas)
     horarios: list[HorarioIn] = Field(default_factory=list)
     habilidades: list[HabilidadeIn] = Field(default_factory=list)
     prompt: str | None = None  # rascunho inicial (agente_prompts status=draft)
@@ -94,6 +100,7 @@ class AgenteUpdate(BaseModel):
     codigo_responsavel: str | None = None
     horario_modo: Literal["dentro", "fora"] | None = None
     canais: list[str] | None = None
+    agendas: list[str] | None = None  # agenda_ids (vazio = atende todas; None = não mexe)
     horarios: list[HorarioIn] | None = None
     habilidades: list[HabilidadeIn] | None = None
     prompt: str | None = None
@@ -241,6 +248,7 @@ class AgenteOut(BaseModel):
     codigo_responsavel: str | None
     horario_modo: str
     canais: list[CanalVinculadoOut]
+    agendas: list[AgendaVinculadaOut] = []
     horarios: list[HorarioOut]
     habilidades: list[HabilidadeOut]
     prompt_draft: str | None

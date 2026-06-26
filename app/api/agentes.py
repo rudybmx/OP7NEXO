@@ -18,6 +18,7 @@ from app.core.database import get_db
 from app.core.deps import exigir_platform_admin
 from app.models.agente import (
     Agente,
+    AgenteAgenda,
     AgenteAjusteResposta,
     AgenteBaseConhecimento,
     AgenteCanal,
@@ -28,9 +29,11 @@ from app.models.agente import (
     LlmProvider,
 )
 from app.models.canal_entrada import CanalEntrada
+from app.models.crm.agenda import Agenda
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.schemas.agente import (
+    AgendaVinculadaOut,
     AgenteIn,
     AgenteListItemOut,
     AgenteOut,
@@ -159,6 +162,33 @@ def _sync_links_ativo(agente: Agente, link_ativo: bool, db: Session) -> None:
     )
 
 
+def _validate_agendas(workspace_id: uuid.UUID, agenda_ids: list[str], db: Session) -> list[uuid.UUID]:
+    """Valida que as agendas pertencem ao workspace. Vazio = atende todas (sem restrição)."""
+    if not agenda_ids:
+        return []
+    uniq = list(dict.fromkeys(agenda_ids))
+    try:
+        ids = [uuid.UUID(a) for a in uniq]
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="agenda_id inválido")
+    rows = db.query(Agenda.id).filter(Agenda.id.in_(ids), Agenda.workspace_id == workspace_id).all()
+    found = {str(r[0]) for r in rows}
+    missing = [a for a in uniq if a not in found]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Agendas não pertencem ao workspace: {missing}",
+        )
+    return ids
+
+
+def _apply_agendas(agente: Agente, agenda_ids: list[uuid.UUID], db: Session) -> None:
+    """Substitui o conjunto de agendas vinculadas ao agente."""
+    db.query(AgenteAgenda).filter(AgenteAgenda.agente_id == agente.id).delete(synchronize_session=False)
+    for aid in agenda_ids:
+        db.add(AgenteAgenda(agente_id=agente.id, agenda_id=aid))
+
+
 def _set_draft(agente_id: uuid.UUID, texto: str, db: Session) -> None:
     draft = (
         db.query(AgentePrompt)
@@ -202,6 +232,13 @@ def _replace_habilidades(agente_id: uuid.UUID, habilidades: list[HabilidadeIn], 
 
 def _hhmm(t: time | None) -> str:
     return t.strftime("%H:%M") if t else ""
+
+
+def _agendas_out(agente: Agente) -> list[AgendaVinculadaOut]:
+    return [
+        AgendaVinculadaOut(agenda_id=str(link.agenda_id), agenda_nome=(link.agenda.nome if link.agenda else None))
+        for link in agente.agendas
+    ]
 
 
 def _canais_out(agente: Agente) -> list[CanalVinculadoOut]:
@@ -258,6 +295,7 @@ def _agente_out(agente: Agente, db: Session) -> AgenteOut:
         codigo_responsavel=str(agente.codigo_responsavel) if agente.codigo_responsavel else None,
         horario_modo=getattr(agente, "horario_modo", "dentro") or "dentro",
         canais=_canais_out(agente),
+        agendas=_agendas_out(agente),
         horarios=[
             HorarioOut(
                 id=str(h.id),
@@ -329,6 +367,7 @@ def criar_agente(
     _get_workspace_or_404(workspace_id, db)
     provider_id = _validate_provider(payload.provider_id, db)
     canal_ids = _validate_canais(workspace_id, payload.canais, db)
+    agenda_ids = _validate_agendas(workspace_id, payload.agendas, db)
 
     agente = Agente(
         workspace_id=workspace_id,
@@ -356,6 +395,7 @@ def criar_agente(
 
     link_ativo = payload.status == "ativo"
     _apply_canais(agente, canal_ids, link_ativo, db)
+    _apply_agendas(agente, agenda_ids, db)
     _replace_horarios(agente.id, payload.horarios, db)
     _replace_habilidades(agente.id, payload.habilidades, db)
     if payload.prompt is not None:
@@ -429,6 +469,11 @@ def atualizar_agente(
         _apply_canais(agente, canal_ids, final_status_ativo, db)
     else:
         _sync_links_ativo(agente, final_status_ativo, db)
+
+    # Agendas vinculadas: se enviadas, substitui o conjunto (vazio = limpa = atende todas).
+    if payload.agendas is not None:
+        agenda_ids = _validate_agendas(workspace_id, payload.agendas, db)
+        _apply_agendas(agente, agenda_ids, db)
 
     if payload.horarios is not None:
         _replace_horarios(agente.id, payload.horarios, db)
