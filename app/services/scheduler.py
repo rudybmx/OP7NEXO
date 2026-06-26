@@ -230,6 +230,21 @@ def _job_followup_etiqueta() -> None:
         log.exception("Erro no job followup_etiqueta: %s", exc)
 
 
+def _job_processar_lembretes() -> None:
+    """A cada 5min: envia lembretes de agendamento vencidos (X dias/horas antes) por WhatsApp.
+    Dedupe durável em agenda_lembrete_envios — não re-spamma o paciente. A resposta do paciente
+    é tratada pelo agente (Fase 3)."""
+    try:
+        with SessionLocal() as db:
+            from app.services.agenda.lembretes import processar_lembretes_pendentes
+
+            r = processar_lembretes_pendentes(db)
+            if r.get("enviados") or r.get("falhas"):
+                log.info("Scheduler: lembretes — %d enviado(s), %d falha(s)", r["enviados"], r["falhas"])
+    except Exception as exc:
+        log.exception("Erro no job processar_lembretes: %s", exc)
+
+
 def _job_process_whatsapp_events() -> None:
     try:
         result = process_next_whatsapp_jobs(limit=25)
@@ -317,6 +332,16 @@ def iniciar_scheduler() -> None:
         "interval",
         minutes=5,
         id="followup_etiqueta",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
+    )
+    scheduler.add_job(
+        _job_processar_lembretes,
+        "interval",
+        minutes=5,
+        id="processar_lembretes",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

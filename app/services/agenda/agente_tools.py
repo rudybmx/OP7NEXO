@@ -103,6 +103,14 @@ TOOLS_SCHEMA: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "confirmar_presenca",
+            "description": "Confirma a presença do cliente no próximo agendamento (marca como confirmado). Use quando o cliente confirmar que vai comparecer (ex.: responder 'sim', 'confirmo', 'estarei lá').",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
 ]
 
 _NOMES_TOOLS = {t["function"]["name"] for t in TOOLS_SCHEMA}
@@ -272,6 +280,8 @@ def executar_tool(db: Session, *, workspace_id: uuid.UUID, telefone: str | None,
             return _tool_reagendar(db, workspace_id, tel_norm, args)
         if nome == "cancelar_agendamento":
             return _tool_cancelar(db, workspace_id, tel_norm, args)
+        if nome == "confirmar_presenca":
+            return _tool_confirmar(db, workspace_id, tel_norm)
     except agendamento_svc.AgendaError as exc:
         return {"erro": str(exc)}
     except Exception as exc:  # noqa: BLE001 — não envenenar a transação do agente
@@ -392,3 +402,13 @@ def _tool_cancelar(db: Session, workspace_id, tel_norm: str | None, args: dict) 
         return {"erro": "há mais de um agendamento; peça a data/hora do que será cancelado", "agendamentos": [_fmt_local(a.data_hora_inicio, fuso) for a in ags]}
     agendamento_svc.cancelar(db, alvo, motivo=args.get("motivo"), cancelado_por="agente")
     return {"ok": True, "cancelado": _fmt_local(alvo.data_hora_inicio, fuso)}
+
+
+def _tool_confirmar(db: Session, workspace_id, tel_norm: str | None) -> dict:
+    ags = _agendamentos_futuros_do_contato(db, workspace_id, tel_norm)
+    if not ags:
+        return {"erro": "o cliente não tem agendamento futuro para confirmar"}
+    alvo = ags[0]
+    fuso = alvo.agenda.fuso_horario if alvo.agenda else "America/Sao_Paulo"
+    agendamento_svc.atualizar_status(db, alvo, status="confirmado")
+    return {"ok": True, "confirmado": _fmt_local(alvo.data_hora_inicio, fuso)}

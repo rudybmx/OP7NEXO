@@ -197,3 +197,55 @@ class AgendaServico(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class AgendaLembreteConfig(Base):
+    """Config de lembrete (Fase 4). agenda_id NULL = global do workspace. v1 só envia canal whatsapp."""
+
+    __tablename__ = "agenda_lembrete_config"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    agenda_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agendas.id", ondelete="CASCADE"), nullable=True
+    )
+    canal: Mapped[str] = mapped_column(String(20), default="whatsapp", nullable=False)
+    dias_antes: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    hora_envio: Mapped[str | None] = mapped_column(String(5), nullable=True)  # HH:mm (dias_antes>0)
+    horas_antes: Mapped[int | None] = mapped_column(Integer, nullable=True)   # dias_antes=0
+    mensagem_template: Mapped[str] = mapped_column(Text, nullable=False)
+    tem_midia: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    midia_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    midia_tipo: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    ordem: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class AgendaLembreteEnvio(Base):
+    """Log de dedupe durável: 1 envio por (agendamento, config). Evita re-spammar o paciente."""
+
+    __tablename__ = "agenda_lembrete_envios"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    agendamento_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agendamentos.id", ondelete="CASCADE"), nullable=False
+    )
+    config_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agenda_lembrete_config.id", ondelete="CASCADE"), nullable=False
+    )
+    enviado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(12), default="enviado", nullable=False)
+    erro: Mapped[str | None] = mapped_column(Text, nullable=True)

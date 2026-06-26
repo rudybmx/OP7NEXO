@@ -21,7 +21,14 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
-from app.models.crm.agenda import Agenda, AgendaBloqueio, AgendaHorario, AgendaServico, Agendamento
+from app.models.crm.agenda import (
+    Agenda,
+    AgendaBloqueio,
+    AgendaHorario,
+    AgendaLembreteConfig,
+    AgendaServico,
+    Agendamento,
+)
 from app.models.user import User
 from app.services.agenda import (
     AgendaNaoEncontrada,
@@ -159,6 +166,54 @@ class ServicoOut(BaseModel):
     preco: float | None
     cor: str | None
     ativo: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class LembreteIn(BaseModel):
+    workspace_id: uuid.UUID | None = None
+    agenda_id: uuid.UUID | None = None
+    canal: str = "whatsapp"
+    dias_antes: int = 1
+    hora_envio: str | None = "09:00"
+    horas_antes: int | None = None
+    mensagem_template: str
+    tem_midia: bool = False
+    midia_url: str | None = None
+    midia_tipo: str | None = None
+    ativo: bool = True
+    ordem: int = 0
+
+
+class LembreteUpdate(BaseModel):
+    agenda_id: uuid.UUID | None = None
+    canal: str | None = None
+    dias_antes: int | None = None
+    hora_envio: str | None = None
+    horas_antes: int | None = None
+    mensagem_template: str | None = None
+    tem_midia: bool | None = None
+    midia_url: str | None = None
+    midia_tipo: str | None = None
+    ativo: bool | None = None
+    ordem: int | None = None
+
+
+class LembreteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    agenda_id: uuid.UUID | None
+    canal: str
+    dias_antes: int
+    hora_envio: str | None
+    horas_antes: int | None
+    mensagem_template: str
+    tem_midia: bool
+    midia_url: str | None
+    midia_tipo: str | None
+    ativo: bool
+    ordem: int
     created_at: datetime
     updated_at: datetime
 
@@ -307,6 +362,15 @@ def criar_agenda(
     db.add(agenda)
     db.commit()
     db.refresh(agenda)
+    # Lembrete padrão (1 dia antes, 09:00) — editável/removível na aba Lembretes.
+    # Best-effort: nunca derruba a criação da agenda se algo falhar.
+    try:
+        from app.services.agenda.lembretes import criar_lembrete_padrao
+
+        criar_lembrete_padrao(db, agenda)
+        db.commit()
+    except Exception:
+        db.rollback()
     return agenda
 
 
@@ -649,6 +713,88 @@ def desativar_servico(
     s.ativo = False
     db.commit()
     return {"id": str(s.id), "ativo": False}
+
+
+# ─────────────────────────── Lembretes (Fase 4) ───────────────────────────
+def _lembrete_autorizado(db: Session, lembrete_id: uuid.UUID, usuario: User) -> AgendaLembreteConfig:
+    l = db.query(AgendaLembreteConfig).filter(AgendaLembreteConfig.id == lembrete_id).first()
+    if not l:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lembrete não encontrado")
+    verificar_acesso_workspace(usuario, l.workspace_id, db)
+    return l
+
+
+@router.get("/lembretes", response_model=list[LembreteOut])
+def listar_lembretes(
+    workspace_id: uuid.UUID | None = Query(None),
+    agenda_id: uuid.UUID | None = Query(None),
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    ws_id = _resolve_workspace(workspace_filter, workspace_id, usuario, db)
+    q = db.query(AgendaLembreteConfig).filter(AgendaLembreteConfig.workspace_id == ws_id)
+    if agenda_id:
+        # lembretes da agenda + os globais (agenda_id NULL)
+        q = q.filter(or_(AgendaLembreteConfig.agenda_id == agenda_id, AgendaLembreteConfig.agenda_id.is_(None)))
+    return q.order_by(AgendaLembreteConfig.ordem, AgendaLembreteConfig.created_at).all()
+
+
+@router.post("/lembretes", response_model=LembreteOut, status_code=status.HTTP_201_CREATED)
+def criar_lembrete(
+    data: LembreteIn,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    ws_id = _resolve_workspace(workspace_filter, data.workspace_id, usuario, db)
+    if data.agenda_id:
+        _get_agenda_or_404(db, data.agenda_id, ws_id)
+    lem = AgendaLembreteConfig(
+        workspace_id=ws_id,
+        agenda_id=data.agenda_id,
+        canal=data.canal or "whatsapp",
+        dias_antes=data.dias_antes if data.dias_antes is not None else 1,
+        hora_envio=data.hora_envio,
+        horas_antes=data.horas_antes,
+        mensagem_template=data.mensagem_template,
+        tem_midia=data.tem_midia,
+        midia_url=data.midia_url,
+        midia_tipo=data.midia_tipo,
+        ativo=data.ativo,
+        ordem=data.ordem or 0,
+    )
+    db.add(lem)
+    db.commit()
+    db.refresh(lem)
+    return lem
+
+
+@router.patch("/lembretes/{lembrete_id}", response_model=LembreteOut)
+def editar_lembrete(
+    lembrete_id: uuid.UUID,
+    data: LembreteUpdate,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    l = _lembrete_autorizado(db, lembrete_id, usuario)
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(l, field, value)
+    db.commit()
+    db.refresh(l)
+    return l
+
+
+@router.delete("/lembretes/{lembrete_id}", status_code=status.HTTP_200_OK)
+def excluir_lembrete(
+    lembrete_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    l = _lembrete_autorizado(db, lembrete_id, usuario)
+    db.delete(l)
+    db.commit()
+    return {"id": str(lembrete_id), "deleted": True}
 
 
 # ─────────────────────────── Disponibilidade ───────────────────────────
