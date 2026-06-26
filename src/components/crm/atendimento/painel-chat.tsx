@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback, Fragment } from 'react'
 import type { CSSProperties } from 'react'
-import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, ChevronDown, Clock, FileText, PlayCircle, AlertCircle, User, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Clock, FileText, PlayCircle, AlertCircle, User, Sparkles } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { hashColor } from '@/lib/hash-color'
@@ -560,11 +560,16 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
   const [ajuste, setAjuste] = useState<{ mensagemId: string; original: string } | null>(null)
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
 
-  // ── Scroll estilo WhatsApp: ao abrir, ancora na 1ª não-lida; se tudo lido, cola no final ──
+  // ── Scroll estilo WhatsApp: ao abrir COLA NO FINAL (robusto a mídia); aviso de não-lidas é separado ──
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const scrolledForRef = useRef<string | null>(null)
-  const prevLenRef = useRef(0)
-  // id da 1ª mensagem não-lida (= a unreadCount-ésima de ENTRADA a partir do fim)
+  // Enquanto true, o chat "gruda" no fim e re-cola a cada crescimento (ex.: mídia carregando).
+  // Vira false assim que o usuário rola para cima — sem cap de tempo, sem brigar com o scroll do usuário.
+  const stickToBottomRef = useRef(true)
+  const [pilulaNaoLidasVisivel, setPilulaNaoLidasVisivel] = useState(false)
+
+  // id da 1ª mensagem não-lida (= a unreadCount-ésima de ENTRADA a partir do fim). Só p/ o marcador + a pílula.
   const firstUnreadId = useMemo(() => {
     if (!unreadCount || unreadCount <= 0) return null
     const entradas = mensagens.filter(m => m.direcao === 'entrada')
@@ -572,36 +577,57 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
     return entradas[Math.max(0, entradas.length - unreadCount)]?.id ?? null
   }, [mensagens, unreadCount])
 
+  const colarNoFim = useCallback((behavior: ScrollBehavior = 'auto') => {
+    mensagensEndRef.current?.scrollIntoView({ block: 'end', behavior })
+  }, [mensagensEndRef])
+
+  // ABERTURA (troca de conversa): cola no fim e religa o "grudar no fim".
+  // `setMensagens([])` em use-mensagens zera a lista ao trocar, então este effect re-roda quando
+  // as mensagens da nova conversa chegam (mensagens.length passa de 0 → N) com scrolledForRef ainda antigo.
   useEffect(() => {
     if (!conversa?.id || mensagens.length === 0) return
-    const container = scrollContainerRef.current
-    if (scrolledForRef.current !== conversa.id) {
-      // ABERTURA: ancora na 1ª não-lida (marcador) ou cola no final; re-ancora enquanto mídia carrega
-      scrolledForRef.current = conversa.id
-      prevLenRef.current = mensagens.length
-      const anchor = () => {
-        const cont = scrollContainerRef.current
-        let alvo: Element | null = null
-        if (firstUnreadId && cont) {
-          try { alvo = cont.querySelector(`[data-msg-id="${CSS.escape(firstUnreadId)}"]`) } catch { alvo = null }
-        }
-        if (alvo) alvo.scrollIntoView({ block: 'start', behavior: 'auto' })
-        else mensagensEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
-      }
-      anchor()
-      const raf = requestAnimationFrame(anchor)
-      const t1 = setTimeout(anchor, 150)
-      const t2 = setTimeout(anchor, 450)
-      return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2) }
+    if (scrolledForRef.current === conversa.id) return
+    scrolledForRef.current = conversa.id
+    stickToBottomRef.current = true
+    colarNoFim('auto')
+    setPilulaNaoLidasVisivel(!!firstUnreadId)
+    const raf = requestAnimationFrame(() => { if (stickToBottomRef.current) colarNoFim('auto') })
+    return () => cancelAnimationFrame(raf)
+  }, [conversa?.id, mensagens.length, firstUnreadId, colarNoFim])
+
+  // CRESCIMENTO do conteúdo (imagens/áudio carregando OU mensagem nova): re-cola no fim se ainda grudado.
+  // Observa o WRAPPER DE CONTEÚDO (cresce), NÃO o container de scroll (altura fixa → não dispararia).
+  useEffect(() => {
+    const alvo = contentRef.current
+    if (!alvo || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => { if (stickToBottomRef.current) colarNoFim('auto') })
+    ro.observe(alvo)
+    return () => ro.disconnect()
+  }, [colarNoFim])
+
+  // Rolagem do usuário: solta/religa o "grudar" e controla a pílula (visível enquanto a 1ª não-lida
+  // estiver acima da área visível — i.e. o usuário precisa subir para vê-la).
+  const handleScroll = useCallback(() => {
+    const c = scrollContainerRef.current
+    if (!c) return
+    stickToBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight < 180
+    if (!firstUnreadId) { setPilulaNaoLidasVisivel(false); return }
+    const alvo = c.querySelector(`[data-msg-id="${CSS.escape(firstUnreadId)}"]`) as HTMLElement | null
+    if (!alvo) { setPilulaNaoLidasVisivel(false); return }
+    setPilulaNaoLidasVisivel(alvo.getBoundingClientRect().top < c.getBoundingClientRect().top)
+  }, [firstUnreadId])
+
+  // Pílula "↑ X não lidas" → sobe até a 1ª não-lida.
+  const irParaPrimeiraNaoLida = useCallback(() => {
+    if (!firstUnreadId) return
+    const c = scrollContainerRef.current
+    const alvo = c?.querySelector(`[data-msg-id="${CSS.escape(firstUnreadId)}"]`) as HTMLElement | null
+    if (alvo) {
+      stickToBottomRef.current = false
+      alvo.scrollIntoView({ block: 'start', behavior: 'smooth' })
     }
-    // MENSAGEM NOVA na mesma conversa: só cola no final se o usuário já está perto do fim
-    const cresceu = mensagens.length > prevLenRef.current
-    prevLenRef.current = mensagens.length
-    if (cresceu && container) {
-      const pertoDoFim = container.scrollHeight - container.scrollTop - container.clientHeight < 180
-      if (pertoDoFim) mensagensEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' })
-    }
-  }, [conversa?.id, mensagens, firstUnreadId, mensagensEndRef])
+    setPilulaNaoLidasVisivel(false)
+  }, [firstUnreadId])
 
   // Participantes do grupo que aparecem na conversa (nomes distintos), p/ o header.
   const participantesGrupo = useMemo(() => {
@@ -901,7 +927,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
         overflow: 'hidden',
       }}>
         <div aria-hidden className="atd-chat-pattern" style={patternOverlayStyle} />
-        <div ref={scrollContainerRef} style={{
+        <div ref={scrollContainerRef} onScroll={handleScroll} style={{
           position: 'relative',
           zIndex: 1,
           minHeight: 0,
@@ -910,12 +936,10 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
           scrollbarGutter: 'stable',
           WebkitOverflowScrolling: 'touch',
           padding: 20,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 24,
           background: 'linear-gradient(to bottom, transparent, rgba(0,110,255,0.02))',
           scrollbarWidth: 'thin',
         }}>
+          <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           <CardRastreamento
             metaHeadline={conversa.contato.metaHeadline}
             metaBody={conversa.contato.metaBody}
@@ -943,11 +967,25 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {grupo.mensagens.map(msg => {
+                // Divisor "X não lidas" (estilo WhatsApp) inserido antes da 1ª mensagem não-lida.
+                const divisorNaoLidas = msg.id === firstUnreadId ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', margin: '6px 0' }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600, color: '#006EFF',
+                      background: 'rgba(0,110,255,0.10)', border: '1px solid rgba(0,110,255,0.20)',
+                      padding: '3px 12px', borderRadius: 99,
+                    }}>
+                      {unreadCount} {unreadCount === 1 ? 'mensagem não lida' : 'mensagens não lidas'}
+                    </span>
+                  </div>
+                ) : null
                 // Mensagem interna do sistema (ex.: handoff/transferência da IA — Fase 4):
                 // nota centralizada, não é bolha de contato/agente.
                 if (msg.remetenteTipo === 'sistema') {
                   return (
-                    <div key={msg.id} style={{ alignSelf: 'center', maxWidth: '88%', margin: '6px auto', display: 'flex', justifyContent: 'center' }}>
+                    <Fragment key={msg.id}>
+                      {divisorNaoLidas}
+                    <div style={{ alignSelf: 'center', maxWidth: '88%', margin: '6px auto', display: 'flex', justifyContent: 'center' }}>
                       <div style={{
                         fontSize: 11,
                         lineHeight: 1.5,
@@ -962,6 +1000,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         {msg.conteudo}
                       </div>
                     </div>
+                    </Fragment>
                   )
                 }
                 const isEntrada = msg.direcao === 'entrada'
@@ -1005,8 +1044,9 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                   ? resolveAvatarSrc(conversa.isGroup ? null : conversa.contato.avatarUrl)
                   : null
                 return (
+                  <Fragment key={msg.id}>
+                  {divisorNaoLidas}
                   <div
-                    key={msg.id}
                     data-msg-id={msg.id}
                     data-wamid={msg.evolutionMsgId || undefined}
                     style={{
@@ -1186,13 +1226,44 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                       )}
                     </div>
                   </div>
+                  </Fragment>
                 )
               })}
               </div>
             </div>
           ))}
           <div ref={mensagensEndRef} />
+          </div>
         </div>
+        {pilulaNaoLidasVisivel && firstUnreadId && mensagens.length > 0 && (
+          <button
+            type="button"
+            onClick={irParaPrimeiraNaoLida}
+            aria-label={`Ir para a primeira de ${unreadCount} mensagens não lidas`}
+            style={{
+              position: 'absolute',
+              bottom: 16,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: '#006EFF',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 99,
+              padding: '6px 14px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 6px 18px rgba(0,110,255,0.35)',
+            }}
+          >
+            <ChevronUp size={15} />
+            {unreadCount} não {unreadCount === 1 ? 'lida' : 'lidas'}
+          </button>
+        )}
       </div>
 
       <Dialog open={!!lightboxUrl} onOpenChange={open => { if (!open) setLightboxUrl(null) }}>
