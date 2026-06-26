@@ -150,8 +150,45 @@ def enviar_mensagem_texto(
     access_token: str,
     to: str,
     text: str,
+    context_message_id: str | None = None,
 ) -> dict:
-    """Envia mensagem de texto via Meta Cloud API."""
+    """Envia mensagem de texto via Meta Cloud API.
+
+    `context_message_id` (opcional): wamid da mensagem citada para responder
+    citando (reply) — vira `"context": {"message_id": <wamid>}`.
+    """
+    url = f"{META_API_BASE}/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    body: dict = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "text",
+        "text": {"body": text},
+    }
+    if context_message_id:
+        body["context"] = {"message_id": context_message_id}
+
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(url, headers=headers, json=body)
+        _handle_error(resp, "enviar_mensagem_texto")
+        return resp.json()
+
+
+def enviar_reacao(
+    phone_number_id: str,
+    access_token: str,
+    to: str,
+    wamid: str,
+    emoji: str,
+) -> dict:
+    """Envia (ou remove) uma reação com emoji via Meta Cloud API.
+
+    `wamid`: id da mensagem reagida. `emoji` vazio remove a reação.
+    """
     url = f"{META_API_BASE}/{phone_number_id}/messages"
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -161,14 +198,13 @@ def enviar_mensagem_texto(
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
         "to": to,
-        "type": "text",
-        "text": {"body": text},
+        "type": "reaction",
+        "reaction": {"message_id": wamid, "emoji": emoji or ""},
     }
-
-    with httpx.Client(timeout=60) as client:
+    with httpx.Client(timeout=30) as client:
         resp = client.post(url, headers=headers, json=body)
-        _handle_error(resp, "enviar_mensagem_texto")
-        return resp.json()
+        _handle_error(resp, "enviar_reacao")
+        return resp.json() if resp.content else {}
 
 
 def enviar_digitando(phone_number_id: str, access_token: str, message_id: str) -> dict:
@@ -211,13 +247,33 @@ def processar_webhook(payload: dict) -> dict:
 
             # Mensagens recebidas
             for msg in value.get("messages", []):
+                msg_type = msg.get("type", "text")
+
+                # Reação: NÃO é mensagem nova — referencia a msg-alvo (reaction.message_id).
+                if msg_type == "reaction":
+                    reaction = msg.get("reaction", {}) if isinstance(msg.get("reaction"), dict) else {}
+                    entries.append({
+                        "type": "reaction",
+                        "wa_id": msg.get("from"),
+                        "wamid": msg.get("id"),
+                        "timestamp": msg.get("timestamp"),
+                        "target_wamid": reaction.get("message_id", ""),
+                        "emoji": reaction.get("emoji", "") or "",
+                        "contacts": value.get("contacts", []),
+                        "metadata": value.get("metadata", {}),
+                    })
+                    continue
+
+                # Citação (reply): context.id = wamid da mensagem citada.
+                context = msg.get("context", {}) if isinstance(msg.get("context"), dict) else {}
                 entries.append({
                     "type": "message",
                     "wa_id": msg.get("from"),
                     "wamid": msg.get("id"),
                     "timestamp": msg.get("timestamp"),
-                    "message_type": msg.get("type", "text"),
-                    "text": msg.get("text", {}).get("body", "") if msg.get("type") == "text" else "",
+                    "message_type": msg_type,
+                    "text": msg.get("text", {}).get("body", "") if msg_type == "text" else "",
+                    "quoted_wamid": context.get("id", "") or "",
                     "contacts": value.get("contacts", []),
                     "metadata": value.get("metadata", {}),
                 })

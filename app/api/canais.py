@@ -52,7 +52,10 @@ from app.services.waha_normalizer import adapt_waha_to_evolution
 from app.services.redis_pub import publish_whatsapp_event
 from app.services.whatsapp_crm_persistence import (
     process_evolution_message,
+    process_evolution_reaction_event,
     process_evolution_connection_event,
+    upsert_reacao,
+    _extract_reaction_payload,
     _br_jid_candidates,
     _canonical_br_jid,
 )
@@ -3190,6 +3193,123 @@ def enviar_mensagem_canal(
     return EnviarMensagemOut(ok=True, mensagem_id=str(mensagem_id), evolution_response=evo_resp)
 
 
+class ReagirIn(BaseModel):
+    conversa_id: str
+    target_evolution_msg_id: str  # evolution_msg_id/wamid da mensagem reagida
+    emoji: str = ""               # '' = remover a reação
+
+
+class ReagirOut(BaseModel):
+    ok: bool
+    acao: str  # 'upserted' | 'removed'
+
+
+@router.post("/canais/{canal_id}/reagir", response_model=ReagirOut)
+def reagir_mensagem_canal(
+    canal_id: uuid.UUID,
+    payload: ReagirIn,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_usuario_atual),
+):
+    """Reage (ou remove a reação) com emoji a uma mensagem, espelhando no WhatsApp.
+    Suporta Evolution, WAHA e Meta Oficial."""
+    from sqlalchemy import text
+    from app.services import meta_cloud
+
+    c = _get_canal_or_404(canal_id, db)
+    _exigir_permissao_atendimento(usuario, c, db)
+
+    workspace_id = str(c.workspace_id)
+    emoji = payload.emoji or ""
+
+    # Resolve a mensagem-alvo (no workspace) → chat, autor, instance, full id WAHA.
+    alvo = db.execute(
+        text("""
+            SELECT id, conversa_id, remote_jid, from_me, participant_jid, instance, payload
+            FROM public.crm_whatsapp_mensagens
+            WHERE workspace_id = CAST(:ws AS uuid) AND evolution_msg_id = :tid
+            ORDER BY created_at DESC LIMIT 1
+        """),
+        {"ws": workspace_id, "tid": payload.target_evolution_msg_id},
+    ).mappings().first()
+    if not alvo:
+        raise HTTPException(status_code=404, detail="Mensagem-alvo não encontrada")
+
+    conversa_id = str(alvo["conversa_id"]) if alvo["conversa_id"] else None
+    remote_jid = str(alvo["remote_jid"] or "")
+    alvo_from_me = bool(alvo["from_me"])
+    participant = str(alvo["participant_jid"] or "")
+    target_id = payload.target_evolution_msg_id
+    instance_eff = c.evolution_instance_id or alvo["instance"] or "opcl"
+
+    # Dispatch por provider
+    try:
+        if c.tipo == "whatsapp_evolution":
+            instance, instance_id, instance_token = _evolution_meta(c)
+            evo_service.enviar_reacao(
+                instance, remote_jid, target_id, emoji,
+                from_me=alvo_from_me, participant=participant or None,
+                instance_id=instance_id, instance_token=instance_token,
+            )
+        elif c.tipo == "whatsapp_waha":
+            session, cfg = _waha_cfg(c)
+            payload_alvo = alvo["payload"] if isinstance(alvo["payload"], dict) else {}
+            waha_meta = payload_alvo.get("waha", {}) if isinstance(payload_alvo.get("waha"), dict) else {}
+            full_id = str(waha_meta.get("fullMessageId") or target_id)
+            waha_service.enviar_reacao(session, cfg, full_id, emoji)
+        elif c.tipo == "whatsapp_oficial":
+            config = c.config or {}
+            phone_number_id = config.get("phone_number_id", "")
+            access_token = config.get("access_token", "")
+            if not phone_number_id or not access_token:
+                raise HTTPException(status_code=400, detail="Canal Meta Cloud não configurado.")
+            to = remote_jid.split("@")[0]
+            meta_cloud.enviar_reacao(phone_number_id, access_token, to, target_id, emoji)
+        else:
+            raise HTTPException(status_code=400, detail="Reação não suportada para este tipo de canal.")
+    except (evo_service.EvolutionError, waha_service.WahaError) as exc:
+        logger.error("[reagir] falha ao enviar reação: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+    except meta_cloud.MetaCloudError as exc:
+        logger.error("[reagir] falha ao enviar reação Meta: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    # Persiste a NOSSA reação (from_me=true). Mesma chave do eco inbound → não duplica.
+    acao = upsert_reacao(
+        db,
+        workspace_id=workspace_id,
+        canal_id=str(c.id),
+        instance=instance_eff,
+        conversa_id=conversa_id,
+        mensagem_id=str(alvo["id"]),
+        target_evolution_msg_id=target_id,
+        reactor_jid="me",
+        reactor_name=None,
+        from_me=True,
+        emoji=emoji,
+        payload=None,
+    )
+    db.commit()
+
+    try:
+        publish_whatsapp_event({
+            "type": "message.reaction",
+            "workspaceId": workspace_id,
+            "conversaId": conversa_id,
+            "targetMessageId": target_id,
+            "mensagemId": str(alvo["id"]),
+            "emoji": emoji,
+            "reactorJid": "me",
+            "fromMe": True,
+            "removed": not emoji.strip(),
+            "instance": instance_eff,
+        })
+    except Exception as e:  # noqa: BLE001
+        logger.info("[reagir] REDIS FALHOU: %s", e)
+
+    return ReagirOut(ok=True, acao=acao)
+
+
 @router.post("/canais/{canal_id}/enviar-template", response_model=EnviarMensagemOut)
 def enviar_template_canal(
     canal_id: uuid.UUID,
@@ -3471,6 +3591,8 @@ async def receber_webhook_meta(
     for entry in resultado.get("entries", []):
         if entry["type"] == "message":
             _processar_mensagem_meta(db, canal, entry)
+        elif entry["type"] == "reaction":
+            _processar_reacao_meta(db, canal, entry)
         elif entry["type"] == "status":
             _processar_status_meta(db, canal, entry)
 
@@ -3796,6 +3918,16 @@ def _processar_evento_evolution(
             db.commit()
 
     if event_norm in message_events:
+        # Reação (reactionMessage): NÃO é mensagem nova — referencia a mensagem-alvo.
+        # Trata e retorna antes do fluxo de mensagem (que a inseriria como lixo / abortaria).
+        if _extract_reaction_payload(instance_data):
+            logger.info("[webhook-evolution] processando reação")
+            try:
+                process_evolution_reaction_event(db, canal, instance_data, raw_event_id=raw_event_id)
+            except Exception:
+                logger.exception("[webhook-evolution] ERRO no processamento de reação")
+            return
+
         logger.info("[webhook-evolution] processando evento de mensagem")
         try:
             resultado = _processar_mensagem_evolution(db, canal, instance_data, raw_event_id=raw_event_id)
@@ -4724,13 +4856,32 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
         )
         conversa_id = new_conv.scalar()
 
+    # Citação (reply): resolve preview da msg-alvo (quoted_wamid = context.id).
+    quoted_wamid = entry.get("quoted_wamid", "") or ""
+    quoted_text = None
+    quoted_remote_jid = None
+    quoted_message_type = None
+    if quoted_wamid:
+        q = db.execute(
+            text("""
+                SELECT conteudo, remote_jid, message_type FROM public.crm_whatsapp_mensagens
+                WHERE workspace_id = :ws AND evolution_msg_id = :qid AND instance = :inst
+                LIMIT 1
+            """),
+            {"ws": workspace_id, "qid": quoted_wamid, "inst": instance},
+        ).fetchone()
+        if q:
+            quoted_text = q[0]
+            quoted_remote_jid = q[1]
+            quoted_message_type = q[2]
+
     # 3. Salva mensagem (workspace_id/canal_id alimentam o índice único de dedup
     #    uq_crm_msg_workspace_canal_provider_id; ON CONFLICT evita abortar a transação)
     db.execute(
         text("""
             INSERT INTO public.crm_whatsapp_mensagens
-            (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, payload, recebida_em, created_at)
-            VALUES (:ws, :canal, :cid, :ct, :wamid, :inst, :jid, 'entrada', false, 'contato', :rn, :msg, :mt, :payload, :ts, NOW())
+            (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, quoted_message_id, quoted_remote_jid, quoted_message_type, quoted_text, payload, recebida_em, created_at)
+            VALUES (:ws, :canal, :cid, :ct, :wamid, :inst, :jid, 'entrada', false, 'contato', :rn, :msg, :mt, :qmid, :qrj, :qmt, :qt, :payload, :ts, NOW())
             ON CONFLICT (workspace_id, canal_id, instance, evolution_msg_id)
             WHERE evolution_msg_id IS NOT NULL AND evolution_msg_id != ''
             DO NOTHING
@@ -4746,6 +4897,10 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
             "rn": push_name or wa_id,
             "msg": text_content if text_content else "[mídia]",
             "mt": message_type,
+            "qmid": quoted_wamid or None,
+            "qrj": quoted_remote_jid,
+            "qmt": quoted_message_type,
+            "qt": quoted_text,
             "payload": json.dumps(entry),
             "ts": recebida_em,
         },
@@ -4766,6 +4921,72 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
         })
     except Exception as e:
         logger.info("[webhook-meta-msg] REDIS FALHOU: %s", e)
+
+
+def _processar_reacao_meta(db: Session, canal: CanalEntrada, entry: dict) -> None:
+    """Processa uma reação RECEBIDA da Meta Cloud API (type=reaction).
+
+    O contato reagiu a uma mensagem (target_wamid). Faz upsert em
+    crm_whatsapp_reacoes — NÃO insere mensagem. emoji vazio = remoção.
+    """
+    from sqlalchemy import text
+
+    wa_id = entry.get("wa_id", "")
+    target_wamid = entry.get("target_wamid", "") or ""
+    emoji = entry.get("emoji", "") or ""
+    if not wa_id or not target_wamid:
+        logger.warning("[webhook-meta-reaction] ABORTANDO: wa_id ou target_wamid vazio")
+        return
+
+    workspace_id = str(canal.workspace_id)
+    instance = canal.evolution_instance_id or "meta"
+
+    # Casa com a mensagem-alvo pelo wamid (= evolution_msg_id no Meta).
+    row = db.execute(
+        text("""
+            SELECT id, conversa_id FROM public.crm_whatsapp_mensagens
+            WHERE workspace_id = :ws AND evolution_msg_id = :wamid AND instance = :inst
+            LIMIT 1
+        """),
+        {"ws": workspace_id, "wamid": target_wamid, "inst": instance},
+    ).fetchone()
+    conversa_id = str(row[1]) if row and row[1] else None
+    mensagem_id = str(row[0]) if row and row[0] else None
+
+    contacts = entry.get("contacts", [])
+    reactor_name = contacts[0].get("profile", {}).get("name", "") if contacts else None
+
+    upsert_reacao(
+        db,
+        workspace_id=workspace_id,
+        canal_id=str(canal.id),
+        instance=instance,
+        conversa_id=conversa_id,
+        mensagem_id=mensagem_id,
+        target_evolution_msg_id=target_wamid,
+        reactor_jid=wa_id,
+        reactor_name=reactor_name,
+        from_me=False,
+        emoji=emoji,
+        payload=entry,
+    )
+    # commit é feito pelo chamador (receber_webhook_meta) após o loop de entries.
+
+    try:
+        publish_whatsapp_event({
+            "type": "message.reaction",
+            "workspaceId": workspace_id,
+            "conversaId": conversa_id,
+            "targetMessageId": target_wamid,
+            "mensagemId": mensagem_id,
+            "emoji": emoji,
+            "reactorJid": wa_id,
+            "fromMe": False,
+            "removed": not emoji.strip(),
+            "instance": instance,
+        })
+    except Exception as e:  # noqa: BLE001
+        logger.info("[webhook-meta-reaction] REDIS FALHOU: %s", e)
 
 
 def _processar_status_meta(db: Session, canal: CanalEntrada, entry: dict) -> None:

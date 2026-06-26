@@ -377,6 +377,43 @@ def adapt_waha_to_evolution(waha: dict) -> dict:
             "instance": session,
         }
 
+    # ── Branch message.reaction — reação com emoji ───────────────────────────
+    # Converte para messages.upsert + message.reactionMessage para cair no mesmo
+    # fluxo de reação do Evolution (process_evolution_reaction_event).
+    if event_name == "message.reaction":
+        reaction_obj = inner.get("reaction") or waha.get("reaction") or {}
+        if not isinstance(reaction_obj, dict):
+            reaction_obj = {}
+        target_full = str(reaction_obj.get("messageId") or reaction_obj.get("id") or "")
+        target_short = _waha_short_msg_id(target_full) if target_full else ""
+        emoji = reaction_obj.get("text") or reaction_obj.get("emoji") or ""
+        key_r: dict[str, object] = {"id": msg_id, "remoteJid": remote_jid, "fromMe": bool(from_me)}
+        if participant_jid:
+            key_r["participant"] = participant_jid
+        return {
+            "data": {
+                "key": key_r,
+                "pushName": push_name,
+                "participant": participant_jid,
+                "participantName": participant_name,
+                "provider": "whatsapp_waha",
+                "message": {
+                    "reactionMessage": {
+                        "key": {"id": target_short, "remoteJid": remote_jid},
+                        "text": emoji,
+                    }
+                },
+                "waha": {
+                    "session": session,
+                    "chatId": remote_jid,
+                    "messageId": msg_id,
+                    "fullMessageId": str(inner.get("id") or waha.get("id") or ""),
+                },
+            },
+            "event": "messages.upsert",
+            "instance": session,
+        }
+
     # ── Branch mensagem (texto / mídia) ──────────────────────────────────────
     waha_type  = str(inner.get("type") or "").lower()
     media_obj  = inner.get("media") or {}

@@ -11,6 +11,7 @@ from app.models.crm.mensagem import Mensagem
 from app.models.crm.message_job import MessageJob
 from app.models.crm.memoria_ia import MemoriaIA
 from app.models.crm.midia import Midia
+from app.models.crm.reacao import Reacao
 from app.models.crm.painel import (
     Painel,
     PainelCampo,
@@ -36,6 +37,7 @@ __all__ = [
     "EquipeMembro",
     "Permissao",
     "Midia",
+    "Reacao",
     "Evento",
     "FollowUp",
     "LeadOriginEvent",

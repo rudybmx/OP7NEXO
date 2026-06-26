@@ -127,6 +127,9 @@ class Mensagem(Base):
     midias: Mapped[list["Midia"]] = relationship(
         back_populates="mensagem", lazy="select"
     )
+    reacoes: Mapped[list["Reacao"]] = relationship(
+        back_populates="mensagem", lazy="select", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index(

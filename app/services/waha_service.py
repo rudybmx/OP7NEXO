@@ -11,7 +11,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 15.0
-OP7_WAHA_WEBHOOK_EVENTS = ["message", "message.any", "message.ack", "session.status"]
+OP7_WAHA_WEBHOOK_EVENTS = ["message", "message.any", "message.ack", "message.reaction", "session.status"]
 
 # NOWEB store: necessário para foto de perfil de contatos não-cacheados e para
 # resolução de @lid → telefone. Sem ele, /api/contacts/profile-picture devolve
@@ -291,6 +291,31 @@ def enviar_mensagem_texto(session: str, cfg: dict, chat_id: str, texto: str, rep
         ) from exc
     except httpx.RequestError as exc:
         raise WahaError(f"WAHA sendText: {exc}") from exc
+
+
+def enviar_reacao(session: str, cfg: dict, message_id: str, emoji: str) -> dict[str, Any]:
+    """PUT /api/reaction — envia (ou remove) uma reação com emoji via WAHA Plus.
+
+    `message_id`: id serializado completo da msg-alvo
+    (`{true|false}_{chatId}_{waid}[_{participantLid}]`). `emoji` vazio remove.
+    """
+    base_url, headers = _headers(cfg)
+    body = {"session": session, "messageId": message_id, "reaction": emoji or ""}
+    try:
+        resp = httpx.put(
+            f"{base_url}/api/reaction",
+            headers=headers,
+            json=body,
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+    except httpx.HTTPStatusError as exc:
+        raise WahaError(
+            f"WAHA reaction: {exc.response.status_code} {exc.response.text[:200]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise WahaError(f"WAHA reaction: {exc}") from exc
 
 
 def definir_digitando(session: str, cfg: dict, chat_id: str, ligar: bool) -> None:

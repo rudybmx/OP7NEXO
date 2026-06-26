@@ -4,7 +4,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
@@ -61,6 +61,8 @@ class MensagemOut(BaseModel):
     quoted_remote_jid: str | None = None
     quoted_message_type: str | None = None
     quoted_text: str | None = None
+    # Reações agregadas por emoji: [{emoji, count, mine, reactors:[nomes]}]
+    reacoes: list[dict] = []
     midias: list[dict] = []
     ativo: bool
     criado_em: datetime
@@ -337,6 +339,28 @@ def _dedup_midias(midias: list) -> list[dict]:
     return [{k: v for k, v in m.items() if k != "_created_at"} for m in seen.values()]
 
 
+def _aggregate_reacoes(m: Mensagem) -> list[dict]:
+    """Agrega as reações da mensagem por emoji para o front renderizar os chips.
+    Cada item: {emoji, count, mine (alguma from_me), reactors:[nomes/jids]}."""
+    reacoes = getattr(m, "reacoes", None) or []
+    grupos: dict[str, dict] = {}
+    for r in reacoes:
+        emoji = (getattr(r, "emoji", None) or "").strip()
+        if not emoji:
+            continue  # reação removida
+        g = grupos.get(emoji)
+        if g is None:
+            g = {"emoji": emoji, "count": 0, "mine": False, "reactors": []}
+            grupos[emoji] = g
+        g["count"] += 1
+        if getattr(r, "from_me", False):
+            g["mine"] = True
+        nome = getattr(r, "reactor_name", None) or getattr(r, "reactor_jid", None)
+        if nome:
+            g["reactors"].append(nome)
+    return list(grupos.values())
+
+
 def _mensagem_out(m: Mensagem, name_by_jid: dict[str, str] | None = None) -> MensagemOut:
     mf = _derive_media_fields(m)
     jids = _derive_mentioned_jids(m)
@@ -389,6 +413,7 @@ def _mensagem_out(m: Mensagem, name_by_jid: dict[str, str] | None = None) -> Men
         quoted_remote_jid=getattr(m, "quoted_remote_jid", None),
         quoted_message_type=getattr(m, "quoted_message_type", None),
         quoted_text=getattr(m, "quoted_text", None),
+        reacoes=_aggregate_reacoes(m),
         midias=_dedup_midias(m.midias or []),
         ativo=m.ativo,
         criado_em=m.criado_em,
@@ -406,7 +431,7 @@ def listar_mensagens(
     workspace_filter=Depends(get_workspace_atual),
     db: Session = Depends(get_db),
 ):
-    q = db.query(Mensagem).filter(
+    q = db.query(Mensagem).options(selectinload(Mensagem.reacoes)).filter(
         Mensagem.conversa_id == conversa_id,
         Mensagem.ativo.is_(True),
     )

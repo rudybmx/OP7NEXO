@@ -670,6 +670,203 @@ def _find_existing_message(
     return dict(row) if row else None
 
 
+def _extract_reaction_payload(data: dict[str, Any]) -> dict[str, str] | None:
+    """Extrai a reactionMessage de um evento Evolution/WAHA-adaptado, se houver.
+
+    Retorna {target_id, emoji} — `target_id` = key.id da mensagem REAGIDA
+    (`message.reactionMessage.key.id`), `emoji` = `reactionMessage.text` (vazio = remoção).
+    None quando o evento não é uma reação.
+    """
+    message = payload_message(data)
+    if not isinstance(message, dict):
+        message = data.get("message") if isinstance(data.get("message"), dict) else {}
+    reaction = message.get("reactionMessage") if isinstance(message, dict) else None
+    if not isinstance(reaction, dict):
+        return None
+    key = reaction.get("key") if isinstance(reaction.get("key"), dict) else {}
+    target_id = str(key.get("id") or "").strip()
+    if not target_id:
+        return None
+    return {"target_id": target_id, "emoji": str(reaction.get("text") or "")}
+
+
+def upsert_reacao(
+    db: Session,
+    *,
+    workspace_id: str,
+    canal_id: str | None,
+    instance: str | None,
+    conversa_id: str | None,
+    mensagem_id: str | None,
+    target_evolution_msg_id: str,
+    reactor_jid: str,
+    reactor_name: str | None,
+    from_me: bool,
+    emoji: str | None,
+    payload: dict[str, Any] | None = None,
+) -> str:
+    """UPSERT idempotente de reação (provider-agnóstico). `emoji` vazio → REMOVE a linha.
+
+    A unicidade é por (workspace, canal, instance, mensagem-alvo, quem-reagiu) — o emoji
+    fica fora da chave, então trocar o emoji é UPDATE e o eco `from_me` do que enviamos
+    cai na mesma linha (sem duplicar). NÃO faz commit — o chamador decide.
+    """
+    import json as _json
+
+    emoji_norm = (emoji or "").strip()
+    params = {
+        "ws": workspace_id,
+        "canal": canal_id,
+        "inst": instance,
+        "tgt": target_evolution_msg_id,
+        "rj": reactor_jid,
+    }
+    if not emoji_norm:
+        db.execute(
+            text("""
+                DELETE FROM public.crm_whatsapp_reacoes
+                WHERE workspace_id = CAST(:ws AS uuid)
+                  AND canal_id IS NOT DISTINCT FROM CAST(:canal AS uuid)
+                  AND instance IS NOT DISTINCT FROM :inst
+                  AND target_evolution_msg_id = :tgt
+                  AND reactor_jid = :rj
+            """),
+            params,
+        )
+        return "removed"
+
+    db.execute(
+        text("""
+            INSERT INTO public.crm_whatsapp_reacoes
+              (workspace_id, canal_id, conversa_id, mensagem_id, instance,
+               target_evolution_msg_id, reactor_jid, reactor_name, from_me, emoji,
+               reacted_at, payload, created_at, updated_at)
+            VALUES (CAST(:ws AS uuid), CAST(:canal AS uuid), CAST(:conv AS uuid),
+                    CAST(:msg AS uuid), :inst, :tgt, :rj, :rn, :fromme, :emoji,
+                    now(), CAST(:payload AS jsonb), now(), now())
+            ON CONFLICT (workspace_id, canal_id, instance, target_evolution_msg_id, reactor_jid)
+            DO UPDATE SET
+                emoji = EXCLUDED.emoji,
+                reactor_name = COALESCE(EXCLUDED.reactor_name, crm_whatsapp_reacoes.reactor_name),
+                mensagem_id = COALESCE(EXCLUDED.mensagem_id, crm_whatsapp_reacoes.mensagem_id),
+                conversa_id = COALESCE(EXCLUDED.conversa_id, crm_whatsapp_reacoes.conversa_id),
+                from_me = EXCLUDED.from_me,
+                reacted_at = now(),
+                payload = EXCLUDED.payload,
+                updated_at = now()
+        """),
+        {
+            **params,
+            "conv": conversa_id,
+            "msg": mensagem_id,
+            "rn": reactor_name,
+            "fromme": from_me,
+            "emoji": emoji_norm,
+            "payload": _json.dumps(payload) if payload is not None else None,
+        },
+    )
+    return "upserted"
+
+
+def process_evolution_reaction_event(
+    db: Session,
+    canal: CanalEntrada,
+    data: dict[str, Any],
+    *,
+    raw_event_id: str | uuid.UUID | None = None,
+) -> dict[str, Any] | None:
+    """Processa uma reação RECEBIDA (Evolution/WAHA). Casa a reação com a mensagem-alvo
+    pelo id externo do provider e faz upsert em crm_whatsapp_reacoes — NÃO insere mensagem
+    (era o que poluía a conversa com linhas reactionMessage)."""
+    reaction = _extract_reaction_payload(data)
+    if not reaction:
+        return None
+
+    normalized = normalize_message_event(data, instance=canal.evolution_instance_id)
+    instance = canal.evolution_instance_id or normalized.instance or "opcl"
+    workspace_id = str(canal.workspace_id)
+    canal_id = str(canal.id)
+    remote_jid = normalized.remote_jid
+    from_me = normalized.from_me
+    target_id = reaction["target_id"]
+    emoji = reaction["emoji"]
+
+    if any(is_ignored_whatsapp_jid(v) for v in (remote_jid, normalized.participant_jid)):
+        return None
+
+    # Quem reagiu: nós (from_me) → "me"; em grupo → participant; 1:1 → remote_jid.
+    if from_me:
+        reactor_jid = "me"
+    else:
+        reactor_jid = normalized.participant_jid or remote_jid or ""
+    if not reactor_jid:
+        return None
+    reactor_name = _valid_display_name(
+        normalized.push_name,
+        jid=reactor_jid,
+        own_identity=_channel_own_identity(canal),
+    )
+
+    # Casa com a mensagem-alvo pelo id externo (evolution_msg_id). Tolera alvo ausente.
+    existing = _find_existing_message(
+        db,
+        workspace_id=workspace_id,
+        canal_id=canal_id,
+        instance=instance,
+        evolution_msg_id=target_id,
+        remote_jid=remote_jid,
+        message_hash="",
+    )
+    conversa_id = str(existing["conversa_id"]) if existing and existing.get("conversa_id") else None
+    mensagem_id = str(existing["id"]) if existing and existing.get("id") else None
+
+    try:
+        acao = upsert_reacao(
+            db,
+            workspace_id=workspace_id,
+            canal_id=canal_id,
+            instance=instance,
+            conversa_id=conversa_id,
+            mensagem_id=mensagem_id,
+            target_evolution_msg_id=target_id,
+            reactor_jid=reactor_jid,
+            reactor_name=reactor_name,
+            from_me=from_me,
+            emoji=emoji,
+            payload=data if isinstance(data, dict) else None,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("[webhook-reaction] falha ao persistir reação target=%s", target_id)
+        return None
+
+    logger.info(
+        "[webhook-reaction] %s target=%s reactor=%s emoji=%s conversa=%s",
+        acao, target_id, reactor_jid, emoji or "(remover)", conversa_id,
+    )
+
+    try:
+        publish_whatsapp_event(
+            {
+                "type": "message.reaction",
+                "workspaceId": workspace_id,
+                "conversaId": conversa_id,
+                "targetMessageId": target_id,
+                "mensagemId": mensagem_id,
+                "emoji": emoji,
+                "reactorJid": reactor_jid,
+                "fromMe": from_me,
+                "removed": not (emoji or "").strip(),
+                "instance": instance,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.info("[webhook-reaction] REDIS FALHOU: %s", exc)
+
+    return {"conversa_id": conversa_id, "mensagem_id": mensagem_id, "emoji": emoji, "acao": acao}
+
+
 def _merge_message_media_fields(
     db: Session,
     *,

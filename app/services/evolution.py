@@ -969,6 +969,45 @@ def enviar_mensagem_texto(
         return _json_or_text(resp)
 
 
+def enviar_reacao(
+    instance_name: str,
+    numero: str,
+    target_msg_id: str,
+    emoji: str,
+    *,
+    from_me: bool = False,
+    participant: str | None = None,
+    instance_id: str | None = None,
+    instance_token: str | None = None,
+) -> dict[str, Any]:
+    """Envia (ou remove) uma reação com emoji via Evolution Go.
+
+    Endpoint `POST /message/react` (struct ReactStruct do evolution-go):
+    `{number, reaction, id, fromMe, participant?}`. `emoji` vazio remove a reação
+    (o Evolution Go também aceita o literal "remove").
+
+    - `target_msg_id`: wa-id (key.id) da mensagem reagida (= evolution_msg_id).
+    - `from_me`: se a mensagem-alvo foi enviada por nós.
+    - `participant`: jid de quem enviou a msg-alvo (em grupo).
+    """
+    body: dict[str, Any] = {
+        "number": numero,
+        "reaction": emoji or "",
+        "id": target_msg_id,
+        "fromMe": from_me,
+    }
+    if participant:
+        body["participant"] = participant
+    with httpx.Client(timeout=30) as client:
+        resp = client.post(
+            f"{META}/message/react",
+            headers=_send_headers(instance_id, instance_token),
+            json=body,
+        )
+        _handle_error(resp, "enviar_reacao")
+        return _json_or_text(resp)
+
+
 def enviar_presenca(
     instance_name: str,
     numero: str,
