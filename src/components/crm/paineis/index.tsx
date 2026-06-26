@@ -203,6 +203,19 @@ export function PaineisCRM() {
                 Automação
               </span>
             )}
+            {resumoAtivo?.sistema && (
+              <span className="inline-flex items-center gap-1.5" title="A IA classifica a etapa do lead e move o card no funil automaticamente">
+                <Switch
+                  checked={resumoAtivo.agente_funil}
+                  onCheckedChange={(v) =>
+                    comErro(() => Promise.resolve(p.toggleAgenteFunil(resumoAtivo.id, v)), 'Erro ao alterar Funil IA.')
+                  }
+                  className="scale-75"
+                  aria-label="Funil IA"
+                />
+                Funil IA
+              </span>
+            )}
             {resumoAtivo && (
               <button
                 onClick={() =>

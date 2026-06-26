@@ -1,8 +1,8 @@
 'use client'
 
-import { Calendar, MessageCircle, Flag, GripVertical, Bot } from 'lucide-react'
+import { Calendar, MessageCircle, Flag, GripVertical, Bot, Flame } from 'lucide-react'
 import type { KanbanCard } from '@/types/kanban'
-import { PRIORIDADE_CONFIG, isVencido, formatarDataCurta } from './_shared'
+import { PRIORIDADE_CONFIG, TEMPERATURA_CONFIG, isVencido, formatarDataCurta } from './_shared'
 
 interface KanbanCardProps {
   card: KanbanCard
@@ -13,6 +13,7 @@ interface KanbanCardProps {
 export function KanbanCardComp({ card, reordenavel, onClick }: KanbanCardProps) {
   const vencido = isVencido(card.dataVencimento)
   const prio = card.prioridade ? PRIORIDADE_CONFIG[card.prioridade] : null
+  const temp = card.leadTemperatura ? TEMPERATURA_CONFIG[card.leadTemperatura] : null
 
   return (
     <div
@@ -35,7 +36,16 @@ export function KanbanCardComp({ card, reordenavel, onClick }: KanbanCardProps) 
 
       {/* Footer */}
       <div className="flex items-center justify-between gap-1.5">
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {temp && (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-micro font-semibold ${temp.classe}`}
+              title="Temperatura do lead (análise IA)"
+            >
+              <Flame className="size-2.5" /> {temp.label}
+              {typeof card.leadScore === 'number' ? ` ${card.leadScore}` : ''}
+            </span>
+          )}
           {prio && (
             <span
               className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-micro font-semibold ${prio.classe}`}

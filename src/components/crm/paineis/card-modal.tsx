@@ -239,24 +239,37 @@ export function CardModal({
 
               {comentarios.length > 0 ? (
                 <ol className="mb-4 space-y-4">
-                  {comentarios.map((c) => (
-                    <li key={c.id} className="flex gap-3">
-                      <Avatar className="mt-0.5 size-7 shrink-0">
-                        <AvatarFallback className="bg-muted text-[10px] font-semibold text-foreground">
-                          {iniciais(c.autor_nome)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-sm font-medium text-foreground">{c.autor_nome ?? 'Usuário'}</span>
-                          <span className="text-micro text-muted-foreground">{formatarDataHora(c.criado_em)}</span>
+                  {comentarios.map((c) => {
+                    const ehIA = c.origem === 'ia' || c.origem === 'sistema'
+                    return (
+                      <li key={c.id} className="flex gap-3">
+                        <Avatar className="mt-0.5 size-7 shrink-0">
+                          <AvatarFallback
+                            className={
+                              ehIA
+                                ? 'bg-primary/15 text-primary'
+                                : 'bg-muted text-[10px] font-semibold text-foreground'
+                            }
+                          >
+                            {ehIA ? <Bot className="size-3.5" /> : iniciais(c.autor_nome)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-sm font-medium text-foreground">{c.autor_nome ?? 'Usuário'}</span>
+                            <span className="text-micro text-muted-foreground">{formatarDataHora(c.criado_em)}</span>
+                          </div>
+                          <p
+                            className={`mt-0.5 whitespace-pre-wrap text-sm leading-relaxed ${
+                              ehIA ? 'text-muted-foreground italic' : 'text-foreground'
+                            }`}
+                          >
+                            {c.texto}
+                          </p>
                         </div>
-                        <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                          {c.texto}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    )
+                  })}
                 </ol>
               ) : (
                 <p className="mb-3 text-xs text-muted-foreground">

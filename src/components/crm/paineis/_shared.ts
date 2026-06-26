@@ -13,6 +13,16 @@ export const PRIORIDADE_CONFIG: Record<
 
 export const PRIORIDADES: Prioridade[] = ['baixa', 'media', 'alta', 'urgente']
 
+/** Temperatura do lead (análise IA): cor + rótulo. */
+export const TEMPERATURA_CONFIG: Record<
+  'quente' | 'morno' | 'frio',
+  { label: string; classe: string; dot: string }
+> = {
+  quente: { label: 'Quente', classe: 'bg-orange-500/12 text-orange-600 dark:text-orange-400', dot: 'bg-orange-500' },
+  morno: { label: 'Morno', classe: 'bg-amber-500/12 text-amber-600 dark:text-amber-400', dot: 'bg-amber-500' },
+  frio: { label: 'Frio', classe: 'bg-sky-500/12 text-sky-600 dark:text-sky-400', dot: 'bg-sky-500' },
+}
+
 export function isVencido(iso?: string): boolean {
   if (!iso) return false
   return new Date(iso + 'T23:59:59') < new Date()

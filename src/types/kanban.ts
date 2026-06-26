@@ -15,7 +15,10 @@ export interface Comentario {
   avatarInitials: string
   texto: string
   criadoEm: string
+  origem?: 'usuario' | 'ia' | 'sistema'
 }
+
+export type Temperatura = 'quente' | 'morno' | 'frio'
 
 export interface KanbanCard {
   id: string
@@ -42,6 +45,9 @@ export interface KanbanCard {
   contatoId?: string | null
   resumoConversa?: string | null
   origemAgente?: boolean | null
+  // Pontuação da IA (espelho do contato; atualizada pela análise)
+  leadTemperatura?: Temperatura | null
+  leadScore?: number | null
 }
 
 export interface KanbanColuna {
@@ -63,6 +69,7 @@ export interface KanbanBoard {
   tipo?: string
   sistema?: boolean
   automacaoAtiva?: boolean
+  agenteFunil?: boolean
   bloqueado?: boolean
 }
 
@@ -74,6 +81,7 @@ export interface PainelResumoApi {
   tipo: string
   sistema: boolean
   automacao_ativa: boolean
+  agente_funil: boolean
   bloqueado: boolean
   ordem: number
 }
@@ -101,6 +109,7 @@ export interface ComentarioApi {
   id: string
   autor_user_id: string | null
   autor_nome: string | null
+  origem?: 'usuario' | 'ia' | 'sistema'
   texto: string
   criado_em: string
 }
@@ -116,6 +125,8 @@ export interface CardApi {
   responsavel_nome: string | null
   responsavel_agente_id: string | null
   responsavel_agente_nome: string | null
+  lead_temperatura: string | null
+  lead_score: number | null
   origem_agente: boolean | null
   data_vencimento: string | null
   nome: string | null

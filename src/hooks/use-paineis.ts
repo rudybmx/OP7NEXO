@@ -57,7 +57,12 @@ function mapComentario(c: ComentarioApi): Comentario {
     avatarInitials: iniciais(c.autor_nome),
     texto: c.texto,
     criadoEm: c.criado_em,
+    origem: c.origem,
   }
+}
+
+function normTemperatura(t?: string | null): 'quente' | 'morno' | 'frio' | null {
+  return t === 'quente' || t === 'morno' || t === 'frio' ? t : null
 }
 
 /** Mescla as definições de campo do painel com os valores do card. */
@@ -94,6 +99,8 @@ function mapCard(card: CardApi, defs: CampoApi[] = []): KanbanCard {
     contatoId: card.contato_id,
     resumoConversa: card.resumo_conversa,
     origemAgente: card.origem_agente,
+    leadTemperatura: normTemperatura(card.lead_temperatura),
+    leadScore: card.lead_score,
   }
 }
 
@@ -104,6 +111,7 @@ function mapBoard(d: PainelDetalheApi): KanbanBoard {
     tipo: d.tipo,
     sistema: d.sistema,
     automacaoAtiva: d.automacao_ativa,
+    agenteFunil: d.agente_funil,
     bloqueado: d.bloqueado,
     colunas: [...d.fases].sort((a, b) => a.ordem - b.ordem).map(mapColuna),
     campos: [...d.campos].sort((a, b) => a.ordem - b.ordem).map(mapCampoDef),
@@ -232,6 +240,23 @@ export function usePaineis(workspaceId?: string | null) {
       if (id === boardId) patchDetalhe((d) => ({ ...d, bloqueado: valor }))
       try {
         await api.patch(`/paineis/${id}/bloqueio`, { valor })
+      } finally {
+        await mutateLista()
+        if (id === boardId) await mutateDetalhe()
+      }
+    },
+    [mutateLista, patchDetalhe, mutateDetalhe, boardId],
+  )
+
+  const toggleAgenteFunil = useCallback(
+    async (id: string, valor: boolean) => {
+      mutateLista(
+        (cur) => cur?.map((p) => (p.id === id ? { ...p, agente_funil: valor } : p)),
+        { revalidate: false },
+      )
+      if (id === boardId) patchDetalhe((d) => ({ ...d, agente_funil: valor }))
+      try {
+        await api.patch(`/paineis/${id}/agente-funil`, { valor })
       } finally {
         await mutateLista()
         if (id === boardId) await mutateDetalhe()
@@ -409,6 +434,7 @@ export function usePaineis(workspaceId?: string | null) {
     excluirPainel,
     toggleAutomacao,
     toggleBloqueio,
+    toggleAgenteFunil,
     // fases
     criarFase,
     atualizarFase,
