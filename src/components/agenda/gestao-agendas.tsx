@@ -1,10 +1,12 @@
 'use client'
 
-import React from 'react'
-import { Plus, Pencil, Users, Clock, CalendarDays } from 'lucide-react'
+import React, { useState } from 'react'
+import { Plus, Pencil, Users, Clock, CalendarDays, Link2, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Agenda, AgendaTipo } from '@/types/agenda'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import api from '@/lib/api-client'
 
 const TIPO_LABELS: Record<AgendaTipo, string> = {
   profissional: 'Profissional',
@@ -27,6 +29,23 @@ interface GestaoAgendasProps {
 }
 
 export function GestaoAgendas({ agendas, onNova, onEditar }: GestaoAgendasProps) {
+  const [gerandoId, setGerandoId] = useState<string | null>(null)
+
+  const gerarLinkPublico = async (agenda: Agenda) => {
+    setGerandoId(agenda.id)
+    try {
+      const r = await api.post<{ link: string; ativo: boolean }>(`/agenda/agendas/${agenda.id}/link-publico`)
+      await navigator.clipboard.writeText(r.link).catch(() => {})
+      toast.success('Link público copiado!', {
+        description: r.ativo ? r.link : 'Atenção: o agendamento online está desativado nesta agenda (Opções Gerais).',
+      })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao gerar o link público.')
+    } finally {
+      setGerandoId(null)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Header */}
@@ -107,6 +126,18 @@ export function GestaoAgendas({ agendas, onNova, onEditar }: GestaoAgendasProps)
                 <Clock size={11} />
                 {FUSO_CURTO[agenda.fuso_horario] ?? agenda.fuso_horario}
               </div>
+
+              {/* Link público de agendamento */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 w-full"
+                onClick={() => gerarLinkPublico(agenda)}
+                disabled={gerandoId === agenda.id}
+              >
+                {gerandoId === agenda.id ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
+                Link público de agendamento
+              </Button>
             </div>
           ))}
         </div>
