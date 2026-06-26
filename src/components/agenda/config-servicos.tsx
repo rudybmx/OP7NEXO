@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Plus, X, Trash2, Clock, DollarSign } from 'lucide-react'
+import { Plus, Trash2, Clock, DollarSign } from 'lucide-react'
 import { useAgendas } from '@/hooks/use-agendas'
 import { useServicos } from '@/hooks/use-servicos'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 
 const DURACOES = [15, 30, 45, 60, 90, 120]
 
@@ -42,69 +50,62 @@ export function ConfigServicos() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500 relative min-h-[600px]">
+    <div className="space-y-6">
       {/* Actions */}
       <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-white/50">Serviços/procedimentos do catálogo. A duração guia os horários disponíveis.</p>
-        <Button
-          onClick={() => setIsPanelOpen(true)}
-          className="gap-2"
-          style={{ background: 'linear-gradient(135deg, var(--ws-blue), var(--ws-purple))', borderRadius: 'var(--ws-radius-md)', border: 'none' }}
-        >
-          <Plus size={18} />
-          Novo Serviço
+        <p className="text-sm text-muted-foreground">
+          Serviços/procedimentos do catálogo. A duração guia os horários disponíveis.
+        </p>
+        <Button onClick={() => setIsPanelOpen(true)}>
+          <Plus size={16} />
+          Novo serviço
         </Button>
       </div>
 
       {/* Table */}
-      <div
-        className="relative overflow-hidden"
-        style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)', borderRadius: 'var(--ws-radius-lg)', backdropFilter: 'blur(16px)', boxShadow: 'var(--ws-glass-shadow)' }}
-      >
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent)', pointerEvents: 'none' }} />
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-white/10">
-                <th className="px-6 py-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">Serviço</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">Agenda</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-white/40 uppercase tracking-widest text-center">Duração</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-white/40 uppercase tracking-widest text-right">Preço</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-white/40 uppercase tracking-widest text-right">Ações</th>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Serviço</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Agenda</th>
+                <th className="px-6 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Duração</th>
+                <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Preço</th>
+                <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-border">
               {servicos.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-white/20 italic">Nenhum serviço cadastrado.</td>
+                  <td colSpan={5} className="px-6 py-12 text-center italic text-muted-foreground">
+                    Nenhum serviço cadastrado.
+                  </td>
                 </tr>
               ) : (
                 servicos.map((s) => (
-                  <tr key={s.id} className="hover:bg-white/[0.02] transition-colors group">
-                    <td className="px-6 py-4"><span className="text-sm font-medium text-white">{s.nome}</span></td>
+                  <tr key={s.id} className="group transition-colors hover:bg-muted/40">
+                    <td className="px-6 py-4"><span className="text-sm font-medium text-foreground">{s.nome}</span></td>
                     <td className="px-6 py-4">
                       <Badge
                         variant="outline"
-                        className="text-[10px] font-semibold border-white/10 px-2 py-0.5 whitespace-nowrap"
-                        style={{ color: getAgendaColor(s.agenda_id), backgroundColor: `${getAgendaColor(s.agenda_id)}15` }}
+                        className="whitespace-nowrap border-transparent text-[10px] font-semibold"
+                        style={{ color: getAgendaColor(s.agenda_id), backgroundColor: `${getAgendaColor(s.agenda_id)}1F` }}
                       >
                         {getAgendaNome(s.agenda_id)}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <span className="text-sm text-white/80">{s.duracao_minutos} min</span>
+                      <span className="text-sm text-muted-foreground">{s.duracao_minutos} min</span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <span className="text-sm text-white/80">{s.preco != null ? `R$ ${Number(s.preco).toFixed(2)}` : '—'}</span>
+                      <span className="text-sm text-muted-foreground">{s.preco != null ? `R$ ${Number(s.preco).toFixed(2)}` : '—'}</span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => removerServico(s.id)}
-                          className="p-2 h-8 w-8 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all"
-                        >
+                      <div className="flex items-center justify-end opacity-0 transition-opacity group-hover:opacity-100">
+                        <Button variant="destructive" size="icon-sm" onClick={() => removerServico(s.id)}>
                           <Trash2 size={14} />
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -115,109 +116,78 @@ export function ConfigServicos() {
         </div>
       </div>
 
-      {/* Sliding Panel */}
-      {isPanelOpen && (
-        <div className="absolute inset-0 z-50">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsPanelOpen(false)} />
-          <div className="absolute top-0 left-0 bottom-0 w-[480px] bg-[#0E142A] border-r border-white/10 shadow-2xl animate-in slide-in-from-left duration-300 flex flex-col">
-            <div className="p-6 border-b border-white/10 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white">Novo Serviço</h2>
-                <p className="text-xs text-white/40 mt-1 uppercase tracking-widest">Procedimento com duração e preço</p>
-              </div>
-              <button onClick={() => setIsPanelOpen(false)} className="p-2 rounded-full hover:bg-white/10 text-white/40 hover:text-white transition-colors">
-                <X size={20} />
-              </button>
+      {/* Modal de novo serviço */}
+      <Dialog open={isPanelOpen} onOpenChange={setIsPanelOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo serviço</DialogTitle>
+            <DialogDescription>Procedimento com duração e preço</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 px-4">
+            <div className="space-y-1.5">
+              <label className="ds-label">Nome do serviço *</label>
+              <Input
+                placeholder="Ex: Avaliação, Limpeza, Consulta"
+                value={form.nome}
+                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+              />
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
-              <div
-                className="relative p-6 space-y-6"
-                style={{ background: 'var(--ws-glass-bg)', border: '1px solid var(--ws-glass-border)', borderRadius: 'var(--ws-radius-lg)', backdropFilter: 'blur(16px)', boxShadow: 'var(--ws-glass-shadow)' }}
-              >
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent)', pointerEvents: 'none' }} />
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Nome do serviço *</label>
-                  <Input
-                    placeholder="Ex: Avaliação, Limpeza, Consulta"
-                    value={form.nome}
-                    onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                    className="bg-black/20 border-white/10 text-white placeholder:text-white/20"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Agenda</label>
-                  <Select value={form.agenda_id} onValueChange={(val) => setForm({ ...form, agenda_id: val })}>
-                    <SelectTrigger className="bg-black/20 border-white/10 text-white">
-                      <SelectValue placeholder="Selecione a agenda" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#0E142A] border-white/10 text-white">
-                      <SelectItem value="global" className="focus:bg-white/10 focus:text-white">Todas as agendas</SelectItem>
-                      {agendas.map((a) => (
-                        <SelectItem key={a.id} value={a.id} className="focus:bg-white/10 focus:text-white">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: a.cor }} />
-                            <span>{a.nome}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest flex items-center gap-1.5">
-                      <Clock size={10} /> Duração
-                    </label>
-                    <Select value={String(form.duracao_minutos)} onValueChange={(val) => setForm({ ...form, duracao_minutos: Number(val) })}>
-                      <SelectTrigger className="bg-black/20 border-white/10 text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#0E142A] border-white/10 text-white">
-                        {DURACOES.map((d) => (
-                          <SelectItem key={d} value={String(d)}>{d} min</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest flex items-center gap-1.5">
-                      <DollarSign size={10} /> Preço (opcional)
-                    </label>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      placeholder="0,00"
-                      value={form.preco}
-                      onChange={(e) => setForm({ ...form, preco: e.target.value })}
-                      className="bg-black/20 border-white/10 text-white placeholder:text-white/20"
-                    />
-                  </div>
-                </div>
-              </div>
+            <div className="space-y-1.5">
+              <label className="ds-label">Agenda</label>
+              <Select value={form.agenda_id} onValueChange={(val) => setForm({ ...form, agenda_id: val })}>
+                <SelectTrigger className="h-8 w-full text-sm">
+                  <SelectValue placeholder="Selecione a agenda" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Todas as agendas</SelectItem>
+                  {agendas.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      <span className="flex items-center gap-2">
+                        <span className="size-2 rounded-full" style={{ backgroundColor: a.cor }} />
+                        {a.nome}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="p-6 border-t border-white/10">
-              <div className="flex items-center gap-3">
-                <Button variant="outline" onClick={() => setIsPanelOpen(false)} className="flex-1 bg-transparent border-white/10 text-white hover:bg-white/5">
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={handleAdd}
-                  className="flex-1 font-bold shadow-lg"
-                  style={{ background: 'linear-gradient(135deg, var(--ws-blue), var(--ws-purple))', borderRadius: 'var(--ws-radius-md)', border: 'none' }}
-                >
-                  Salvar Serviço
-                </Button>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="ds-label flex items-center gap-1.5"><Clock size={10} /> Duração</label>
+                <Select value={String(form.duracao_minutos)} onValueChange={(val) => setForm({ ...form, duracao_minutos: Number(val) })}>
+                  <SelectTrigger className="h-8 w-full text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DURACOES.map((d) => (
+                      <SelectItem key={d} value={String(d)}>{d} min</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="ds-label flex items-center gap-1.5"><DollarSign size={10} /> Preço (opcional)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  placeholder="0,00"
+                  value={form.preco}
+                  onChange={(e) => setForm({ ...form, preco: e.target.value })}
+                />
               </div>
             </div>
           </div>
-        </div>
-      )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsPanelOpen(false)}>Cancelar</Button>
+            <Button onClick={handleAdd}>Salvar serviço</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

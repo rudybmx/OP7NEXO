@@ -71,24 +71,24 @@ export function ListaAgendamentos({
           100% { box-shadow: 0 0 0 0 rgba(122, 90, 248, 0); }
         }
       `}</style>
-      <div className="flex flex-col h-full bg-transparent overflow-y-auto overflow-x-hidden p-4 gap-6 scrollbar-hide">
-      
+      <div className="flex flex-col h-full bg-card overflow-y-auto overflow-x-hidden p-4 gap-6 scrollbar-hide">
+
       {grupos.map((grupo, gIdx) => (
         <div key={gIdx} className="flex flex-col gap-3">
           {/* HEADER DE DATA */}
           <div className="flex items-center gap-4 px-2">
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-[var(--ws-gold)]">
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-primary">
               {format(grupo.data, "EEEE, d 'de' MMMM", { locale: ptBR })}
             </h3>
-            <div className="flex-1 h-[1px] bg-white/5" />
+            <div className="flex-1 h-px bg-border" />
           </div>
 
           {/* GRID TIPO TABELA */}
-          <div 
-            className="flex flex-col bg-white/[0.02] border border-white/5 rounded-xl overflow-hidden backdrop-blur-md"
+          <div
+            className="flex flex-col bg-card border border-border rounded-xl overflow-hidden"
           >
             {/* Headers da Tabela - Ocultos em telas pequenas se necessário */}
-            <div className="grid grid-cols-[1.5fr,1fr,1fr,1.2fr,0.8fr,1fr,auto] gap-4 px-5 py-3 bg-white/5 text-[10px] font-black uppercase tracking-widest text-white/40 border-b border-white/5">
+            <div className="grid grid-cols-[1.5fr,1fr,1fr,1.2fr,0.8fr,1fr,auto] gap-4 px-5 py-3 bg-muted/50 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b border-border">
               <div>Cliente</div>
               <div>Agenda</div>
               <div>Serviço</div>
@@ -105,43 +105,43 @@ export function ListaAgendamentos({
               return (
                 <div 
                   key={ag.id}
-                  className={`grid grid-cols-[1.5fr,1fr,1fr,1.2fr,0.8fr,1fr,auto] gap-4 px-5 py-4 items-center transition-all hover:bg-white/[0.03] border-white/5 ${
+                  className={`grid grid-cols-[1.5fr,1fr,1fr,1.2fr,0.8fr,1fr,auto] gap-4 px-5 py-4 items-center transition-all hover:bg-muted/40 border-border ${
                     i !== grupo.items.length - 1 ? 'border-b' : ''
                   }`}
                 >
                   {/* CLIENTE */}
-                  <div 
+                  <div
                     className="flex flex-col min-w-0 cursor-pointer group"
                     onClick={() => onAgendamentoClick(ag)}
                   >
-                    <span className="text-[13px] font-bold text-white group-hover:text-[var(--ws-gold)] transition-colors truncate">
+                    <span className="text-[13px] font-bold text-foreground group-hover:text-primary transition-colors truncate">
                       {ag.cliente_nome}
                     </span>
-                    <span className="text-[11px] text-white/40 font-medium tabular-nums">
+                    <span className="text-[11px] text-muted-foreground font-medium tabular-nums">
                       {ag.cliente_telefone}
                     </span>
                   </div>
 
                   {/* AGENDA */}
                   <div className="flex items-center gap-2 min-w-0">
-                    <div 
-                      className="w-2.5 h-2.5 rounded-full shrink-0" 
-                      style={{ background: agenda?.cor || 'var(--ws-blue)', boxShadow: `0 0 8px ${agenda?.cor || 'var(--ws-blue)'}60` }}
+                    <div
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ background: agenda?.cor || '#006EFF' }}
                     />
-                    <span className="text-xs text-white/70 truncate">{agenda?.nome || '—'}</span>
+                    <span className="text-xs text-muted-foreground truncate">{agenda?.nome || '—'}</span>
                   </div>
 
                   {/* SERVIÇO */}
-                  <div className="text-xs text-white/60 truncate font-medium">
+                  <div className="text-xs text-muted-foreground truncate font-medium">
                     {ag.servico || 'Não informado'}
                   </div>
 
                   {/* DATA/HORA */}
                   <div className="flex flex-col min-w-0">
-                    <span className="text-xs text-white/80 font-bold tracking-tight">
+                    <span className="text-xs text-foreground font-bold tracking-tight">
                       {format(dataInicio, "d 'de' MMM", { locale: ptBR })}
                     </span>
-                    <span className="text-[11px] text-white/40 tabular-nums">
+                    <span className="text-[11px] text-muted-foreground tabular-nums">
                       {format(dataInicio, "HH:mm")}
                     </span>
                   </div>
@@ -158,12 +158,12 @@ export function ListaAgendamentos({
 
                   {/* AÇÕES (Dropdown Contextual) */}
                   <div className="flex justify-end relative group/actions">
-                    <button className="p-2 rounded-lg hover:bg-white/10 text-white/40 transition-all">
+                    <button className="p-2 rounded-lg hover:bg-muted text-muted-foreground transition-all">
                       <MoreHorizontal size={18} />
                     </button>
-                    
+
                     {/* MENU FLUTUANTE SIMULADO (Aparece no hover do container ações para agilidade) */}
-                    <div className="absolute right-0 top-10 w-48 bg-[#0E142A] border border-white/10 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.5)] z-50 p-1 hidden group-hover/actions:flex flex-col backdrop-blur-xl">
+                    <div className="absolute right-0 top-10 w-48 bg-popover text-popover-foreground border border-border rounded-xl shadow-lg z-50 p-1 hidden group-hover/actions:flex flex-col">
                       {renderAcoesContextuais(ag)}
                     </div>
                   </div>
@@ -182,7 +182,7 @@ export function ListaAgendamentos({
     
     switch (status) {
       case 'agendado':
-        return <div className={`${common} bg-[#3E5BFF]/10 text-[#3E5BFF] border border-[#3E5BFF]/20`}><Clock size={12}/> Agendado</div>
+        return <div className={`${common} bg-primary/10 text-primary border border-primary/20`}><Clock size={12}/> Agendado</div>
       case 'confirmado':
         return <div className={`${common} bg-[#0fa856]/10 text-[#0fa856] border border-[#0fa856]/20`}><CheckCircle2 size={12}/> Confirmado</div>
       case 'em_atendimento':
@@ -199,9 +199,9 @@ export function ListaAgendamentos({
       case 'falta':
         return <div className={`${common} bg-[#a32d2d]/10 text-[#a32d2d] border border-[#a32d2d]/20`}><XCircle size={12}/> Falta</div>
       case 'cancelado':
-        return <div className={`${common} bg-white/5 text-white/40 border border-white/10`}><XCircle size={12}/> Cancelado</div>
+        return <div className={`${common} bg-muted text-muted-foreground border border-border`}><XCircle size={12}/> Cancelado</div>
       case 'reagendado':
-        return <div className={`${common} bg-[var(--ws-gold)]/10 text-[var(--ws-gold)] border border-[var(--ws-gold)]/20`}><RotateCcw size={12}/> Reagendado</div>
+        return <div className={`${common} bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20`}><RotateCcw size={12}/> Reagendado</div>
       default:
         return <div className={common}>{status}</div>
     }
@@ -211,16 +211,16 @@ export function ListaAgendamentos({
     const common = "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border"
     
     if (origem === 'agente') {
-      return <div className={`${common} bg-[var(--ws-gold)]/10 text-[var(--ws-gold)] border-[var(--ws-gold)]/20`}><Bot size={10}/> Agente</div>
+      return <div className={`${common} bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20`}><Bot size={10}/> Agente</div>
     }
     if (origem === 'api') {
-      return <div className={`${common} bg-[#00F5FF]/10 text-[#00F5FF] border-[#00F5FF]/20`}><Code2 size={10}/> API</div>
+      return <div className={`${common} bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20`}><Code2 size={10}/> API</div>
     }
-    return <div className={`${common} bg-[#3E5BFF]/10 text-[#3E5BFF] border-[#3E5BFF]/20`}><User size={10}/> Manual</div>
+    return <div className={`${common} bg-primary/10 text-primary border-primary/20`}><User size={10}/> Manual</div>
   }
 
   function renderAcoesContextuais(ag: Agendamento) {
-    const itemCls = "flex items-center gap-3 px-3 py-2 text-xs text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left w-full"
+    const itemCls = "flex items-center gap-3 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors text-left w-full"
     
     return (
       <>
@@ -244,16 +244,16 @@ export function ListaAgendamentos({
           </>
         )}
         {ag.status === 'compareceu' && !ag.nps_enviado && (
-          <button onClick={() => toast.info('NPS enviado com sucesso!')} className={itemCls}><MessageSquare size={14} className="text-[var(--ws-gold)]"/> Enviar NPS Manual</button>
+          <button onClick={() => toast.info('NPS enviado com sucesso!')} className={itemCls}><MessageSquare size={14} className="text-amber-500"/> Enviar NPS Manual</button>
         )}
         {(ag.status === 'falta' || ag.status === 'cancelado') && (
           <>
-            <button onClick={() => handleStatusUpdate(ag.id, 'agendado')} className={itemCls}><RotateCcw size={14} className="text-[var(--ws-gold)]"/> Reagendar</button>
+            <button onClick={() => handleStatusUpdate(ag.id, 'agendado')} className={itemCls}><RotateCcw size={14} className="text-amber-500"/> Reagendar</button>
             <button onClick={() => toast('Agendamento arquivado')} className={itemCls}><Archive size={14}/> Arquivar</button>
           </>
         )}
         
-        <div className="h-[1px] bg-white/5 my-1" />
+        <div className="h-[1px] bg-border my-1" />
         <button onClick={() => onAgendamentoClick(ag)} className={itemCls}><Play size={14} className="rotate-90"/> Ver Detalhes / Editar</button>
       </>
     )

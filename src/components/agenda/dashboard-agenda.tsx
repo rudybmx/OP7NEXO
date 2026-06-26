@@ -1,8 +1,7 @@
 'use client'
 
 import React from 'react'
-import { parseISO } from 'date-fns'
-import { format } from 'date-fns'
+import { parseISO, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
   Calendar,
@@ -20,8 +19,9 @@ import {
   STATUS_COLORS,
   ORIGEM_LABELS,
 } from '@/types/agenda'
+import { Button } from '@/components/ui/button'
 
-// ─── KPI Card (movido da página — só o Dashboard usa KPIs agora) ────────────────
+// ─── KPI Card ───────────────────────────────────────────────────────────────────
 interface KpiCardProps {
   label: string
   value: string | number
@@ -33,101 +33,27 @@ interface KpiCardProps {
 
 function KpiCard({ label, value, delta, deltaPositivo, icon, accentColor }: KpiCardProps) {
   return (
-    <div
-      style={{
-        position: 'relative',
-        background: 'var(--ws-glass-bg)',
-        border: '1px solid var(--ws-glass-border)',
-        borderRadius: 'var(--ws-radius-lg)',
-        backdropFilter: 'blur(16px)',
-        boxShadow: 'var(--ws-glass-shadow)',
-        padding: '12px 14px',
-        flex: 1,
-        minWidth: 0,
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 1,
-          background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.8),transparent)',
-          pointerEvents: 'none',
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: 3,
-          bottom: 0,
-          background: accentColor,
-          borderRadius: '4px 0 0 4px',
-        }}
-      />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+      <div className="absolute inset-y-0 left-0 w-[3px] rounded-l" style={{ background: accentColor }} />
+      <div className="flex items-start justify-between">
         <div>
-          <div
-            style={{
-              fontSize: 10,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              color: 'var(--ws-text-3)',
-              marginBottom: 6,
-              fontWeight: 600,
-            }}
-          >
-            {label}
-          </div>
-          <div style={{ fontSize: 20, fontWeight: 500, color: 'var(--ws-text-1)', lineHeight: 1.2 }}>
-            {value}
-          </div>
+          <div className="ds-label text-muted-foreground">{label}</div>
+          <div className="mt-1 text-xl font-medium leading-tight text-foreground">{value}</div>
           {delta && (
-            <div
-              style={{
-                fontSize: 11,
-                marginTop: 4,
-                color: deltaPositivo ? 'var(--ws-green)' : 'var(--ws-coral)',
-                fontWeight: 600,
-              }}
-            >
+            <div className={`mt-1 text-[11px] font-semibold ${deltaPositivo ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
               {delta}
             </div>
           )}
         </div>
         <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            background: `${accentColor}18`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg"
+          style={{ background: `${accentColor}1F` }}
         >
           {icon}
         </div>
       </div>
     </div>
   )
-}
-
-// ─── Painel ─────────────────────────────────────────────────────────────────────
-const PAINEL: React.CSSProperties = {
-  position: 'relative',
-  background: 'var(--ws-glass-bg)',
-  border: '1px solid var(--ws-glass-border)',
-  borderRadius: 'var(--ws-radius-lg)',
-  backdropFilter: 'blur(16px)',
-  boxShadow: 'var(--ws-glass-shadow)',
-  padding: 16,
-  overflow: 'hidden',
 }
 
 // Status que NÃO contam como "próximo agendamento ativo"
@@ -148,6 +74,13 @@ interface DashboardAgendaProps {
   onAbrirAgendamento: (ag: Agendamento) => void
 }
 
+const C_BLUE = '#006EFF'
+const C_GREEN = '#0fa856'
+const C_RED = '#e5484d'
+const C_GOLD = '#f5a623'
+const C_VIOLET = '#7A5AF8'
+const C_CYAN = '#00b8c8'
+
 export function DashboardAgenda({
   kpis,
   agendamentos,
@@ -157,13 +90,11 @@ export function DashboardAgenda({
 }: DashboardAgendaProps) {
   const agora = new Date()
 
-  // Próximos agendamentos ativos (futuros, ordenados, limite 7)
   const proximos = agendamentos
     .filter((a) => !STATUS_INATIVOS.has(a.status) && parseISO(a.data_hora_inicio) >= agora)
     .sort((a, b) => parseISO(a.data_hora_inicio).getTime() - parseISO(b.data_hora_inicio).getTime())
     .slice(0, 7)
 
-  // Split por origem (Web/IA/manual) — reduce client-side sobre os agendamentos já carregados
   const porOrigem = agendamentos.reduce(
     (acc, a) => {
       acc[a.origem] = (acc[a.origem] ?? 0) + 1
@@ -177,183 +108,103 @@ export function DashboardAgenda({
     .filter((x) => x.total > 0)
     .sort((a, b) => b.total - a.total)
 
-  const corAgenda = (agendaId: string) => agendas.find((a) => a.id === agendaId)?.cor ?? 'var(--ws-blue)'
+  const corAgenda = (agendaId: string) => agendas.find((a) => a.id === agendaId)?.cor ?? C_BLUE
   const nomeAgenda = (agendaId: string) => agendas.find((a) => a.id === agendaId)?.nome ?? 'Agenda'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-4">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="flex items-center justify-between">
         <div>
-          <h1 style={{ fontSize: 18, fontWeight: 600, color: 'var(--ws-text-1)', margin: 0 }}>
-            Visão Geral
-          </h1>
-          <p style={{ fontSize: 12, color: 'var(--muted-foreground)', margin: '2px 0 0' }}>
-            Resumo da agenda — hoje e próximos atendimentos
-          </p>
+          <h1 className="ds-section-title text-foreground">Visão Geral</h1>
+          <p className="text-sm text-muted-foreground">Resumo da agenda — hoje e próximos atendimentos</p>
         </div>
-        <button
-          onClick={onNovoAgendamento}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: 'var(--ws-radius-md)',
-            background: 'linear-gradient(135deg, var(--ws-blue), var(--ws-purple))',
-            color: '#fff',
-            fontSize: 12,
-            fontWeight: 500,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-        >
+        <Button onClick={onNovoAgendamento}>
           <Plus size={14} />
-          Novo Agendamento
-        </button>
+          Novo agendamento
+        </Button>
       </div>
 
       {/* KPIs */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div className="flex flex-wrap gap-3">
         <KpiCard
-          label="Agendamentos Hoje"
+          label="Agendamentos hoje"
           value={kpis.agendamentosHoje}
           delta="no dia de hoje"
           deltaPositivo
-          icon={<Calendar size={16} color="var(--ws-blue)" />}
-          accentColor="var(--ws-blue)"
+          icon={<Calendar size={16} color={C_BLUE} />}
+          accentColor={C_BLUE}
         />
         <KpiCard
           label="Confirmados"
           value={kpis.confirmadosHoje}
           delta={`de ${kpis.agendamentosHoje} hoje`}
           deltaPositivo={kpis.confirmadosHoje >= kpis.agendamentosHoje / 2}
-          icon={<UserCheck size={16} color="var(--ws-green)" />}
-          accentColor="var(--ws-green)"
+          icon={<UserCheck size={16} color={C_GREEN} />}
+          accentColor={C_GREEN}
         />
         <KpiCard
           label="Faltas (semana)"
           value={kpis.faltasSemana}
           delta={kpis.faltasSemana > 2 ? 'Acima da média' : 'Dentro da meta'}
           deltaPositivo={kpis.faltasSemana <= 2}
-          icon={<UserX size={16} color="var(--ws-coral)" />}
-          accentColor="var(--ws-coral)"
+          icon={<UserX size={16} color={C_RED} />}
+          accentColor={C_RED}
         />
         <KpiCard
-          label="Taxa Comparecimento"
+          label="Taxa de comparecimento"
           value={`${kpis.taxaComparecimento}%`}
           delta={kpis.taxaComparecimento >= 80 ? '▲ Meta atingida' : '▼ Abaixo da meta'}
           deltaPositivo={kpis.taxaComparecimento >= 80}
-          icon={<BarChart2 size={16} color="var(--ws-gold)" />}
-          accentColor="var(--ws-gold)"
+          icon={<BarChart2 size={16} color={C_GOLD} />}
+          accentColor={C_GOLD}
         />
       </div>
 
       {/* Próximos + Por origem */}
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div className="flex flex-wrap items-start gap-4">
         {/* Próximos agendamentos */}
-        <div style={{ ...PAINEL, flex: 2, minWidth: 320 }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginBottom: 12,
-            }}
-          >
-            <CalendarClock size={15} color="var(--ws-blue)" />
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>
-              Próximos agendamentos
-            </span>
+        <div className="min-w-[320px] flex-[2] rounded-lg border border-border bg-card p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <CalendarClock size={15} color={C_BLUE} />
+            <span className="text-[13px] font-semibold text-foreground">Próximos agendamentos</span>
           </div>
 
           {proximos.length === 0 ? (
-            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--muted-foreground)', fontSize: 12 }}>
-              Nenhum agendamento futuro. Clique em “Novo Agendamento” para começar.
+            <div className="py-6 text-center text-xs text-muted-foreground">
+              Nenhum agendamento futuro. Clique em "Novo agendamento" para começar.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <div className="flex flex-col gap-0.5">
               {proximos.map((ag) => {
                 const dt = parseISO(ag.data_hora_inicio)
                 return (
                   <button
                     key={ag.id}
                     onClick={() => onAbrirAgendamento(ag)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '8px 8px',
-                      borderRadius: 8,
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      width: '100%',
-                      transition: 'background 150ms ease',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    className="flex w-full items-center gap-2.5 rounded-lg p-2 text-left transition-colors hover:bg-muted"
                   >
                     {/* Data/hora */}
-                    <div style={{ width: 64, flexShrink: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ws-text-1)' }}>
-                        {format(dt, 'HH:mm')}
-                      </div>
-                      <div style={{ fontSize: 10, color: 'var(--muted-foreground)', textTransform: 'capitalize' }}>
-                        {format(dt, "dd MMM", { locale: ptBR })}
+                    <div className="w-16 shrink-0">
+                      <div className="text-xs font-semibold text-foreground">{format(dt, 'HH:mm')}</div>
+                      <div className="text-[10px] capitalize text-muted-foreground">
+                        {format(dt, 'dd MMM', { locale: ptBR })}
                       </div>
                     </div>
                     {/* Bolinha agenda */}
-                    <div
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        background: corAgenda(ag.agenda_id),
-                        flexShrink: 0,
-                      }}
-                    />
+                    <div className="size-2 shrink-0 rounded-full" style={{ background: corAgenda(ag.agenda_id) }} />
                     {/* Cliente + serviço */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 500,
-                          color: 'var(--ws-text-1)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {ag.cliente_nome}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: 'var(--muted-foreground)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {ag.servico ? `${ag.servico} · ` : ''}{nomeAgenda(ag.agenda_id)}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium text-foreground">{ag.cliente_nome}</div>
+                      <div className="truncate text-[11px] text-muted-foreground">
+                        {ag.servico ? `${ag.servico} · ` : ''}
+                        {nomeAgenda(ag.agenda_id)}
                       </div>
                     </div>
                     {/* Status */}
                     <span
-                      style={{
-                        flexShrink: 0,
-                        fontSize: 10,
-                        fontWeight: 600,
-                        padding: '3px 8px',
-                        borderRadius: 9999,
-                        color: STATUS_COLORS[ag.status],
-                        background: `${STATUS_COLORS[ag.status]}1a`,
-                      }}
+                      className="shrink-0 rounded-full px-2 py-[3px] text-[10px] font-semibold"
+                      style={{ color: STATUS_COLORS[ag.status], background: `${STATUS_COLORS[ag.status]}1a` }}
                     >
                       {STATUS_LABELS[ag.status]}
                     </span>
@@ -365,33 +216,29 @@ export function DashboardAgenda({
         </div>
 
         {/* Por origem */}
-        <div style={{ ...PAINEL, flex: 1, minWidth: 240 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <BarChart2 size={15} color="var(--ws-purple)" />
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>
-              Por origem
-            </span>
+        <div className="min-w-[240px] flex-1 rounded-lg border border-border bg-card p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <BarChart2 size={15} color={C_VIOLET} />
+            <span className="text-[13px] font-semibold text-foreground">Por origem</span>
           </div>
 
           {origensOrdenadas.length === 0 ? (
-            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--muted-foreground)', fontSize: 12 }}>
-              Sem agendamentos ainda.
-            </div>
+            <div className="py-6 text-center text-xs text-muted-foreground">Sem agendamentos ainda.</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="flex flex-col gap-3">
               {origensOrdenadas.map(({ origem, total }) => {
                 const pct = Math.round((total / totalOrigem) * 100)
-                const cor = origem === 'agente' ? 'var(--ws-purple)' : origem === 'manual' ? 'var(--ws-blue)' : 'var(--ws-cyan)'
+                const cor = origem === 'agente' ? C_VIOLET : origem === 'manual' ? C_BLUE : C_CYAN
                 return (
                   <div key={origem}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, color: 'var(--ws-text-1)' }}>{ORIGEM_LABELS[origem]}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ws-text-1)' }}>
-                        {total} <span style={{ color: 'var(--muted-foreground)', fontWeight: 400 }}>({pct}%)</span>
+                    <div className="mb-1 flex justify-between">
+                      <span className="text-xs text-foreground">{ORIGEM_LABELS[origem]}</span>
+                      <span className="text-xs font-semibold text-foreground">
+                        {total} <span className="font-normal text-muted-foreground">({pct}%)</span>
                       </span>
                     </div>
-                    <div style={{ height: 6, borderRadius: 9999, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: cor, borderRadius: 9999 }} />
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: cor }} />
                     </div>
                   </div>
                 )

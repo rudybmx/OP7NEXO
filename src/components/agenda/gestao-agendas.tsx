@@ -3,6 +3,8 @@
 import React from 'react'
 import { Plus, Pencil, Users, Clock, CalendarDays } from 'lucide-react'
 import { Agenda, AgendaTipo } from '@/types/agenda'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 
 const TIPO_LABELS: Record<AgendaTipo, string> = {
   profissional: 'Profissional',
@@ -26,210 +28,82 @@ interface GestaoAgendasProps {
 
 export function GestaoAgendas({ agendas, onNova, onEditar }: GestaoAgendasProps) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-4">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="flex items-center justify-between">
         <div>
-          <h1 style={{ fontSize: 18, fontWeight: 600, color: 'var(--ws-text-1)', margin: 0 }}>
-            Agendas
-          </h1>
-          <p style={{ fontSize: 12, color: 'var(--muted-foreground)', margin: '2px 0 0' }}>
+          <h1 className="ds-section-title text-foreground">Agendas</h1>
+          <p className="text-sm text-muted-foreground">
             Profissionais, salas e equipamentos que recebem agendamentos
           </p>
         </div>
-        <button
-          onClick={onNova}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: 'var(--ws-radius-md)',
-            background: 'linear-gradient(135deg, var(--ws-blue), var(--ws-purple))',
-            color: '#fff',
-            fontSize: 12,
-            fontWeight: 500,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-        >
+        <Button onClick={onNova}>
           <Plus size={14} />
-          Nova Agenda
-        </button>
+          Nova agenda
+        </Button>
       </div>
 
       {/* Grid de cards */}
       {agendas.length === 0 ? (
-        <div
-          style={{
-            padding: '48px 24px',
-            textAlign: 'center',
-            background: 'var(--ws-glass-bg)',
-            border: '1px dashed var(--ws-glass-border)',
-            borderRadius: 'var(--ws-radius-lg)',
-          }}
-        >
-          <CalendarDays size={28} color="var(--muted-foreground)" style={{ marginBottom: 8 }} />
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ws-text-1)', marginBottom: 4 }}>
-            Nenhuma agenda ainda
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 16 }}>
+        <div className="rounded-lg border border-dashed border-border bg-card px-6 py-12 text-center">
+          <CalendarDays size={28} className="mx-auto mb-2 text-muted-foreground" />
+          <div className="mb-1 text-sm font-semibold text-foreground">Nenhuma agenda ainda</div>
+          <div className="mb-4 text-sm text-muted-foreground">
             Crie a primeira agenda (um profissional, uma sala ou um equipamento) para começar a agendar.
           </div>
-          <button
-            onClick={onNova}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '8px 16px',
-              border: 'none',
-              borderRadius: 'var(--ws-radius-md)',
-              background: 'linear-gradient(135deg, var(--ws-blue), var(--ws-purple))',
-              color: '#fff',
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
+          <Button onClick={onNova}>
             <Plus size={14} />
             Criar primeira agenda
-          </button>
+          </Button>
         </div>
       ) : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-            gap: 12,
-          }}
-        >
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
           {agendas.map((agenda) => (
             <div
               key={agenda.id}
-              style={{
-                position: 'relative',
-                background: 'var(--ws-glass-bg)',
-                border: '1px solid var(--ws-glass-border)',
-                borderRadius: 'var(--ws-radius-lg)',
-                backdropFilter: 'blur(16px)',
-                boxShadow: 'var(--ws-glass-shadow)',
-                padding: 16,
-                overflow: 'hidden',
-              }}
+              className="relative overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm"
             >
               {/* faixa de cor lateral */}
               <div
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: 4,
-                  bottom: 0,
-                  background: agenda.cor,
-                }}
+                className="absolute inset-y-0 left-0 w-1"
+                style={{ background: agenda.cor }}
               />
 
               {/* Topo: nome + editar */}
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                  <div
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: '50%',
-                      background: agenda.cor,
-                      flexShrink: 0,
-                      boxShadow: `0 0 6px ${typeof agenda.cor === 'string' && agenda.cor.startsWith('#') ? agenda.cor + '80' : 'transparent'}`,
-                    }}
-                  />
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <span
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: 'var(--ws-text-1)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
+                    className="size-3 shrink-0 rounded-full"
+                    style={{ background: agenda.cor }}
+                  />
+                  <span className="truncate text-sm font-semibold text-foreground">
                     {agenda.nome}
                   </span>
                 </div>
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => onEditar(agenda)}
                   title="Editar agenda"
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'var(--muted-foreground)',
-                    display: 'flex',
-                    padding: 4,
-                    borderRadius: 6,
-                    flexShrink: 0,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.06)'
-                    e.currentTarget.style.color = 'var(--foreground)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent'
-                    e.currentTarget.style.color = 'var(--muted-foreground)'
-                  }}
                 >
                   <Pencil size={14} />
-                </button>
+                </Button>
               </div>
 
               {/* Badges */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 500,
-                    padding: '3px 8px',
-                    borderRadius: 9999,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid var(--ws-glass-border)',
-                    color: 'var(--ws-text-2)',
-                  }}
-                >
-                  {TIPO_LABELS[agenda.tipo]}
-                </span>
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    fontSize: 11,
-                    fontWeight: 500,
-                    padding: '3px 8px',
-                    borderRadius: 9999,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid var(--ws-glass-border)',
-                    color: 'var(--ws-text-2)',
-                  }}
-                >
+              <div className="flex flex-wrap gap-1.5">
+                <Badge variant="secondary">{TIPO_LABELS[agenda.tipo]}</Badge>
+                <Badge variant="secondary" className="gap-1">
                   <Users size={11} />
                   {agenda.capacidade_simultanea} simultâneo{agenda.capacidade_simultanea > 1 ? 's' : ''}
-                </span>
+                </Badge>
+                {!agenda.ativo && (
+                  <Badge variant="outline" className="text-muted-foreground">Inativa</Badge>
+                )}
               </div>
 
               {/* Rodapé: fuso */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  marginTop: 12,
-                  fontSize: 11,
-                  color: 'var(--muted-foreground)',
-                }}
-              >
+              <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Clock size={11} />
                 {FUSO_CURTO[agenda.fuso_horario] ?? agenda.fuso_horario}
               </div>

@@ -6,7 +6,6 @@ import {
   startOfWeek,
   addDays,
   startOfDay,
-  addMinutes,
   differenceInMinutes,
   isSameDay,
   parseISO,
@@ -24,7 +23,14 @@ import {
   Check,
   Plus,
 } from 'lucide-react'
-import { Agendamento, Agenda, AgendamentoStatus } from '@/types/agenda'
+import {
+  Agendamento,
+  Agenda,
+  AgendamentoStatus,
+  HorarioAgenda,
+  Bloqueio,
+  DiaSemana,
+} from '@/types/agenda'
 
 interface CalendarioSemanaProps {
   agendamentos: Agendamento[]
@@ -34,11 +40,26 @@ interface CalendarioSemanaProps {
   onSemanaChange: (data: Date) => void
   onAgendamentoClick: (agendamento: Agendamento) => void
   onSlotClick: (data: string, hora: string, agendaId?: string) => void
+  horarios?: HorarioAgenda[]
+  bloqueios?: Bloqueio[]
 }
 
 const ROW_HEIGHT_30MIN = 48
 const HOUR_HEIGHT = 96
 const HOUR_WIDTH = 60
+
+// Faixa-horário padrão quando não há horários cadastrados.
+const HORA_INICIO_DEFAULT = 8
+const HORA_FIM_DEFAULT = 19
+
+const DIAS_JS: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab']
+
+const hhmmParaMinutos = (s?: string) => {
+  if (!s) return null
+  const [h, m] = s.split(':').map(Number)
+  if (Number.isNaN(h)) return null
+  return h * 60 + (m || 0)
+}
 
 export function CalendarioSemana({
   agendamentos,
@@ -48,6 +69,8 @@ export function CalendarioSemana({
   onSemanaChange,
   onAgendamentoClick,
   onSlotClick,
+  horarios = [],
+  bloqueios = [],
 }: CalendarioSemanaProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
@@ -62,12 +85,55 @@ export function CalendarioSemana({
     return `${format(inicio, "d 'de' MMM", { locale: ptBR })} — ${format(fim, "d 'de' MMM yyyy", { locale: ptBR })}`
   }, [diasDaSemana])
 
+  // ── Faixa-horário dinâmica: derivada dos horários das agendas visíveis,
+  // SEMPRE ampliada para conter qualquer agendamento da semana (nada fica oculto
+  // fora da faixa — agente/equipe podem marcar 07h ou 21h). Default 08–19. ──
+  const [horaInicioGrid, horaFimGrid] = useMemo(() => {
+    let min = Infinity
+    let max = -Infinity
+
+    horarios
+      .filter((h) => h.ativo && agendasVisiveis.includes(h.agenda_id))
+      .forEach((h) => {
+        const ini = hhmmParaMinutos(h.hora_inicio)
+        const fim = hhmmParaMinutos(h.hora_fim)
+        if (ini != null) min = Math.min(min, ini)
+        if (fim != null) max = Math.max(max, fim)
+      })
+
+    // Engloba os agendamentos da semana visível (evita clipping de horário fora da faixa).
+    const inicioSemana = startOfDay(diasDaSemana[0])
+    const fimSemana = startOfDay(addDays(diasDaSemana[6], 1))
+    agendamentos.forEach((ag) => {
+      if (!agendasVisiveis.includes(ag.agenda_id)) return
+      const d = parseISO(ag.data_hora_inicio)
+      if (!isValid(d) || d < inicioSemana || d >= fimSemana) return
+      const f = parseISO(ag.data_hora_fim)
+      min = Math.min(min, d.getHours() * 60 + d.getMinutes())
+      if (isValid(f) && isSameDay(d, f)) {
+        max = Math.max(max, f.getHours() * 60 + f.getMinutes())
+      } else {
+        max = Math.max(max, d.getHours() * 60 + d.getMinutes() + 60)
+      }
+    })
+
+    if (!isFinite(min) || !isFinite(max)) return [HORA_INICIO_DEFAULT, HORA_FIM_DEFAULT]
+    const inicioH = Math.min(HORA_INICIO_DEFAULT, Math.max(0, Math.floor(min / 60)))
+    const fimH = Math.max(HORA_FIM_DEFAULT, Math.min(24, Math.ceil(max / 60)))
+    if (fimH <= inicioH) return [HORA_INICIO_DEFAULT, HORA_FIM_DEFAULT]
+    return [inicioH, fimH]
+  }, [horarios, agendasVisiveis, agendamentos, diasDaSemana])
+
+  const numHoras = horaFimGrid - horaInicioGrid
+  const gridHeight = numHoras * HOUR_HEIGHT
+  const minutoBase = horaInicioGrid * 60
+
   const horasArr = useMemo(() => {
-    return Array.from({ length: 24 }, (_, i) => {
-      const h = i.toString().padStart(2, '0')
+    return Array.from({ length: numHoras }, (_, i) => {
+      const h = (horaInicioGrid + i).toString().padStart(2, '0')
       return [`${h}:00`, `${h}:30`]
     }).flat()
-  }, [])
+  }, [numHoras, horaInicioGrid])
 
   const agendamentosNoPeriodo = useMemo(() => {
     const inicioSemana = startOfDay(diasDaSemana[0])
@@ -83,11 +149,11 @@ export function CalendarioSemana({
     })
   }, [agendamentos, agendasVisiveis, diasDaSemana])
 
-  // Helper para posicionamento
+  // Helper para posicionamento (relativo à hora-base do grid)
   const getTop = (isoString: string) => {
     const date = parseISO(isoString)
     if (!isValid(date)) return 0
-    const minutes = date.getHours() * 60 + date.getMinutes()
+    const minutes = date.getHours() * 60 + date.getMinutes() - minutoBase
     return (minutes * HOUR_HEIGHT) / 60
   }
 
@@ -99,16 +165,73 @@ export function CalendarioSemana({
     return Math.max(40, (dur * HOUR_HEIGHT) / 60)
   }
 
+  // ── Faixas de almoço por dia da semana (visual: azul-clara da brand) ──
+  // Dedupe por (dia, inicio-fim) para não empilhar bandas idênticas de várias agendas.
+  const faixasAlmoco = useMemo(() => {
+    const out: { diaIdx: number; top: number; height: number; key: string }[] = []
+    const vistos = new Set<string>()
+    diasDaSemana.forEach((dia, diaIdx) => {
+      const diaSem = DIAS_JS[dia.getDay()]
+      horarios.forEach((h) => {
+        if (
+          !h.ativo ||
+          !h.tem_almoco ||
+          h.dia_semana !== diaSem ||
+          !agendasVisiveis.includes(h.agenda_id)
+        )
+          return
+        const ini = hhmmParaMinutos(h.almoco_inicio)
+        const fim = hhmmParaMinutos(h.almoco_fim)
+        if (ini == null || fim == null || fim <= ini) return
+        const key = `${diaIdx}-${ini}-${fim}`
+        if (vistos.has(key)) return
+        vistos.add(key)
+        out.push({
+          diaIdx,
+          top: ((ini - minutoBase) * HOUR_HEIGHT) / 60,
+          height: ((fim - ini) * HOUR_HEIGHT) / 60,
+          key,
+        })
+      })
+    })
+    return out
+  }, [horarios, agendasVisiveis, diasDaSemana, minutoBase])
+
+  // ── Faixas de bloqueio (visual: amarela-clara) ──
+  const faixasBloqueio = useMemo(() => {
+    const out: { diaIdx: number; top: number; height: number; motivo: string; key: string }[] = []
+    bloqueios.forEach((b) => {
+      // global (agenda_id null) ou de uma agenda visível
+      if (b.agenda_id && !agendasVisiveis.includes(b.agenda_id)) return
+      const ini = parseISO(b.inicio)
+      const fim = parseISO(b.fim)
+      if (!isValid(ini) || !isValid(fim)) return
+      diasDaSemana.forEach((dia, diaIdx) => {
+        if (!isSameDay(ini, dia)) return
+        const iniMin = ini.getHours() * 60 + ini.getMinutes() - minutoBase
+        const durMin = Math.max(20, differenceInMinutes(fim, ini))
+        out.push({
+          diaIdx,
+          top: (iniMin * HOUR_HEIGHT) / 60,
+          height: (durMin * HOUR_HEIGHT) / 60,
+          motivo: b.motivo,
+          key: b.id,
+        })
+      })
+    })
+    return out
+  }, [bloqueios, agendasVisiveis, diasDaSemana, minutoBase])
+
   // Lógica de colisão
   const calculateEventPositions = (dayAgendamentos: Agendamento[]) => {
-    const sorted = [...dayAgendamentos].sort((a, b) => 
+    const sorted = [...dayAgendamentos].sort((a, b) =>
       new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime()
     )
 
     const groups: Agendamento[][] = []
     sorted.forEach(evt => {
-      const group = groups.find(g => 
-        g.some(e => 
+      const group = groups.find(g =>
+        g.some(e =>
           (evt.data_hora_inicio < e.data_hora_fim && evt.data_hora_fim > e.data_hora_inicio)
         )
       )
@@ -151,10 +274,9 @@ export function CalendarioSemana({
 
   const currentTimePos = useMemo(() => {
     const agora = new Date()
-    const HORA_INICIO_GRID = 0
-    const minutosDesdeInicio = (agora.getHours() - HORA_INICIO_GRID) * 60 + agora.getMinutes()
+    const minutosDesdeInicio = (agora.getHours() - horaInicioGrid) * 60 + agora.getMinutes()
     return (minutosDesdeInicio / 60) * HOUR_HEIGHT
-  }, [])
+  }, [horaInicioGrid])
 
   useEffect(() => {
     if (scrollContainerRef.current) {
@@ -166,52 +288,44 @@ export function CalendarioSemana({
   function renderStatusBadge(status: AgendamentoStatus) {
     switch (status) {
       case 'confirmado':
-        return <div className="p-0.5 bg-green-500/20 backdrop-blur-sm rounded-full"><Check size={8} className="text-green-300" strokeWidth={4} /></div>
+        return <div className="rounded-full bg-green-500/30 p-0.5"><Check size={8} className="text-white" strokeWidth={4} /></div>
       case 'compareceu':
-        return <div className="p-0.5 bg-green-600 rounded-full shadow-lg"><Check size={8} className="text-white" strokeWidth={4} /></div>
+        return <div className="rounded-full bg-green-600 p-0.5 shadow"><Check size={8} className="text-white" strokeWidth={4} /></div>
       case 'falta':
-        return <div className="px-1 py-0.5 bg-red-500/20 rounded-full text-[7px] font-black text-red-200 uppercase">FALTA</div>
+        return <div className="rounded-full bg-red-500/40 px-1 py-0.5 text-[7px] font-black uppercase text-white">FALTA</div>
       case 'agendado':
-        return <div className="p-0.5 bg-blue-500/20 rounded-full w-2 h-2 border border-blue-400/50" />
+        return <div className="size-2 rounded-full border border-white/60 bg-white/20" />
       default:
         return null
     }
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden select-none" style={{ minHeight: 600 }}>
-      {/* HEADER GLASS */}
-      <div 
-        className="flex flex-col flex-shrink-0 z-30 relative"
-        style={{ 
-          background: 'var(--ws-glass-bg)', 
-          backdropFilter: 'blur(24px)',
-          borderBottom: '1px solid var(--ws-glass-border)',
-          boxShadow: 'var(--ws-glass-shadow)'
-        }}
-      >
+    <div className="flex h-full flex-col overflow-hidden bg-card select-none" style={{ minHeight: 600 }}>
+      {/* HEADER */}
+      <div className="relative z-30 flex flex-shrink-0 flex-col border-b border-border bg-card">
         {/* Nav Toolbar */}
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex items-center bg-black/5 dark:bg-white/5 rounded-lg border border-[var(--ws-divider)] p-1">
-              <button 
+            <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1">
+              <button
                 onClick={() => onSemanaChange(subWeeks(semanaAtual, 1))}
-                className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-[var(--ws-text-2)]"
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted"
               >
                 <ChevronLeft size={18} />
               </button>
-              <button 
+              <button
                 onClick={() => onSemanaChange(addWeeks(semanaAtual, 1))}
-                className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-[var(--ws-text-2)]"
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted"
               >
                 <ChevronRight size={18} />
               </button>
             </div>
-            <span className="text-[var(--ws-text-1)] font-semibold text-sm tracking-wide">{periodoLabel}</span>
+            <span className="text-sm font-semibold tracking-wide text-foreground">{periodoLabel}</span>
           </div>
-          <button 
+          <button
             onClick={() => onSemanaChange(new Date())}
-            className="px-4 py-1.5 rounded-full bg-[rgba(201,168,76,0.12)] border border-[rgba(201,168,76,0.3)] text-[var(--ws-gold)] text-xs font-bold hover:bg-[rgba(201,168,76,0.2)] transition-all"
+            className="rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary transition-colors hover:bg-primary/20"
           >
             Hoje
           </button>
@@ -219,24 +333,19 @@ export function CalendarioSemana({
 
         {/* Labels Dias */}
         <div className="flex">
-          <div style={{ width: HOUR_WIDTH }} className="flex-shrink-0 border-r border-[var(--ws-divider)]" />
+          <div style={{ width: HOUR_WIDTH }} className="flex-shrink-0 border-r border-border" />
           <div className="flex flex-1">
             {diasDaSemana.map((dia, i) => {
               const hoje = isToday(dia)
               return (
-                <div key={i} className="flex-1 flex flex-col items-center py-3 border-l border-[var(--ws-divider)]">
-                  <span style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ws-text-3)', fontWeight: 500, marginBottom: 8 }}>
+                <div key={i} className="flex flex-1 flex-col items-center border-l border-border py-3">
+                  <span className="ds-label mb-2 text-muted-foreground">
                     {format(dia, 'eee', { locale: ptBR })}
                   </span>
-                  <div 
-                    style={{
-                      fontSize: 18, fontWeight: 500, width: 36, height: 36,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      borderRadius: '50%',
-                      background: hoje ? 'var(--ws-blue)' : 'transparent',
-                      color: hoje ? '#ffffff' : 'var(--ws-text-1)',
-                      transition: 'all 0.2s',
-                    }}
+                  <div
+                    className={`flex size-9 items-center justify-center rounded-full text-lg font-medium transition-colors ${
+                      hoje ? 'bg-primary text-primary-foreground' : 'text-foreground'
+                    }`}
                   >
                     {format(dia, 'd')}
                   </div>
@@ -245,62 +354,42 @@ export function CalendarioSemana({
             })}
           </div>
         </div>
-
-        {/* Dia Todo */}
-        <div className="flex border-t border-[var(--ws-divider)] bg-black/[0.02] dark:bg-white/[0.02]">
-          <div style={{ width: HOUR_WIDTH }} className="flex-shrink-0 flex items-center justify-center text-[8px] uppercase tracking-widest text-[var(--ws-text-3)] font-black border-r border-[var(--ws-divider)]">
-            ALL DAY
-          </div>
-          <div className="flex flex-1 h-10">
-            {diasDaSemana.map((dia, i) => (
-              <div key={i} className="flex-1 border-l border-[var(--ws-divider)]" />
-            ))}
-          </div>
-        </div>
-        
-        {/* Linha de brilho interior */}
-        <div style={{ position:'absolute',top:0,left:0,right:0,height:1, background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent)', pointerEvents:'none' }} />
       </div>
 
       {/* GRID CONTENT */}
-      <div 
+      <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto relative scrollbar-hide bg-transparent"
+        className="relative flex-1 overflow-y-auto scrollbar-hide"
       >
-        <div className="flex relative" style={{ height: 24 * HOUR_HEIGHT }}>
-          
+        <div className="relative flex" style={{ height: gridHeight }}>
+
           {/* Coluna Horas */}
-          <div 
-            style={{ width: HOUR_WIDTH }} 
-            className="flex-shrink-0 bg-white/40 dark:bg-black/40 border-r border-[var(--ws-divider)] sticky left-0 z-20"
+          <div
+            style={{ width: HOUR_WIDTH }}
+            className="sticky left-0 z-20 flex-shrink-0 border-r border-border bg-card"
           >
-            {Array.from({ length: 24 }, (_, i) => (
-              <div 
-                key={i} 
-                style={{ height: HOUR_HEIGHT }} 
+            {Array.from({ length: numHoras }, (_, i) => (
+              <div
+                key={i}
+                style={{ height: HOUR_HEIGHT }}
                 className="relative flex justify-center pt-2"
               >
-                <span className="text-[10px] text-[var(--ws-text-3)] font-bold tabular-nums">
-                  {i.toString().padStart(2, '0')}:00
+                <span className="text-[10px] font-bold tabular-nums text-muted-foreground">
+                  {(horaInicioGrid + i).toString().padStart(2, '0')}:00
                 </span>
               </div>
             ))}
           </div>
 
           {/* Grid de Dias */}
-          <div className="flex flex-1 relative">
+          <div className="relative flex flex-1">
             {/* Grid Lines */}
-            <div className="absolute inset-0 pointer-events-none z-0">
-              {Array.from({ length: 24 * 2 }, (_, i) => (
-                <div 
-                  key={i} 
-                  style={{ 
-                    height: ROW_HEIGHT_30MIN,
-                    borderBottom: i % 2 === 1 
-                      ? '1px dashed rgba(14,20,42,0.05)' 
-                      : '1px solid rgba(14,20,42,0.10)'
-                  }} 
-                  className="w-full"
+            <div className="pointer-events-none absolute inset-0 z-0">
+              {Array.from({ length: numHoras * 2 }, (_, i) => (
+                <div
+                  key={i}
+                  style={{ height: ROW_HEIGHT_30MIN }}
+                  className={`w-full border-b ${i % 2 === 1 ? 'border-dashed border-border/40' : 'border-border/70'}`}
                 />
               ))}
             </div>
@@ -311,31 +400,53 @@ export function CalendarioSemana({
               const agsRaw = agendamentosNoPeriodo.filter(a => isSameDay(parseISO(a.data_hora_inicio), dia))
               const ags = calculateEventPositions(agsRaw)
               const hoje = isToday(dia)
+              const almocosDoDia = faixasAlmoco.filter((f) => f.diaIdx === diaIdx)
+              const bloqueiosDoDia = faixasBloqueio.filter((f) => f.diaIdx === diaIdx)
 
               return (
-                <div key={diaIdx} className="flex-1 relative border-l border-[var(--ws-divider)] hover:bg-[var(--ws-blue-soft)] transition-colors group">
-                  
+                <div key={diaIdx} className="group relative flex-1 border-l border-border transition-colors hover:bg-primary/5">
+
+                  {/* Faixa de almoço (azul-clara da brand) */}
+                  {almocosDoDia.map((f) => (
+                    <div
+                      key={`almoco-${f.key}`}
+                      className="pointer-events-none absolute inset-x-0 z-0 bg-primary/10"
+                      style={{ top: f.top, height: f.height }}
+                      title="Intervalo de almoço"
+                    />
+                  ))}
+
+                  {/* Faixa de bloqueio (amarela-clara) */}
+                  {bloqueiosDoDia.map((f) => (
+                    <div
+                      key={`bloqueio-${f.key}`}
+                      className="pointer-events-none absolute inset-x-0 z-[1] bg-yellow-400/15"
+                      style={{ top: f.top, height: f.height }}
+                      title={f.motivo || 'Bloqueio'}
+                    />
+                  ))}
+
                   {/* Slots clicáveis */}
                   {horasArr.map((hora, hIdx) => (
-                    <div 
+                    <div
                       key={hIdx}
                       style={{ height: ROW_HEIGHT_30MIN }}
                       onClick={() => onSlotClick(dateKey, hora)}
-                      className="w-full relative cursor-pointer group/slot"
+                      className="group/slot relative w-full cursor-pointer"
                     >
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/slot:opacity-100 bg-[var(--ws-blue-soft)] transition-all">
-                        <Plus size={16} className="text-[#3E5BFF]" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-primary/5 opacity-0 transition-all group-hover/slot:opacity-100">
+                        <Plus size={16} className="text-primary" />
                       </div>
                     </div>
                   ))}
 
                   {/* Agendamentos */}
-                  <div className="absolute inset-0 pointer-events-none">
+                  <div className="pointer-events-none absolute inset-0">
                     {ags.map((ag) => {
                       const agenda = agendas.find(a => a.id === ag.agenda_id)
                       const top = getTop(ag.data_hora_inicio)
                       const height = getHeightValue(ag.data_hora_inicio, ag.data_hora_fim)
-                      const bgColor = agenda?.cor || '#3E5BFF'
+                      const bgColor = agenda?.cor || '#006EFF'
                       const isCancelado = ag.status === 'cancelado'
 
                       return (
@@ -349,31 +460,30 @@ export function CalendarioSemana({
                             position: 'absolute',
                             top: top + 2,
                             height: height - 4,
-                            background: `${bgColor}D9`,
+                            background: `${bgColor}E6`,
                             borderLeft: `4px solid ${bgColor}`,
                             zIndex: 10,
                             ...ag.style,
                             pointerEvents: 'auto',
-                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)',
                           }}
-                          className={`rounded-r-md px-2 py-1 overflow-hidden transition-all hover:brightness-125 hover:z-20 active:scale-[0.97] group/card ${isCancelado ? 'opacity-50 grayscale' : ''}`}
+                          className={`group/card overflow-hidden rounded-r-md px-2 py-1 shadow-sm transition-all hover:z-20 hover:brightness-110 active:scale-[0.97] ${isCancelado ? 'opacity-50 grayscale' : ''}`}
                         >
-                          <div className="flex justify-between items-start gap-1">
-                            <span 
-                              className={`text-[11px] font-bold text-white truncate leading-tight ${isCancelado ? 'line-through opacity-60' : ''}`}
+                          <div className="flex items-start justify-between gap-1">
+                            <span
+                              className={`truncate text-[11px] font-bold leading-tight text-white ${isCancelado ? 'line-through opacity-60' : ''}`}
                             >
                               {ag.cliente_nome}
                             </span>
-                            <div className="flex gap-1 shrink-0">
-                              {ag.origem === 'agente' && <Bot size={10} className="text-[var(--ws-gold)] drop-shadow-lg" />}
-                              {ag.origem === 'api' && <Code2 size={10} className="text-[#00F5FF]" />}
+                            <div className="flex shrink-0 gap-1">
+                              {ag.origem === 'agente' && <Bot size={10} className="text-amber-200" />}
+                              {ag.origem === 'api' && <Code2 size={10} className="text-cyan-200" />}
                             </div>
                           </div>
 
                           {height > 44 && (
-                            <div className="flex flex-col mt-0.5">
-                              <span className="text-[9px] text-white/80 font-medium truncate uppercase tracking-tighter">{ag.servico}</span>
-                              <span className="text-[8px] text-white/40 font-bold tabular-nums">
+                            <div className="mt-0.5 flex flex-col">
+                              <span className="truncate text-[9px] font-medium uppercase tracking-tighter text-white/80">{ag.servico}</span>
+                              <span className="text-[8px] font-bold tabular-nums text-white/60">
                                 {format(parseISO(ag.data_hora_inicio), 'HH:mm')}
                               </span>
                             </div>
@@ -388,13 +498,13 @@ export function CalendarioSemana({
                   </div>
 
                   {/* Linha do Tempo */}
-                  {hoje && (
-                    <div 
-                      className="absolute left-0 right-0 z-30 flex items-center pointer-events-none"
+                  {hoje && currentTimePos >= 0 && currentTimePos <= gridHeight && (
+                    <div
+                      className="pointer-events-none absolute inset-x-0 z-30 flex items-center"
                       style={{ top: currentTimePos }}
                     >
-                      <div className="w-2.5 h-2.5 rounded-full bg-red-500 -ml-1.25 shadow-[0_0_10px_rgba(239,68,68,1)] border border-white/20 dark:border-black/20" />
-                      <div className="flex-1 h-[2px] bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]" />
+                      <div className="-ml-1.25 size-2.5 rounded-full border border-white/40 bg-red-500 shadow" />
+                      <div className="h-[2px] flex-1 bg-red-500" />
                     </div>
                   )}
                 </div>

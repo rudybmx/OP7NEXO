@@ -1,7 +1,7 @@
 // ===== AGENDAS (as "salas" ou "profissionais") =====
 export type AgendaCor =
-  | '#3E5BFF' | '#0fa856' | '#FF5C8D' | '#7A5AF8'
-  | '#00b8c8' | 'var(--ws-gold)' | '#FF8C00' | '#6B7280'
+  | '#006EFF' | '#3E5BFF' | '#0fa856' | '#FF5C8D' | '#7A5AF8'
+  | '#00b8c8' | 'var(--ws-gold)' | '#F5A623' | '#FF8C00' | '#6B7280'
 
 export type AgendaTipo = 'profissional' | 'sala' | 'equipamento' | 'outro'
 
