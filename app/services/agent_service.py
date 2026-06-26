@@ -412,18 +412,23 @@ def gerar_resposta(
 
 
 def dentro_do_horario(agente: Agente, agora: datetime | None = None) -> bool:
-    """True se `agora` cai numa janela ativa. Sem janelas configuradas = 24/7.
+    """True se o agente DEVE responder neste momento. Sem janelas configuradas = 24/7.
 
-    NOTA: `agora` deve vir no timezone do workspace (o worker passará isso na Fase 2.x);
-    sem parâmetro usa UTC.
+    `horario_modo`: 'dentro' (padrão) = responde DENTRO das janelas de `agente_horarios`;
+    'fora' (plantão) = responde FORA delas (cobre noites + fins de semana automaticamente).
+    `agora` default = horário de Brasília (UTC-3 fixo, igual a `_contexto_temporal`) — as
+    janelas são cadastradas e interpretadas no horário de Brasília.
     """
     janelas = [h for h in agente.horarios if h.ativo]
     if not janelas:
         return True
-    agora = agora or datetime.now(timezone.utc)
+    agora = agora or datetime.now(timezone(timedelta(hours=-3)))
     dia = agora.weekday()  # 0=Seg .. 6=Dom (alinhado ao dia_semana)
     t: time = agora.timetz().replace(tzinfo=None) if agora.tzinfo else agora.time()
-    return any(j.dia_semana == dia and j.hora_inicio <= t <= j.hora_fim for j in janelas)
+    dentro = any(j.dia_semana == dia and j.hora_inicio <= t <= j.hora_fim for j in janelas)
+    if (getattr(agente, "horario_modo", "dentro") or "dentro") == "fora":
+        return not dentro
+    return dentro
 
 
 def tokens_usados_hoje(db: Session, agente: Agente) -> int:

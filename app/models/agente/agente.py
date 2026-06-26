@@ -38,6 +38,8 @@ class Agente(Base):
     codigo_responsavel: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # 'dentro' = responde nas janelas de agente_horarios; 'fora' (plantão) = responde FORA delas.
+    horario_modo: Mapped[str] = mapped_column(String(10), nullable=False, default="dentro")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

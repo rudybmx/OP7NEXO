@@ -256,6 +256,7 @@ def _agente_out(agente: Agente, db: Session) -> AgenteOut:
         objetivo=agente.objetivo,
         tempo_followup_min=agente.tempo_followup_min,
         codigo_responsavel=str(agente.codigo_responsavel) if agente.codigo_responsavel else None,
+        horario_modo=getattr(agente, "horario_modo", "dentro") or "dentro",
         canais=_canais_out(agente),
         horarios=[
             HorarioOut(
@@ -348,6 +349,7 @@ def criar_agente(
         objetivo=payload.objetivo,
         tempo_followup_min=payload.tempo_followup_min,
         codigo_responsavel=_validate_responsavel(payload.codigo_responsavel, workspace_id, db),
+        horario_modo=payload.horario_modo,
     )
     db.add(agente)
     db.flush()  # obtém agente.id
@@ -411,6 +413,7 @@ def atualizar_agente(
         "mensagem_abertura",
         "objetivo",
         "tempo_followup_min",
+        "horario_modo",
     ):
         valor = getattr(payload, campo)
         if valor is not None:
