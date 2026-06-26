@@ -2080,6 +2080,9 @@ def _conectar_whatsapp_oficial(c: CanalEntrada, db: Session) -> ConectarOut:
     numero = info.get("display_phone_number") or info.get("verified_name")
     if numero:
         c.numero_telefone = numero
+    # Instance único por canal (= phone_number_id). Isola conversas/mensagens entre
+    # canais oficiais; sem isto todos usariam o literal "meta" e poderiam colidir.
+    c.evolution_instance_id = phone_number_id
     c.status = "ativo"
     c.connection_status = "connected"
     c.conectado_em = datetime.now(timezone.utc)
@@ -2218,11 +2221,12 @@ def _enviar_template_meta_cloud(
         conversa_id = db.execute(
             text("""
                 INSERT INTO public.crm_whatsapp_conversas
-                (workspace_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
-                VALUES (:ws, :ct, 'meta', :jid, 'em_atendimento', 0, :msg, 'saida', NOW(), NOW(), NOW())
+                (workspace_id, canal_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
+                VALUES (:ws, :canal, :ct, :inst, :jid, 'em_atendimento', 0, :msg, 'saida', NOW(), NOW(), NOW())
                 RETURNING id
             """),
-            {"ws": str(canal.workspace_id), "ct": str(contato_id), "jid": to, "msg": resumo},
+            {"ws": str(canal.workspace_id), "canal": str(canal.id), "ct": str(contato_id),
+             "inst": canal.evolution_instance_id or "meta", "jid": to, "msg": resumo},
         ).scalar()
     else:
         db.execute(
@@ -2238,7 +2242,7 @@ def _enviar_template_meta_cloud(
         text("""
             INSERT INTO public.crm_whatsapp_mensagens
             (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, status, recebida_em, created_at)
-            VALUES (:ws, :canal, :cid, :ct, :wamid, 'meta', :jid, 'saida', true, 'agente', :rn, :msg, 'template', 'enviada', NOW(), NOW())
+            VALUES (:ws, :canal, :cid, :ct, :wamid, :inst, :jid, 'saida', true, 'agente', :rn, :msg, 'template', 'enviada', NOW(), NOW())
             RETURNING id
         """),
         {
@@ -2247,6 +2251,7 @@ def _enviar_template_meta_cloud(
             "cid": str(conversa_id),
             "ct": str(contato_id),
             "wamid": wamid,
+            "inst": canal.evolution_instance_id or "meta",
             "jid": to,
             "rn": usuario.nome or usuario.email or "agente",
             "msg": resumo,
@@ -2723,13 +2728,15 @@ def _enviar_mensagem_meta_cloud(
         new_conv = db.execute(
             text("""
                 INSERT INTO public.crm_whatsapp_conversas
-                (workspace_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
-                VALUES (:ws, :ct, 'meta', :jid, 'em_atendimento', 0, :msg, 'saida', NOW(), NOW(), NOW())
+                (workspace_id, canal_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
+                VALUES (:ws, :canal, :ct, :inst, :jid, 'em_atendimento', 0, :msg, 'saida', NOW(), NOW(), NOW())
                 RETURNING id
             """),
             {
                 "ws": str(canal.workspace_id),
+                "canal": str(canal.id),
                 "ct": str(contato_id),
+                "inst": canal.evolution_instance_id or "meta",
                 "jid": to,
                 "msg": (payload.texto or "")[:500],
             },
@@ -2754,7 +2761,7 @@ def _enviar_mensagem_meta_cloud(
         text("""
             INSERT INTO public.crm_whatsapp_mensagens
             (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, status, recebida_em, created_at)
-            VALUES (:ws, :canal, :cid, :ct, :wamid, 'meta', :jid, 'saida', true, 'agente', :rn, :msg, 'conversation', 'enviada', NOW(), NOW())
+            VALUES (:ws, :canal, :cid, :ct, :wamid, :inst, :jid, 'saida', true, 'agente', :rn, :msg, 'conversation', 'enviada', NOW(), NOW())
             RETURNING id
         """),
         {
@@ -2763,6 +2770,7 @@ def _enviar_mensagem_meta_cloud(
             "cid": str(conversa_id),
             "ct": str(contato_id),
             "wamid": wamid,
+            "inst": canal.evolution_instance_id or "meta",
             "jid": to,
             "rn": usuario.nome or usuario.email or "agente",
             "msg": payload.texto or "",
@@ -2780,7 +2788,7 @@ def _enviar_mensagem_meta_cloud(
             "remoteJid": to,
             "direction": "saida",
             "text": payload.texto or "",
-            "instance": "meta",
+            "instance": canal.evolution_instance_id or "meta",
             "messageType": "conversation",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
@@ -4625,10 +4633,11 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
     ja_existe = db.execute(
         text("""
             SELECT 1 FROM public.crm_whatsapp_mensagens
-            WHERE workspace_id = :ws AND evolution_msg_id = :wamid AND instance = :inst
+            WHERE workspace_id = :ws AND canal_id = CAST(:canal AS uuid)
+              AND evolution_msg_id = :wamid AND instance = :inst
             LIMIT 1
         """),
-        {"ws": workspace_id, "wamid": wamid, "inst": instance},
+        {"ws": workspace_id, "canal": str(canal.id), "wamid": wamid, "inst": instance},
     ).fetchone()
     if ja_existe:
         logger.info("[webhook-meta-msg] duplicado ignorado wamid=%s", wamid)
@@ -4663,10 +4672,11 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
     conv_result = db.execute(
         text("""
             SELECT id, status FROM public.crm_whatsapp_conversas
-            WHERE instance = :inst AND remote_jid = :jid
+            WHERE workspace_id = CAST(:ws AS uuid) AND canal_id = CAST(:canal AS uuid)
+              AND instance = :inst AND remote_jid = :jid
             ORDER BY updated_at DESC LIMIT 1
         """),
-        {"inst": instance, "jid": wa_id},
+        {"ws": workspace_id, "canal": str(canal.id), "inst": instance, "jid": wa_id},
     )
     conv_row = conv_result.fetchone()
 
@@ -4678,12 +4688,13 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
             new_conv = db.execute(
                 text("""
                     INSERT INTO public.crm_whatsapp_conversas
-                    (workspace_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
-                    VALUES (:ws, :ct, :inst, :jid, 'nova', 1, :msg, 'entrada', :ts, NOW(), NOW())
+                    (workspace_id, canal_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
+                    VALUES (:ws, :canal, :ct, :inst, :jid, 'nova', 1, :msg, 'entrada', :ts, NOW(), NOW())
                     RETURNING id
                 """),
                 {
                     "ws": workspace_id,
+                    "canal": str(canal.id),
                     "ct": str(contato_id),
                     "inst": instance,
                     "jid": wa_id,
@@ -4709,12 +4720,13 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
         new_conv = db.execute(
             text("""
                 INSERT INTO public.crm_whatsapp_conversas
-                (workspace_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
-                VALUES (:ws, :ct, :inst, :jid, 'nova', 1, :msg, 'entrada', :ts, NOW(), NOW())
+                (workspace_id, canal_id, contato_id, instance, remote_jid, status, nao_lidas, ultima_mensagem, ultima_direcao, ultima_msg_at, created_at, updated_at)
+                VALUES (:ws, :canal, :ct, :inst, :jid, 'nova', 1, :msg, 'entrada', :ts, NOW(), NOW())
                 RETURNING id
             """),
             {
                 "ws": workspace_id,
+                "canal": str(canal.id),
                 "ct": str(contato_id),
                 "inst": instance,
                 "jid": wa_id,
@@ -4726,7 +4738,7 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
 
     # 3. Salva mensagem (workspace_id/canal_id alimentam o índice único de dedup
     #    uq_crm_msg_workspace_canal_provider_id; ON CONFLICT evita abortar a transação)
-    db.execute(
+    res_msg = db.execute(
         text("""
             INSERT INTO public.crm_whatsapp_mensagens
             (workspace_id, canal_id, conversa_id, contato_id, evolution_msg_id, instance, remote_jid, direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type, payload, recebida_em, created_at)
@@ -4734,6 +4746,7 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
             ON CONFLICT (workspace_id, canal_id, instance, evolution_msg_id)
             WHERE evolution_msg_id IS NOT NULL AND evolution_msg_id != ''
             DO NOTHING
+            RETURNING id
         """),
         {
             "ws": workspace_id,
@@ -4750,8 +4763,26 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
             "ts": recebida_em,
         },
     )
+    mensagem_id = res_msg.scalar()
 
-    # 4. Publica no Redis
+    # 4. Hook Kanban (cria/atualiza card de Recepcionamento; arquiva "Leads sem Resposta").
+    #    Em SAVEPOINT — nunca derruba a persistência da mensagem se a automação falhar.
+    try:
+        from app.models.crm.conversa import Conversa as _Conversa
+        from app.services.paineis_automacao import sincronizar_paineis_apos_mensagem
+
+        _conv = db.get(_Conversa, uuid.UUID(str(conversa_id)))
+        if _conv is not None:
+            with db.begin_nested():
+                sincronizar_paineis_apos_mensagem(db, _conv, "entrada")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[webhook-meta-msg] hook Kanban falhou conversa_id=%s: %s", conversa_id, exc)
+
+    # Commit ANTES dos enqueues best-effort: espelha whatsapp_crm_persistence —
+    # a mensagem é persistida primeiro, então um rollback de enqueue nunca a desfaz.
+    db.commit()
+
+    # 5. Publica no Redis (tempo real no Atendimento)
     try:
         publish_whatsapp_event({
             "type": "message.upsert",
@@ -4766,6 +4797,58 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
         })
     except Exception as e:
         logger.info("[webhook-meta-msg] REDIS FALHOU: %s", e)
+
+    # 6. Central de Agentes: enfileira a resposta automática do agente (só se houver
+    #    agente ativo no canal e ai_ativo na conversa) + análise de IA. As funções
+    #    commitam por conta própria; o rollback no except só desfaz o job parcial.
+    try:
+        from app.services.agent_service import enfileirar_agente_reply
+
+        enfileirar_agente_reply(
+            db,
+            workspace_id=workspace_id,
+            canal_id=str(canal.id),
+            conversa_id=str(conversa_id),
+            mensagem_id=str(mensagem_id) if mensagem_id else None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        logger.warning("[webhook-meta-msg] enqueue agente_reply falhou conversa_id=%s: %s", conversa_id, exc)
+
+    try:
+        from app.services.agent_service import enfileirar_analise
+
+        enfileirar_analise(
+            db,
+            workspace_id=workspace_id,
+            canal_id=str(canal.id),
+            conversa_id=str(conversa_id),
+        )
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        logger.warning("[webhook-meta-msg] enqueue conversa_analise falhou conversa_id=%s: %s", conversa_id, exc)
+
+    # 7. Notificação in-app "mensagem nova" (sino) — agregada por conversa.
+    try:
+        from app.services.notificacoes import criar_notificacao
+
+        preview = (text_content or "").strip().replace("\n", " ")
+        if len(preview) > 120:
+            preview = preview[:117] + "..."
+        criar_notificacao(
+            db,
+            workspace_id,
+            "mensagem_nova",
+            titulo=push_name or wa_id or "Nova mensagem",
+            mensagem=preview or "Enviou uma mensagem",
+            link=f"/crm/atendimento/conversas?conversa={conversa_id}",
+            entidade=("conversa", conversa_id),
+            dedupe_key=f"mensagem_nova:{conversa_id}",
+            payload={"contato": push_name or wa_id, "canal_id": str(canal.id)},
+        )
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[webhook-meta-msg] notificação mensagem_nova falhou conversa_id=%s: %s", conversa_id, exc)
 
 
 def _processar_status_meta(db: Session, canal: CanalEntrada, entry: dict) -> None:
@@ -4797,9 +4880,11 @@ def _processar_status_meta(db: Session, canal: CanalEntrada, entry: dict) -> Non
                 delivered_at = CASE WHEN :status = 'delivered' AND delivered_at IS NULL THEN NOW() ELSE delivered_at END,
                 read_at = CASE WHEN :status = 'read' AND read_at IS NULL THEN NOW() ELSE read_at END,
                 updated_at = NOW()
-            WHERE evolution_msg_id = :wamid AND instance = :inst
+            WHERE workspace_id = CAST(:ws AS uuid) AND canal_id = CAST(:canal AS uuid)
+              AND evolution_msg_id = :wamid AND instance = :inst
         """),
-        {"status": wa_status, "wamid": wamid, "inst": instance},
+        {"status": wa_status, "wamid": wamid, "inst": instance,
+         "ws": str(canal.workspace_id), "canal": str(canal.id)},
     )
 
     logger.info("[webhook-meta-status] wamid=%s status=%s", wamid, wa_status)
