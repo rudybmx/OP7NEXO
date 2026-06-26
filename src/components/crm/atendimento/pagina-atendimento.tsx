@@ -127,7 +127,13 @@ export function PaginaAtendimento() {
   // marcarLidaLocal zerar). O PainelChat usa p/ ancorar o scroll na 1ª não-lida.
   const unreadSnapRef = useRef<Record<string, number>>({})
 
+  // Reset de estado SÓ ao TROCAR de workspace — NÃO na resolução inicial, senão
+  // limparia uma conversa aberta por deep-link (`?conversa=`/F5/notificação).
+  const prevWorkspaceRef = useRef<string | null>(null)
   useEffect(() => {
+    const anterior = prevWorkspaceRef.current
+    if (workspaceAtual) prevWorkspaceRef.current = workspaceAtual
+    if (!anterior || !workspaceAtual || anterior === workspaceAtual) return
     let cancelled = false
     queueMicrotask(() => {
       if (cancelled) return
