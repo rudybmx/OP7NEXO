@@ -35,6 +35,13 @@ class Agente(Base):
     mensagem_abertura: Mapped[str | None] = mapped_column(Text, nullable=True)
     objetivo: Mapped[str | None] = mapped_column(Text, nullable=True)
     tempo_followup_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Resgate (Fase 2): o agente dispara mensagem de resgate p/ leads em followup.
+    # 'desligado' = não resgata; 'rascunho' = IA gera, humano aprova; 'automatico' = envia sozinho.
+    resgate_modo: Mapped[str] = mapped_column(String(20), nullable=False, default="desligado")
+    resgate_max_tentativas: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    resgate_intervalo_horas: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
+    resgate_hora_inicio: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    resgate_hora_fim: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     codigo_responsavel: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

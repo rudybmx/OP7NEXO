@@ -245,6 +245,21 @@ def _job_processar_lembretes() -> None:
         log.exception("Erro no job processar_lembretes: %s", exc)
 
 
+def _job_disparar_resgate() -> None:
+    """A cada 10min: gera/dispara o resgate (Fase 2) p/ leads em followup cujo agente tem
+    resgate_modo != 'desligado'. Modo 'rascunho' gera pendentes p/ aprovação na tela; 'automatico'
+    envia. Idempotente (UNIQUE conversa,tentativa); best-effort por lead."""
+    try:
+        with SessionLocal() as db:
+            from app.services.followup_resgate import processar_resgates
+
+            r = processar_resgates(db)
+            if r.get("enviados") or r.get("rascunhos") or r.get("falhas") or r.get("terminados"):
+                log.info("Scheduler: resgate — %s", r)
+    except Exception as exc:
+        log.exception("Erro no job disparar_resgate: %s", exc)
+
+
 def _job_process_whatsapp_events() -> None:
     try:
         result = process_next_whatsapp_jobs(limit=25)
@@ -352,6 +367,16 @@ def iniciar_scheduler() -> None:
         "interval",
         minutes=max(1, int(settings.HEALTH_CHECK_INTERVAL_MIN)),
         id="channel_health",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
+    )
+    scheduler.add_job(
+        _job_disparar_resgate,
+        "interval",
+        minutes=10,
+        id="disparar_resgate",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

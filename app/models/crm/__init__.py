@@ -6,6 +6,7 @@ from app.models.crm.equipe import Equipe, EquipeMembro, Permissao
 from app.models.crm.etiqueta import CrmEtiqueta, crm_conversa_etiquetas
 from app.models.crm.evento import Evento
 from app.models.crm.followup import FollowUp
+from app.models.crm.followup_resgate import FollowupResgate
 from app.models.crm.lead_origin_event import LeadOriginEvent
 from app.models.crm.mensagem import Mensagem
 from app.models.crm.message_job import MessageJob
@@ -38,6 +39,7 @@ __all__ = [
     "Midia",
     "Evento",
     "FollowUp",
+    "FollowupResgate",
     "LeadOriginEvent",
     "MessageJob",
     "MemoriaIA",

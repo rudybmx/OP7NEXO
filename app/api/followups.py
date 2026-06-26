@@ -380,3 +380,92 @@ def _publish_followup(item: FollowUp) -> None:
         )
     except Exception:
         pass
+
+
+# ── Resgate (Fase 2): fila de rascunhos + aprovar/cancelar ───────────────────────
+class ResgateOut(BaseModel):
+    id: str
+    conversa_id: str
+    contato_nome: str | None = None
+    telefone: str | None = None
+    agente_id: str | None = None
+    tentativa: int
+    status: str
+    mensagem: str | None = None
+    score: float | None = None
+    created_at: str | None = None
+
+
+@router.get("/resgates", response_model=list[ResgateOut])
+def listar_resgates(
+    workspace_id: uuid.UUID = Query(...),
+    status_filtro: str = Query("pendente", alias="status"),
+    usuario: User = Depends(get_usuario_atual),
+    _wf=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    """Resgates de um workspace por status (default 'pendente' = fila de aprovação)."""
+    verificar_acesso_workspace(usuario, workspace_id, db)
+    rows = db.execute(
+        text(
+            """
+            SELECT r.id::text AS id, r.conversa_id::text AS conversa_id,
+                   ct.nome AS contato_nome, ct.telefone AS telefone,
+                   r.agente_id::text AS agente_id, r.tentativa, r.status,
+                   r.mensagem, r.score, r.created_at
+            FROM crm_followup_resgates r
+            LEFT JOIN crm_whatsapp_contatos ct ON ct.id = r.contato_id
+            WHERE r.workspace_id = CAST(:ws AS uuid) AND r.status = :st
+            ORDER BY r.created_at DESC
+            LIMIT 200
+            """
+        ),
+        {"ws": str(workspace_id), "st": status_filtro},
+    ).mappings().all()
+    return [
+        ResgateOut(
+            id=r["id"], conversa_id=r["conversa_id"], contato_nome=r["contato_nome"],
+            telefone=r["telefone"] or None, agente_id=r["agente_id"], tentativa=r["tentativa"],
+            status=r["status"], mensagem=r["mensagem"], score=r["score"],
+            created_at=r["created_at"].isoformat() if r["created_at"] else None,
+        )
+        for r in rows
+    ]
+
+
+def _resgate_or_404(db: Session, resgate_id: uuid.UUID, usuario: User):
+    from app.models.crm import FollowupResgate
+    r = db.query(FollowupResgate).filter(FollowupResgate.id == resgate_id).first()
+    if not r:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resgate não encontrado")
+    verificar_acesso_workspace(usuario, r.workspace_id, db)
+    return r
+
+
+@router.post("/resgates/{resgate_id}/aprovar")
+def aprovar_resgate_endpoint(
+    resgate_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    _wf=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    _resgate_or_404(db, resgate_id, usuario)
+    from app.services.followup_resgate import aprovar_resgate
+
+    res = aprovar_resgate(db, resgate_id)
+    if not res.get("ok"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=res.get("erro") or "Falha ao enviar")
+    return res
+
+
+@router.post("/resgates/{resgate_id}/cancelar")
+def cancelar_resgate_endpoint(
+    resgate_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    _wf=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    _resgate_or_404(db, resgate_id, usuario)
+    from app.services.followup_resgate import cancelar_resgate
+
+    return cancelar_resgate(db, resgate_id)

@@ -70,6 +70,11 @@ class AgenteIn(BaseModel):
     mensagem_abertura: str | None = None
     objetivo: str | None = Field(default=None, max_length=2000)
     tempo_followup_min: int | None = Field(default=None, ge=0)
+    resgate_modo: Literal["desligado", "rascunho", "automatico"] = "desligado"
+    resgate_max_tentativas: int = Field(default=3, ge=1, le=10)
+    resgate_intervalo_horas: int = Field(default=24, ge=1, le=720)
+    resgate_hora_inicio: int = Field(default=8, ge=0, le=23)
+    resgate_hora_fim: int = Field(default=20, ge=0, le=24)
     codigo_responsavel: str | None = None  # FK users: humano que recebe o handoff (Fase 4)
     horario_modo: Literal["dentro", "fora"] = "dentro"  # 'fora' = plantão (responde fora das janelas)
     # Vínculos opcionais na criação
@@ -97,6 +102,11 @@ class AgenteUpdate(BaseModel):
     mensagem_abertura: str | None = None
     objetivo: str | None = Field(default=None, max_length=2000)
     tempo_followup_min: int | None = Field(default=None, ge=0)
+    resgate_modo: Literal["desligado", "rascunho", "automatico"] | None = None
+    resgate_max_tentativas: int | None = Field(default=None, ge=1, le=10)
+    resgate_intervalo_horas: int | None = Field(default=None, ge=1, le=720)
+    resgate_hora_inicio: int | None = Field(default=None, ge=0, le=23)
+    resgate_hora_fim: int | None = Field(default=None, ge=0, le=24)
     codigo_responsavel: str | None = None
     horario_modo: Literal["dentro", "fora"] | None = None
     canais: list[str] | None = None
@@ -245,6 +255,11 @@ class AgenteOut(BaseModel):
     mensagem_abertura: str | None
     objetivo: str | None
     tempo_followup_min: int | None
+    resgate_modo: str = "desligado"
+    resgate_max_tentativas: int = 3
+    resgate_intervalo_horas: int = 24
+    resgate_hora_inicio: int = 8
+    resgate_hora_fim: int = 20
     codigo_responsavel: str | None
     horario_modo: str
     canais: list[CanalVinculadoOut]
