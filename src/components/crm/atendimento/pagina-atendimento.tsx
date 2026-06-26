@@ -131,8 +131,6 @@ export function PaginaAtendimento() {
   const { atualizar: atualizarConversa } = useAtualizarConversa()
   const {
     etiquetas,
-    aplicar: aplicarEtiqueta,
-    remover: removerEtiqueta,
     aplicarContato: aplicarEtiquetaContato,
     removerContato: removerEtiquetaContato,
     criar: criarEtiqueta,
@@ -401,15 +399,17 @@ export function PaginaAtendimento() {
     refetch()
   }, [conversas, atualizarConversa, refetch])
 
-  const handleAplicarEtiqueta = useCallback(async (conversaId: string, etiquetaId: string) => {
-    await aplicarEtiqueta(conversaId, etiquetaId)
+  // Etiquetas unificadas no CONTATO (fonte única): o menu ⋮ da lista passa o
+  // contato.id e marca/desmarca no contato — reflete em todas as conversas dele.
+  const handleAplicarEtiqueta = useCallback(async (contatoId: string, etiquetaId: string) => {
+    await aplicarEtiquetaContato(contatoId, etiquetaId)
     refetch()
-  }, [aplicarEtiqueta, refetch])
+  }, [aplicarEtiquetaContato, refetch])
 
-  const handleRemoverEtiqueta = useCallback(async (conversaId: string, etiquetaId: string) => {
-    await removerEtiqueta(conversaId, etiquetaId)
+  const handleRemoverEtiqueta = useCallback(async (contatoId: string, etiquetaId: string) => {
+    await removerEtiquetaContato(contatoId, etiquetaId)
     refetch()
-  }, [removerEtiqueta, refetch])
+  }, [removerEtiquetaContato, refetch])
 
   // Criar etiqueta no painel do contato injeta o workspace atual.
   const handleCriarEtiqueta = useCallback(

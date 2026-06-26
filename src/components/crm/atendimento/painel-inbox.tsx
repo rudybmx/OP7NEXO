@@ -125,7 +125,7 @@ function MenuContextoConversa({
     transition: 'background 0.12s',
   }
 
-  const etiquetasConversa = conversa.etiquetas ?? []
+  const etiquetasConversa = conversa.contato?.etiquetas ?? []
   const etiquetaIds = new Set(etiquetasConversa.map(e => e.id))
 
   const handleItem = (fn: () => void) => {
@@ -218,8 +218,9 @@ function MenuContextoConversa({
                       fontSize: 12,
                     }}
                     onClick={() => {
-                      if (aplicada) onRemoverEtiqueta?.(conversa.id, et.id)
-                      else onAplicarEtiqueta?.(conversa.id, et.id)
+                      // Etiquetas unificadas no contato (fonte única) — aplica/remove no contato.
+                      if (aplicada) onRemoverEtiqueta?.(conversa.contato.id, et.id)
+                      else onAplicarEtiqueta?.(conversa.contato.id, et.id)
                     }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--ws-glass-bg)' }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
@@ -964,7 +965,7 @@ export function PainelInbox({
           const unreadCount = conversa.naoLidas > 99 ? '99+' : String(conversa.naoLidas)
           const showStatus = conversa.status !== 'em_atendimento'
 
-          const etiquetasConversa = conversa.etiquetas ?? []
+          const etiquetasConversa = conversa.contato?.etiquetas ?? []
 
           return (
             <div
