@@ -44,6 +44,7 @@ export interface AgenteDetalhe extends AgenteListItem {
   objetivo: string | null
   tempo_followup_min: number | null
   codigo_responsavel: string | null
+  horario_modo: string
   horarios: (HorarioItem & { id: string })[]
   habilidades: unknown[]
   prompt_draft: string | null
@@ -70,6 +71,7 @@ export interface AgenteInput {
   objetivo?: string | null
   tempo_followup_min?: number | null
   codigo_responsavel?: string | null
+  horario_modo?: 'dentro' | 'fora'
   canais?: string[]
   horarios?: HorarioItem[]
   prompt?: string | null

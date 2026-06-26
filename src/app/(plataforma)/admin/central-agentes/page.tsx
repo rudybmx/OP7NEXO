@@ -31,7 +31,7 @@ function emptyForm(): AgenteInput {
   return {
     nome: '', descricao: '', provider_id: null, modelo: null, status: 'inativo', tom: '',
     idiomas: [], blacklist_topicos: [], threshold_confianca: 0.7, debounce_segundos: 40,
-    limite_tokens_dia: null, alerta_threshold_pct: 80, mensagem_abertura: '', objetivo: '', tempo_followup_min: null, codigo_responsavel: '', canais: [],
+    limite_tokens_dia: null, alerta_threshold_pct: 80, mensagem_abertura: '', objetivo: '', tempo_followup_min: null, codigo_responsavel: '', horario_modo: 'dentro', canais: [],
     horarios: [], prompt: '',
   }
 }
@@ -106,7 +106,7 @@ export default function CentralAgentesPage() {
         status: a.status === 'ativo' ? 'ativo' : 'inativo', tom: a.tom ?? '', idiomas: a.idiomas,
         blacklist_topicos: a.blacklist_topicos, threshold_confianca: a.threshold_confianca,
         debounce_segundos: a.debounce_segundos, limite_tokens_dia: a.limite_tokens_dia,
-        alerta_threshold_pct: a.alerta_threshold_pct, mensagem_abertura: a.mensagem_abertura ?? '', objetivo: a.objetivo ?? '', tempo_followup_min: a.tempo_followup_min ?? null, codigo_responsavel: a.codigo_responsavel ?? '',
+        alerta_threshold_pct: a.alerta_threshold_pct, mensagem_abertura: a.mensagem_abertura ?? '', objetivo: a.objetivo ?? '', tempo_followup_min: a.tempo_followup_min ?? null, codigo_responsavel: a.codigo_responsavel ?? '', horario_modo: a.horario_modo === 'fora' ? 'fora' : 'dentro',
         canais: a.canais.map((c) => c.canal_id), prompt: a.prompt_draft ?? '',
         horarios: a.horarios.map((h) => ({ dia_semana: h.dia_semana, hora_inicio: h.hora_inicio, hora_fim: h.hora_fim, ativo: h.ativo })),
       })
@@ -342,6 +342,16 @@ export default function CentralAgentesPage() {
             </Section>
 
             <Section titulo="Horários de funcionamento">
+              <div className="mb-3">
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--ws-text-2)' }}>O agente responde:</label>
+                <select className={inputCls} style={inputStyle} value={form.horario_modo ?? 'dentro'} onChange={(e) => setF('horario_modo', e.target.value as 'dentro' | 'fora')}>
+                  <option value="dentro">Dentro do horário abaixo</option>
+                  <option value="fora">Fora do horário abaixo (plantão — noites e fins de semana)</option>
+                </select>
+                <p className="text-xs mt-1" style={{ color: 'var(--ws-text-2)' }}>
+                  Horários no fuso de <strong>Brasília (UTC-3)</strong>. Sem nenhum horário definido, o agente responde <strong>sempre (24/7)</strong>. No modo plantão, cadastre o horário comercial abaixo — o agente atende automaticamente fora dele (noites e fins de semana).
+                </p>
+              </div>
               <div className="space-y-2">
                 {(form.horarios ?? []).map((h, i) => (
                   <div key={i} className="flex items-center gap-2">
