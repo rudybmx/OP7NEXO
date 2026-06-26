@@ -50,7 +50,9 @@ cat /root/op7nexo-api/graphify-out/GRAPH_REPORT.md
 cat /root/op7nexo-front/graphify-out/GRAPH_REPORT.md
 
 # 5. Design system — OBRIGATÓRIO antes de criar/editar qualquer UI
-cat /root/op7nexo-front/docs/design-system.md
+#    Fonte canônica = a URL (flat shadcn, cores de marca, componentes shadcn/ui)
+curl -s https://design.op7franquia.com.br/design-system.md
+# Vitrine visual (componentes renderizados): https://design.op7franquia.com.br
 ```
 
 ## SPEC-FIRST FLOW (OBRIGATÓRIO)
@@ -75,9 +77,9 @@ docs/specs/[nome-feature]/
 
 ### Workflow obrigatório
 1. Verifique se spec existe: `find docs/specs/ -name "spec.md" | xargs grep -l "[keyword]" 2>/dev/null`
-2. Se não existir: crie a pasta e execute `/speckit.specify` para gerar `spec.md`
-3. Execute `/speckit.plan` para gerar `plan.md`
-4. Execute `/speckit.tasks` para gerar `tasks.md`
+2. Se não existir: crie a pasta e execute `/speckit-specify` para gerar `spec.md`
+3. Execute `/speckit-plan` para gerar `plan.md`
+4. Execute `/speckit-tasks` para gerar `tasks.md`
 5. Só implemente depois que spec + plan + tasks estiverem sem perguntas em aberto
 6. Se a implementação mudar comportamento: atualize `spec.md` no mesmo trabalho
 
@@ -89,7 +91,7 @@ Regras:
 ## REGRAS DE CÓDIGO
 
 ### Antes de criar qualquer coisa
-1. **Verifique se já existe** — use o grafo: `query_graph "hook para X"` ou `grep -r "funcionalidade" src/`
+1. **Verifique se já existe** — use o grafo: `graphify query "hook para X"` ou `grep -r "funcionalidade" src/`
 2. **Identifique o padrão existente** — leia 1 arquivo similar antes de criar novo
 3. **Siga a convenção do projeto** — nomes, estrutura de pastas, imports
 
@@ -97,22 +99,25 @@ Regras:
 - Hooks em `src/hooks/use-[recurso].ts`
 - Componentes de página em `src/app/[rota]/page.tsx`
 - Componentes reutilizáveis em `src/components/`
-- UI primitivos: Radix UI + Tailwind (nunca instalar nova lib de UI sem checar se Radix já cobre)
+- UI primitivos: **shadcn/ui** (Radix + Tailwind) + **lucide-react**; nunca HeroUI/react-icons; nunca instalar nova lib de UI sem checar se shadcn/Radix já cobre
 - Dropdowns/Selects: padrão Radix com scroll (ver `filtros-criativos.tsx` como referência)
 - Sempre usar `workspace_id` do contexto de autenticação
 
-### Padrões obrigatórios (op7nexo-api)
-- Rotas em `src/routes/[modulo]/[recurso].ts`
-- Migrations numeradas sequencialmente: `0XX_descricao.sql`
-- Sempre filtrar por `workspace_id` em queries multi-tenant
-- Soft delete padrão: campo `ativo BOOLEAN DEFAULT true`
-- Após qualquer migration: `lock-deploy bash /root/deploy.sh api`
+### Padrões obrigatórios (op7nexo-api) — Python/FastAPI
+- Stack: **FastAPI + SQLAlchemy 2.0** (estilo `Mapped[...]` + `mapped_column`) + **Alembic** + PostgreSQL
+- Endpoints/routers em `app/api/[modulo].py` (cada arquivo: `router = APIRouter(prefix="/modulo")` + `@router.get/post/put/delete`)
+- Lógica de negócio em `app/services/[funcionalidade].py` (ex.: `meta_sync.py`, `agenda/`)
+- Migrations Alembic em `alembic/versions/NNN_descricao.py` (sequencial; ex.: `074_sync_jobs_scheduling.py`); aplicadas **no boot** (o `lifespan` da app roda `alembic upgrade head`)
+- Multi-tenant: `workspace_id: Mapped[uuid.UUID]` (FK `workspaces.id`); SEMPRE `.filter(Model.workspace_id == ...)` + `verificar_acesso_workspace(...)`
+- Soft delete padrão: coluna `ativo: Mapped[bool]` default `True`; `DELETE` faz `ativo=False`; filtrar `.filter(Model.ativo.is_(True))`
+- Relações m2m: tipar `Mapped[list["X"]]` (sem o tipo vira `uselist=False` → bug 500 na 1ª associação)
+- Deploy: `lock-deploy bash /root/deploy.sh api`. O **worker é container separado** → `lock-deploy bash /root/deploy.sh worker` ao mudar automação/scheduler (o `both` NÃO inclui worker)
 
 ## FLUXO DE ENTREGA
 
 Para cada tarefa:
 1. Leia o CONTEXT.md, o grafo e as specs relevantes
-2. Identifique arquivos afetados (use `get_neighbors` no grafo)
+2. Identifique arquivos afetados (use `graphify query "..."`, `graphify explain "..."` ou `graphify path "A" "B"` no grafo)
 3. Implemente seguindo padrões
 4. Teste com curl (backend) ou verifique build (frontend)
 5. Reporte: o que foi feito, arquivos modificados, como testar
@@ -127,7 +132,7 @@ Após qualquer implementação concluída, execute em sequência:
 cd /root/op7nexo-api && graphify update .
 cd /root/op7nexo-front && graphify update .
 ```
-Use `--update` — re-extrai apenas arquivos modificados (cache SHA256, sem custo de tokens para código). Rode apenas o(s) projeto(s) com arquivos modificados.
+O `graphify update .` re-extrai apenas arquivos modificados (cache SHA256, sem custo de tokens para código). Rode apenas o(s) projeto(s) com arquivos modificados.
 
 ### 2. Atualizar spec
 Se a implementação mudou comportamento, atualize a spec correspondente em `docs/specs/` no mesmo trabalho.
@@ -157,15 +162,19 @@ TOKEN=$(curl -s -X POST https://api.op7franquia.com.br/auth/login \
 # Deploy (USAR SEMPRE SOB lock-deploy — nunca docker compose up direto)
 lock-deploy bash /root/deploy.sh api        # só API
 lock-deploy bash /root/deploy.sh front      # só front
-lock-deploy bash /root/deploy.sh both       # ambos em sequência
+lock-deploy bash /root/deploy.sh worker     # só worker (automações CRM + scheduler)
+lock-deploy bash /root/deploy.sh both       # api+front em sequência (NÃO inclui worker)
 
 # Logs
 cd /root/op7nexo-api && docker compose logs -f --tail=50
 cd /root/op7nexo-front && docker compose logs -f --tail=50
 
 # Graphify
-graphify src/ docs/ --update   # incremental (só arquivos modificados)
-graphify src/ docs/            # rebuild completo (primeiro run ou >24h)
+graphify update .              # incremental (re-extrai só os modificados; sem custo de LLM)
+graphify update . --force      # após refactor que apagou código (sobrescreve mesmo com menos nós)
+graphify query "<pergunta>"    # consulta BFS no grafo
+graphify explain "<conceito>"  # explica um nó e seus vizinhos
+graphify path "A" "B"          # caminho mais curto entre dois nós
 ```
 
 ## DEPLOY — REGRA OBRIGATÓRIA (lock-deploy)
@@ -293,7 +302,7 @@ Referência completa das 10 heurísticas: https://www.nngroup.com/articles/ten-u
 
 ## Padrão Visual de Componentes
 
-> **Fonte única de verdade visual: [`docs/design-system.md`](docs/design-system.md).** Leia ANTES de criar/editar qualquer UI.
+> **Fonte única de verdade visual: <https://design.op7franquia.com.br/design-system.md>** (vitrine renderizada: <https://design.op7franquia.com.br>). Leia ANTES de criar/editar qualquer UI: `curl -s https://design.op7franquia.com.br/design-system.md`.
 
 Resumo (tokens e detalhes completos no doc):
 - Estética **flat shadcn** + **Inter** 14px base. **shadcn/ui (Radix) + lucide-react** exclusivamente.
@@ -302,7 +311,7 @@ Resumo (tokens e detalhes completos no doc):
 - Cores via **tokens semânticos** (`bg-card`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-primary`, `text-destructive`) — nunca hex fixo.
 - Tipografia via classes `.ds-*` (`globals.css`); ❌ sem `style={{ fontSize }}` nem `text-[Npx]` arbitrário. Ver `docs/specs/tipografia/`.
 - ❌ **NUNCA** HeroUI (`@heroui/*`) nem `react-icons` — ambos em remoção (Fase 1). ⚠️ Tokens `--ws-*` estão **deprecados** (repontados p/ a brand; saem na Fase 2).
-- Vitrine de componentes: `src/components/design-system/ds-agentes.md`.
+- Vitrine de componentes (renderizada): <https://design.op7franquia.com.br>.
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
