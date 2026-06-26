@@ -49,7 +49,7 @@ type Visualizacao = 'kanban' | 'lista'
 export function PaineisCRM() {
   const { workspaceAtual } = useWorkspace()
   const p = usePaineis(workspaceAtual)
-  const { agentes } = useAgentesDisponiveis(workspaceAtual ?? undefined)
+  const { agentes } = useAgentesDisponiveis(workspaceAtual ?? undefined, Boolean(workspaceAtual))
   const {
     boards,
     boardId,
