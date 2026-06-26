@@ -1,7 +1,14 @@
 # OP7NEXO — Context de Arquitetura e Negócio
 
-> Atualizado: 2026-05-15
+> Atualizado: 2026-06-26
 > Mantenha este arquivo atualizado conforme o sistema evolui.
+
+> **Atendimento — citação (@LID→nome) + scroll (2026-06):** o autor da mensagem citada e a prévia
+> da lista agora exibem o NOME (o backend resolve `@LID`→nome no read-path; o route handler
+> `app/api/whatsapp/conversations/[id]/messages/route.ts` passou a mapear `quotedAuthor` — antes
+> ficava hardcoded `null`). Clicar na citação rola até a original; quando ela não está entre as
+> ~120 msgs carregadas, `painel-chat.tsx` (`irParaMensagemCitada`) avisa via toast em vez do antigo
+> no-op silencioso.
 
 ## O QUE É O SISTEMA
 
