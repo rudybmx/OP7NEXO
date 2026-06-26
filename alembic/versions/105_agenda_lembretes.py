@@ -4,16 +4,18 @@ Config de lembrete por agenda (agenda_id NULL = global do workspace). O job de v
 worker envia por WhatsApp X dias/horas antes; agenda_lembrete_envios é o log de dedupe durável
 (1 envio por agendamento×config, não re-spamma o paciente).
 
-Revision ID: 104
-Revises: 103
+Revision ID: 105
+Revises: 104
 Create Date: 2026-06-26
+
+(Renumerado de 104 -> 105 por colisão: outro agente já tinha revision 104 = agente_horario_modo.)
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "104"
-down_revision = "103"
+revision = "105"
+down_revision = "104"
 branch_labels = None
 depends_on = None
 
