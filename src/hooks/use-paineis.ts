@@ -247,7 +247,7 @@ export function usePaineis(workspaceId?: string | null) {
 
   const atualizarFase = useCallback(
     async (faseId: string, patch: { nome?: string; cor?: string; limite_wip?: number | null }) => {
-      await api.put(`/fases/${faseId}`, patch)
+      await api.put(`/paineis/fases/${faseId}`, patch)
       await mutateDetalhe()
     },
     [mutateDetalhe],
@@ -255,7 +255,7 @@ export function usePaineis(workspaceId?: string | null) {
 
   const excluirFase = useCallback(
     async (faseId: string) => {
-      await api.delete(`/fases/${faseId}`)
+      await api.delete(`/paineis/fases/${faseId}`)
       await mutateDetalhe()
     },
     [mutateDetalhe],
@@ -291,7 +291,7 @@ export function usePaineis(workspaceId?: string | null) {
 
   const atualizarCampo = useCallback(
     async (campoId: string, patch: { nome?: string; tipo?: string; opcoes?: string[] | null }) => {
-      await api.put(`/campos/${campoId}`, patch)
+      await api.put(`/paineis/campos/${campoId}`, patch)
       await mutateDetalhe()
     },
     [mutateDetalhe],
@@ -299,7 +299,7 @@ export function usePaineis(workspaceId?: string | null) {
 
   const excluirCampo = useCallback(
     async (campoId: string) => {
-      await api.delete(`/campos/${campoId}`)
+      await api.delete(`/paineis/campos/${campoId}`)
       await mutateDetalhe()
     },
     [mutateDetalhe],
@@ -318,7 +318,7 @@ export function usePaineis(workspaceId?: string | null) {
 
   const atualizarCard = useCallback(
     async (cardId: string, patch: CardPatch) => {
-      await api.put(`/cards/${cardId}`, patch)
+      await api.put(`/paineis/cards/${cardId}`, patch)
       await mutateDetalhe()
     },
     [mutateDetalhe],
@@ -344,7 +344,7 @@ export function usePaineis(workspaceId?: string | null) {
         return { ...d, cards }
       })
       try {
-        await api.patch(`/cards/${cardId}/mover`, { fase_id: faseId, ordem })
+        await api.patch(`/paineis/cards/${cardId}/mover`, { fase_id: faseId, ordem })
       } finally {
         await mutateDetalhe()
       }
@@ -356,7 +356,7 @@ export function usePaineis(workspaceId?: string | null) {
     async (cardId: string) => {
       patchDetalhe((d) => ({ ...d, cards: d.cards.filter((c) => c.id !== cardId) }))
       try {
-        await api.delete(`/cards/${cardId}`)
+        await api.delete(`/paineis/cards/${cardId}`)
       } finally {
         await mutateDetalhe()
       }
@@ -366,7 +366,7 @@ export function usePaineis(workspaceId?: string | null) {
 
   const salvarValores = useCallback(
     async (cardId: string, valores: { campo_id: string; valor: unknown }[]) => {
-      await api.put(`/cards/${cardId}/valores`, { valores })
+      await api.put(`/paineis/cards/${cardId}/valores`, { valores })
       await mutateDetalhe()
     },
     [mutateDetalhe],
@@ -374,14 +374,14 @@ export function usePaineis(workspaceId?: string | null) {
 
   const comentar = useCallback(
     async (cardId: string, texto: string) => {
-      await api.post(`/cards/${cardId}/comentarios`, { texto })
+      await api.post(`/paineis/cards/${cardId}/comentarios`, { texto })
       await mutateDetalhe()
     },
     [mutateDetalhe],
   )
 
   const obterCard = useCallback(async (cardId: string) => {
-    const card = await api.get<CardApi>(`/cards/${cardId}`)
+    const card = await api.get<CardApi>(`/paineis/cards/${cardId}`)
     return card
   }, [])
 
