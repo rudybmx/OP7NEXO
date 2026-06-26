@@ -2,73 +2,70 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { FiltrosFollowup, FollowupLead, LeadStatusFechamento, LeadTemperatura } from '@/types/followup'
+import { FiltrosFollowup, FollowupLead, LeadStatusFechamento } from '@/types/followup'
 import api from '@/lib/api-client'
 import { useWorkspace } from '@/lib/workspace-context'
 
+/**
+ * Worklist de Follow-up / Resgate.
+ *
+ * Lê os leads em follow-up do backend real: conversas com a etiqueta `followup`
+ * (aplicada pelo worker quando o lead para de responder além do
+ * `tempo_followup_min` do agente), enriquecidas com a análise da IA
+ * (temperatura/interesse/resumo). Não há cadência/disparo — só worklist +
+ * edição do desfecho (status_fechamento).
+ */
 export function useFollowup() {
   const { workspaceAtual } = useWorkspace()
   const [leads, setLeads] = useState<FollowupLead[]>([])
-  const [carregando, setCarregando] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const carregar = useCallback(async () => {
-    if (!workspaceAtual) { setLeads([]); return }
-    setCarregando(true)
+  const refetch = useCallback(async () => {
+    if (!workspaceAtual) { setLeads([]); setError(null); return }
+    setIsLoading(true)
+    setError(null)
     try {
       setLeads(await api.get<FollowupLead[]>(`/crm/followups/leads?workspace_id=${workspaceAtual}`))
-    } catch {
-      setLeads([])
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao carregar follow-ups')
     } finally {
-      setCarregando(false)
+      setIsLoading(false)
     }
   }, [workspaceAtual])
 
-  useEffect(() => { carregar() }, [carregar])
+  useEffect(() => { refetch() }, [refetch])
 
+  // Filtro client-side da tabela. `status` mira engajamento (status_followup:
+  // ativo/respondeu) OU desfecho (status_fechamento: ganho/perca/...).
   const listarLeads = (filtros: FiltrosFollowup) => {
     return leads.filter(lead => {
-      const matchStatus = filtros.status === 'todos' || lead.status_followup === filtros.status
-      const matchFechamento = filtros.status_fechamento === 'todos' || lead.status_fechamento === filtros.status_fechamento
+      const matchStatus =
+        filtros.status === 'todos' ||
+        lead.status_followup === filtros.status ||
+        lead.status_fechamento === (filtros.status as unknown as LeadStatusFechamento)
       const matchTemperatura = filtros.temperatura === 'todos' || lead.temperatura === filtros.temperatura
       const matchOrigem = filtros.origem === 'todos' || lead.origem === filtros.origem
       const matchBusca = !filtros.busca ||
         lead.nome?.toLowerCase().includes(filtros.busca.toLowerCase()) ||
         lead.telefone.includes(filtros.busca)
-
-      let matchEnvio = true
-      if (filtros.proximo_envio_range !== 'todos') {
-        const hoje = new Date().toISOString().split('T')[0]
-        if (filtros.proximo_envio_range === 'hoje') {
-          matchEnvio = lead.proximo_envio?.startsWith(hoje) || false
-        } else if (filtros.proximo_envio_range === 'atrasados') {
-          matchEnvio = (lead.proximo_envio && lead.proximo_envio < hoje) || false
-        }
-      }
-
-      return matchStatus && matchFechamento && matchTemperatura && matchOrigem && matchBusca && matchEnvio
+      return matchStatus && matchTemperatura && matchOrigem && matchBusca
     })
   }
 
   const getLead = (id: string) => leads.find(l => l.id === id)
 
-  // Persiste no backend (ganho/perda é a ação de venda que importa).
+  // Persiste o desfecho (ganho/perda é a ação de venda que importa).
+  // `id` = id da conversa (= lead.id no worklist).
   const atualizarStatusFechamento = async (id: string, status: LeadStatusFechamento) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, status_fechamento: status } : l))
     try {
       await api.patch(`/crm/followups/conversa/${id}/fechamento`, { status_fechamento: status })
     } catch (e: any) {
       toast.error(e?.message || 'Erro ao salvar fechamento')
-      carregar()
+      refetch()
     }
   }
-
-  // Temperatura é automática (análise da IA, Fase 1) — não é editável aqui.
-  const atualizarTemperatura = (_id: string, _temperatura: LeadTemperatura) => {
-    toast.info('A temperatura é definida automaticamente pela análise da IA.')
-  }
-  // Pausar/reativar followup chega num próximo incremento (não persiste ainda).
-  const pausarLead = (_id: string) => { toast.info('Pausar followup chega em breve.') }
-  const reativarLead = (_id: string) => { toast.info('Reativar followup chega em breve.') }
 
   const metricas = useMemo(() => {
     const total = leads.length
@@ -78,7 +75,7 @@ export function useFollowup() {
       vencidos: leads.filter(l => l.status_followup === 'vencido').length,
       esgotados: leads.filter(l => l.status_followup === 'esgotado').length,
       ganhos,
-      percas: leads.filter(l => l.status_fechamento === 'perca').length,
+      percas: leads.filter(l => l.status_fechamento === 'perca' || l.status_fechamento === 'perdido').length,
       total,
       taxa_conversao: total > 0 ? (ganhos / total) * 100 : 0,
       responderam: leads.filter(l => l.status_followup === 'respondeu').length,
@@ -87,14 +84,12 @@ export function useFollowup() {
 
   return {
     leads,
-    carregando,
-    carregar,
+    isLoading,
+    error,
+    refetch,
     listarLeads,
     getLead,
     atualizarStatusFechamento,
-    atualizarTemperatura,
-    pausarLead,
-    reativarLead,
     metricas,
   }
 }

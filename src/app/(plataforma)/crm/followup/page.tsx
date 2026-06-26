@@ -1,39 +1,29 @@
 "use client"
 
-import React, { useState, useMemo } from 'react'
+import React, { useState } from 'react'
+import Link from 'next/link'
 import {
-  Plus,
-  Filter,
   Search,
-  Calendar,
-  Clock,
   ChevronRight,
   Smartphone,
   Globe,
   MessageCircle,
+  MessageSquare,
   Briefcase,
-  Music
+  Music,
+  RefreshCw,
+  AlertTriangle,
+  Inbox,
+  Loader2,
 } from 'lucide-react'
 import { useFollowup } from '@/hooks/use-followup'
-import { FollowupLead, FiltrosFollowup, LeadOrigem } from '@/types/followup'
+import { FollowupLead, FiltrosFollowup, LeadOrigem, LeadStatusFechamento } from '@/types/followup'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { FollowupKpis } from '@/components/followup/followup-kpis'
-import { FollowupGraficoTentativas } from '@/components/followup/followup-grafico-tentativas'
 import { FollowupTabela } from '@/components/followup/followup-tabela'
-import { 
-  format, 
-  parseISO, 
-  isToday, 
-  isTomorrow, 
-  isPast, 
-  addDays, 
-  differenceInHours 
-} from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// COMPONENTES AUXILIARES INLINE (CONFORME REQUISITADO)
+// COMPONENTES AUXILIARES INLINE
 // ─────────────────────────────────────────────────────────────────────────────
 
 const OrigemIcon = ({ origem, size = 12 }: { origem: LeadOrigem, size?: number }) => {
@@ -53,18 +43,28 @@ const OrigemIcon = ({ origem, size = 12 }: { origem: LeadOrigem, size?: number }
   return <Icon size={size} style={{ color: config.color }} />
 }
 
+// Botões de desfecho usados no painel lateral.
+const FECHAMENTO_OPCOES: { key: LeadStatusFechamento, label: string, color: string }[] = [
+  { key: 'ganho', label: 'Ganho', color: 'var(--ws-green)' },
+  { key: 'perca', label: 'Perca', color: 'var(--ws-coral)' },
+  { key: 'reagendado', label: 'Reagendado', color: 'var(--ws-gold)' },
+  { key: 'em_aberto', label: 'Em aberto', color: 'var(--ws-text-2)' },
+]
+
 export default function FollowupPage() {
-  const { 
-    listarLeads, 
-    metricas, 
-    leads, 
-    atualizarStatusFechamento, 
-    atualizarTemperatura 
+  const {
+    leads,
+    metricas,
+    listarLeads,
+    atualizarStatusFechamento,
+    isLoading,
+    error,
+    refetch,
   } = useFollowup()
-  
+
   const [filtros, setFiltros] = useState<FiltrosFollowup>({
     status: 'todos',
-    status_fechamento: 'todos', 
+    status_fechamento: 'todos',
     temperatura: 'todos',
     origem: 'todos',
     agente_id: '',
@@ -73,48 +73,20 @@ export default function FollowupPage() {
     periodo: 'atual',
   })
 
-  const [filtroProximos, setFiltroProximos] = useState<'todos' | 'hoje' | 'amanha' | '7dias' | 'atrasados'>('todos')
-  const [leadSelecionado, setLeadSelecionado] = useState<FollowupLead | null>(null)
+  const [leadSelecionadoId, setLeadSelecionadoId] = useState<string | null>(null)
   const [painelAberto, setPainelAberto] = useState(false)
 
   const leadsFiltrados = listarLeads(filtros)
-
-  // Lógica de Próximos Disparos
-  const proximosDisparos = useMemo(() => {
-    const agora = new Date()
-    return leads
-      .filter(l => l.status_followup === 'ativo' || l.status_followup === 'vencido')
-      .filter(l => {
-        if (!l.proximo_envio) return false
-        const data = parseISO(l.proximo_envio)
-        
-        if (filtroProximos === 'todos') return true
-        if (filtroProximos === 'hoje') return isToday(data)
-        if (filtroProximos === 'amanha') return isTomorrow(data)
-        if (filtroProximos === 'atrasados') return isPast(data) && !isToday(data)
-        if (filtroProximos === '7dias') return data <= addDays(agora, 7)
-        return true
-      })
-      .sort((a, b) => {
-        if (!a.proximo_envio || !b.proximo_envio) return 0
-        return parseISO(a.proximo_envio).getTime() - parseISO(b.proximo_envio).getTime()
-      })
-      .slice(0, 20) // Limite maior para o scroll interno
-  }, [leads, filtroProximos])
-
-  const getUrgenciaColor = (dateStr?: string) => {
-    if (!dateStr) return 'var(--ws-text-3)'
-    const data = parseISO(dateStr)
-    if (isPast(data) && !isToday(data)) return 'var(--ws-coral)'
-    if (isToday(data)) return 'var(--ws-green)'
-    if (isTomorrow(data)) return 'var(--ws-gold)'
-    return 'var(--ws-text-3)'
-  }
+  // Lê sempre da lista para o painel refletir o desfecho recém-gravado.
+  const leadAtual: FollowupLead | null =
+    leadSelecionadoId ? (leads.find(l => l.id === leadSelecionadoId) || null) : null
 
   const handleLeadClick = (lead: FollowupLead) => {
-    setLeadSelecionado(lead)
+    setLeadSelecionadoId(lead.id)
     setPainelAberto(true)
   }
+
+  const semLeads = !isLoading && !error && leads.length === 0
 
   return (
     <div style={{ background: 'var(--ws-page-bg)', minHeight: '100%', padding: '24px' }}>
@@ -131,180 +103,34 @@ export default function FollowupPage() {
             Follow-up / Resgate
           </h1>
           <p style={{ fontSize: 13, color: 'var(--ws-text-2)', marginTop: 4 }}>
-            Reengaje leads inativos com sequências inteligentes de mensagens
+            Leads que o agente atendeu e pararam de responder — priorize o resgate e registre o desfecho
           </p>
         </div>
-        <Button 
-          style={{ 
-            background: 'linear-gradient(135deg,var(--ws-blue),var(--ws-purple))',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 'var(--ws-radius-md)',
-            boxShadow: '0 4px 16px rgba(0,110,255,0.35)'
-          }}
-          className="gap-2"
+        <Button
+          variant="ghost"
+          onClick={() => refetch()}
+          disabled={isLoading}
+          className="gap-2 text-[color:var(--ws-text-2)] border border-[var(--ws-glass-border)] bg-[var(--ws-surface-2)] hover:bg-[var(--ws-glass-bg)] h-9"
         >
-          <Plus size={18} />
-          Novo Lead
+          <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />
+          Atualizar
         </Button>
       </div>
 
       {/* KPI Cards */}
       <FollowupKpis metricas={metricas} />
 
-      {/* Top Row: Gráfico e Próximos Disparos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        {/* Parte B: Gráfico */}
-        <FollowupGraficoTentativas leads={leads} />
-
-        {/* Parte C: Próximos Disparos */}
-        <div style={{ 
+      {/* Main Table Container */}
+      <div
+        style={{
           background: 'var(--ws-glass-bg)',
           border: '1px solid var(--ws-glass-border)',
           borderRadius: 'var(--ws-radius-lg)',
           backdropFilter: 'blur(16px)',
           boxShadow: 'var(--ws-glass-shadow)',
-          padding: '20px',
           position: 'relative',
           overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          height: '320px'
-        }}>
-          <div style={{ position:'absolute',top:0,left:0,right:0,height:1,
-            background:'linear-gradient(90deg,transparent,var(--ws-glass-border),transparent)',
-            pointerEvents:'none' }} />
-
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h3 style={{ 
-                fontSize: '10px', 
-                fontWeight: 'bold', 
-                textTransform: 'uppercase', 
-                color: 'var(--ws-text-2)',
-                letterSpacing: '0.05em'
-              }}>
-                Próximos Disparos
-              </h3>
-              <p style={{ fontSize: '11px', color: 'var(--ws-text-3)' }}>
-                filas de automação pendentes
-              </p>
-            </div>
-            <div style={{
-              background: 'var(--ws-surface-2)',
-              padding: '2px 8px',
-              borderRadius: '99px',
-              fontSize: '10px',
-              fontWeight: 600,
-              color: 'var(--ws-text-2)',
-              border: '1px solid var(--ws-glass-border)'
-            }}>
-              {proximosDisparos.length} total
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-1 mb-4">
-            {['todos', 'hoje', 'amanha', '7dias', 'atrasados'].map((f) => (
-              <button
-                key={f}
-                onClick={() => setFiltroProximos(f as any)}
-                style={{
-                  background: filtroProximos === f ? 'rgba(201,168,76,0.12)' : 'transparent',
-                  border: filtroProximos === f ? '1px solid var(--ws-gold)' : '1px solid transparent',
-                  color: filtroProximos === f ? 'var(--ws-gold)' : 'var(--ws-text-3)',
-                  borderRadius: 'var(--ws-radius-sm)',
-                  padding: '4px 12px',
-                  fontSize: 11,
-                  fontWeight: filtroProximos === f ? 600 : 500,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                }}
-              >
-                {f === 'amanha' ? 'AMANHÃ' : f === '7dias' ? '7 DIAS' : f.toUpperCase()}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
-            {proximosDisparos.map((lead) => (
-              <div 
-                key={lead.id}
-                onClick={() => handleLeadClick(lead)}
-                style={{
-                  padding: '10px 12px',
-                  background: 'var(--ws-surface-2)',
-                  borderRadius: '8px',
-                  borderLeft: `3px solid ${getUrgenciaColor(lead.proximo_envio)}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s, background 0.2s'
-                }}
-                className="hover:bg-white/5 active:scale-[0.98]"
-              >
-                <div style={{ 
-                  fontSize: '11px', 
-                  fontWeight: 'bold', 
-                  color: getUrgenciaColor(lead.proximo_envio),
-                  minWidth: '50px' 
-                }}>
-                  {lead.proximo_envio ? format(parseISO(lead.proximo_envio), 'HH:mm') : '--:--'}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ws-text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {lead.nome}
-                  </div>
-                  <div style={{ fontSize: '10px', color: 'var(--ws-text-3)' }}>
-                    {lead.telefone}
-                  </div>
-                </div>
-
-                <div style={{ 
-                  fontSize: '10px', 
-                  fontWeight: 600, 
-                  color: 'var(--ws-text-2)',
-                  background: 'var(--ws-surface-2)',
-                  padding: '2px 6px',
-                  borderRadius: '4px'
-                }}>
-                  T{lead.tentativa_atual}
-                </div>
-
-                {lead.temperatura && (
-                  <div style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    background: lead.temperatura === 'quente' ? 'var(--ws-coral)' : lead.temperatura === 'morno' ? 'var(--ws-gold)' : 'var(--ws-blue)'
-                  }} />
-                )}
-
-                <OrigemIcon origem={lead.origem} />
-              </div>
-            ))}
-
-            {proximosDisparos.length === 0 && (
-              <div className="h-full flex flex-col items-center justify-center opacity-40 py-8">
-                <Clock size={32} className="mb-2" />
-                <p className="text-xs">Nenhum disparo agendado</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Main Table Container */}
-      <div 
-        style={{ 
-          background: 'var(--ws-glass-bg)',
-          border: '1px solid var(--ws-glass-border)',
-          borderRadius: 'var(--ws-radius-lg)',
-          backdropFilter: 'blur(16px)',
-          boxShadow: 'var(--ws-glass-shadow)',
-          position: 'relative',
-          overflow: 'hidden'
+          marginTop: 24,
         }}
         className="p-4"
       >
@@ -312,6 +138,7 @@ export default function FollowupPage() {
           background:'linear-gradient(90deg,transparent,var(--ws-glass-border),transparent)',
           pointerEvents:'none' }} />
 
+        {/* Barra de filtros */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -325,11 +152,6 @@ export default function FollowupPage() {
           flexWrap: 'wrap',
           position: 'relative'
         }}>
-          {/* Linha de brilho no topo */}
-          <div style={{ position:'absolute',top:0,left:0,right:0,height:1,
-            background:'linear-gradient(90deg,transparent,var(--ws-glass-border),transparent)',
-            pointerEvents:'none' }} />
-
           {/* Busca */}
           <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
             <Search size={13} style={{
@@ -358,12 +180,12 @@ export default function FollowupPage() {
           {/* Separador */}
           <div style={{ width: 1, height: 20, background: 'var(--ws-divider)' }} />
 
-          {/* Botões de status */}
+          {/* Botões de status (engajamento + desfecho) */}
           <div className="flex gap-1.5 p-1">
-            {['todos', 'ativo', 'vencido', 'esgotado', 'ganho'].map((s) => (
+            {['todos', 'ativo', 'respondeu', 'ganho', 'perca'].map((s) => (
               <button
                 key={s}
-                onClick={() => setFiltros(f => ({ ...f, status: s as any }))}
+                onClick={() => setFiltros(f => ({ ...f, status: s as FiltrosFollowup['status'] }))}
                 style={{
                   padding: '5px 14px',
                   borderRadius: 'var(--ws-radius-sm)',
@@ -382,29 +204,53 @@ export default function FollowupPage() {
               </button>
             ))}
           </div>
-
-          <Button variant="ghost" className="text-[color:var(--ws-text-2)] gap-2 border border-[var(--ws-glass-border)] bg-[var(--ws-surface-2)] hover:bg-[var(--ws-glass-bg)] text-xs py-1 h-8">
-            <Calendar size={14} />
-            Período
-          </Button>
-
-          <Button variant="ghost" className="text-[color:var(--ws-text-2)] gap-2 border border-[var(--ws-glass-border)] bg-[var(--ws-surface-2)] hover:bg-[var(--ws-glass-bg)] text-xs py-1 h-8">
-            <Filter size={14} />
-            Mais Filtros
-          </Button>
         </div>
 
-        <FollowupTabela 
-          leads={leadsFiltrados} 
-          onLeadClick={handleLeadClick}
-          onStatusFechamentoChange={atualizarStatusFechamento}
-          onTemperaturaChange={atualizarTemperatura}
-        />
+        {/* Estados: erro / carregando / vazio / tabela */}
+        {error ? (
+          <div className="flex flex-col items-center justify-center text-center gap-3 py-16">
+            <AlertTriangle size={32} className="text-[var(--ws-coral)]" />
+            <div>
+              <p className="text-sm font-semibold text-[var(--ws-text-1)]">Não foi possível carregar os follow-ups</p>
+              <p className="text-xs text-[var(--ws-text-3)] mt-1 max-w-md">{error}</p>
+            </div>
+            <Button variant="ghost" onClick={() => refetch()} className="gap-2 border border-[var(--ws-glass-border)] bg-[var(--ws-surface-2)] h-9 text-[color:var(--ws-text-1)]">
+              <RefreshCw size={14} />
+              Tentar novamente
+            </Button>
+          </div>
+        ) : isLoading && leads.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 opacity-60">
+            <Loader2 size={28} className="animate-spin text-[var(--ws-blue)]" />
+            <p className="text-xs text-[var(--ws-text-3)]">Carregando leads em follow-up…</p>
+          </div>
+        ) : semLeads ? (
+          <div className="flex flex-col items-center justify-center text-center gap-3 py-16">
+            <Inbox size={32} className="text-[var(--ws-text-3)]" />
+            <div>
+              <p className="text-sm font-semibold text-[var(--ws-text-1)]">Nenhum lead em follow-up</p>
+              <p className="text-xs text-[var(--ws-text-3)] mt-1 max-w-md">
+                Os leads entram aqui automaticamente quando param de responder. Configure
+                {' '}<strong>“Tempo sem resposta do lead”</strong> no agente para ativar.
+              </p>
+            </div>
+            <Link href="/admin/central-agentes" className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--ws-blue)] hover:underline">
+              Configurar agente
+              <ChevronRight size={14} />
+            </Link>
+          </div>
+        ) : (
+          <FollowupTabela
+            leads={leadsFiltrados}
+            onLeadClick={handleLeadClick}
+            onStatusFechamentoChange={atualizarStatusFechamento}
+          />
+        )}
       </div>
 
-      {/* Painel Lateral Lead - Sliding Panel */}
-      {painelAberto && leadSelecionado && (
-        <div 
+      {/* Painel Lateral Lead */}
+      {painelAberto && leadAtual && (
+        <div
           onClick={() => setPainelAberto(false)}
           className="animate-in fade-in duration-300"
           style={{
@@ -414,10 +260,10 @@ export default function FollowupPage() {
             backdropFilter: 'blur(4px)',
             zIndex: 100,
             display: 'flex',
-            justifyContent: 'flex-start' // ESQUERDA PARA DIREITA
+            justifyContent: 'flex-start'
           }}
         >
-          <div 
+          <div
             onClick={e => e.stopPropagation()}
             className="animate-in slide-in-from-left duration-500 ease-out"
             style={{
@@ -435,15 +281,15 @@ export default function FollowupPage() {
             {/* Header do Painel */}
             <div className="flex justify-between items-start mb-8">
               <div>
-                <h2 className="text-2xl font-bold mb-1">{leadSelecionado.nome || 'Lead sem nome'}</h2>
+                <h2 className="text-2xl font-bold mb-1">{leadAtual.nome || 'Lead sem nome'}</h2>
                 <div className="flex items-center gap-2 text-muted-foreground text-sm">
                   <Smartphone size={14} />
-                  {leadSelecionado.telefone}
+                  {leadAtual.telefone}
                 </div>
               </div>
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => setPainelAberto(false)}
                 className="text-white/40 hover:text-white"
               >
@@ -452,25 +298,39 @@ export default function FollowupPage() {
             </div>
 
             <div className="space-y-6">
-              {/* Status Section */}
+              {/* Temperatura + Origem (leitura da IA) */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-3 bg-white/5 rounded-lg border border-white/5">
                   <p className="text-[9px] uppercase text-muted-foreground mb-1 font-bold">Temperatura</p>
                   <div className="text-sm font-semibold flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ background: leadSelecionado.temperatura === 'quente' ? 'var(--ws-coral)' : 'var(--ws-gold)' }} />
-                    {leadSelecionado.temperatura?.toUpperCase()}
+                    {leadAtual.temperatura ? (
+                      <>
+                        <div className="w-2 h-2 rounded-full" style={{ background: leadAtual.temperatura === 'quente' ? 'var(--ws-coral)' : leadAtual.temperatura === 'morno' ? 'var(--ws-gold)' : 'var(--ws-blue)' }} />
+                        {leadAtual.temperatura.toUpperCase()}
+                      </>
+                    ) : (
+                      <span className="text-white/40 italic text-xs font-normal">Sem análise</span>
+                    )}
                   </div>
                 </div>
                 <div className="p-3 bg-white/5 rounded-lg border border-white/5">
                   <p className="text-[9px] uppercase text-muted-foreground mb-1 font-bold">Origem</p>
                   <div className="text-sm font-semibold flex items-center gap-2">
-                    <OrigemIcon origem={leadSelecionado.origem} size={14} />
-                    {leadSelecionado.origem.replace('_', ' ').toUpperCase()}
+                    <OrigemIcon origem={leadAtual.origem} size={14} />
+                    {leadAtual.origem.replace('_', ' ').toUpperCase()}
                   </div>
                 </div>
               </div>
 
-              {/* IA Summary */}
+              {/* Interesse (leitura da IA) */}
+              {leadAtual.interesse && (
+                <div className="p-3 bg-white/5 rounded-lg border border-white/5">
+                  <p className="text-[9px] uppercase text-muted-foreground mb-1 font-bold">Interesse</p>
+                  <p className="text-sm text-white/90">{leadAtual.interesse}</p>
+                </div>
+              )}
+
+              {/* Resumo da IA */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-white/10 to-transparent border border-white/10 relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/40 to-transparent" />
                 <div className="flex items-center gap-2 mb-3">
@@ -478,69 +338,53 @@ export default function FollowupPage() {
                   <h4 className="text-[10px] uppercase font-bold tracking-widest text-white/60">Resumo da Interação</h4>
                 </div>
                 <p className="text-sm leading-relaxed text-white/90">
-                  {leadSelecionado.ultimo_resumo || "O robô ainda não processou um resumo detalhado para este lead."}
+                  {leadAtual.ultimo_resumo || "O agente ainda não gerou um resumo para esta conversa."}
                 </p>
               </div>
 
-              {/* Sequência / Histórico */}
+              {/* Desfecho (persiste no clique) */}
               <div>
-                <h4 className="text-[10px] uppercase font-bold tracking-widest text-white/40 mb-4 px-1">Próximos Passos na Cadência</h4>
-                <div className="space-y-3 relative before:absolute before:left-3.5 before:top-2 before:bottom-2 before:w-px before:bg-white/10">
-                  {[1, 2, 3, 4].map((step) => {
-                    const isDone = step < leadSelecionado.tentativa_atual
-                    const isCurrent = step === leadSelecionado.tentativa_atual
+                <h4 className="text-[10px] uppercase font-bold tracking-widest text-white/40 mb-3 px-1">Desfecho</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {FECHAMENTO_OPCOES.map((opt) => {
+                    const ativo = leadAtual.status_fechamento === opt.key
                     return (
-                      <div key={step} className="flex gap-4 items-start relative">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold z-10 
-                          ${isDone ? 'bg-[var(--ws-green)] text-white' : isCurrent ? 'bg-[var(--ws-blue)] text-white' : 'bg-white/5 text-white/20'}`}>
-                          {isDone ? '✓' : step}
-                        </div>
-                        <div className="flex-1 pt-1">
-                          <p className={`text-xs font-bold ${isCurrent ? 'text-white' : 'text-white/40'}`}>
-                            Mensagem {step}
-                          </p>
-                          {isCurrent && (
-                            <p className="text-[10px] text-[var(--ws-blue)] font-medium mt-0.5">
-                              {leadSelecionado.proximo_envio ? `Programado para ${format(parseISO(leadSelecionado.proximo_envio), 'dd/MM HH:mm')}` : 'Aguardando agendamento'}
-                            </p>
-                          )}
-                        </div>
-                      </div>
+                      <button
+                        key={opt.key}
+                        onClick={() => atualizarStatusFechamento(leadAtual.id, opt.key)}
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold transition-all border"
+                        style={{
+                          background: ativo ? `${opt.color}20` : 'rgba(255,255,255,0.04)',
+                          borderColor: ativo ? opt.color : 'rgba(255,255,255,0.08)',
+                          color: ativo ? opt.color : 'rgba(255,255,255,0.7)',
+                        }}
+                      >
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ background: opt.color }} />
+                        {opt.label}
+                      </button>
                     )
                   })}
                 </div>
               </div>
             </div>
 
-            <Button 
-              className="mt-12 w-full gap-2"
-              style={{ 
-                background: 'linear-gradient(135deg,var(--ws-blue),var(--ws-purple))',
-                boxShadow: '0 4px 16px rgba(0,110,255,0.2)'
-              }}
-            >
-              <MessageCircle size={16} />
-              Abrir no WhatsApp
-            </Button>
+            {/* Ação: abrir a conversa no Atendimento */}
+            {leadAtual.session_id ? (
+              <Link
+                href={`/crm/atendimento?session=${leadAtual.session_id}`}
+                className="mt-12 w-full inline-flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-semibold text-white"
+                style={{
+                  background: 'linear-gradient(135deg,var(--ws-blue),var(--ws-purple))',
+                  boxShadow: '0 4px 16px rgba(0,110,255,0.2)'
+                }}
+              >
+                <MessageSquare size={16} />
+                Ver Conversa no Atendimento
+              </Link>
+            ) : null}
           </div>
         </div>
       )}
-
-      <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: var(--ws-glass-border);
-          border-radius: 99px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: var(--ws-text-3);
-        }
-      `}</style>
     </div>
   )
 }

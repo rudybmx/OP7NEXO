@@ -1,12 +1,11 @@
 "use client"
 
 import React from 'react'
-import { 
-  Zap, 
-  AlertCircle, 
-  XCircle, 
-  TrendingUp, 
-  BarChart2 
+import {
+  Zap,
+  MessageCircle,
+  TrendingUp,
+  BarChart2
 } from 'lucide-react'
 
 interface FollowupKpisProps {
@@ -30,24 +29,23 @@ export function FollowupKpis({ metricas }: FollowupKpisProps) {
   }
 
   const kpis = [
-    { label: 'ATIVOS', value: metricas.ativos, icon: Zap, color: 'var(--ws-green)', sub: 'aguardando disparo', total: metricas.total },
-    { label: 'VENCIDOS', value: metricas.vencidos, icon: AlertCircle, color: 'var(--ws-gold)', sub: 'envio atrasado', total: metricas.total },
-    { label: 'ESGOTADOS', value: metricas.esgotados, icon: XCircle, color: 'var(--ws-coral)', sub: 'sem resposta', total: metricas.total },
-    { label: 'GANHOS', value: metricas.ganhos, icon: TrendingUp, color: 'var(--ws-blue)', sub: 'convertidos', total: metricas.total },
+    { label: 'EM FOLLOW-UP', value: metricas.ativos, icon: Zap, color: 'var(--ws-green)', sub: 'aguardando retorno', total: metricas.total },
+    { label: 'RESPONDERAM', value: metricas.responderam, icon: MessageCircle, color: 'var(--ws-blue)', sub: 'voltaram a responder', total: metricas.total },
+    { label: 'GANHOS', value: metricas.ganhos, icon: TrendingUp, color: 'var(--ws-green)', sub: 'convertidos', total: metricas.total },
     { label: 'TAXA CONV.', value: `${metricas.taxa_conversao.toFixed(1)}%`, icon: BarChart2, color: getTaxaColor(metricas.taxa_conversao), sub: 'ganhos / total leads', total: 100, isPercentage: true }
   ]
 
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: 'repeat(5, 1fr)',
+      gridTemplateColumns: 'repeat(4, 1fr)',
       gap: 12,
       marginBottom: 24,
     }}>
       {kpis.map((kpi, i) => {
-        const progress = kpi.isPercentage 
-          ? parseFloat(kpi.value) 
-          : (kpi.value / (kpi.total || 1)) * 100
+        const progress = kpi.isPercentage
+          ? parseFloat(String(kpi.value))
+          : (Number(kpi.value) / (kpi.total || 1)) * 100
 
         return (
           <div 
@@ -84,20 +82,6 @@ export function FollowupKpis({ metricas }: FollowupKpisProps) {
               <div style={{ fontSize: 28, fontWeight: 600, color: kpi.color, lineHeight: 1, marginBottom: 6 }}>
                 {kpi.value}
               </div>
-              {kpi.label === 'ESGOTADOS' && metricas.esgotados > 0 && (
-                <div style={{
-                  fontSize: '9px',
-                  background: 'var(--ws-coral-soft)',
-                  color: 'var(--ws-coral)',
-                  padding: '2px 6px',
-                  borderRadius: '99px',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  animation: 'pulse 2s infinite'
-                }}>
-                  Ativos
-                </div>
-              )}
             </div>
             
             <div style={{ fontSize: 11, color: 'var(--ws-text-3)', marginBottom: 12 }}>
