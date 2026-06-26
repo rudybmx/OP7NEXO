@@ -25,6 +25,17 @@ const DURACAO_OPTIONS = [
   { value: '120', label: '2h' },
 ]
 
+// Padrão de um dia ainda não configurado (fonte única — render + upsert dos handlers).
+const configPadrao = (dia: DiaSemana): HorarioAgenda =>
+  ({
+    dia_semana: dia,
+    ativo: false,
+    hora_inicio: '08:00',
+    hora_fim: '18:00',
+    duracao_slot_minutos: 60,
+    tem_almoco: false,
+  } as HorarioAgenda)
+
 export function ConfigHorarios() {
   const { agendas, getHorariosAgenda, salvarHorarios, editarAgenda } = useAgendas()
 
@@ -58,12 +69,24 @@ export function ConfigHorarios() {
     }
   }, [selectedAgendaId, getHorariosAgenda, agendas])
 
+  // Upsert: aplica `updates` ao dia; se o dia ainda não está na lista (agenda nova,
+  // horariosLocal vazio), ADICIONA semeado pelo padrão — senão o map ignorava o dia
+  // e o Switch nunca ligava (o dia "não abria").
+  const upsertDia = (dia: DiaSemana, updates: Partial<HorarioAgenda>) => {
+    setHorariosLocal((prev) => {
+      const existe = prev.some((h) => h.dia_semana === dia)
+      if (existe) return prev.map((h) => (h.dia_semana === dia ? { ...h, ...updates } : h))
+      return [...prev, { ...configPadrao(dia), ...updates }]
+    })
+  }
+
   const handleToggleDia = (dia: DiaSemana) => {
-    setHorariosLocal((prev) => prev.map((h) => (h.dia_semana === dia ? { ...h, ativo: !h.ativo } : h)))
+    const atual = horariosLocal.find((h) => h.dia_semana === dia)
+    upsertDia(dia, { ativo: !(atual?.ativo ?? false) })
   }
 
   const handleUpdateHorario = (dia: DiaSemana, updates: Partial<HorarioAgenda>) => {
-    setHorariosLocal((prev) => prev.map((h) => (h.dia_semana === dia ? { ...h, ...updates } : h)))
+    upsertDia(dia, updates)
   }
 
   const handleSave = async () => {
@@ -109,16 +132,7 @@ export function ConfigHorarios() {
       <div className="grid grid-cols-1 gap-3">
         {/* Lista de dias */}
         {(['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'] as DiaSemana[]).map((dia) => {
-          const config =
-            horariosLocal.find((h) => h.dia_semana === dia) ||
-            ({
-              dia_semana: dia,
-              ativo: false,
-              hora_inicio: '08:00',
-              hora_fim: '18:00',
-              duracao_slot_minutos: 60,
-              tem_almoco: false,
-            } as HorarioAgenda)
+          const config = horariosLocal.find((h) => h.dia_semana === dia) || configPadrao(dia)
 
           return (
             <div
