@@ -571,6 +571,29 @@ usuário, broadcast sem fan-out) + `notificacao_config` (audiência por workspac
 
 ---
 
+## Transcrição automática de áudio (agente entende áudio) — migration 108
+
+- **Problema**: voice/áudio chegava com `conteudo="[mídia]"` (placeholder do `whatsapp_normalizer`)
+  → o agente "via" `[mídia]` no histórico e respondia sem entender. **Fix**: STT que substitui o
+  `[mídia]` pela fala transcrita.
+- **Pipeline**: `whatsapp_media.register_media_record` (gancho comum inbound+outbound) enfileira o job
+  `audio_transcription` quando a mídia de áudio fica `ready` → worker
+  `audio_transcription.process_audio_transcription_job` re-baixa do MinIO (`object_storage.get_object`),
+  transcreve via **gpt-4o-transcribe** (`ai_config` feature `"audio"` → herda chave/base DEDICADA de
+  imagem; STT é OpenAI-only, o gateway de texto não serve) e grava: TEXTO em
+  `crm_whatsapp_mensagens.conteudo` (mesmo guard `IN ('','[mídia]')` — nunca sobrescreve edição humana)
+  + STATUS em `crm_whatsapp_midia.transcricao_status` (`pendente|processando|pronto|sem_fala|erro|nao_transcrito`).
+- **Race-guard** (`agent_service.processar_reply`): se a última msg de entrada é áudio
+  pendente/processando, re-agenda o reply (+15s, via `enfileirar_agente_reply(atraso_segundos=)`) e
+  sai — não responde ao `[mídia]`. Status terminal libera a resposta.
+- **Front**: bolha de áudio mostra chevron + ícone no rodapé (lê `midias[].transcricao_status`); clica e
+  expande a transcrição inline. Serializer expõe `transcricao_status` em `midias[]` (snake — `midias[]`
+  não é camelizado).
+- Migration **108**: `transcricao_status` + índice parcial por status + índice único do job. Sem
+  backfill (áudios legados = `nao_transcrito`). **Deploy: precisa de `deploy.sh worker`** (job roda no worker).
+
+---
+
 ## COMO ATUALIZAR ESTE ARQUIVO
 
 Sempre que implementar uma feature:

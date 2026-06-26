@@ -498,11 +498,16 @@ def _agente_ativo_do_canal(db: Session, canal_id) -> Agente | None:
     )
 
 
-def enfileirar_agente_reply(db: Session, *, workspace_id, canal_id, conversa_id, mensagem_id=None) -> None:
+def enfileirar_agente_reply(
+    db: Session, *, workspace_id, canal_id, conversa_id, mensagem_id=None,
+    atraso_segundos: int | None = None,
+) -> None:
     """Enfileira/atualiza um job agente_reply com debounce. Idempotente por conversa.
 
     Guarda anti-race: o UPDATE só toca jobs `status='pending'` (não reseta um job já
     pego pelo worker, que vira 'running'). Se 0 linhas, INSERT novo job. Ver Riscos no PLANO.
+    `atraso_segundos` sobrescreve o debounce do agente — usado pelo race-guard de áudio
+    em processar_reply (re-agendamento curto enquanto a transcrição não fica pronta).
     """
     agente = _agente_ativo_do_canal(db, canal_id)
     if agente is None:
@@ -514,7 +519,7 @@ def enfileirar_agente_reply(db: Session, *, workspace_id, canal_id, conversa_id,
     ).scalar()
     if not ativo:
         return
-    deb = str(int(agente.debounce_segundos or 40))
+    deb = str(int(atraso_segundos if atraso_segundos is not None else (agente.debounce_segundos or 40)))
     payload = json.dumps(
         {
             "conversa_id": str(conversa_id),
@@ -1089,6 +1094,29 @@ def processar_reply(db: Session, payload: dict) -> None:
         return
     canal = db.get(CanalEntrada, conversa.canal_id) if conversa.canal_id else None
     canal_id = conversa.canal_id
+
+    # Race-guard de áudio: se a ÚLTIMA mensagem do cliente é um áudio ainda não transcrito
+    # (transcricao_status pendente/processando), NÃO responder ao placeholder "[mídia]" —
+    # re-agenda o reply com atraso curto e sai. O job de transcrição roda em paralelo;
+    # status terminal (pronto/sem_fala/erro/nao_transcrito) libera a resposta no próximo ciclo.
+    audio_pend = db.execute(
+        text("""
+            SELECT mid.transcricao_status
+            FROM public.crm_whatsapp_mensagens m
+            LEFT JOIN public.crm_whatsapp_midia mid
+              ON mid.mensagem_id = m.id AND mid.tipo = 'audio' AND mid.deleted_at IS NULL
+            WHERE m.conversa_id = CAST(:cid AS uuid) AND m.direcao = 'entrada' AND m.ativo = true
+            ORDER BY m.created_at DESC
+            LIMIT 1
+        """),
+        {"cid": str(conversa.id)},
+    ).scalar()
+    if audio_pend in ("pendente", "processando"):
+        enfileirar_agente_reply(
+            db, workspace_id=conversa.workspace_id, canal_id=canal_id,
+            conversa_id=conversa.id, atraso_segundos=15,
+        )
+        return
 
     historico, ultima_msg = _carregar_contexto(db, conversa)
     if not ultima_msg:

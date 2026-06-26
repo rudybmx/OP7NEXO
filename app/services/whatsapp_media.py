@@ -341,6 +341,37 @@ def register_media_record(
             "sha256": stored.sha256,
         },
     )
+    # Transcrição automática de áudio (job separado — NÃO bloqueia o player). Gancho
+    # comum a inbound (process_media_download_job) e outbound (envio do operador, via
+    # canais.py), cobrindo recebidos E enviados. Idempotente por mensagem (índice único
+    # parcial). NÃO commita aqui — entra na transação do caller.
+    if stored.media_type == "audio" and storage_status == "ready":
+        db.execute(
+            text("""
+                INSERT INTO public.crm_message_jobs (
+                    workspace_id, canal_id, related_message_id,
+                    job_type, status, priority, payload, created_at, updated_at
+                )
+                VALUES (
+                    CAST(:workspace_id AS uuid), CAST(:canal_id AS uuid), CAST(:mensagem_id AS uuid),
+                    'audio_transcription', 'pending', 5, CAST(:payload AS jsonb), NOW(), NOW()
+                )
+                ON CONFLICT (related_message_id)
+                    WHERE related_message_id IS NOT NULL AND job_type = 'audio_transcription'
+                DO NOTHING
+            """),
+            {
+                "workspace_id": workspace_id,
+                "canal_id": canal_id,
+                "mensagem_id": mensagem_id,
+                "payload": _json_dumps({
+                    "mensagem_id": mensagem_id,
+                    "conversa_id": conversa_id,
+                    "minio_path": stored.object_key,
+                    "mimetype": stored.mimetype,
+                }),
+            },
+        )
 
 
 def validate_media(content: bytes, mimetype: str) -> None:

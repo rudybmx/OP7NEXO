@@ -128,6 +128,15 @@ def _process_job(job_id: str) -> str:
                 _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
                 return "processed"
 
+            if job_type == "audio_transcription":
+                from app.services.audio_transcription import process_audio_transcription_job
+
+                transc_job = dict(job)
+                transc_job["payload"] = transc_job.get("job_payload") or {}
+                process_audio_transcription_job(db, transc_job)
+                _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
+                return "processed"
+
             if job_type == "contact_avatar_enrichment":
                 from app.services.contact_avatar_enrichment import process_contact_avatar_enrichment_job
                 enrichment_job = dict(job)

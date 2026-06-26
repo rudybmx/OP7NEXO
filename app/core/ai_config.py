@@ -22,7 +22,7 @@ from app.core.config import settings
 
 log = logging.getLogger(__name__)
 
-FEATURES = ("insights", "image", "vision", "copy", "carrossel", "agent")
+FEATURES = ("insights", "image", "vision", "copy", "carrossel", "audio", "agent")
 
 _DEFAULT_BASE = "https://api.openai.com/v1"
 _CACHE_TTL = 60.0
@@ -60,6 +60,10 @@ def _env_defaults(feature: str) -> tuple[str, str, str]:
         return img_key, img_base, settings.openai_copy_model
     if feature == "carrossel":
         return img_key, img_base, settings.openai_carrossel_model
+    if feature == "audio":
+        # transcrição (STT) — herda a chave/base DEDICADA de imagem (OpenAI real;
+        # o gateway de texto não serve audio.transcriptions).
+        return img_key, img_base, settings.openai_audio_model
     # agent — slot reservado; herda a chave/base de texto.
     return (
         settings.openai_api_key,

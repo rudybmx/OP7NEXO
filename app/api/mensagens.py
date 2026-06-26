@@ -364,6 +364,7 @@ def _dedup_midias(midias: list) -> list[dict]:
             "filename": getattr(media, "filename", None),
             "caption": getattr(media, "caption", None),
             "storage_status": getattr(media, "storage_status", None),
+            "transcricao_status": getattr(media, "transcricao_status", None),
             "sha256": getattr(media, "sha256", None),
             "_created_at": getattr(media, "criado_em", None),
         }

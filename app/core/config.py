@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Modelo de TEXTO do Carrossel 2.0 (diretor/ajuste/análise) — mais inteligente, escopado só ao carrossel.
     # gpt-5-mini: família GPT-5 (raciocínio) viável em endpoint síncrono (~18s); gpt-5 full = 80-200s (timeout).
     openai_carrossel_model: str = "gpt-5-mini"
+    # TRANSCRIÇÃO de áudio (speech-to-text, endpoint audio.transcriptions). OpenAI-only —
+    # herda a chave/base_url DEDICADA de imagem (o gateway de texto/opencode não tem STT).
+    openai_audio_model: str = "gpt-4o-transcribe"
     # Firecrawl — busca de notícias para o buscador de pautas (Origin A do Criativos 2.0).
     firecrawl_api_key: str = ""
     firecrawl_api_url: str = "https://api.firecrawl.dev"
