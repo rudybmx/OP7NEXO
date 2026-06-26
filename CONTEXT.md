@@ -217,6 +217,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-26) — CRM Atendimento: fix clique-trava + scroll WhatsApp (Fase 1)
+- **Bug clique não troca de conversa** (`pagina-atendimento.tsx`): o effect do deep-link (`?conversa=`) tinha `conversaAtivaId` nas deps → ao clicar, `router.replace` assíncrono fazia o effect reverter a seleção p/ o `conversaParam` antigo (loop "abrindo a mesma", F5 resolvia). Fix: deps = `[conversaParam]` só.
+- **Scroll ao abrir estilo WhatsApp**: removido o `scrollIntoView({smooth})` em `[mensagens]`; agora o `PainelChat` ancora ao abrir — na **1ª não-lida** (snapshot de `naoLidas` em `handleSelectConversa` ANTES de marcar lido via `unreadSnapRef`→`unreadCount`; `firstUnreadId` = a unreadCount-ésima de entrada do fim; bolha tem `data-msg-id`, `querySelector`+`scrollIntoView({block:'start'})`) ou **cola no final** (`block:'end'`), com re-âncora (rAF+timeouts) p/ mídia. Msg nova só rola ao fim se perto do fim (180px). `scrollContainerRef` no container.
+
 ### ✅ Implementado (2026-06-26) — CRM Atendimento: responder/citar mensagem (P3, estilo WhatsApp)
 - Cada bolha (`painel-chat.tsx`) ganhou um **chevron "Responder"** (lucide `ChevronDown`) no canto superior, que aparece no hover (CSS `.atd-reply-chevron`/`.atd-bubble-reply` em `globals.css`). Clicar → `onReply(msg)` → estado `replyingTo` em `pagina-atendimento.tsx` → **barra "Respondendo a … {preview}"** acima do compositor (`input-mensagem.tsx`, props `replyingTo`/`onClearReply`, X p/ cancelar). Ao enviar, `handleEnviar` passa `quotedMessageId=replyingTo.id` → `use-enviar-mensagem` (`quoted_message_id` no body) → proxy `send/route.ts` repassa → backend cita no provider (Evolution `quoted`/WAHA `reply_to`) e grava `quoted_*`. `replyingTo` limpa no sucesso. Backend confirmado ao vivo (WAHA reply_to → citação real). Par da API em `api/production`.
 

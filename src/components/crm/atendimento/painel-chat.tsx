@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, ChevronDown, Clock, FileText, PlayCircle, AlertCircle, User, Sparkles } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
@@ -22,6 +22,8 @@ interface PainelChatProps {
   onTransferir: () => void
   onResolver: () => void
   mensagensEndRef: React.RefObject<HTMLDivElement | null>
+  /** Nº de não-lidas no momento da abertura — ancora o scroll na 1ª não-lida (estilo WhatsApp). */
+  unreadCount?: number
   /** Quando presente (mobile drill-down), exibe a seta "voltar" no header. */
   onVoltar?: () => void
   isMobile?: boolean
@@ -550,12 +552,56 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpen
   )
 }
 
-export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, onVoltar, isMobile = false, onReply }: PainelChatProps) {
+export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, unreadCount = 0, onVoltar, isMobile = false, onReply }: PainelChatProps) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const { user } = useAuth()
   const isAdmin = !!user && user.role !== 'company_agent'
   const [ajuste, setAjuste] = useState<{ mensagemId: string; original: string } | null>(null)
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
+
+  // ── Scroll estilo WhatsApp: ao abrir, ancora na 1ª não-lida; se tudo lido, cola no final ──
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const scrolledForRef = useRef<string | null>(null)
+  const prevLenRef = useRef(0)
+  // id da 1ª mensagem não-lida (= a unreadCount-ésima de ENTRADA a partir do fim)
+  const firstUnreadId = useMemo(() => {
+    if (!unreadCount || unreadCount <= 0) return null
+    const entradas = mensagens.filter(m => m.direcao === 'entrada')
+    if (entradas.length === 0) return null
+    return entradas[Math.max(0, entradas.length - unreadCount)]?.id ?? null
+  }, [mensagens, unreadCount])
+
+  useEffect(() => {
+    if (!conversa?.id || mensagens.length === 0) return
+    const container = scrollContainerRef.current
+    if (scrolledForRef.current !== conversa.id) {
+      // ABERTURA: ancora na 1ª não-lida (marcador) ou cola no final; re-ancora enquanto mídia carrega
+      scrolledForRef.current = conversa.id
+      prevLenRef.current = mensagens.length
+      const anchor = () => {
+        const cont = scrollContainerRef.current
+        let alvo: Element | null = null
+        if (firstUnreadId && cont) {
+          try { alvo = cont.querySelector(`[data-msg-id="${CSS.escape(firstUnreadId)}"]`) } catch { alvo = null }
+        }
+        if (alvo) alvo.scrollIntoView({ block: 'start', behavior: 'auto' })
+        else mensagensEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
+      }
+      anchor()
+      const raf = requestAnimationFrame(anchor)
+      const t1 = setTimeout(anchor, 150)
+      const t2 = setTimeout(anchor, 450)
+      return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2) }
+    }
+    // MENSAGEM NOVA na mesma conversa: só cola no final se o usuário já está perto do fim
+    const cresceu = mensagens.length > prevLenRef.current
+    prevLenRef.current = mensagens.length
+    if (cresceu && container) {
+      const pertoDoFim = container.scrollHeight - container.scrollTop - container.clientHeight < 180
+      if (pertoDoFim) mensagensEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' })
+    }
+  }, [conversa?.id, mensagens, firstUnreadId, mensagensEndRef])
+
   const titulo = formatHeaderTitle(conversa)
   const telefone = formatarTelefoneBR(conversa.contato.telefone || conversa.remoteJid)
   const avatarSrc = resolveAvatarSrc(conversa.isGroup ? (conversa.groupAvatarUrl || conversa.contato.avatarUrl) : conversa.contato.avatarUrl)
@@ -838,7 +884,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
         overflow: 'hidden',
       }}>
         <div aria-hidden className="atd-chat-pattern" style={patternOverlayStyle} />
-        <div style={{
+        <div ref={scrollContainerRef} style={{
           position: 'relative',
           zIndex: 1,
           minHeight: 0,
@@ -936,6 +982,7 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                 return (
                   <div
                     key={msg.id}
+                    data-msg-id={msg.id}
                     data-wamid={msg.evolutionMsgId || undefined}
                     style={{
                       alignSelf: isEntrada ? 'flex-start' : 'flex-end',

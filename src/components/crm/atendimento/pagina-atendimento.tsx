@@ -43,11 +43,17 @@ export function PaginaAtendimento() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const conversaParam = searchParams.get('conversa')
+  // Sincroniza a conversa ativa a partir da URL (deep-link / voltar do browser).
+  // ⚠️ NÃO incluir `conversaAtivaId` nas deps: ao clicar numa conversa, setConversaAtivaId
+  // roda na hora mas router.replace(?conversa=) é assíncrono — se o effect re-disparasse por
+  // mudança de conversaAtivaId, leria o conversaParam ANTIGO e revertia a seleção (bug do
+  // "clique fica abrindo a mesma"). Roda só quando a URL muda.
   useEffect(() => {
     if (conversaParam && conversaParam !== conversaAtivaId) {
       setConversaAtivaId(conversaParam)
     }
-  }, [conversaParam, conversaAtivaId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversaParam])
   const [painelAberto, setPainelAberto] = useState(false)
   const [filtroAtivo, setFiltroAtivo] = useState<string>('todas')
   const [busca, setBusca] = useState('')
@@ -117,6 +123,9 @@ export function PaginaAtendimento() {
   const { etiquetas, aplicar: aplicarEtiqueta, remover: removerEtiqueta } = useEtiquetas(workspaceAtual)
 
   const mensagensEndRef = useRef<HTMLDivElement>(null)
+  // Snapshot do nº de não-lidas NO MOMENTO de abrir cada conversa (capturado antes de
+  // marcarLidaLocal zerar). O PainelChat usa p/ ancorar o scroll na 1ª não-lida.
+  const unreadSnapRef = useRef<Record<string, number>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -136,10 +145,8 @@ export function PaginaAtendimento() {
     }
   }, [workspaceAtual])
 
-  // Auto-scroll para mensagens
-  useEffect(() => {
-    mensagensEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [mensagens])
+  // (O auto-scroll ao abrir/receber mensagem agora é tratado dentro do PainelChat —
+  // ancora na 1ª não-lida ou cola no final, com robustez p/ carregamento de mídia.)
 
   // Polling fallback: SSE é o canal primário. Polling a cada 30s cobre desconexões silenciosas.
   useEffect(() => {
@@ -233,6 +240,8 @@ export function PaginaAtendimento() {
       setNovaConversaAberta(false)
     }
     const conversa = conversas.find(c => c.id === id)
+    // Captura as não-lidas ANTES de marcar como lida (senão o scroll perde a âncora)
+    unreadSnapRef.current[id] = conversa?.naoLidas ?? 0
     setConversaAtivaId(id)
     // Reflete a conversa na URL (deep-link / sobrevive a F5 / compartilhável). replace
     // (não push) p/ não poluir o histórico de back/forward.
@@ -529,6 +538,7 @@ export function PaginaAtendimento() {
               onTransferir={() => setMostrarModalTransferir(true)}
               onResolver={() => setMostrarModalResolver(true)}
               mensagensEndRef={mensagensEndRef}
+              unreadCount={conversaAtivaId ? (unreadSnapRef.current[conversaAtivaId] ?? 0) : 0}
               onVoltar={isMobile ? () => setConversaAtivaId(null) : undefined}
               isMobile={isMobile}
               onReply={setReplyingTo}
