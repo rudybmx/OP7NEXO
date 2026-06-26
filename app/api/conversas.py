@@ -1130,6 +1130,38 @@ def sugerir_ajuste_resposta(
     )
 
 
+@router.post("/{conversa_id}/acionar-ia")
+def acionar_ia(
+    conversa_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    """Botão "Acionar IA": o agente de IA do canal analisa o histórico e ENVIA uma mensagem
+    proativa de reengajamento (retoma do ponto de parada), depois assume a conversa (ai_ativo=True).
+    Síncrono (geração ~3-20s). Sem agente no canal → 409. Grupo → 422."""
+    c = _get_conversa_or_404(conversa_id, db, workspace_filter)
+    verificar_acesso_workspace(usuario, c.workspace_id, db)
+    if c.is_group:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Reengajamento por IA não se aplica a grupos")
+
+    from app.services import agent_service
+
+    try:
+        res = agent_service.disparar_reengajamento(db, c)
+    except agent_service.ReengajamentoError as exc:
+        codigo_http = {
+            "sem_agente": status.HTTP_409_CONFLICT,
+            "texto_vazio": status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "envio_falhou": status.HTTP_502_BAD_GATEWAY,
+            "llm": status.HTTP_502_BAD_GATEWAY,
+        }.get(exc.code, status.HTTP_400_BAD_REQUEST)
+        raise HTTPException(status_code=codigo_http, detail=exc.detail)
+
+    db.refresh(c)
+    return {"ok": True, "mensagem": res["mensagem"], "agente": res["agente"], "conversa": _conversa_out(c)}
+
+
 @router.post("/{conversa_id}/reabrir", response_model=ConversaOut)
 def reabrir_conversa(
     conversa_id: uuid.UUID,

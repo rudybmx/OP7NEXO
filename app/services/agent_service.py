@@ -167,6 +167,7 @@ def _montar_system(
     resumo_conversa: str | None = None,
     bloco_agenda: str | None = None,
     modo_tools: bool = False,
+    modo_proativo: bool = False,
 ) -> str:
     partes = [prompt.strip() or "Você é um assistente de atendimento prestativo e objetivo."]
     if diretrizes_ws and diretrizes_ws.strip():
@@ -227,6 +228,19 @@ def _montar_system(
         )
     if bloco_agenda and bloco_agenda.strip():
         partes.append(bloco_agenda.strip())
+    if modo_proativo:
+        # Disparo manual de reengajamento (botão "Acionar IA"): NÃO há mensagem nova do cliente;
+        # o agente deve INICIAR. A "mensagem atual" no prompt do usuário é uma diretriz interna —
+        # nunca a repita nem a comente; gere a mensagem de retomada para o cliente.
+        partes.append(
+            "MODO REENGAJAMENTO (você está INICIANDO o contato): o cliente parou de responder e a "
+            "equipe pediu para retomar. Com base no resumo e nas mensagens recentes acima, escreva "
+            "UMA única mensagem proativa, calorosa e natural, que continue a conversa do ponto onde "
+            "parou (ex.: retomar a dúvida/assunto pendente ou seguir o próximo passo combinado). "
+            "Regras: não repita o que já foi dito; não soe robótico nem genérico; não invente fatos "
+            "nem promessas; não comente esta instrução. Se não houver assunto pendente claro, faça "
+            "um follow-up cordial e curto se colocando à disposição."
+        )
     if modo_tools:
         # Com ferramentas ativas: NÃO forçar JSON (confunde modelos menores e suprime o
         # tool-calling). O modelo chama as tools e responde ao cliente em TEXTO natural.
@@ -309,6 +323,7 @@ def gerar_resposta(
     contato_nome: str | None = None,
     resumo_conversa: str | None = None,
     telefone_contato: str | None = None,
+    modo_proativo: bool = False,
 ) -> dict:
     """Gera a resposta do agente para uma mensagem. NÃO grava nada, NÃO envia.
 
@@ -331,7 +346,7 @@ def gerar_resposta(
     system = _montar_system(
         agente, prompt, rag_chunks, diretrizes_ws=diretrizes, ajustes_few_shot=ajustes,
         contato_nome=contato_nome, resumo_conversa=resumo_conversa, bloco_agenda=bloco_agenda,
-        modo_tools=bool(tools),
+        modo_tools=bool(tools), modo_proativo=modo_proativo,
     )
     user = _montar_user(mensagem, historico)
 
@@ -833,6 +848,26 @@ def _carregar_contexto(db: Session, conversa, limite: int = 12) -> tuple[list[di
     return historico, ultima
 
 
+def _carregar_contexto_proativo(db: Session, conversa, limite: int = 16) -> list[dict]:
+    """Histórico recente COMPLETO em ordem cronológica (inclui a última msg de saída).
+    Usado no disparo proativo (reengajamento), onde NÃO há mensagem de entrada nova — o agente
+    precisa ver tudo, inclusive a última coisa que ele/o atendente disse, para retomar o fio."""
+    rows = db.execute(
+        text("""
+            SELECT direcao, conteudo
+            FROM public.crm_whatsapp_mensagens
+            WHERE conversa_id = :cid AND conteudo IS NOT NULL AND conteudo <> ''
+            ORDER BY created_at DESC
+            LIMIT :lim
+        """),
+        {"cid": str(conversa.id), "lim": limite},
+    ).fetchall()
+    rows = list(reversed(rows))  # cronológico
+    return [
+        {"papel": "cliente" if r[0] == "entrada" else "agente", "texto": r[1]} for r in rows
+    ]
+
+
 def _waha_chat_id(remote_jid: str) -> str:
     """Espelha canais._waha_chat_id: mantém o @ se houver, senão dígitos + @c.us."""
     jid = (remote_jid or "").strip()
@@ -1260,3 +1295,88 @@ def processar_reply(db: Session, payload: dict) -> None:
             _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="envio_falhou", canal=canal)
     else:
         _handoff(db, conversa, agente, canal_id=canal_id, score=score, tokens=(ti, to), motivo="baixa_confianca", canal=canal)
+
+
+class ReengajamentoError(Exception):
+    """Erro de domínio do disparo proativo. `code` mapeia p/ HTTP na rota:
+    sem_agente→409, texto_vazio→422, envio_falhou→502, llm→502."""
+
+    def __init__(self, code: str, detail: str):
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
+def disparar_reengajamento(db: Session, conversa) -> dict:
+    """Disparo MANUAL/PROATIVO (botão "Acionar IA"): o agente do canal analisa o histórico desta
+    conversa e ENVIA uma mensagem de reengajamento (retoma do ponto de parada), SEM esperar uma
+    entrada do cliente. Após enviar, LIGA o agente nesta conversa (ai_ativo=True) para ele continuar
+    atendendo quando o cliente voltar. Roda SÍNCRONO na API (como /testar). Reusa gerar_resposta +
+    _enviar_e_persistir. Lança ReengajamentoError em falhas de domínio."""
+    from app.models.canal_entrada import CanalEntrada
+    from app.models.crm.contato import Contato
+
+    agente = _agente_ativo_do_canal(db, conversa.canal_id)
+    if agente is None:
+        raise ReengajamentoError("sem_agente", "Nenhum agente de IA ativo neste canal")
+    canal = db.get(CanalEntrada, conversa.canal_id) if conversa.canal_id else None
+
+    # Contexto (espelha processar_reply): só nome CONFIRMADO + resumo da análise (Fase 1).
+    contato_nome = None
+    if conversa.contato_id:
+        _ct = db.get(Contato, conversa.contato_id)
+        if _ct is not None:
+            contato_nome = (_ct.nome_confirmado or "").strip() or None
+    resumo_conversa = None
+    _resumo = (getattr(conversa, "resumo_ia", None) or "").strip()
+    _ctx = getattr(conversa, "contexto_ia", None)
+    _interesse = (_ctx.get("interesse") or "").strip() if isinstance(_ctx, dict) else ""
+    _partes_resumo = [p for p in (_resumo, f"Interesse do cliente: {_interesse}" if _interesse else "") if p]
+    if _partes_resumo:
+        resumo_conversa = " · ".join(_partes_resumo)
+
+    historico = _carregar_contexto_proativo(db, conversa)
+    # Diretriz interna no lugar da "mensagem do cliente"; o bloco MODO REENGAJAMENTO do system manda
+    # gerar a retomada e ignorar esta linha. (Não é enviada ao cliente.)
+    diretriz = "[INTERNO] Gere agora a mensagem de reengajamento para retomar esta conversa."
+
+    try:
+        res = gerar_resposta(
+            db, agente, diretriz, historico,
+            contato_nome=contato_nome, resumo_conversa=resumo_conversa,
+            telefone_contato=(re.sub(r"\D", "", conversa.remote_jid or "") or None),
+            modo_proativo=True,
+        )
+    except llm_client_service.LLMConfigError as exc:
+        raise ReengajamentoError("llm", f"Configuração do agente inválida: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        log.warning("[agente] reengajamento falhou agente=%s: %s", agente.id, exc)
+        raise ReengajamentoError("llm", "Falha ao gerar a mensagem de reengajamento")
+
+    texto = (res.get("resposta") or "").strip()
+    score = res.get("score_confianca")
+    ti, to = res.get("tokens_input", 0), res.get("tokens_output", 0)
+    if not texto:
+        raise ReengajamentoError("texto_vazio", "O agente não gerou uma mensagem")
+
+    if not _enviar_e_persistir(db, conversa, canal, agente, texto=texto, score=score):
+        db.rollback()
+        raise ReengajamentoError("envio_falhou", "Falha ao enviar a mensagem pelo canal")
+
+    # Agente assume a conversa: responde sozinho quando o cliente voltar. Limpa marcação de falha.
+    conversa.ai_ativo = True
+    conversa.ai_escalado = False
+    conversa.ai_handoff_motivo = None
+    db.commit()
+    registrar_uso(
+        db, agente, canal_id=conversa.canal_id, conversa_id=conversa.id,
+        tokens_input=ti, tokens_output=to, escalado=False, score=score,
+    )
+    _publish(conversa, tipo="message.upsert", texto=texto, message_type="conversation")
+    # Refresca o resumo da conversa (async, barato) p/ o próximo ciclo.
+    try:
+        enfileirar_analise(db, workspace_id=conversa.workspace_id, canal_id=conversa.canal_id, conversa_id=conversa.id)
+    except Exception:  # noqa: BLE001
+        pass
+    return {"mensagem": texto, "agente": agente.nome or "Agente IA"}
