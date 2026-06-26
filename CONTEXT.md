@@ -1,7 +1,10 @@
 # OP7NEXO — Context de Arquitetura e Negócio
 
-> Atualizado: 2026-05-15
+> Atualizado: 2026-06-26
 > Mantenha este arquivo atualizado conforme o sistema evolui.
+
+## Reações em mensagens (Atendimento)
+Bolha (`painel-chat.tsx`) tem botão de reagir (SmilePlus) no hover + seletor rápido (👍❤️😂😮😢🙏) e chips de reação agregados abaixo (count + destaque da minha; re-clique remove). Hook `use-reagir.ts` → rota cookie-aware `/api/whatsapp/reagir` → backend `POST /canais/{id}/reagir`. `MensagemApi.reacoes` (mapeado em `conversations/[id]/messages/route.ts`). Realtime via `whatsapp.refresh` existente. Responder/citar já existia (botão "Responder" + barra no compositor).
 
 ## O QUE É O SISTEMA
 
