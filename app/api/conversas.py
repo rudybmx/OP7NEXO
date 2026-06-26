@@ -408,10 +408,12 @@ def listar_conversas(
             | Conversa.remote_jid.ilike(f"%{busca}%")
         )
     if etiqueta_ids:
-        # OR: conversas com pelo menos uma das etiquetas selecionadas.
-        # distinct evita duplicar conversa que casa em mais de uma etiqueta.
+        # OR: conversas cujo CONTATO tem pelo menos uma das etiquetas selecionadas.
+        # Etiquetas são unificadas no contato (fonte única); o filtro casa pela
+        # tabela crm_contato_etiquetas via Conversa.contato. distinct evita duplicar.
         q = (
-            q.join(Conversa.etiquetas)
+            q.join(Conversa.contato)
+            .join(Contato.etiquetas)
             .filter(CrmEtiqueta.id.in_(etiqueta_ids))
             .distinct()
         )
