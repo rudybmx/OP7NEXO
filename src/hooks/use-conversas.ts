@@ -60,6 +60,14 @@ export interface MensagemApi {
   quotedRemoteJid?: string | null
   quotedMessageId?: string | null
   quotedMessageType?: string | null
+  reacoes?: ReacaoApi[]
+}
+
+export interface ReacaoApi {
+  emoji: string
+  count: number
+  mine: boolean
+  reactors: string[]
 }
 
 export interface MensagemMidiaApi {

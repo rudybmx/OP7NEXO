@@ -37,6 +37,7 @@ interface BackendMensagemRow {
   quoted_remote_jid?: string | null
   quoted_message_type?: string | null
   quoted_text?: string | null
+  reacoes?: Array<{ emoji: string; count: number; mine: boolean; reactors: string[] }> | null
   midias?: Array<{
     id: string
     tipo?: string | null
@@ -94,6 +95,7 @@ interface MensagemRespostaRow {
   quotedRemoteJid: string | null
   quotedMessageId: string | null
   quotedMessageType: string | null
+  reacoes: Array<{ emoji: string; count: number; mine: boolean; reactors: string[] }>
 }
 
 type RouteContext = {
@@ -194,6 +196,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         quotedRemoteJid: row.quoted_remote_jid ?? null,
         quotedMessageId: row.quoted_message_id ?? null,
         quotedMessageType: row.quoted_message_type ?? null,
+        reacoes: row.reacoes || [],
       }
     })
 

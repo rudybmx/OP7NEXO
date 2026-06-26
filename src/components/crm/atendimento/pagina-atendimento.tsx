@@ -7,6 +7,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { useConversas, type V2Filtros, type MensagemApi } from '@/hooks/use-conversas'
 import { useMensagens } from '@/hooks/use-mensagens'
 import { useEnviarMensagem } from '@/hooks/use-enviar-mensagem'
+import { useReagir } from '@/hooks/use-reagir'
 import { useAssumirConversa } from '@/hooks/use-assumir-conversa'
 import { useTransferirConversa } from '@/hooks/use-transferir-conversa'
 import { useResolverConversa } from '@/hooks/use-resolver-conversa'
@@ -113,6 +114,7 @@ export function PaginaAtendimento() {
     workspaceResolvido
   )
   const { enviar, isEnviando, error: erroEnvio } = useEnviarMensagem()
+  const { reagir } = useReagir()
   const { assumir, isAssumindo, error: erroAssumir } = useAssumirConversa()
   const { transferir, isTransferindo, error: erroTransferir } = useTransferirConversa()
   const { resolver, isResolvendo, error: erroResolver } = useResolverConversa()
@@ -334,6 +336,20 @@ export function PaginaAtendimento() {
     }
   }, [textoMensagem, conversaAtiva, conversaEfemeraId, enviar, refetchMensagens, refetch, addMensagemLocal, removerMensagemLocal, workspaceAtual, canalSelecionadoId, replyingTo])
 
+  // Reagir/remover reação a uma mensagem (espelha no WhatsApp). Toggle: clicar no
+  // mesmo emoji que já é meu remove (emoji='').
+  const handleReact = useCallback(async (msg: MensagemApi, emoji: string) => {
+    if (!conversaAtiva || !msg.evolutionMsgId) return
+    const jaTenho = (msg.reacoes || []).some(r => r.emoji === emoji && r.mine)
+    const ok = await reagir(
+      conversaAtiva.id,
+      msg.evolutionMsgId,
+      jaTenho ? '' : emoji,
+      conversaAtiva.canalId || (canalSelecionadoId === 'todos' ? undefined : canalSelecionadoId),
+    )
+    if (ok) refetchMensagens()
+  }, [conversaAtiva, reagir, refetchMensagens, canalSelecionadoId])
+
   const handleTransferir = useCallback(async (novoResponsavelId: string, novaEquipeId?: string) => {
     if (!conversaAtivaId) return
     const ok = await transferir(conversaAtivaId, novoResponsavelId, novaEquipeId)
@@ -548,6 +564,7 @@ export function PaginaAtendimento() {
               onVoltar={isMobile ? () => setConversaAtivaId(null) : undefined}
               isMobile={isMobile}
               onReply={setReplyingTo}
+              onReact={handleReact}
             />
             <InputMensagem
               valor={textoMensagem}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback, Fragment } from 'react'
 import type { CSSProperties } from 'react'
-import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Clock, FileText, PlayCircle, AlertCircle, User, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRightLeft, Check, CheckCheck, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Clock, FileText, PlayCircle, AlertCircle, User, Sparkles, SmilePlus } from 'lucide-react'
 import type { ConversaApi, MensagemApi } from '@/hooks/use-conversas'
 import { resolveAvatarSrc } from '@/lib/avatar-src'
 import { hashColor } from '@/lib/hash-color'
@@ -30,7 +30,12 @@ interface PainelChatProps {
   isMobile?: boolean
   /** P3: responder/citar uma mensagem (abre a barra de resposta no compositor). */
   onReply?: (msg: MensagemApi) => void
+  /** Reagir/remover reação com emoji a uma mensagem (espelha no WhatsApp). */
+  onReact?: (msg: MensagemApi, emoji: string) => void
 }
+
+/** Emojis de reação rápida (mesmos padrões do WhatsApp). */
+const EMOJIS_REACAO = ['👍', '❤️', '😂', '😮', '😢', '🙏']
 
 function formatarData(valor?: string | null) {
   if (!valor) return 'Hoje'
@@ -553,11 +558,13 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpen
   )
 }
 
-export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, unreadCount = 0, onVoltar, isMobile = false, onReply }: PainelChatProps) {
+export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, unreadCount = 0, onVoltar, isMobile = false, onReply, onReact }: PainelChatProps) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const { user } = useAuth()
   const isAdmin = !!user && user.role !== 'company_agent'
   const [ajuste, setAjuste] = useState<{ mensagemId: string; original: string } | null>(null)
+  // Qual mensagem está com o seletor de emoji aberto (hover/click no botão de reagir).
+  const [reactPickerFor, setReactPickerFor] = useState<string | null>(null)
   const grupos = useMemo(() => agruparMensagensPorData(mensagens), [mensagens])
 
   // ── Scroll estilo WhatsApp: ao abrir COLA NO FINAL (robusto a mídia); aviso de não-lidas é separado ──
@@ -1132,6 +1139,52 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                           <ChevronDown size={15} />
                         </button>
                       )}
+                      {onReact && msg.evolutionMsgId && (
+                        <div style={{ position: 'absolute', top: 2, right: onReply ? 24 : 4 }}>
+                          <button
+                            type="button"
+                            className="atd-reply-chevron"
+                            title="Reagir"
+                            aria-label="Reagir"
+                            onClick={() => setReactPickerFor(reactPickerFor === msg.id ? null : msg.id)}
+                            style={{ border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', padding: 2, lineHeight: 0, borderRadius: 4 }}
+                          >
+                            <SmilePlus size={15} />
+                          </button>
+                          {reactPickerFor === msg.id && (
+                            <div
+                              role="menu"
+                              onMouseLeave={() => setReactPickerFor(null)}
+                              style={{
+                                position: 'absolute',
+                                top: '100%',
+                                right: 0,
+                                marginTop: 4,
+                                zIndex: 20,
+                                display: 'flex',
+                                gap: 2,
+                                padding: '4px 6px',
+                                background: 'var(--card, #fff)',
+                                border: '1px solid var(--border, rgba(15,39,68,0.12))',
+                                borderRadius: 999,
+                                boxShadow: '0 6px 18px rgba(0,0,0,0.18)',
+                              }}
+                            >
+                              {EMOJIS_REACAO.map(e => (
+                                <button
+                                  key={e}
+                                  type="button"
+                                  title={`Reagir com ${e}`}
+                                  onClick={() => { onReact(msg, e); setReactPickerFor(null) }}
+                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '2px 3px', borderRadius: 6 }}
+                                >
+                                  {e}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {(msg.quotedText || msg.quotedMessageId) && (
                         <div
                           role={msg.quotedMessageId ? 'button' : undefined}
@@ -1222,6 +1275,34 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                       {msg.failedReason && (
                         <div style={{ fontSize: 10, color: isEntrada ? '#a32d2d' : '#b91c1c', marginTop: 4 }}>
                           {msg.failedReason}
+                        </div>
+                      )}
+                      {(msg.reacoes?.length ?? 0) > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                          {msg.reacoes!.map(r => (
+                            <button
+                              key={r.emoji}
+                              type="button"
+                              onClick={onReact && msg.evolutionMsgId ? () => onReact(msg, r.emoji) : undefined}
+                              title={r.reactors.join(', ')}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                fontSize: 12,
+                                lineHeight: 1,
+                                padding: '2px 7px',
+                                borderRadius: 999,
+                                cursor: onReact && msg.evolutionMsgId ? 'pointer' : 'default',
+                                background: r.mine ? 'rgba(0,110,255,0.14)' : 'var(--ws-glass-bg, rgba(15,39,68,0.06))',
+                                border: r.mine ? '1px solid #006EFF' : '1px solid transparent',
+                                color: 'inherit',
+                              }}
+                            >
+                              <span>{r.emoji}</span>
+                              {r.count > 1 && <span style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{r.count}</span>}
+                            </button>
+                          ))}
                         </div>
                       )}
                     </div>
