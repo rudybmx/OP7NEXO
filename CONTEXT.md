@@ -353,6 +353,11 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Instrumentado: image_gen (base+integrada), ia_insights (passa a capturar `usage`), e endpoints de copy/vision em `criativos_design.py` (funções de copy/vision são puras → log no endpoint, onde há `workspace_id`).
 - API `app/api/ai_usage.py` (platform_admin): `/ai/usage/summary` (totais + quebra por feature/model/workspace, USD+BRL), `/ai/usage/pricing` (GET/PUT), `/ai/usage/fx`. Front: aba "Consumo & Custo" em `/admin/ia`.
 
+### ✅ Implementado (2026-06-26) — Painéis CRM: IA pontua e move o lead no funil
+- Migration **111**: `crm_paineis.agente_funil` (liga "IA move o card no funil" por painel) + `crm_painel_comentarios.origem` (usuario|ia|sistema) + `autor_label` (autor de eventos de sistema/IA na timeline).
+- `analisar_conversa` (agent_service.py) também classifica a `etapa` do funil **quando** o painel recepcionamento tem `agente_funil` ligado (prompt condicional; `_ANALISE_PROMPT_VERSAO=3`). `processar_analise` chama `paineis_automacao.aplicar_analise_no_funil`: move o card p/ a fase classificada, mapeia temperatura→prioridade (quente=alta/morno=media/frio=baixa) e registra evento de sistema ("Ana (IA) moveu para …") só em mudança real.
+- `app/api/paineis.py`: `_card_out` expõe `lead_temperatura`/`lead_score` (join contato) + `origem` nos comentários; `_painel_resumo_out` retorna `agente_funil`; novo `PATCH /paineis/{id}/agente-funil`. Roda no **worker** — deploy api **+ worker**.
+
 ### ✅ Implementado (2026-06-26) — Painéis CRM: responsável pode ser agente de IA
 - Migration **107**: `crm_painel_cards.responsavel_agente_id` (FK `agentes.id` ON DELETE SET NULL, indexada). Model `PainelCard.responsavel_agente` (relationship).
 - `app/api/paineis.py`: `CardUpdate.responsavel_agente_id`; `_card_out` retorna `responsavel_agente_id`+`responsavel_agente_nome`; `atualizar_card` aplica exclusividade mútua (setar agente limpa `responsavel_user_id` e desvincula `conversa.responsavel_id`; setar usuário limpa o agente).

@@ -17,10 +17,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.crm.conversa import Conversa
-from app.models.crm.painel import Painel, PainelCard, PainelFase
+from app.models.crm.painel import Painel, PainelCard, PainelComentario, PainelFase
 from app.services.paineis_padrao import ensure_paineis_padrao, fase_entrada
 
 logger = logging.getLogger(__name__)
+
+# Mapa temperatura (análise IA) -> prioridade do card.
+_TEMP_PRIORIDADE = {"quente": "alta", "morno": "media", "frio": "baixa"}
 
 
 def _agora() -> datetime:
@@ -232,3 +235,105 @@ def sincronizar_cards_da_conversa(db: Session, conversa: Conversa) -> None:
             if fase and fase.id != card.fase_id:
                 card.fase_id = fase.id
                 card.ordem = _proxima_ordem(db, fase.id)
+
+
+def fases_funil_do_workspace(db: Session, workspace_id) -> list[str]:
+    """Nomes das fases ativas (em ordem) do painel recepcionamento_leads SE `agente_funil`
+    estiver ligado; senão []. Usado para constranger a classificação de etapa da análise."""
+    painel = (
+        db.query(Painel)
+        .filter(
+            Painel.workspace_id == workspace_id,
+            Painel.tipo == "recepcionamento_leads",
+            Painel.ativo.is_(True),
+            Painel.agente_funil.is_(True),
+        )
+        .first()
+    )
+    if not painel:
+        return []
+    fases = (
+        db.query(PainelFase)
+        .filter(PainelFase.painel_id == painel.id, PainelFase.ativo.is_(True))
+        .order_by(PainelFase.ordem)
+        .all()
+    )
+    return [f.nome for f in fases]
+
+
+def aplicar_analise_no_funil(
+    db: Session,
+    *,
+    conversa_id,
+    agente,
+    etapa: str | None,
+    temperatura: str | None,
+    score,
+    resumo: str | None = None,
+) -> None:
+    """Pós-análise: para cards de painel com `agente_funil` ligado, move o card para a fase
+    classificada (`etapa`), mapeia temperatura->prioridade e registra um evento de sistema na
+    linha do tempo quando há mudança real. NÃO commita (entra na transação do processar_analise).
+    Tolerante a falha — nunca derruba o worker."""
+    try:
+        conversa = conversa_id if isinstance(conversa_id, Conversa) else db.get(Conversa, conversa_id)
+        if conversa is None:
+            return
+        etapa_norm = (etapa or "").strip().lower()
+        prioridade = _TEMP_PRIORIDADE.get((temperatura or "").strip().lower())
+        cards = (
+            db.query(PainelCard)
+            .join(Painel, Painel.id == PainelCard.painel_id)
+            .filter(
+                PainelCard.conversa_id == conversa.id,
+                PainelCard.ativo.is_(True),
+                Painel.agente_funil.is_(True),
+                Painel.ativo.is_(True),
+            )
+            .all()
+        )
+        if not cards:
+            return
+        autor = f"{(getattr(agente, 'nome', None) or 'Agente')} (IA)"
+        for card in cards:
+            mudou_fase = False
+            fase_destino = None
+            if etapa_norm:
+                fase_destino = (
+                    db.query(PainelFase)
+                    .filter(
+                        PainelFase.painel_id == card.painel_id,
+                        PainelFase.ativo.is_(True),
+                        func.lower(PainelFase.nome) == etapa_norm,
+                    )
+                    .first()
+                )
+                if fase_destino and fase_destino.id != card.fase_id:
+                    card.fase_id = fase_destino.id
+                    card.ordem = _proxima_ordem(db, fase_destino.id)
+                    conversa.etapa_funil = fase_destino.nome
+                    mudou_fase = True
+            mudou_prio = bool(prioridade) and card.prioridade != prioridade
+            if mudou_prio:
+                card.prioridade = prioridade
+            if resumo:
+                card.resumo_conversa = resumo
+            if mudou_fase or mudou_prio:
+                partes = []
+                if mudou_fase and fase_destino is not None:
+                    partes.append(f"moveu para {fase_destino.nome}")
+                if temperatura:
+                    partes.append(f"lead {temperatura} ({score})")
+                texto = " · ".join(partes) or "atualizou a pontuação"
+                db.add(
+                    PainelComentario(
+                        card_id=card.id,
+                        autor_user_id=None,
+                        origem="ia",
+                        autor_label=autor,
+                        texto=texto,
+                    )
+                )
+        db.flush()
+    except Exception as exc:  # noqa: BLE001 — funil nunca derruba a análise
+        logger.info("[funil] aplicar_analise falhou conversa=%s: %s", conversa_id, exc)

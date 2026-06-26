@@ -170,6 +170,9 @@ def _card_out(card: PainelCard, *, detalhe: bool = False) -> dict:
         "resumo_conversa": card.resumo_conversa,
         "conversa_id": str(card.conversa_id) if card.conversa_id else None,
         "contato_id": str(card.contato_id) if card.contato_id else None,
+        # Pontuação da IA (espelho do contato; atualizada pela análise da conversa).
+        "lead_temperatura": card.contato.sentimento_ia if card.contato else None,
+        "lead_score": card.contato.score_lead_ia if card.contato else None,
         "ordem": card.ordem,
         "criado_em": card.criado_em,
         "atualizado_em": card.atualizado_em,
@@ -180,7 +183,8 @@ def _card_out(card: PainelCard, *, detalhe: bool = False) -> dict:
             {
                 "id": str(c.id),
                 "autor_user_id": str(c.autor_user_id) if c.autor_user_id else None,
-                "autor_nome": c.autor.nome if c.autor else None,
+                "autor_nome": (c.autor.nome if c.autor else None) or c.autor_label,
+                "origem": c.origem,
                 "texto": c.texto,
                 "criado_em": c.criado_em,
             }
@@ -196,6 +200,7 @@ def _painel_resumo_out(p: Painel) -> dict:
         "tipo": p.tipo,
         "sistema": p.sistema,
         "automacao_ativa": p.automacao_ativa,
+        "agente_funil": p.agente_funil,
         "bloqueado": p.bloqueado,
         "ordem": p.ordem,
     }
@@ -607,6 +612,21 @@ def toggle_bloqueio(
 ):
     p = _get_painel(db, painel_id, usuario)
     p.bloqueado = data.valor
+    db.commit()
+    db.refresh(p)
+    return _painel_resumo_out(p)
+
+
+@router.patch("/{painel_id}/agente-funil")
+def toggle_agente_funil(
+    painel_id: uuid.UUID,
+    data: ToggleIn,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Liga/desliga 'a IA move o card no funil' para este painel."""
+    p = _get_painel(db, painel_id, usuario)
+    p.agente_funil = data.valor
     db.commit()
     db.refresh(p)
     return _painel_resumo_out(p)

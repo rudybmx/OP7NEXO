@@ -29,6 +29,8 @@ class Painel(Base):
     sistema: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     automacao_ativa: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     bloqueado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Liga "a IA move o card no funil" (classifica etapa na análise e move).
+    agente_funil: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     ordem: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     criado_em: Mapped[datetime] = mapped_column(
@@ -159,6 +161,9 @@ class PainelCard(Base):
     responsavel_agente: Mapped["Agente | None"] = relationship(  # type: ignore[name-defined]
         foreign_keys=[responsavel_agente_id], lazy="select"
     )
+    contato: Mapped["Contato | None"] = relationship(  # type: ignore[name-defined]
+        foreign_keys=[contato_id], lazy="select"
+    )
     valores: Mapped[list["PainelCardValor"]] = relationship(
         back_populates="card", lazy="select", cascade="all, delete-orphan",
     )
@@ -200,6 +205,10 @@ class PainelComentario(Base):
     autor_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # Origem do registro: usuario (humano) | ia | sistema. autor_label exibe o autor
+    # de eventos de sistema/IA (ex.: "Ana (IA)"), já que não têm autor_user_id.
+    origem: Mapped[str] = mapped_column(String(12), default="usuario", nullable=False)
+    autor_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
     texto: Mapped[str] = mapped_column(Text, nullable=False)
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

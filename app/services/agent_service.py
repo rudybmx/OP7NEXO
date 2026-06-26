@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.models.agente import Agente, AgenteCanal, AgentePrompt, AgenteUsoToken
 from app.services import llm_client_service
+from app.services import paineis_automacao
 
 log = logging.getLogger(__name__)
 
@@ -559,7 +560,7 @@ def enfileirar_agente_reply(
 # ── análise de conversa (inteligência de IA — Fase 1) ─────────────────────────
 # Prompts de análise vivem AQUI (backend, versionados) — o "segredo" da qualidade,
 # fora do prompt editável do agente. Bump _ANALISE_PROMPT_VERSAO ao mudar o prompt.
-_ANALISE_PROMPT_VERSAO = "2"  # v2: extrai nome_cliente declarado pelo lead
+_ANALISE_PROMPT_VERSAO = "3"  # v3: classifica etapa do funil (condicional a agente_funil)
 _ANALISE_DEBOUNCE_S = 20      # quiet-period após a última msg do lead
 _ANALISE_COOLDOWN_S = 180     # no máx. 1 análise / 3 min por conversa (custo)
 
@@ -600,18 +601,33 @@ def _transcript_para_analise(db: Session, conversa_id, limite: int = 24) -> str:
     return "\n".join(linhas)
 
 
-def analisar_conversa(db: Session, agente: Agente, conversa_id) -> dict | None:
+def analisar_conversa(
+    db: Session, agente: Agente, conversa_id, fases_funil: list[str] | None = None
+) -> dict | None:
     """Roda a análise da conversa com o MODELO DO AGENTE. Tolerante a falha (try/except +
-    rollback) — degrada para None, nunca derruba o worker nem envenena a transação."""
+    rollback) — degrada para None, nunca derruba o worker nem envenena a transação.
+
+    Se `fases_funil` (nomes das fases do painel) for passado, a análise também classifica a
+    `etapa` atual do lead — usado para mover o card no funil (gateado por painel.agente_funil)."""
     transcript = _transcript_para_analise(db, conversa_id)
     if not transcript.strip():
         return None
     papel = (_prompt_efetivo(db, agente) or "(não definido)").strip()
     objetivo = (getattr(agente, "objetivo", None) or "(não definido)").strip()
+    bloco_funil = ""
+    if fases_funil:
+        nomes = ", ".join(f'"{n}"' for n in fases_funil)
+        bloco_funil = (
+            "\n\n- \"etapa\": classifique a etapa ATUAL do lead no funil escolhendo EXATAMENTE "
+            f"um destes nomes de fase: {nomes}. Avance conforme o estado da conversa (ex.: "
+            "demonstrou interesse/pediu orçamento → fase de negociação; fechou/confirmou → fase "
+            "de conversão; recusou/sem interesse → fase de perda). Se ainda é só contato inicial "
+            'ou sem sinal, retorne "". NÃO recue de fase sem sinal claro de regressão.'
+        )
     system = (
         f"PAPEL DO AGENTE (referência):\n{papel}\n\n"
         f"OBJETIVO DO AGENTE: {objetivo}\n\n"
-        f"{_ANALISE_INSTRUCOES}"
+        f"{_ANALISE_INSTRUCOES}{bloco_funil}"
     )
     user = f"Conversa:\n{transcript}\n\nProduza a análise em JSON."
     try:
@@ -624,6 +640,13 @@ def analisar_conversa(db: Session, agente: Agente, conversa_id) -> dict | None:
             score = int(max(0.0, min(100.0, float(data.get("temperatura_score")))))
         except (TypeError, ValueError):
             score = {"frio": 20, "morno": 55, "quente": 85}[temperatura]
+        # Valida a etapa contra as fases conhecidas (case-insensitive); senão "".
+        etapa = str(data.get("etapa") or "").strip()
+        if fases_funil:
+            casa = next((n for n in fases_funil if n.lower() == etapa.lower()), "")
+            etapa = casa
+        else:
+            etapa = ""
         return {
             "resumo": str(data.get("resumo") or "").strip(),
             "temperatura": temperatura,
@@ -631,6 +654,7 @@ def analisar_conversa(db: Session, agente: Agente, conversa_id) -> dict | None:
             "interesse": str(data.get("interesse") or "").strip(),
             "observacoes": str(data.get("observacoes") or "").strip(),
             "nome_cliente": _validar_nome_cliente(data.get("nome_cliente")),
+            "etapa": etapa,
         }
     except Exception as exc:  # noqa: BLE001 — análise nunca derruba nada
         log.info("[analise] falhou conversa=%s: %s", conversa_id, exc)
@@ -692,7 +716,12 @@ def processar_analise(db: Session, payload: dict) -> None:
     agente = _agente_ativo_do_canal(db, canal_id)
     if agente is None:
         return
-    res = analisar_conversa(db, agente, conversa_id)
+    # Fases do funil (só se o painel tiver `agente_funil` ligado) → análise classifica a etapa.
+    try:
+        fases_funil = paineis_automacao.fases_funil_do_workspace(db, agente.workspace_id)
+    except Exception:  # noqa: BLE001
+        fases_funil = []
+    res = analisar_conversa(db, agente, conversa_id, fases_funil or None)
     if res is None:
         return
     contexto = {
@@ -751,6 +780,16 @@ def processar_analise(db: Session, payload: dict) -> None:
         # Fase 2: nome declarado pelo lead → confirma (origem 'ia'), nunca sobrescreve humano.
         if res.get("nome_cliente"):
             _aplicar_nome_confirmado_ia(db, _cid, res["nome_cliente"])
+    # Lógica do funil: move o card + prioridade + evento de sistema (gateado por agente_funil).
+    paineis_automacao.aplicar_analise_no_funil(
+        db,
+        conversa_id=conversa_id,
+        agente=agente,
+        etapa=res.get("etapa"),
+        temperatura=res["temperatura"],
+        score=res["temperatura_score"],
+        resumo=res["resumo"],
+    )
     db.commit()
     log.info("[analise] conversa=%s temperatura=%s score=%s", conversa_id, res["temperatura"], res["temperatura_score"])
     try:
