@@ -1,17 +1,16 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { resolveWhatsappWorkspaceAccess } from '@/lib/whatsapp-workspace-access'
-import { getSql } from '@/lib/db'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
+const API_BASE_URL = 'http://op7nexo-api:8000'
+
 export const dynamic = 'force-dynamic'
 
-async function getEtiquetaWorkspace(id: string) {
-  const db = getSql()
-  const rows = await db`SELECT id, workspace_id FROM public.crm_etiquetas WHERE id = ${id}::uuid AND ativo = true`
-  return rows.length ? (rows[0] as { id: string; workspace_id: string }) : null
-}
+// Editar / excluir etiqueta — encaminha para a API FastAPI
+// (PUT/DELETE /etiquetas/{id}); isolamento por workspace é feito no backend.
+// Sem acesso direto ao DB (regra 2.2).
 
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
@@ -19,35 +18,20 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     if (access instanceof Response) return access
 
     const { id } = await context.params
-    const etiqueta = await getEtiquetaWorkspace(id)
-    if (!etiqueta || !access.allowedWorkspaceIds.has(etiqueta.workspace_id)) {
-      return NextResponse.json({ error: 'Etiqueta não encontrada' }, { status: 404 })
+    const body = await request.json().catch(() => ({})) as { nome?: string; cor?: string }
+
+    const resp = await fetch(`${API_BASE_URL}/etiquetas/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: access.tokenToForward, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nome: body.nome, cor: body.cor }),
+    })
+
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => '')
+      return NextResponse.json({ error: detail || 'Erro' }, { status: resp.status })
     }
-
-    const body = await request.json() as { nome?: string; cor?: string }
-    const nome = body.nome?.trim()
-    const cor = body.cor?.trim()
-    if (!nome && !cor) return NextResponse.json({ error: 'Nada para atualizar' }, { status: 400 })
-
-    const db = getSql()
-
-    if (nome) {
-      const dup = await db`
-        SELECT id FROM public.crm_etiquetas
-        WHERE workspace_id = ${etiqueta.workspace_id}::uuid AND nome = ${nome} AND ativo = true AND id <> ${id}::uuid
-      `
-      if (dup.length > 0) return NextResponse.json({ error: 'Etiqueta com este nome já existe' }, { status: 409 })
-    }
-
-    const [atualizada] = await db`
-      UPDATE public.crm_etiquetas
-      SET nome = COALESCE(${nome ?? null}, nome),
-          cor = COALESCE(${cor ?? null}, cor)
-      WHERE id = ${id}::uuid
-      RETURNING id, workspace_id, nome, cor, ativo, criado_em
-    `
-
-    return NextResponse.json({ etiqueta: atualizada })
+    const etiqueta = await resp.json()
+    return NextResponse.json({ etiqueta })
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Erro' }, { status: 500 })
   }
@@ -59,18 +43,14 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     if (access instanceof Response) return access
 
     const { id } = await context.params
-    const etiqueta = await getEtiquetaWorkspace(id)
-    if (!etiqueta || !access.allowedWorkspaceIds.has(etiqueta.workspace_id)) {
-      return NextResponse.json({ error: 'Etiqueta não encontrada' }, { status: 404 })
-    }
+    const resp = await fetch(`${API_BASE_URL}/etiquetas/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: access.tokenToForward },
+    })
 
-    const db = getSql()
-    // Soft delete (mantém histórico); os vínculos são limpos para sumir dos chips.
-    await db`UPDATE public.crm_etiquetas SET ativo = false WHERE id = ${id}::uuid`
-    await db`DELETE FROM public.crm_contato_etiquetas WHERE etiqueta_id = ${id}::uuid`
-    await db`DELETE FROM public.crm_conversa_etiquetas WHERE etiqueta_id = ${id}::uuid`
-
-    return NextResponse.json({ ok: true })
+    if (resp.ok) return NextResponse.json({ ok: true })
+    const detail = await resp.text().catch(() => '')
+    return NextResponse.json({ error: detail || 'Erro' }, { status: resp.status })
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Erro' }, { status: 500 })
   }
