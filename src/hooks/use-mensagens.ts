@@ -28,6 +28,14 @@ export function useMensagens(conversaId?: string, workspaceId?: string, enabled 
     workspaceIdRef.current = workspaceId
   }, [workspaceId])
 
+  // Ao TROCAR de conversa, limpa imediatamente as mensagens da anterior. Sem isso, o
+  // PainelChat ancora o scroll com as mensagens stale (da conversa anterior) e, quando
+  // as novas chegam, os timeouts de re-âncora já foram cancelados pelo cleanup do effect
+  // → a conversa abria fora do fim. Limpando, o scroll ancora com as mensagens certas.
+  useEffect(() => {
+    setMensagens([])
+  }, [conversaId])
+
   const fetchMensagens = useCallback(async () => {
     if (!enabled || !conversaId || !workspaceId) {
       abortRef.current?.abort()
