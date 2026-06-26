@@ -365,6 +365,7 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 - Chat renderiza mídia inline, checks de status (`pending/sent/delivered/read/played/failed`), participante e menção em grupos.
 - Painel do contato exibe lead/follow-up e permite criar ou marcar follow-up como feito via `/crm/followups`.
 - BFF de WhatsApp valida acesso de workspace em `GET /me/workspaces` da API Python.
+- **Tela `/crm/followup` (Follow-up/Resgate) religada ao backend real (2026-06-26):** `use-followup` lê `GET /crm/followups/leads` (conversas com etiqueta `followup` aplicada pelo worker via `tempo_followup_min` do agente, enriquecidas com a análise da IA — temperatura/interesse/resumo) e persiste o desfecho em `PATCH /crm/followups/conversa/{id}/fechamento`. **Sem cadência/disparo**: removidos gráfico de tentativas, "Próximos Disparos", timeline, colunas Tentativa/Próx.Envio; temperatura é leitura. Estados loading/erro/vazio (vazio orienta configurar o agente). `mock-followup` segue só em campanhas/recorrência e no sandbox `/crm/followup-2`.
 
 ### ✅ Implementado (2026-05-29) — Realtime Redis/SSE
 - `whatsapp-realtime` e `redis-buffer` usam `REDIS_URL` ou `REDIS_PASSWORD` compartilhado com a infra.
