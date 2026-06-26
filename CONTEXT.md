@@ -10,6 +10,14 @@
 > ~120 msgs carregadas, `painel-chat.tsx` (`irParaMensagemCitada`) avisa via toast em vez do antigo
 > no-op silencioso.
 
+> **Atendimento — deep-link de conversa (2026-06-26):** `?conversa=<id>` em `/crm/atendimento/conversas`
+> abre a conversa. Para conversas FORA do inbox carregado (ex.: lead frio aberto pelo Follow-up), há
+> fallback: o route handler **`GET /api/whatsapp/conversations/[id]`** busca 1 conversa (Python
+> `GET /conversas/{id}` + enriquece canal; mapeamento espelha a rota da lista) e o hook
+> `useConversaUnica` alimenta `conversaAtiva` quando ela não está na lista. A tela de Follow-up
+> (`/crm/followup`) linka para `/crm/atendimento/conversas?conversa=<id>` (antes ia p/
+> `/crm/atendimento?session=` → 404).
+
 ## O QUE É O SISTEMA
 
 SaaS de Marketing + CRM multi-tenant. Cada cliente é um **workspace**. O produto gerencia campanhas de Meta Ads, canais de comunicação (WhatsApp via Evolution API) e dados de performance.
