@@ -50,6 +50,19 @@ def _so_marcador(texto: str) -> bool:
     return not _MARCADOR_RE.sub("", texto).strip()
 
 
+def _predominante_nao_latino(texto: str) -> bool:
+    """True se a maioria das LETRAS não é do alfabeto latino — sinal de forward em outro
+    script (árabe, pashto, devanágari, CJK, cirílico…) ou de alucinação cross-língua do STT
+    em áudio curto/ruidoso. O atendimento é em PT-BR (latino), então isso NÃO é fala do
+    cliente — vira 'sem_fala' para não poluir o histórico do agente nem a UI. Texto curto
+    demais (< 4 letras) não decide (deixa passar)."""
+    letras = [c for c in texto if c.isalpha()]
+    if len(letras) < 2:
+        return False
+    latinas = sum(1 for c in letras if c.isascii() or ("À" <= c <= "ɏ"))
+    return latinas / len(letras) < 0.5
+
+
 def _fname_para_stt(filename: str | None, mimetype: str | None) -> str:
     ext = _EXT_POR_MIME.get((mimetype or "").split(";", 1)[0].strip().lower(), "")
     return f"audio.{ext}" if ext else (filename or "audio.ogg")
@@ -74,7 +87,9 @@ def transcrever_audio(
         language="pt",
     )
     texto = (getattr(resp, "text", None) or "").strip()
-    if not texto or _so_marcador(texto):
+    # Sem fala (vazio / só "[música]") ou transcrição predominantemente não-latina
+    # (forward em outro idioma ou alucinação cross-língua) → não é fala de atendimento PT.
+    if not texto or _so_marcador(texto) or _predominante_nao_latino(texto):
         return None, "sem_fala"
     return texto, "pronto"
 
