@@ -232,6 +232,10 @@ PATCH  /meta/[recurso]/:id/toggle   ← inverte campo ativo
 
 ## ESTADO ATUAL DO PROJETO (atualizar conforme progresso)
 
+### ✅ Implementado (2026-06-27) — CRM Atendimento: botão "Acionar IA" (reengajamento proativo)
+- `painel-contato.tsx` ganhou botão **Acionar IA** (acima de "Análise IA", oculto em grupos): dispara o agente de IA do canal para analisar o histórico e **enviar uma mensagem proativa de reengajamento** (retoma do ponto de parada) + liga `ai_ativo`. Estado loading + toast (sonner) + `onAtualizar`; a msg aparece no chat via SSE `whatsapp.refresh`.
+- Proxy novo `api/whatsapp/conversations/[id]/acionar-ia/route.ts` (POST) **encaminha à API FastAPI** `POST /conversas/{id}/acionar-ia` (regra 2.2, sem lib/db). Backend: `agent_service.disparar_reengajamento` (síncrono, ~5-15s; tool-calling desligado no modo proativo p/ não estourar Cloudflare 100s). Sem agente no canal → 409; grupo → 422.
+
 ### ✅ Implementado (2026-06-26) — Agenda: lembretes religados à API (Fase 4 front)
 - `src/hooks/use-lembretes.ts` religado do mock (`MOCK_LEMBRETES`) ao `/agenda/lembretes` via `api-client` (fetch condicional no `workspaceAtual`), **mantendo a assinatura** (`listarLembretes(agendaId)`, `salvarLembrete`, `excluirLembrete`, `alternarStatus`) — `config-lembretes.tsx` (aba Lembretes em Opções Gerais) não muda. Busca todos os lembretes do workspace; `listarLembretes` filtra por `agenda_id` exato (null = "Padrão (todas)"/global). `salvarLembrete` POST/PATCH; `alternarStatus` PATCH otimista. Backend = Fase 4 (api/production, scan no worker + `confirmar_presenca`). v1 só WhatsApp.
 
