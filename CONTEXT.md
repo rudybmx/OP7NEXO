@@ -5,7 +5,7 @@
 
 > **Follow-up Fase 2 — resgate pelo agente (2026-06-26):** o agente gera/dispara mensagem de resgate
 > p/ leads em followup. Config por agente (`agentes.resgate_modo` desligado|rascunho|automatico +
-> max_tentativas/intervalo_horas/hora_inicio-fim) [migration **111**]. Worker
+> max_tentativas/intervalo_horas/hora_inicio-fim) [migration **112**]. Worker
 > `scheduler.py:_job_disparar_resgate` (10min) → `app/services/followup_resgate.py:processar_resgates`
 > — elegibilidade: etiqueta 'followup' + agente do canal com resgate_modo≠desligado + ultima_direcao
 > ='saida' + sem handoff (ai_escalado/responsavel_id) + fechamento aberto (NÃO gateia ai_ativo).
