@@ -25,7 +25,7 @@ function emptyForm(): AgenteInput {
   return {
     nome: '', descricao: '', provider_id: null, modelo: null, status: 'inativo', tom: '',
     idiomas: [], blacklist_topicos: [], threshold_confianca: 0.7, debounce_segundos: 40,
-    limite_tokens_dia: null, alerta_threshold_pct: 80, mensagem_abertura: '', objetivo: '', tempo_followup_min: null, codigo_responsavel: '', horario_modo: 'dentro', canais: [],
+    limite_tokens_dia: null, alerta_threshold_pct: 80, mensagem_abertura: '', objetivo: '', tempo_followup_min: null, codigo_responsavel: '', horario_modo: 'dentro', canais: [], agendas: [],
     horarios: [], prompt: '',
   }
 }
@@ -47,6 +47,7 @@ export function AgenteForm({ agenteId, wsParam }: { agenteId?: string; wsParam?:
   const { agentes: atendentes } = useAgentesDisponiveis(ws ?? undefined)
 
   const [canais, setCanais] = useState<CanalLite[]>([])
+  const [agendasDisp, setAgendasDisp] = useState<CanalLite[]>([])
   const [form, setForm] = useState<AgenteInput>(emptyForm())
   const [inicial, setInicial] = useState<AgenteInput>(emptyForm())
   const [carregando, setCarregando] = useState(Boolean(agenteId))
@@ -68,6 +69,14 @@ export function AgenteForm({ agenteId, wsParam }: { agenteId?: string; wsParam?:
     api.get<CanalLite[]>(`/workspaces/${ws}/canais`).then(setCanais).catch(() => setCanais([]))
   }, [ws])
 
+  useEffect(() => {
+    if (!ws) { setAgendasDisp([]); return }
+    api
+      .get<{ id: string; nome: string }[]>(`/agenda/agendas?workspace_id=${ws}`)
+      .then((ags) => setAgendasDisp(ags.map((a) => ({ id: a.id, nome: a.nome }))))
+      .catch(() => setAgendasDisp([]))
+  }, [ws])
+
   // Carga do agente no editar — só quando ws e id presentes (evita 404 na rehidratação do ws).
   const carregadoRef = useRef(false)
   useEffect(() => {
@@ -83,7 +92,7 @@ export function AgenteForm({ agenteId, wsParam }: { agenteId?: string; wsParam?:
           debounce_segundos: a.debounce_segundos, limite_tokens_dia: a.limite_tokens_dia,
           alerta_threshold_pct: a.alerta_threshold_pct, mensagem_abertura: a.mensagem_abertura ?? '',
           objetivo: a.objetivo ?? '', tempo_followup_min: a.tempo_followup_min ?? null, codigo_responsavel: a.codigo_responsavel ?? '', horario_modo: a.horario_modo === 'fora' ? 'fora' : 'dentro',
-          canais: a.canais.map((c) => c.canal_id), prompt: a.prompt_draft ?? '',
+          canais: a.canais.map((c) => c.canal_id), agendas: (a.agendas ?? []).map((x) => x.agenda_id), prompt: a.prompt_draft ?? '',
           horarios: a.horarios.map((h) => ({ dia_semana: h.dia_semana, hora_inicio: h.hora_inicio, hora_fim: h.hora_fim, ativo: h.ativo })),
         }
         setForm(f)
@@ -138,6 +147,14 @@ export function AgenteForm({ agenteId, wsParam }: { agenteId?: string; wsParam?:
       const set = new Set(f.canais ?? [])
       set.has(id) ? set.delete(id) : set.add(id)
       return { ...f, canais: [...set] }
+    })
+  }
+
+  function toggleAgenda(id: string) {
+    setForm((f) => {
+      const set = new Set(f.agendas ?? [])
+      set.has(id) ? set.delete(id) : set.add(id)
+      return { ...f, agendas: [...set] }
     })
   }
 
@@ -339,6 +356,36 @@ export function AgenteForm({ agenteId, wsParam }: { agenteId?: string; wsParam?:
                       }}
                     >
                       {c.nome}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </Section>
+
+          <Section titulo="Agendas que o agente pode marcar">
+            <p className="text-xs mb-2" style={{ color: 'var(--ws-text-2)' }}>
+              Vazio = o agente atende <strong>todas</strong> as agendas do workspace. Selecione para
+              restringir (multi-clínica): ex. o agente desta clínica só marca com os profissionais dela.
+            </p>
+            {agendasDisp.length === 0 ? (
+              <p className="text-xs" style={{ color: 'var(--ws-text-2)' }}>Nenhuma agenda neste workspace.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {agendasDisp.map((a) => {
+                  const sel = (form.agendas ?? []).includes(a.id)
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => toggleAgenda(a.id)}
+                      className="rounded-full px-3 py-1 text-xs font-medium border"
+                      style={{
+                        borderColor: sel ? '#c9a84c' : 'var(--ws-glass-border)',
+                        background: sel ? 'rgba(201,168,76,0.12)' : 'transparent',
+                        color: sel ? '#c9a84c' : 'var(--ws-text-2)',
+                      }}
+                    >
+                      {a.nome}
                     </button>
                   )
                 })}

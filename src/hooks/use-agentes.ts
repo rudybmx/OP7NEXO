@@ -11,6 +11,11 @@ export interface CanalVinculado {
   ativo: boolean
 }
 
+export interface AgendaVinculada {
+  agenda_id: string
+  agenda_nome: string | null
+}
+
 export interface AgenteListItem {
   id: string
   nome: string
@@ -45,6 +50,7 @@ export interface AgenteDetalhe extends AgenteListItem {
   tempo_followup_min: number | null
   codigo_responsavel: string | null
   horario_modo: string
+  agendas: AgendaVinculada[]
   horarios: (HorarioItem & { id: string })[]
   habilidades: unknown[]
   prompt_draft: string | null
@@ -73,6 +79,7 @@ export interface AgenteInput {
   codigo_responsavel?: string | null
   horario_modo?: 'dentro' | 'fora'
   canais?: string[]
+  agendas?: string[]
   horarios?: HorarioItem[]
   prompt?: string | null
 }
