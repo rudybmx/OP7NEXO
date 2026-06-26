@@ -3471,7 +3471,7 @@ async def receber_webhook_meta(
     logger.info("[webhook-meta] canal=%s payload_keys=%s", canal.nome, list(payload.keys()))
 
     # Salva evento bruto
-    _salvar_evento_raw(db, canal.id, canal.evolution_instance_id or "meta", "meta_webhook", payload)
+    _salvar_evento_raw(db, canal.id, canal.evolution_instance_id or "meta", "meta_webhook", payload, workspace_id=canal.workspace_id)
 
     # Processa payload
     resultado = meta_service.processar_webhook(payload)
@@ -3531,7 +3531,7 @@ async def receber_webhook_instagram(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Assinatura inválida")
 
     payload = json.loads(body) if body else {}
-    _salvar_evento_raw(db, canal.id, "instagram", "instagram_webhook", payload)
+    _salvar_evento_raw(db, canal.id, "instagram", "instagram_webhook", payload, workspace_id=canal.workspace_id)
 
     resultado = ig.processar_webhook(payload)
     for entry in resultado.get("entries", []):
@@ -3865,8 +3865,12 @@ def _processar_evento_evolution(
             logger.exception("[webhook-evolution] ERRO no processamento de status")
             raise
 
-def _salvar_evento_raw(db: Session, canal_id: uuid.UUID, instance: str, event: str, payload: dict) -> None:
-    """Salva o payload bruto do webhook para audit trail e debug."""
+def _salvar_evento_raw(db: Session, canal_id, instance: str, event: str, payload: dict, workspace_id=None) -> None:
+    """Salva o payload bruto do webhook para audit trail e debug.
+
+    `crm_whatsapp_eventos.workspace_id` é NOT NULL — passe workspace_id (caminhos
+    meta/instagram). Em falha, faz rollback para não deixar a transação do chamador
+    abortada (o evento raw é só audit; nunca deve derrubar a ingestão da mensagem)."""
     from datetime import datetime, timezone
     from sqlalchemy import text
     import json
@@ -3881,10 +3885,12 @@ def _salvar_evento_raw(db: Session, canal_id: uuid.UUID, instance: str, event: s
 
         db.execute(
             text("""
-                INSERT INTO public.crm_whatsapp_eventos (event, instance, remote_jid, payload, recebido_em)
-                VALUES (:ev, :inst, :rj, :payload, :ts)
+                INSERT INTO public.crm_whatsapp_eventos (workspace_id, canal_id, event, instance, remote_jid, payload, recebido_em)
+                VALUES (CAST(:ws AS uuid), CAST(:canal AS uuid), :ev, :inst, :rj, :payload, :ts)
             """),
             {
+                "ws": str(workspace_id) if workspace_id else None,
+                "canal": str(canal_id) if (canal_id and str(canal_id) != "test") else None,
                 "ev": event,
                 "inst": instance,
                 "rj": remote_jid,
@@ -3895,6 +3901,7 @@ def _salvar_evento_raw(db: Session, canal_id: uuid.UUID, instance: str, event: s
         db.commit()
     except Exception:
         logger.exception("[webhook] falha ao salvar evento raw")
+        db.rollback()
 
 def _processar_mensagem_evolution(db: Session, canal: CanalEntrada, data: dict) -> dict | None:
     from datetime import datetime, timezone
