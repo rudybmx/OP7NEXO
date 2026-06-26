@@ -570,6 +570,7 @@ function renderMidia(msg: MensagemApi, isEntrada: boolean, isIA: boolean, onOpen
 
 export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, onTransferir, onResolver, mensagensEndRef, unreadCount = 0, onVoltar, isMobile = false, onReply }: PainelChatProps) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [transcricaoAberta, setTranscricaoAberta] = useState<string | null>(null)
   const { user } = useAuth()
   const isAdmin = !!user && user.role !== 'company_agent'
   const [ajuste, setAjuste] = useState<{ mensagemId: string; original: string } | null>(null)
@@ -1190,7 +1191,9 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         const isPlaceholder = body === '[mídia]'
                         // Suprimir placeholders de mídia quando media_kind conhecido: "[mídia]", "mídia", "(mídia)"
                         const isMidiaText = msg.mediaKind != null && /^[\[(]?(mídia|midia)[\])]?$/i.test(body)
-                        if (!msg.conteudo || (temMidia && isPlaceholder) || isMidiaText) return null
+                        // Áudio: o conteudo é a TRANSCRIÇÃO — não aparece inline, vai para o chevron.
+                        const ehAudio = (msg.midias ?? []).some(m => m.tipo === 'audio')
+                        if (!msg.conteudo || (temMidia && isPlaceholder) || isMidiaText || ehAudio) return null
                         return <div style={{ whiteSpace: 'pre-wrap' }}>{renderConteudoComMencoes(msg.conteudo, msg.mentionedNames)}</div>
                       })()}
                       <div style={{
@@ -1214,6 +1217,34 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                           </button>
                         )}
                         <span>{messageTime}</span>
+                        {(() => {
+                          const audioMidia = (msg.midias ?? []).find(m => m.tipo === 'audio')
+                          if (!audioMidia) return null
+                          const st = (audioMidia as { transcricao_status?: string | null }).transcricao_status
+                          const aberta = transcricaoAberta === msg.id
+                          if (st === 'pronto') {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setTranscricaoAberta(aberta ? null : msg.id)}
+                                title={aberta ? 'Ocultar transcrição' : 'Ver transcrição do áudio'}
+                                aria-label="Transcrição do áudio"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 1, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', color: footerColor, opacity: 0.75 }}
+                              >
+                                <FileText size={12} />
+                                {aberta ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                              </button>
+                            )
+                          }
+                          if (st === 'pendente' || st === 'processando') {
+                            return (
+                              <span title="Transcrevendo áudio…" aria-label="Transcrevendo áudio" style={{ display: 'inline-flex', alignItems: 'center', color: footerColor, opacity: 0.4 }}>
+                                <FileText size={12} />
+                              </span>
+                            )
+                          }
+                          return null  // sem_fala / erro / nao_transcrito → sem chevron
+                        })()}
                         {isOutgoing && messageStatus && (
                           <span
                             title={messageStatus.label}
@@ -1234,6 +1265,22 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                           </span>
                         )}
                       </div>
+                      {transcricaoAberta === msg.id && (msg.conteudo?.trim() ?? '') !== '' && (msg.conteudo?.trim() ?? '') !== '[mídia]' && (
+                        <div style={{
+                          marginTop: 6,
+                          padding: '8px 10px',
+                          borderRadius: 8,
+                          fontSize: 13,
+                          lineHeight: 1.45,
+                          fontStyle: 'italic',
+                          color: 'inherit',
+                          background: isEntrada ? 'rgba(128,128,128,0.14)' : 'rgba(255,255,255,0.16)',
+                          whiteSpace: 'pre-wrap',
+                        }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.6, marginBottom: 3, fontStyle: 'normal', textTransform: 'uppercase', letterSpacing: 0.4 }}>Transcrição</div>
+                          {msg.conteudo}
+                        </div>
+                      )}
                       {msg.failedReason && (
                         <div style={{ fontSize: 10, color: isEntrada ? '#a32d2d' : '#b91c1c', marginTop: 4 }}>
                           {msg.failedReason}
