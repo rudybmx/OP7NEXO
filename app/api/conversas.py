@@ -94,6 +94,7 @@ class ConversaOut(BaseModel):
     ai_escalado: bool = False
     ai_handoff_motivo: str | None = None
     etiquetas: list[EtiquetaOut] = []
+    contato_etiquetas: list[EtiquetaOut] = []
 
 
 class ConversaIn(BaseModel):
@@ -296,6 +297,11 @@ def _conversa_out(c: Conversa, ultima_mensagem_override: str | None = None) -> C
         etiquetas=[
             EtiquetaOut(id=str(e.id), nome=e.nome, cor=e.cor)
             for e in (getattr(c, "etiquetas", None) or [])
+            if getattr(e, "ativo", True)
+        ],
+        contato_etiquetas=[
+            EtiquetaOut(id=str(e.id), nome=e.nome, cor=e.cor)
+            for e in (getattr(c.contato, "etiquetas", None) or [] if c.contato else [])
             if getattr(e, "ativo", True)
         ],
     )

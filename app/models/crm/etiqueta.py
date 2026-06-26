@@ -17,6 +17,14 @@ crm_conversa_etiquetas = Table(
 )
 
 
+crm_contato_etiquetas = Table(
+    "crm_contato_etiquetas",
+    Base.metadata,
+    Column("contato_id", UUID(as_uuid=True), ForeignKey("crm_whatsapp_contatos.id", ondelete="CASCADE"), primary_key=True),
+    Column("etiqueta_id", UUID(as_uuid=True), ForeignKey("crm_etiquetas.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class CrmEtiqueta(Base):
     __tablename__ = "crm_etiquetas"
 
@@ -36,6 +44,13 @@ class CrmEtiqueta(Base):
     conversas: Mapped[list["Conversa"]] = relationship(
         "Conversa",
         secondary="crm_conversa_etiquetas",
+        back_populates="etiquetas",
+        lazy="select",
+    )
+
+    contatos: Mapped[list["Contato"]] = relationship(
+        "Contato",
+        secondary="crm_contato_etiquetas",
         back_populates="etiquetas",
         lazy="select",
     )

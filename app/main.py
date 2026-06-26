@@ -12,6 +12,7 @@ from app.api.auth import router as auth_router
 from app.api.canais import router as canais_router
 from app.api.conversas import router as conversas_router
 from app.api.contatos import router as contatos_router
+from app.api.contato_etiquetas import router as contato_etiquetas_router
 from app.api.etiquetas import router as etiquetas_router
 from app.api.paineis import router as paineis_router
 from app.api.followups import router as followups_router
@@ -141,6 +142,7 @@ app.include_router(google_ads_data_router)
 app.include_router(canais_router)
 app.include_router(conversas_router)
 app.include_router(contatos_router)
+app.include_router(contato_etiquetas_router)
 app.include_router(etiquetas_router)
 app.include_router(paineis_router)
 app.include_router(followups_router)

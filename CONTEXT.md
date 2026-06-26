@@ -595,6 +595,15 @@ usuário, broadcast sem fan-out) + `notificacao_config` (audiência por workspac
 - Migration **108**: `transcricao_status` + índice parcial por status + índice único do job. Sem
   backfill (áudios legados = `nao_transcrito`). **Deploy: precisa de `deploy.sh worker`** (job roda no worker).
 
+### Etiquetas no contato (2026-06-26) — migration 109
+- M2M etiqueta↔contato: tabela `crm_contato_etiquetas` (migration **109**), relação `Contato.etiquetas` ⇄
+  `CrmEtiqueta.contatos` (ambas `Mapped[list[...]]` tipado → `uselist=True`). Complementa o vínculo
+  etiqueta↔conversa já existente (057).
+- Endpoints `POST/DELETE /contatos/{contato_id}/etiquetas/{etiqueta_id}` em `app/api/contato_etiquetas.py`
+  (router próprio, prefixo `/contatos`, **sem** o gate `exigir_acesso_contatos` — acesso só por workspace,
+  igual aos de conversa). Isolamento: `etiqueta.workspace_id == contato.workspace_id` senão 404.
+- `GET /conversas` agora expõe `contato_etiquetas` no `ConversaOut` (etiquetas do contato, ao lado das da conversa).
+
 ---
 
 ## COMO ATUALIZAR ESTE ARQUIVO

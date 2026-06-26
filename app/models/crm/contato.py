@@ -123,6 +123,12 @@ class Contato(Base):
     mensagens: Mapped[list["Mensagem"]] = relationship(
         back_populates="contato", lazy="select"
     )
+    etiquetas: Mapped[list["CrmEtiqueta"]] = relationship(  # type: ignore[name-defined]
+        "CrmEtiqueta",
+        secondary="crm_contato_etiquetas",
+        back_populates="contatos",
+        lazy="select",
+    )
 
     __table_args__ = (
         UniqueConstraint("workspace_id", "jid", name="uq_contatos_workspace_jid"),
