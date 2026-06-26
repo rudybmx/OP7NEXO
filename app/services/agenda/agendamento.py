@@ -17,7 +17,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.crm.agenda import Agenda, Agendamento
+from app.models.crm.agenda import Agenda, AgendaServico, Agendamento
 from app.models.crm.contato import Contato
 from app.services.agenda.disponibilidade import STATUS_OCUPANTES
 from app.services.agenda.telefone import canonical_phone_digits
@@ -81,6 +81,7 @@ def criar_agendamento(
     cliente_telefone: str | None = None,
     cliente_email: str | None = None,
     servico: str | None = None,
+    servico_id: uuid.UUID | None = None,
     observacoes: str | None = None,
     origem: str = "manual",
     criado_por: str | None = None,
@@ -100,6 +101,16 @@ def criar_agendamento(
     )
     if agenda is None:
         raise AgendaNaoEncontrada("Agenda não encontrada")
+
+    # serviço do catálogo: snapshot do nome quando não veio `servico` explícito
+    if servico_id and not servico:
+        serv = (
+            db.query(AgendaServico)
+            .filter(AgendaServico.id == servico_id, AgendaServico.workspace_id == workspace_id)
+            .first()
+        )
+        if serv:
+            servico = serv.nome
 
     # Telefones: exceção terceiro grava o paciente SEM telefone; quem marcou fica em agendado_por.
     if para_terceiro:
@@ -152,6 +163,7 @@ def criar_agendamento(
             data_hora_fim=fim,
             slot_index=idx,
             servico=(servico or None),
+            servico_id=servico_id,
             observacoes=(observacoes or None),
             status=status,
             origem=origem,

@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
-from app.models.crm.agenda import Agenda, AgendaBloqueio, AgendaHorario, Agendamento
+from app.models.crm.agenda import Agenda, AgendaBloqueio, AgendaHorario, AgendaServico, Agendamento
 from app.models.user import User
 from app.services.agenda import (
     AgendaNaoEncontrada,
@@ -131,6 +131,38 @@ class BloqueioOut(BaseModel):
     created_at: datetime
 
 
+class ServicoIn(BaseModel):
+    workspace_id: uuid.UUID | None = None
+    agenda_id: uuid.UUID | None = None
+    nome: str
+    duracao_minutos: int = 30
+    preco: float | None = None
+    cor: str | None = None
+
+
+class ServicoUpdate(BaseModel):
+    agenda_id: uuid.UUID | None = None
+    nome: str | None = None
+    duracao_minutos: int | None = None
+    preco: float | None = None
+    cor: str | None = None
+    ativo: bool | None = None
+
+
+class ServicoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    agenda_id: uuid.UUID | None
+    nome: str
+    duracao_minutos: int
+    preco: float | None
+    cor: str | None
+    ativo: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class AgendamentoIn(BaseModel):
     workspace_id: uuid.UUID | None = None
     agenda_id: uuid.UUID
@@ -140,6 +172,7 @@ class AgendamentoIn(BaseModel):
     data_hora_inicio: datetime
     data_hora_fim: datetime
     servico: str | None = None
+    servico_id: uuid.UUID | None = None
     observacoes: str | None = None
     origem: str = "manual"
     para_terceiro: bool = False
@@ -177,6 +210,7 @@ class AgendamentoOut(BaseModel):
     data_hora_fim: datetime
     slot_index: int
     servico: str | None
+    servico_id: uuid.UUID | None
     observacoes: str | None
     status: str
     origem: str
@@ -475,6 +509,7 @@ def criar_agendamento(
             cliente_telefone=data.cliente_telefone,
             cliente_email=data.cliente_email,
             servico=data.servico,
+            servico_id=data.servico_id,
             observacoes=data.observacoes,
             origem=data.origem,
             criado_por=str(usuario.id),
@@ -537,18 +572,105 @@ def cancelar_agendamento(
     return svc_cancelar(db, obj, cancelado_por=str(usuario.id))
 
 
+# ─────────────────────────── Serviços (catálogo) ───────────────────────────
+def _servico_autorizado(db: Session, servico_id: uuid.UUID, usuario: User) -> AgendaServico:
+    s = db.query(AgendaServico).filter(AgendaServico.id == servico_id).first()
+    if not s:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Serviço não encontrado")
+    verificar_acesso_workspace(usuario, s.workspace_id, db)
+    return s
+
+
+@router.get("/servicos", response_model=list[ServicoOut])
+def listar_servicos(
+    workspace_id: uuid.UUID | None = Query(None),
+    agenda_id: uuid.UUID | None = Query(None),
+    incluir_inativos: bool = Query(False),
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    ws_id = _resolve_workspace(workspace_filter, workspace_id, usuario, db)
+    q = db.query(AgendaServico).filter(AgendaServico.workspace_id == ws_id)
+    if agenda_id:
+        # serviços da agenda + os do workspace (agenda_id NULL)
+        q = q.filter(or_(AgendaServico.agenda_id == agenda_id, AgendaServico.agenda_id.is_(None)))
+    if not incluir_inativos:
+        q = q.filter(AgendaServico.ativo.is_(True))
+    return q.order_by(AgendaServico.nome).all()
+
+
+@router.post("/servicos", response_model=ServicoOut, status_code=status.HTTP_201_CREATED)
+def criar_servico(
+    data: ServicoIn,
+    usuario: User = Depends(get_usuario_atual),
+    workspace_filter=Depends(get_workspace_atual),
+    db: Session = Depends(get_db),
+):
+    ws_id = _resolve_workspace(workspace_filter, data.workspace_id, usuario, db)
+    if data.agenda_id:
+        _get_agenda_or_404(db, data.agenda_id, ws_id)
+    servico = AgendaServico(
+        workspace_id=ws_id,
+        agenda_id=data.agenda_id,
+        nome=data.nome,
+        duracao_minutos=max(1, data.duracao_minutos or 30),
+        preco=data.preco,
+        cor=data.cor,
+    )
+    db.add(servico)
+    db.commit()
+    db.refresh(servico)
+    return servico
+
+
+@router.patch("/servicos/{servico_id}", response_model=ServicoOut)
+def editar_servico(
+    servico_id: uuid.UUID,
+    data: ServicoUpdate,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    s = _servico_autorizado(db, servico_id, usuario)
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(s, field, value)
+    db.commit()
+    db.refresh(s)
+    return s
+
+
+@router.delete("/servicos/{servico_id}", status_code=status.HTTP_200_OK)
+def desativar_servico(
+    servico_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    s = _servico_autorizado(db, servico_id, usuario)
+    s.ativo = False
+    db.commit()
+    return {"id": str(s.id), "ativo": False}
+
+
 # ─────────────────────────── Disponibilidade ───────────────────────────
 @router.get("/disponibilidade")
 def disponibilidade(
     agenda_id: uuid.UUID = Query(...),
     data: date_cls = Query(...),
     duracao_min: int | None = Query(None, ge=1),
+    servico_id: uuid.UUID | None = Query(None),
     workspace_id: uuid.UUID | None = Query(None),
     usuario: User = Depends(get_usuario_atual),
     workspace_filter=Depends(get_workspace_atual),
     db: Session = Depends(get_db),
 ):
     ws_id = _resolve_workspace(workspace_filter, workspace_id, usuario, db)
+    # serviço guia a duração do slot (se não veio duracao_min explícito)
+    if servico_id and not duracao_min:
+        serv = db.query(AgendaServico).filter(
+            AgendaServico.id == servico_id, AgendaServico.workspace_id == ws_id
+        ).first()
+        if serv:
+            duracao_min = serv.duracao_minutos
     resultado = calcular_disponibilidade(
         db, workspace_id=ws_id, agenda_id=agenda_id, data=data, duracao_min=duracao_min
     )

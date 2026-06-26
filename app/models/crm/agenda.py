@@ -5,12 +5,14 @@ normalizado, slot_index). Ver migration 101_agenda_core.py e docs/specs/agenda-c
 """
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -137,6 +139,9 @@ class Agendamento(Base):
 
     # Classificação
     servico: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    servico_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agenda_servicos.id", ondelete="SET NULL"), nullable=True
+    )
     observacoes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Controle
@@ -166,3 +171,29 @@ class Agendamento(Base):
     )
 
     agenda: Mapped["Agenda"] = relationship(foreign_keys=[agenda_id], lazy="select")
+
+
+class AgendaServico(Base):
+    """Serviço/procedimento do catálogo (por agenda; agenda_id NULL = do workspace).
+    duracao_minutos guia o slot na disponibilidade."""
+
+    __tablename__ = "agenda_servicos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    agenda_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agendas.id", ondelete="CASCADE"), nullable=True
+    )
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    duracao_minutos: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    preco: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    cor: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
