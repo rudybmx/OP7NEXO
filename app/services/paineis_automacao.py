@@ -334,6 +334,10 @@ def aplicar_analise_no_funil(
                         texto=texto,
                     )
                 )
-        db.flush()
+        db.commit()
     except Exception as exc:  # noqa: BLE001 — funil nunca derruba a análise
         logger.info("[funil] aplicar_analise falhou conversa=%s: %s", conversa_id, exc)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass

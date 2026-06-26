@@ -13,7 +13,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_usuario_atual, get_workspace_atual, verificar_acesso_workspace
@@ -212,6 +212,12 @@ def _painel_detalhe_out(db: Session, p: Painel) -> dict:
     campos = sorted([c for c in p.campos if c.ativo], key=lambda c: c.ordem)
     cards = (
         db.query(PainelCard)
+        .options(
+            selectinload(PainelCard.contato),
+            selectinload(PainelCard.responsavel),
+            selectinload(PainelCard.responsavel_agente),
+            selectinload(PainelCard.valores),
+        )
         .filter(PainelCard.painel_id == p.id, PainelCard.ativo.is_(True))
         .order_by(PainelCard.fase_id, PainelCard.ordem)
         .all()

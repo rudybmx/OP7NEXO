@@ -780,7 +780,9 @@ def processar_analise(db: Session, payload: dict) -> None:
         # Fase 2: nome declarado pelo lead → confirma (origem 'ia'), nunca sobrescreve humano.
         if res.get("nome_cliente"):
             _aplicar_nome_confirmado_ia(db, _cid, res["nome_cliente"])
-    # Lógica do funil: move o card + prioridade + evento de sistema (gateado por agente_funil).
+    # Persiste a análise (scoring) ANTES do funil — um bug do funil nunca pode descartar o scoring.
+    db.commit()
+    # Lógica do funil em transação própria: move o card + prioridade + evento de sistema.
     paineis_automacao.aplicar_analise_no_funil(
         db,
         conversa_id=conversa_id,
@@ -790,7 +792,6 @@ def processar_analise(db: Session, payload: dict) -> None:
         score=res["temperatura_score"],
         resumo=res["resumo"],
     )
-    db.commit()
     log.info("[analise] conversa=%s temperatura=%s score=%s", conversa_id, res["temperatura"], res["temperatura_score"])
     try:
         from app.services.redis_pub import publish_whatsapp_event
