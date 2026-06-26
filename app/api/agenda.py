@@ -41,6 +41,8 @@ from app.services.agenda import (
 )
 from app.services.agenda.disponibilidade import STATUS_OCUPANTES
 from app.services.agenda.telefone import canonical_phone_digits
+from app.services.agenda import public_token
+from app.core.config import settings
 
 router = APIRouter(prefix="/agenda", tags=["agenda"])
 
@@ -399,6 +401,39 @@ def desativar_agenda(
     agenda.ativo = False
     db.commit()
     return {"id": str(agenda.id), "ativo": False}
+
+
+# ─────────────────────── Link público de agendamento ───────────────────────
+def _link_publico(token: str) -> str:
+    return f"{settings.frontend_url.rstrip('/')}/agendar/{token}"
+
+
+@router.post("/agendas/{agenda_id}/link-publico", status_code=status.HTTP_201_CREATED)
+def gerar_link_publico(
+    agenda_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Gera (ou reusa) o link público de auto-agendamento da agenda."""
+    agenda = _agenda_autorizada(db, agenda_id, usuario)
+    row = public_token.gerar_ou_reusar_token(db, agenda.id, agenda.workspace_id)
+    return {
+        "token": row.token,
+        "link": _link_publico(row.token),
+        "ativo": agenda.agente_agendamento != "desativado",
+    }
+
+
+@router.delete("/agendas/{agenda_id}/link-publico", status_code=status.HTTP_200_OK)
+def revogar_link_publico(
+    agenda_id: uuid.UUID,
+    usuario: User = Depends(get_usuario_atual),
+    db: Session = Depends(get_db),
+):
+    """Revoga o link público vigente (o antigo deixa de funcionar; um novo pode ser gerado)."""
+    agenda = _agenda_autorizada(db, agenda_id, usuario)
+    n = public_token.revogar_tokens_da_agenda(db, agenda.id)
+    return {"revogados": n}
 
 
 # ─────────────────────────── Horários ───────────────────────────
