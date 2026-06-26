@@ -1,7 +1,10 @@
 # OP7NEXO — Context de Arquitetura e Negócio
 
-> Atualizado: 2026-06-24
+> Atualizado: 2026-06-26
 > Mantenha este arquivo atualizado conforme o sistema evolui.
+
+## Reações em mensagens WhatsApp (migration 106)
+Tabela `crm_whatsapp_reacoes` (UNIQUE ws+canal+instance+target+reactor, emoji fora da chave → idempotência do eco from_me). Inbound: `_extract_reaction_payload`/`process_evolution_reaction_event` + `upsert_reacao` em `whatsapp_crm_persistence.py`; o dispatcher `_processar_evento_evolution` (canais.py) intercepta `reactionMessage` antes do insert (fecha o lixo). WAHA: `message.reaction`→reactionMessage em `adapt_waha_to_evolution` + evento no `OP7_WAHA_WEBHOOK_EVENTS`. Meta: `_processar_reacao_meta` + `processar_webhook` expõe reaction/context. Outbound: `POST /canais/{id}/reagir` (Evolution `/message/react`, WAHA `PUT /api/reaction`, Meta `type:reaction`). Serialização: `MensagemOut.reacoes` agregado. Reply/citação já existia (migration 082). Script: `scripts/limpar_reactionmessage_lixo.py`.
 
 > **Link público de conexão (2026-06):** o admin gera `POST /canais/{id}/link-conexao` e envia
 > ao cliente; endpoints públicos sem auth `/public/conectar/{token}` (info/iniciar/status/parear)
