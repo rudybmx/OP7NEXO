@@ -48,6 +48,11 @@ export interface AgenteDetalhe extends AgenteListItem {
   mensagem_abertura: string | null
   objetivo: string | null
   tempo_followup_min: number | null
+  resgate_modo: 'desligado' | 'rascunho' | 'automatico'
+  resgate_max_tentativas: number
+  resgate_intervalo_horas: number
+  resgate_hora_inicio: number
+  resgate_hora_fim: number
   codigo_responsavel: string | null
   horario_modo: string
   agendas: AgendaVinculada[]
@@ -76,6 +81,11 @@ export interface AgenteInput {
   mensagem_abertura?: string | null
   objetivo?: string | null
   tempo_followup_min?: number | null
+  resgate_modo?: 'desligado' | 'rascunho' | 'automatico'
+  resgate_max_tentativas?: number
+  resgate_intervalo_horas?: number
+  resgate_hora_inicio?: number
+  resgate_hora_fim?: number
   codigo_responsavel?: string | null
   horario_modo?: 'dentro' | 'fora'
   canais?: string[]

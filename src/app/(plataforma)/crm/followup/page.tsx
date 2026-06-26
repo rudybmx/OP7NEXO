@@ -15,9 +15,13 @@ import {
   AlertTriangle,
   Inbox,
   Loader2,
+  Sparkles,
+  Check,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useFollowup } from '@/hooks/use-followup'
+import { useFollowupResgates } from '@/hooks/use-followup-resgates'
 import { usePersistedState } from '@/hooks/use-estado-persistido'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useAgentesDisponiveis } from '@/hooks/use-agentes-disponiveis'
@@ -85,6 +89,8 @@ export default function FollowupPage() {
     () => Object.fromEntries(agentes.map(a => [a.id, { nome: a.nome, avatar_url: a.avatar_url }])),
     [agentes],
   )
+  // Fila de rascunhos de resgate gerados pela IA (modo 'rascunho' no agente) — aprovar/cancelar.
+  const { resgates, acaoId, aprovar, cancelar } = useFollowupResgates()
 
   // Filtros persistidos (Nielsen #6: sobrevivem a F5).
   const [filtros, setFiltros] = usePersistedState<FiltrosFollowup>('crm:followup:filtros', {
@@ -144,6 +150,72 @@ export default function FollowupPage() {
 
       {/* KPI Cards */}
       <FollowupKpis metricas={metricas} />
+
+      {/* Fila de aprovação — rascunhos de resgate gerados pela IA */}
+      {resgates.length > 0 && (
+        <div
+          style={{
+            background: 'var(--ws-glass-bg)',
+            border: '1px solid var(--ws-gold)',
+            borderRadius: 'var(--ws-radius-lg)',
+            backdropFilter: 'blur(16px)',
+            boxShadow: 'var(--ws-glass-shadow)',
+            padding: 16,
+            marginBottom: 24,
+          }}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles size={16} style={{ color: 'var(--ws-gold)' }} />
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ws-text-1)' }}>
+              Resgates aguardando aprovação
+            </h3>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ws-gold)', background: 'rgba(201,168,76,0.12)', padding: '1px 8px', borderRadius: 99 }}>
+              {resgates.length}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {resgates.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-start gap-3"
+                style={{ background: 'var(--ws-surface-2)', borderRadius: 'var(--ws-radius-md)', padding: '10px 12px' }}
+              >
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ws-text-1)' }}>
+                    {r.contato_nome || r.telefone || 'Lead'}
+                    <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--ws-text-3)', marginLeft: 6 }}>
+                      tentativa {r.tentativa}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 13, color: 'var(--ws-text-2)', marginTop: 2, lineHeight: 1.4 }}>
+                    {r.mensagem}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    onClick={() => aprovar(r.id)}
+                    disabled={acaoId === r.id}
+                    className="gap-1.5 h-8"
+                    style={{ background: 'var(--ws-green)', color: '#fff', border: 'none' }}
+                  >
+                    <Check size={14} /> Aprovar e enviar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => cancelar(r.id)}
+                    disabled={acaoId === r.id}
+                    className="gap-1.5 h-8 text-[color:var(--ws-text-2)] border border-[var(--ws-glass-border)]"
+                  >
+                    <X size={14} /> Descartar
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main Table Container */}
       <div
