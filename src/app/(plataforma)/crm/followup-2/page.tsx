@@ -18,9 +18,9 @@ import { useFollowup2 } from '@/hooks/use-followup-2'
 import { FollowupLead, FiltrosFollowup, LeadOrigem } from '@/types/followup'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { FollowupKpis } from '@/components/followup/followup-kpis'
+import { FollowupKpisDemo } from '@/components/followup/followup-kpis-demo'
 import { FollowupGraficoTentativas } from '@/components/followup/followup-grafico-tentativas'
-import { FollowupTabela } from '@/components/followup/followup-tabela'
+import { FollowupTabelaDemo } from '@/components/followup/followup-tabela-demo'
 import {
   format,
   parseISO,
@@ -150,7 +150,7 @@ export default function Followup2Page() {
       </div>
 
       {/* KPI Cards */}
-      <FollowupKpis metricas={metricas} />
+      <FollowupKpisDemo metricas={metricas} />
 
       {/* Top Row: Gráfico e Próximos Disparos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
@@ -394,7 +394,7 @@ export default function Followup2Page() {
           </Button>
         </div>
 
-        <FollowupTabela
+        <FollowupTabelaDemo
           leads={leadsFiltrados}
           onLeadClick={handleLeadClick}
           onStatusFechamentoChange={atualizarStatusFechamento}

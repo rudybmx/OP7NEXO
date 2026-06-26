@@ -147,6 +147,7 @@ export const secoesNavegacao: SecaoNavegacao[] = [
           { nome: "Painéis",               rota: "/crm/paineis" },
           { nome: "NPS",                    rota: "/crm/nps" },
           { nome: "Follow-up / Resgate",    rota: "/crm/followup" },
+          { nome: "Follow-up / Resgate 2",  rota: "/crm/followup-2" },
           { nome: "Recorrência",            rota: "/crm/recorrencia" },
           { nome: "Conversão Campanhas",    rota: "/crm/campanhas-conversao" },
         ],
