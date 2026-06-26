@@ -305,33 +305,7 @@ export function NovoCanalDialog({
                 />
               </div>
 
-              {/* Mensagem de boas-vindas */}
-              <div>
-                <label style={labelStyle}>Mensagem de Boas-Vindas</label>
-                <textarea
-                  placeholder="Mensagem enviada automaticamente ao novo contato..."
-                  value={form.mensagem_boas_vindas}
-                  onChange={e => setForm(prev => ({ ...prev, mensagem_boas_vindas: e.target.value }))}
-                  rows={3}
-                  style={{ ...inputStyle, resize: 'vertical' }}
-                />
-              </div>
-
               {/* Config por tipo */}
-              {form.tipo === 'whatsapp_evolution' && (
-                <div>
-                  <label style={labelStyle}>Nome da Instância Evolution</label>
-                  <input
-                    type="text"
-                    placeholder="ex: minha-instancia"
-                    value={readStr('instancia')}
-                    onChange={e => setConfig('instancia', e.target.value)}
-                    style={inputStyle}
-                  />
-                </div>
-              )}
-
-
               {form.tipo === 'whatsapp_oficial' && (
                 <>
                   <div style={{

@@ -166,16 +166,6 @@ export function EditarCanalDialog({
             </div>
 
             <div>
-              <label style={labelStyle}>Mensagem de Boas-Vindas</label>
-              <textarea
-                value={form.mensagem_boas_vindas}
-                onChange={(event) => setForm((prev) => ({ ...prev, mensagem_boas_vindas: event.target.value }))}
-                rows={3}
-                style={{ ...inputStyle, resize: 'vertical', minHeight: 96 }}
-              />
-            </div>
-
-            <div>
               <label style={labelStyle}>Status *</label>
               <select
                 value={form.status}
