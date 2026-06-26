@@ -465,8 +465,12 @@ def listar_conversas(
     q = q.order_by(Conversa.fixada.desc(), Conversa.ultima_msg_at.desc().nullslast())
     total = q.offset(offset).limit(limit).all()
     # Resolve @<LID/número> nas prévias (mesma máquina de /mensagens). Custo extra
-    # só quando alguma prévia da página tem menção.
-    preview_overrides = _resolver_mencoes_preview(db, workspace_target, total)
+    # só quando alguma prévia da página tem menção. Cosmético: NUNCA derruba a
+    # listagem — se a resolução falhar, cai na prévia crua.
+    try:
+        preview_overrides = _resolver_mencoes_preview(db, workspace_target, total)
+    except Exception:
+        preview_overrides = {}
     return [_conversa_out(c, preview_overrides.get(str(c.id))) for c in total]
 
 
