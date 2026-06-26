@@ -47,7 +47,7 @@ export function useAgendas() {
     setError(null)
     try {
       const ws = workspaceAtual
-      const ags = await api.get<Agenda[]>(`/agenda/agendas?workspace_id=${ws}&incluir_inativas=true`)
+      const ags = await api.get<Agenda[]>(`/agenda/agendas?workspace_id=${ws}&incluir_inativas=false`)
       setAgendas(ags)
       // horários de cada agenda (poucas agendas por workspace)
       const listas = await Promise.all(
