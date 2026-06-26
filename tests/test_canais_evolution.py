@@ -832,5 +832,42 @@ class CanaisEvolutionTests(unittest.TestCase):
         self.assertEqual(kwargs["filename"], "voice.webm")
 
 
+class EvolutionStatusLabelTests(unittest.TestCase):
+    """evolution-go: Connected=socket no servidor; LoggedIn=WhatsApp pareado.
+
+    Connected sem LoggedIn precisa de QR (connecting), senão _conectar_evolution
+    faz short-circuit como 'open' e nunca busca o QR.
+    """
+
+    def test_connected_sem_logged_in_e_connecting(self):
+        self.assertEqual(evo_service._instance_status_label(True, False), "connecting")
+
+    def test_connected_e_logged_in_e_open(self):
+        self.assertEqual(evo_service._instance_status_label(True, True), "open")
+
+    def test_logged_in_sozinho_e_open(self):
+        self.assertEqual(evo_service._instance_status_label(None, True), "open")
+
+    def test_connected_sem_info_de_login_e_open(self):
+        # LoggedIn ausente (None) não rebaixa — só False explícito.
+        self.assertEqual(evo_service._instance_status_label(True, None), "open")
+
+    def test_nada_conectado_usa_fallback(self):
+        self.assertEqual(evo_service._instance_status_label(False, False), "close")
+
+    def test_normalize_connection_evolution_go_nao_logado_e_connecting(self):
+        # Payload real do evolution-go /instance/status para instância não pareada.
+        payload = {"data": {"Connected": True, "LoggedIn": False, "Name": ""}, "message": "success"}
+        result = evo_service._normalize_connection(payload, fallback_name="op7-teste")
+        self.assertEqual(result["state"], "connecting")
+        self.assertFalse(result["loggedIn"])
+
+    def test_normalize_connection_evolution_go_logado_e_open(self):
+        payload = {"data": {"Connected": True, "LoggedIn": True, "Name": "OP7.Ai"}, "message": "success"}
+        result = evo_service._normalize_connection(payload, fallback_name="op7-teste")
+        self.assertEqual(result["state"], "open")
+        self.assertTrue(result["loggedIn"])
+
+
 if __name__ == "__main__":
     unittest.main()

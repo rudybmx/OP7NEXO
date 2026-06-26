@@ -186,10 +186,15 @@ def _payload_list(payload: Any) -> list[Any]:
 
 
 def _instance_status_label(connected: Any, logged_in: Any, fallback: str = "close") -> str:
-    if connected is True:
-        return "open"
-    if logged_in is True:
+    # evolution-go reporta Connected=true assim que o socket sobe no servidor, mas só
+    # LoggedIn=true indica WhatsApp pareado de verdade. Connected sem LoggedIn => ainda
+    # precisa de QR (state "connecting"), senão _conectar_evolution faz short-circuit e
+    # nunca busca o QR. Só rebaixa em LoggedIn explicitamente False (não regride a API
+    # legada, que sempre manda `state` explícito e nem chega aqui).
+    if connected is True and logged_in is False:
         return "connecting"
+    if connected is True or logged_in is True:
+        return "open"
     return fallback
 
 
