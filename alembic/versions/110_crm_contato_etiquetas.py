@@ -1,14 +1,14 @@
 """Cria tabela crm_contato_etiquetas (vínculo etiqueta <-> contato)
 
-Revision ID: 109
-Revises: 108
+Revision ID: 110
+Revises: 109
 Create Date: 2026-06-26
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "109"
-down_revision = "108"
+revision = "110"
+down_revision = "109"
 branch_labels = None
 depends_on = None
 
