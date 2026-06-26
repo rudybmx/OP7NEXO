@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarClock, Phone, User, Users, MessageSquare, X } from 'lucide-react'
+import { CalendarClock, Phone, User, Users, MessageSquare, X, Sparkles, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import type { ConversaApi } from '@/hooks/use-conversas'
 import type { Etiqueta } from '@/hooks/use-etiquetas'
 import { TermometroLead } from './termometro-lead'
@@ -58,6 +59,7 @@ function formatDateTimeLocal(value: Date) {
 
 export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePainel, isMobile = false, etiquetasWorkspace = [], onAplicarEtiquetaContato, onRemoverEtiquetaContato, onCriarEtiqueta, onEditarEtiqueta, onExcluirEtiqueta }: PainelContatoProps) {
   const [expandido, setExpandido] = useState(true)
+  const [acionandoIA, setAcionandoIA] = useState(false)
   const [followupNota, setFollowupNota] = useState('')
   const [followupDueAt, setFollowupDueAt] = useState(() => {
     const tomorrow = new Date()
@@ -92,6 +94,25 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
     if (ok) {
       setFollowupNota('')
       onAtualizar?.()
+    }
+  }
+
+  async function acionarIA() {
+    if (acionandoIA) return
+    setAcionandoIA(true)
+    try {
+      const res = await fetch(`/api/whatsapp/conversations/${conversa.id}/acionar-ia`, { method: 'POST' })
+      if (res.ok) {
+        toast.success('IA acionada — mensagem de retomada enviada')
+        onAtualizar?.()
+      } else {
+        const data = await res.json().catch(() => null)
+        toast.error(data?.error || data?.detail || 'Não foi possível acionar a IA')
+      }
+    } catch {
+      toast.error('Falha de conexão ao acionar a IA')
+    } finally {
+      setAcionandoIA(false)
     }
   }
 
@@ -401,6 +422,39 @@ export function PainelContato({ conversa, workspaceId, onAtualizar, onTogglePain
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Acionar IA — disparo proativo de reengajamento (o agente do canal retoma a conversa) */}
+        {!conversa.isGroup && (
+          <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--ws-divider)', marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={acionarIA}
+              disabled={acionandoIA}
+              title="O agente de IA analisa a conversa e envia uma mensagem retomando do ponto de parada"
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                height: 38,
+                borderRadius: 10,
+                border: 'none',
+                cursor: acionandoIA ? 'default' : 'pointer',
+                background: acionandoIA ? 'rgba(0,110,255,0.55)' : '#006EFF',
+                color: '#fff',
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              {acionandoIA ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+              {acionandoIA ? 'Acionando IA…' : 'Acionar IA'}
+            </button>
+            <p style={{ fontSize: 10, color: 'var(--ws-text-3)', margin: '6px 2px 0', lineHeight: 1.4 }}>
+              O agente analisa as últimas mensagens e inicia uma retomada, continuando do ponto de parada.
+            </p>
           </div>
         )}
 
