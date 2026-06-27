@@ -1,7 +1,18 @@
 # OP7NEXO — Context de Arquitetura e Negócio
 
-> Atualizado: 2026-06-26
+> Atualizado: 2026-06-27
 > Mantenha este arquivo atualizado conforme o sistema evolui.
+
+> **Transferência: bolha de sistema + prévia de mídia + @LID via participant_name (2026-06):**
+> (A) `POST /conversas/{id}/transferir` agora posta uma BOLHA de sistema "🔄 X transferiu para Y" +
+> resumo gerado pela IA na hora (`analisar_conversa` com o agente do canal, best-effort; só APÓS o
+> commit da transferência p/ não revertê-la). Helper `postar_bolha_sistema` em
+> `whatsapp_crm_persistence.py` (o handoff do agente passou a reusá-lo). (B) `GET /conversas`: prévia
+> "[mídia]" vira "🎤 Áudio/📷 Imagem/🎬 Vídeo/📄 Documento/Figurinha" (`_rotulo_midia` no read-path;
+> `_resolver_mencoes_preview` renomeada p/ `_enriquecer_previas`). (C) menção/citação/prévia @LID
+> resolvem por `participant_name` da própria conversa quando o contato @lid ficou sem nome
+> (`participant_map` em `_nome_mencao`/`_nome_quoted_author`/`_enriquecer_previas`). Tudo
+> read-path/endpoint, sem migration; front não muda.
 
 > **Follow-up Fase 2 — resgate pelo agente (2026-06-26):** o agente gera/dispara mensagem de resgate
 > p/ leads em followup. Config por agente (`agentes.resgate_modo` desligado|rascunho|automatico +

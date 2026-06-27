@@ -1020,26 +1020,8 @@ def _postar_msg_sistema(db: Session, conversa, agente: Agente, motivo: str) -> N
             extras.append(f"interesse: {ctx['interesse']}")
         if extras:
             partes.append(" · ".join(extras))
-    db.execute(
-        text("""
-            INSERT INTO public.crm_whatsapp_mensagens
-            (workspace_id, canal_id, conversa_id, contato_id, instance, remote_jid,
-             direcao, from_me, remetente_tipo, remetente_nome, conteudo, message_type,
-             status, recebida_em, created_at, updated_at)
-            VALUES (:ws, :canal, :cid, :ct, :inst, :jid,
-                    'saida', false, 'sistema', 'Sistema', :msg, 'sistema',
-                    'enviada', NOW(), NOW(), NOW())
-        """),
-        {
-            "ws": str(conversa.workspace_id),
-            "canal": str(conversa.canal_id) if conversa.canal_id else None,
-            "cid": str(conversa.id),
-            "ct": str(conversa.contato_id) if conversa.contato_id else None,
-            "inst": conversa.instance,
-            "jid": conversa.remote_jid,
-            "msg": "\n".join(partes),
-        },
-    )
+    from app.services.whatsapp_crm_persistence import postar_bolha_sistema
+    postar_bolha_sistema(db, conversa, "\n".join(partes))
 
 
 def _set_digitando(conversa, canal, *, ativo: bool, wamid: str | None = None) -> None:

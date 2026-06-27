@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import case
+from sqlalchemy import case, text
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -15,7 +15,7 @@ from app.models.crm import Contato, Conversa, CrmEtiqueta, Mensagem
 from app.models.user import RoleUsuario, User
 from app.schemas.agente import AjusteRespostaIn, AjusteRespostaOut
 from app.services.whatsapp_jid_filters import visible_whatsapp_jid_clause
-from app.services.whatsapp_crm_persistence import aplicar_transferencia, record_assignment_event
+from app.services.whatsapp_crm_persistence import aplicar_transferencia, postar_bolha_sistema, record_assignment_event
 from app.services.crm_escopo import aplicar_teto_conversas, eh_supervisor, pode_transferir, pode_ver_conversa
 from app.services import evolution as evo_service, waha_service
 # Reuso da máquina de resolução de menções (@LID→nome) de /mensagens p/ resolver
@@ -307,36 +307,82 @@ def _conversa_out(c: Conversa, ultima_mensagem_override: str | None = None) -> C
     )
 
 
-def _reescrever_preview(texto: str, lid2phone: dict[str, str], name_by_jid: dict[str, str]) -> str:
+_MEDIA_PLACEHOLDER = "[mídia]"
+
+
+def _rotulo_midia(message_type: str | None) -> str:
+    """Rótulo amigável (com ícone) do tipo de mídia p/ a prévia da lista."""
+    t = (message_type or "").lower()
+    if "image" in t or "imagem" in t:
+        return "📷 Imagem"
+    if "sticker" in t:
+        return "Figurinha"
+    if "audio" in t or "ptt" in t:
+        return "🎤 Áudio"
+    if "video" in t or "ptv" in t:
+        return "🎬 Vídeo"
+    if "document" in t:
+        return "📄 Documento"
+    return "📎 Mídia"
+
+
+def _reescrever_preview(
+    texto: str, lid2phone: dict[str, str], name_by_jid: dict[str, str],
+    participant_map: dict[str, str] | None = None,
+) -> str:
     """Troca cada @<dígitos> da prévia pelo nome resolvido (mantém o número se não resolver)."""
     def _repl(mt):
-        nome = _nome_mencao(mt.group(1), lid2phone, name_by_jid)
+        nome = _nome_mencao(mt.group(1), lid2phone, name_by_jid, participant_map)
         return f"@{nome}" if nome else mt.group(0)
     return _MENTION_RE.sub(_repl, texto)
 
 
-def _resolver_mencoes_preview(
+def _enriquecer_previas(
     db: Session, workspace_id: uuid.UUID, conversas: list[Conversa]
 ) -> dict[str, str]:
-    """{conversa_id: prévia com @LID→nome}. Reusa a máquina de /mensagens. Só toca
-    conversas cuja prévia tem menção; +1 query batch p/ o payload da última msg
-    (ponte Evolution LID→telefone do groupData) e +1 p/ os nomes dos contatos."""
-    alvo = [c for c in conversas if c.ultima_mensagem and _mention_digits(c.ultima_mensagem)]
+    """{conversa_id: prévia enriquecida}. (B) prévia "[mídia]" → rótulo do tipo;
+    (C) @LID → nome (contato OU participant_name de quem já falou no grupo). Só toca
+    conversas cuja prévia tem menção ou é placeholder de mídia. Reusa /mensagens."""
+    def _tem_mencao(c) -> bool:
+        return bool(c.ultima_mensagem and _mention_digits(c.ultima_mensagem))
+    def _eh_midia(c) -> bool:
+        return (c.ultima_mensagem or "").strip() == _MEDIA_PLACEHOLDER
+    alvo = [c for c in conversas if _tem_mencao(c) or _eh_midia(c)]
     if not alvo:
         return {}
+    # última msg de cada conversa-alvo: payload (ponte LID) + message_type (rótulo de mídia)
     rows = (
-        db.query(Mensagem.conversa_id, Mensagem.payload)
+        db.query(Mensagem.conversa_id, Mensagem.payload, Mensagem.message_type)
         .filter(Mensagem.conversa_id.in_([c.id for c in alvo]), Mensagem.ativo.is_(True))
         .order_by(Mensagem.conversa_id, Mensagem.criado_em.desc())
         .distinct(Mensagem.conversa_id)
         .all()
     )
-    payload_por_conv = {str(cid): payload for cid, payload in rows}
+    payload_por_conv = {str(cid): payload for cid, payload, _mt in rows}
+    mtype_por_conv = {str(cid): mt for cid, _p, mt in rows}
+    # participantes (jid→nome) das conversas com menção — fallback p/ @LID sem contato
+    com_mencao = [c for c in alvo if _tem_mencao(c)]
+    participant_por_conv: dict[str, dict[str, str]] = {}
+    if com_mencao:
+        for cid, pjid, pnome in (
+            db.query(Mensagem.conversa_id, Mensagem.participant_jid, Mensagem.participant_name)
+            .filter(
+                Mensagem.conversa_id.in_([c.id for c in com_mencao]),
+                Mensagem.participant_jid.isnot(None),
+                Mensagem.participant_name.isnot(None),
+                Mensagem.participant_name != "",
+            )
+            .distinct()
+            .all()
+        ):
+            n = (pnome or "").strip()
+            if n and pjid and n != pjid.split("@", 1)[0] and not n.isdigit():
+                participant_por_conv.setdefault(str(cid), {})[pjid] = n
     lid2phone_por_conv = {
-        str(c.id): _lid_phone_map(payload_por_conv.get(str(c.id))) for c in alvo
+        str(c.id): _lid_phone_map(payload_por_conv.get(str(c.id))) for c in com_mencao
     }
     candidatos: list[str] = []
-    for c in alvo:
+    for c in com_mencao:
         lid2phone = lid2phone_por_conv[str(c.id)]
         for d in _mention_digits(c.ultima_mensagem):
             candidatos.append(f"{d}@lid")
@@ -344,12 +390,17 @@ def _resolver_mencoes_preview(
             if phone:
                 candidatos.extend(_phone_jid_variants(phone))
     name_by_jid = _resolver_nomes_mencoes(db, workspace_id, candidatos)
-    return {
-        str(c.id): _reescrever_preview(
-            c.ultima_mensagem, lid2phone_por_conv[str(c.id)], name_by_jid
-        )
-        for c in alvo
-    }
+    out: dict[str, str] = {}
+    for c in alvo:
+        cid = str(c.id)
+        if _eh_midia(c):
+            out[cid] = _rotulo_midia(mtype_por_conv.get(cid))
+        else:
+            out[cid] = _reescrever_preview(
+                c.ultima_mensagem, lid2phone_por_conv.get(cid, {}), name_by_jid,
+                participant_por_conv.get(cid),
+            )
+    return out
 
 
 @router.get("", response_model=list[ConversaOut])
@@ -476,7 +527,7 @@ def listar_conversas(
     # só quando alguma prévia da página tem menção. Cosmético: NUNCA derruba a
     # listagem — se a resolução falhar, cai na prévia crua.
     try:
-        preview_overrides = _resolver_mencoes_preview(db, workspace_target, total)
+        preview_overrides = _enriquecer_previas(db, workspace_target, total)
     except Exception:
         preview_overrides = {}
     return [_conversa_out(c, preview_overrides.get(str(c.id))) for c in total]
@@ -1058,6 +1109,40 @@ def resolver_conversa(
     return _conversa_out(c)
 
 
+def _bolha_transferencia(db: Session, conversa, actor_user, data: TransferirIn) -> None:
+    """Bolha de sistema 'X transferiu para Y' + resumo gerado pela IA na hora (best-effort:
+    precisa de agente no canal p/ o modelo; se falhar/não houver, sai só com quem→quem)."""
+    actor = (getattr(actor_user, "nome", None) or "Atendente").strip()
+    if data.responsavel_id:
+        destino = db.query(User.nome).filter(User.id == data.responsavel_id).scalar() or "outro atendente"
+    elif data.equipe_id:
+        row = db.execute(
+            text("SELECT nome FROM crm_whatsapp_equipes WHERE id = CAST(:id AS uuid)"),
+            {"id": str(data.equipe_id)},
+        ).first()
+        destino = f"a equipe {row[0]}" if row and row[0] else "outra equipe"
+    else:
+        destino = "outro atendente"
+    partes = [f"🔄 {actor} transferiu a conversa para {destino}."]
+    # Motivo: a IA resume as últimas mensagens na hora (modelo do agente do canal).
+    try:
+        from app.services.agent_service import _agente_ativo_do_canal, analisar_conversa
+        agente = _agente_ativo_do_canal(db, conversa.canal_id)
+        if agente is not None:
+            analise = analisar_conversa(db, agente, conversa.id)
+            resumo = ((analise or {}).get("resumo") or "").strip()
+            if resumo:
+                partes.append(f"Resumo: {resumo}")
+    except Exception:
+        pass
+    postar_bolha_sistema(db, conversa, "\n".join(partes))
+    try:
+        from app.services.agent_service import _publish
+        _publish(conversa, tipo="conversation.refresh")
+    except Exception:
+        pass
+
+
 @router.post("/{conversa_id}/transferir", response_model=ConversaOut)
 def transferir_conversa(
     conversa_id: uuid.UUID,
@@ -1072,7 +1157,7 @@ def transferir_conversa(
     if not pode_transferir(usuario, c):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para transferir esta conversa")
 
-    aplicar_transferencia(
+    mudou = aplicar_transferencia(
         db,
         c,
         responsavel_id=data.responsavel_id,
@@ -1082,6 +1167,14 @@ def transferir_conversa(
     )
     db.commit()
     db.refresh(c)
+    # Bolha de sistema só APÓS o commit da transferência (a geração de IA pode dar
+    # rollback e não pode reverter a transferência já efetivada).
+    if mudou:
+        try:
+            _bolha_transferencia(db, c, usuario, data)
+            db.commit()
+        except Exception:
+            db.rollback()
     return _conversa_out(c)
 
 

@@ -214,19 +214,28 @@ def _candidatos_mencao(m: Mensagem) -> list[str]:
     return cands
 
 
-def _nome_mencao(d: str, lid2phone: dict[str, str], nome_por_jid: dict[str, str]) -> str | None:
+def _nome_mencao(
+    d: str, lid2phone: dict[str, str], nome_por_jid: dict[str, str],
+    participant_map: dict[str, str] | None = None,
+) -> str | None:
     """Resolve um dígito de menção → nome do contato (por @lid OU por telefone),
-    com fallback ao telefone formatado. None se não há como melhorar o número cru."""
+    com fallback ao telefone formatado. None se não há como melhorar o número cru.
+    participant_map = {participant_jid: nome} de quem já enviou msg na conversa — usado
+    quando o contato @lid ficou sem nome (o nome real está na própria mensagem)."""
     nome = nome_por_jid.get(f"{d}@lid")  # 1) WAHA (contato por LID)
     if nome:
         return nome
-    phone = lid2phone.get(d)  # 2) Evolution: LID→telefone→contato
+    if participant_map:  # 2) participante que já falou no grupo (nome real)
+        nome = participant_map.get(f"{d}@lid") or participant_map.get(f"{d}@s.whatsapp.net")
+        if nome:
+            return nome
+    phone = lid2phone.get(d)  # 3) Evolution: LID→telefone→contato
     if phone:
         for cand in _phone_jid_variants(phone):
-            nome = nome_por_jid.get(cand)
+            nome = nome_por_jid.get(cand) or (participant_map or {}).get(cand)
             if nome:
                 return nome
-        return _format_phone_display(phone)  # 3) fallback: telefone formatado
+        return _format_phone_display(phone)  # 4) fallback: telefone formatado
     return None
 
 
@@ -247,7 +256,8 @@ def _candidatos_quoted(m: Mensagem) -> list[str]:
 
 
 def _nome_quoted_author(
-    jid: str | None, lid2phone: dict[str, str], nome_por_jid: dict[str, str]
+    jid: str | None, lid2phone: dict[str, str], nome_por_jid: dict[str, str],
+    participant_map: dict[str, str] | None = None,
 ) -> str | None:
     """Nome do autor da mensagem citada a partir do JID cru (telefone@ ou <LID>@lid).
     Reusa a MESMA ponte das menções; fallback ao telefone formatado. None quando não
@@ -257,22 +267,51 @@ def _nome_quoted_author(
     nome = nome_por_jid.get(jid)  # match direto (telefone@s.whatsapp.net ou <lid>@lid)
     if nome:
         return nome
+    if participant_map and participant_map.get(jid):  # participante que já falou (nome real)
+        return participant_map[jid]
     d = re.sub(r"\D", "", jid.split("@", 1)[0])
     if not d:
         return None
     nome = nome_por_jid.get(f"{d}@lid")  # WAHA (contato por LID)
     if nome:
         return nome
+    if participant_map:
+        nome = participant_map.get(f"{d}@lid") or participant_map.get(f"{d}@s.whatsapp.net")
+        if nome:
+            return nome
     phone = lid2phone.get(d)  # Evolution: LID→telefone→contato
     if phone:
         for cand in _phone_jid_variants(phone):
-            nome = nome_por_jid.get(cand)
+            nome = nome_por_jid.get(cand) or (participant_map or {}).get(cand)
             if nome:
                 return nome
         return _format_phone_display(phone)
     if jid.endswith("@s.whatsapp.net"):  # já é telefone, sem contato → formata o número
         return _format_phone_display(d)
     return None
+
+
+def _participant_map_conversa(db: Session, conversa_id) -> dict[str, str]:
+    """{participant_jid: nome} dos remetentes da conversa (grupos), só nomes úteis.
+    Fallback p/ menção/citação quando o contato @lid ficou sem nome — o nome real do
+    remetente está gravado na própria mensagem (participant_name)."""
+    rows = (
+        db.query(Mensagem.participant_jid, Mensagem.participant_name)
+        .filter(
+            Mensagem.conversa_id == conversa_id,
+            Mensagem.participant_jid.isnot(None),
+            Mensagem.participant_name.isnot(None),
+            Mensagem.participant_name != "",
+        )
+        .distinct()
+        .all()
+    )
+    out: dict[str, str] = {}
+    for jid, nome in rows:
+        n = (nome or "").strip()
+        if n and jid and n != jid.split("@", 1)[0] and not n.isdigit():
+            out[jid] = n
+    return out
 
 
 def _derive_media_fields(m: Mensagem) -> dict:
@@ -386,7 +425,10 @@ def _dedup_midias(midias: list) -> list[dict]:
     return [{k: v for k, v in m.items() if k != "_created_at"} for m in seen.values()]
 
 
-def _mensagem_out(m: Mensagem, name_by_jid: dict[str, str] | None = None) -> MensagemOut:
+def _mensagem_out(
+    m: Mensagem, name_by_jid: dict[str, str] | None = None,
+    participant_map: dict[str, str] | None = None,
+) -> MensagemOut:
     mf = _derive_media_fields(m)
     jids = _derive_mentioned_jids(m)
     mentioned_names: dict[str, str] = {}
@@ -397,11 +439,11 @@ def _mensagem_out(m: Mensagem, name_by_jid: dict[str, str] | None = None) -> Men
         # groupData.Participants do próprio payload (ver _nome_mencao).
         lid2phone = _lid_phone_map(m.payload)
         for d in _mention_digits(m.conteudo):
-            nome = _nome_mencao(d, lid2phone, name_by_jid)
+            nome = _nome_mencao(d, lid2phone, name_by_jid, participant_map)
             if nome:
                 mentioned_names[d] = nome
         # Mesma máquina p/ o autor da mensagem citada (antes vinha cru como @LID).
-        quoted_author = _nome_quoted_author(getattr(m, "quoted_remote_jid", None), lid2phone, name_by_jid)
+        quoted_author = _nome_quoted_author(getattr(m, "quoted_remote_jid", None), lid2phone, name_by_jid, participant_map)
     return MensagemOut(
         id=str(m.id),
         workspace_id=str(m.workspace_id),
@@ -493,7 +535,9 @@ def listar_mensagens(
     # ponte LID→telefone do groupData.Participants).
     candidatos = [c for m in total for c in (_candidatos_mencao(m) + _candidatos_quoted(m))]
     name_by_jid = _resolver_nomes_mencoes(db, workspace_target, candidatos)
-    return [_mensagem_out(m, name_by_jid) for m in total]
+    # Fallback: nome de quem já enviou msg na conversa (contorna contato @lid sem nome).
+    participant_map = _participant_map_conversa(db, conversa_id)
+    return [_mensagem_out(m, name_by_jid, participant_map) for m in total]
 
 
 @router.post("", response_model=MensagemOut, status_code=status.HTTP_201_CREATED)
