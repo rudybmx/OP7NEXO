@@ -1,5 +1,7 @@
 'use client'
 
+import { IconeInstagram, IconeFacebook, detectarPlataforma } from './icones-marca'
+
 interface CardRastreamentoProps {
   metaHeadline?: string | null
   metaBody?: string | null
@@ -11,6 +13,16 @@ interface CardRastreamentoProps {
   utmCampaign?: string | null
   primeiraConversaAt?: string | null
 }
+
+// Azul de marca (#006EFF) — frame do cartão.
+const BRAND = '0,110,255'
+
+// Identidade de cada plataforma: ícone, cor reconhecível e rótulo.
+const PLATAFORMAS = {
+  instagram: { Icon: IconeInstagram, cor: '#E1306C', label: 'Veio de um anúncio no Instagram' },
+  facebook: { Icon: IconeFacebook, cor: '#1877F2', label: 'Veio de um anúncio no Facebook' },
+  meta: { Icon: IconeFacebook, cor: '#006EFF', label: 'Veio de um anúncio (Meta)' },
+} as const
 
 export function CardRastreamento({
   metaHeadline,
@@ -26,6 +38,9 @@ export function CardRastreamento({
   const hasData = metaHeadline || campanhaOrigem || utmSource || metaBody
   if (!hasData) return null
 
+  const plataforma = detectarPlataforma(metaSourceUrl, utmSource)
+  const { Icon, cor, label } = PLATAFORMAS[plataforma]
+
   const dataFormatada = primeiraConversaAt
     ? new Date(primeiraConversaAt).toLocaleDateString('pt-BR', {
         day: '2-digit',
@@ -36,17 +51,10 @@ export function CardRastreamento({
       })
     : null
 
-  const origemLabel = utmSource
-    ? utmSource.replace(/_/g, ' ').toUpperCase()
-    : 'ORGÂNICO'
+  const campanha = campanhaOrigem || metaHeadline || utmCampaign || null
+  const headline = metaHeadline && metaHeadline !== campanha ? metaHeadline : null
 
-  const meioLabel = utmMedium
-    ? utmMedium.replace(/_/g, ' ').toUpperCase()
-    : 'WHATSAPP'
-
-  const headline = metaHeadline || campanhaOrigem || utmCampaign || '—'
-
-  // Truncar body em 2 linhas (~150 chars)
+  // Truncar body em ~2 linhas (~150 chars)
   const bodyTruncado = metaBody
     ? metaBody.length > 150
       ? metaBody.slice(0, 150) + '...'
@@ -55,58 +63,62 @@ export function CardRastreamento({
 
   return (
     <div style={{
-      background: 'rgba(201,168,76,0.08)',
-      border: '1px solid rgba(201,168,76,0.20)',
+      background: `rgba(${BRAND},0.06)`,
+      border: `1px solid rgba(${BRAND},0.18)`,
       borderRadius: 12,
       padding: '14px 16px',
       marginBottom: 16,
       position: 'relative',
     }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 13 }}>📊</span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#c9a84c', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            Rastreamento
+      {/* Header: ícone da plataforma + rótulo + data */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <Icon size={16} style={{ color: cor, flexShrink: 0 }} />
+          <span style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: `rgb(${BRAND})`,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            {label}
           </span>
         </div>
         {dataFormatada && (
-          <span style={{ fontSize: 10, color: 'var(--ws-text-3)' }}>{dataFormatada}</span>
+          <span style={{ fontSize: 10, color: 'var(--ws-text-3)', flexShrink: 0 }}>{dataFormatada}</span>
         )}
       </div>
 
-      {/* Content grid */}
+      {/* Content grid: criativo à esquerda + dados à direita */}
       <div style={{ display: 'grid', gridTemplateColumns: metaImageUrl ? '100px 1fr' : '1fr', gap: 12 }}>
         {metaImageUrl && (
           <div style={{ width: 100, height: 100, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
             <img
               src={metaImageUrl}
-              alt="criativo"
+              alt="criativo da campanha"
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
             />
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
-            <div>
-              <span style={{ fontSize: 9, color: 'var(--ws-text-3)', fontWeight: 600, textTransform: 'uppercase' }}>Origem:</span>{' '}
-              <span style={{ fontSize: 11, color: 'var(--ws-text-1)', fontWeight: 500 }}>{origemLabel}</span>
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+          {campanha && (
             <div>
               <span style={{ fontSize: 9, color: 'var(--ws-text-3)', fontWeight: 600, textTransform: 'uppercase' }}>Campanha:</span>{' '}
-              <span style={{ fontSize: 11, color: 'var(--ws-text-1)', fontWeight: 500 }}>{campanhaOrigem || metaHeadline || '—'}</span>
+              <span style={{ fontSize: 12, color: 'var(--ws-text-1)', fontWeight: 600 }}>{campanha}</span>
             </div>
+          )}
+
+          {headline && (
             <div>
               <span style={{ fontSize: 9, color: 'var(--ws-text-3)', fontWeight: 600, textTransform: 'uppercase' }}>Headline:</span>{' '}
               <span style={{ fontSize: 11, color: 'var(--ws-text-1)', fontWeight: 500 }}>{headline}</span>
             </div>
-            <div>
-              <span style={{ fontSize: 9, color: 'var(--ws-text-3)', fontWeight: 600, textTransform: 'uppercase' }}>Meio:</span>{' '}
-              <span style={{ fontSize: 11, color: 'var(--ws-text-1)', fontWeight: 500 }}>{meioLabel}</span>
-            </div>
-          </div>
+          )}
 
           {bodyTruncado && (
             <div>
@@ -118,16 +130,23 @@ export function CardRastreamento({
           )}
 
           {metaSourceUrl && (
-            <div>
-              <span style={{ fontSize: 9, color: 'var(--ws-text-3)', fontWeight: 600, textTransform: 'uppercase' }}>Acesso:</span>{' '}
+            <div style={{ minWidth: 0 }}>
+              <span style={{ fontSize: 9, color: 'var(--ws-text-3)', fontWeight: 600, textTransform: 'uppercase' }}>URL da campanha:</span>{' '}
               <a
                 href={metaSourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ fontSize: 11, color: '#3E5BFF', fontWeight: 500 }}
+                style={{ fontSize: 11, color: `rgb(${BRAND})`, fontWeight: 500, wordBreak: 'break-all' }}
               >
-                {metaSourceUrl.length > 50 ? metaSourceUrl.slice(0, 50) + '...' : metaSourceUrl}
+                {metaSourceUrl.length > 60 ? metaSourceUrl.slice(0, 60) + '...' : metaSourceUrl}
               </a>
+            </div>
+          )}
+
+          {(utmSource || utmMedium) && (
+            <div style={{ fontSize: 9, color: 'var(--ws-text-3)' }}>
+              {utmSource ? utmSource.replace(/_/g, ' ') : ''}
+              {utmMedium ? ` · ${utmMedium}` : ''}
             </div>
           )}
         </div>
