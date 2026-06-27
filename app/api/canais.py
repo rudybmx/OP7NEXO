@@ -3476,11 +3476,37 @@ async def receber_webhook_meta(
     # Processa payload
     resultado = meta_service.processar_webhook(payload)
 
+    # O webhook do App é ÚNICO por app (uma só callback URL) — a Meta envia os eventos de
+    # TODOS os números do app para a mesma URL. Roteia cada entry para o canal certo pelo
+    # phone_number_id do metadata (NÃO pelo token da URL, que pertence a um único canal).
+    _cache_canal: dict[str, CanalEntrada | None] = {}
+
+    def _resolver_canal(pnid: str | None) -> CanalEntrada:
+        if not pnid:
+            return canal
+        if pnid not in _cache_canal:
+            _cache_canal[pnid] = (
+                db.query(CanalEntrada)
+                .filter(
+                    CanalEntrada.tipo == "whatsapp_oficial",
+                    CanalEntrada.config["phone_number_id"].astext == pnid,
+                )
+                .order_by(CanalEntrada.criado_em)
+                .first()
+            )
+        canal_resolvido = _cache_canal[pnid]
+        if canal_resolvido is None:
+            logger.warning("[webhook-meta] phone_number_id=%s sem canal — usando canal do token=%s", pnid, canal.nome)
+            return canal
+        return canal_resolvido
+
     for entry in resultado.get("entries", []):
+        pnid = (entry.get("metadata") or {}).get("phone_number_id")
+        canal_destino = _resolver_canal(pnid)
         if entry["type"] == "message":
-            _processar_mensagem_meta(db, canal, entry)
+            _processar_mensagem_meta(db, canal_destino, entry)
         elif entry["type"] == "status":
-            _processar_status_meta(db, canal, entry)
+            _processar_status_meta(db, canal_destino, entry)
 
     db.commit()
     return {"recebido": True}

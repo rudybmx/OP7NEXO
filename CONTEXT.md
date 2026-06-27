@@ -50,7 +50,9 @@
 > `_conectar_whatsapp_oficial` valida credenciais + `subscribed_apps` e seta
 > `evolution_instance_id = phone_number_id` (instance único por canal). Webhook Graph API v23.0 em
 > `GET/POST /webhook/meta/{token}` (challenge texto puro + HMAC `X-Hub-Signature-256` via
-> `META_APP_SECRET`). Inbound `_processar_mensagem_meta` espelha o pipeline canônico: persiste
+> `META_APP_SECRET`). ⚠️ O webhook do App é ÚNICO por app (1 callback URL p/ TODOS os números do
+> app) → `receber_webhook_meta` roteia cada entry pelo `phone_number_id` do `metadata` (busca o canal
+> por `config->>'phone_number_id'`), NÃO pelo token da URL (que é de um canal só). Inbound `_processar_mensagem_meta` espelha o pipeline canônico: persiste
 > contato/conversa/mensagem (escopo `workspace_id`+`canal_id`), Kanban em SAVEPOINT, e enfileira
 > `agente_reply`+`conversa_analise` + notificação `mensagem_nova` (IA responde igual Evolution; o
 > agente vincula-se por `canal_id` via `agente_canais`). Envio de texto/template (erro 131047 →

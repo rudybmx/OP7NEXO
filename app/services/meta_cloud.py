@@ -232,6 +232,7 @@ def processar_webhook(payload: dict) -> dict:
                     "recipient_id": status.get("recipient_id"),
                     "status": status.get("status"),  # sent, delivered, read, failed
                     "timestamp": status.get("timestamp"),
+                    "metadata": value.get("metadata", {}),
                 })
 
     event_type = "message" if any(e["type"] == "message" for e in entries) else (
