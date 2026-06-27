@@ -58,6 +58,9 @@ class Midia(Base):
     # Status do pipeline de transcrição (só relevante p/ tipo='audio'):
     # pendente | processando | pronto | sem_fala | erro | nao_transcrito (legado).
     transcricao_status: Mapped[str] = mapped_column(String(20), default="pendente", nullable=False)
+    # Status do pipeline de análise/descrição (só relevante p/ tipo='image'):
+    # pendente | processando | pronto | erro | nao_analisado (legado).
+    descricao_status: Mapped[str] = mapped_column(String(20), default="pendente", nullable=False)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # TRANSCRIÇÃO de áudio (speech-to-text, endpoint audio.transcriptions). OpenAI-only —
     # herda a chave/base_url DEDICADA de imagem (o gateway de texto/opencode não tem STT).
     openai_audio_model: str = "gpt-4o-transcribe"
+    # DESCRIÇÃO de imagem recebida pelo agente (visão). Modelo barato (volume alto de
+    # imagens no WhatsApp); herda a chave/base DEDICADA de imagem (OpenAI real).
+    openai_agent_image_model: str = "gpt-4o-mini"
     # Firecrawl — busca de notícias para o buscador de pautas (Origin A do Criativos 2.0).
     firecrawl_api_key: str = ""
     firecrawl_api_url: str = "https://api.firecrawl.dev"

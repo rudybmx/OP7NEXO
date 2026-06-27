@@ -621,6 +621,22 @@ usuário, broadcast sem fan-out) + `notificacao_config` (audiência por workspac
   igual aos de conversa). Isolamento: `etiqueta.workspace_id == contato.workspace_id` senão 404.
 - `GET /conversas` agora expõe `contato_etiquetas` no `ConversaOut` (etiquetas do contato, ao lado das da conversa).
 
+## Análise de imagem pelo agente (agente entende imagem) — migration 113
+
+- **Igual ao áudio** ([[transcricao-audio-agente]]), trocando STT por **visão**. Imagem chega com
+  `conteudo="[mídia]"` → o agente "via" `[mídia]`. Agora um job descreve a imagem e o agente decide
+  responder ou só reconhecer.
+- **Pipeline**: `whatsapp_media.register_media_record` enfileira `image_analysis` quando a mídia de
+  imagem fica `ready` → worker `app/services/image_analysis.py::process_image_analysis_job` re-baixa do
+  MinIO → **gpt-4o-mini** (`ai_config` feature `"agent_image"` → chave/base de imagem; `detail:low`)
+  gera uma DESCRIÇÃO NEUTRA → `UPDATE conteudo = '[imagem: '||desc||']'` (guard `IN ('','[mídia]')`,
+  preserva caption) + `crm_whatsapp_midia.descricao_status` (`pendente|processando|pronto|erro|nao_analisado`).
+- **Relevância = do AGENTE** (não da visão): a descrição é neutra/cacheável (serve busca/operador, funciona
+  sem agente); `agent_service._montar_system` instrui — se a imagem tem relação com o papel → responde,
+  senão → só reconhece. Race-guard de `processar_reply` foi **generalizado** (áudio+imagem, CASE por tipo).
+- **Front** (`painel-chat`): suprime o marcador `[imagem: …]`/`[imagem]` (só bastidores; caption real
+  aparece). Sem proxy/type/chevron. Migration **113**. **Deploy: precisa de `deploy.sh worker`**.
+
 ---
 
 ## COMO ATUALIZAR ESTE ARQUIVO

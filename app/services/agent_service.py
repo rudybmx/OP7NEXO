@@ -228,6 +228,16 @@ def _montar_system(
         )
     if bloco_agenda and bloco_agenda.strip():
         partes.append(bloco_agenda.strip())
+    # IMAGENS (sempre presente): o agente vê imagens descritas e decide, pelo seu papel,
+    # responder sobre elas ou só reconhecer o recebimento.
+    partes.append(
+        "IMAGENS: o cliente pode enviar imagens. Cada imagem aparece no histórico como "
+        '"[imagem: <descrição do que a imagem mostra>]" (ou apenas "[imagem]" quando não foi '
+        "possível descrevê-la). Se o que a imagem mostra tiver relação com o seu papel/atendimento, "
+        "comente ou use essa informação normalmente na resposta. Se NÃO tiver relação com o que você "
+        "atende, apenas confirme de forma breve e educada que recebeu a imagem — sem descrever o "
+        "conteúdo, sem comentar e sem inventar. NUNCA repita o texto entre colchetes literalmente."
+    )
     if modo_proativo:
         # Disparo manual de reengajamento (botão "Acionar IA"): NÃO há mensagem nova do cliente;
         # o agente deve INICIAR. A "mensagem atual" no prompt do usuário é uma diretriz interna —
@@ -1178,23 +1188,26 @@ def processar_reply(db: Session, payload: dict) -> None:
     canal = db.get(CanalEntrada, conversa.canal_id) if conversa.canal_id else None
     canal_id = conversa.canal_id
 
-    # Race-guard de áudio: se a ÚLTIMA mensagem do cliente é um áudio ainda não transcrito
-    # (transcricao_status pendente/processando), NÃO responder ao placeholder "[mídia]" —
-    # re-agenda o reply com atraso curto e sai. O job de transcrição roda em paralelo;
-    # status terminal (pronto/sem_fala/erro/nao_transcrito) libera a resposta no próximo ciclo.
-    audio_pend = db.execute(
+    # Race-guard de mídia: se a ÚLTIMA mensagem do cliente é uma MÍDIA ainda não analisada
+    # pela IA (áudio→transcricao_status, imagem→descricao_status em pendente/processando), NÃO
+    # responder ao placeholder "[mídia]" — re-agenda o reply com atraso curto e sai. O job de
+    # análise (transcrição/descrição) roda em paralelo; status terminal libera no próximo ciclo.
+    midia_pend = db.execute(
         text("""
-            SELECT mid.transcricao_status
+            SELECT CASE
+                       WHEN mid.tipo = 'audio' THEN mid.transcricao_status
+                       WHEN mid.tipo = 'image' THEN mid.descricao_status
+                   END AS status
             FROM public.crm_whatsapp_mensagens m
             LEFT JOIN public.crm_whatsapp_midia mid
-              ON mid.mensagem_id = m.id AND mid.tipo = 'audio' AND mid.deleted_at IS NULL
+              ON mid.mensagem_id = m.id AND mid.tipo IN ('audio', 'image') AND mid.deleted_at IS NULL
             WHERE m.conversa_id = CAST(:cid AS uuid) AND m.direcao = 'entrada' AND m.ativo = true
             ORDER BY m.created_at DESC
             LIMIT 1
         """),
         {"cid": str(conversa.id)},
     ).scalar()
-    if audio_pend in ("pendente", "processando"):
+    if midia_pend in ("pendente", "processando"):
         enfileirar_agente_reply(
             db, workspace_id=conversa.workspace_id, canal_id=canal_id,
             conversa_id=conversa.id, atraso_segundos=15,

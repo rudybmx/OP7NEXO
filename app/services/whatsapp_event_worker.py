@@ -137,6 +137,15 @@ def _process_job(job_id: str) -> str:
                 _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
                 return "processed"
 
+            if job_type == "image_analysis":
+                from app.services.image_analysis import process_image_analysis_job
+
+                img_job = dict(job)
+                img_job["payload"] = img_job.get("job_payload") or {}
+                process_image_analysis_job(db, img_job)
+                _mark_done(db, job_id, str(job["event_id"] or ""), status="done")
+                return "processed"
+
             if job_type == "contact_avatar_enrichment":
                 from app.services.contact_avatar_enrichment import process_contact_avatar_enrichment_job
                 enrichment_job = dict(job)
