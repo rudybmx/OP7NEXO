@@ -220,6 +220,8 @@ def processar_webhook(payload: dict) -> dict:
                     "text": msg.get("text", {}).get("body", "") if msg.get("type") == "text" else "",
                     "contacts": value.get("contacts", []),
                     "metadata": value.get("metadata", {}),
+                    # referral do Click-to-WhatsApp Ads (anúncio Instagram/Facebook)
+                    "referral": msg.get("referral"),
                 })
 
             # Status de entrega

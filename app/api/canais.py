@@ -4620,6 +4620,7 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
     """Processa mensagem recebida da Meta Cloud API e salva no banco."""
     from datetime import datetime, timezone
     from sqlalchemy import text
+    from app.services.lead_origin import extract_lead_origin
 
     wa_id = entry.get("wa_id", "")
     wamid = entry.get("wamid", "")
@@ -4654,14 +4655,44 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
     contacts = entry.get("contacts", [])
     push_name = contacts[0].get("profile", {}).get("name", "") if contacts else ""
 
-    # 1. Upsert contato
+    # Origem do lead: referral do Click-to-WhatsApp Ads (anúncio Instagram/Facebook).
+    # Reusa o mesmo parser do Evolution; sem referral, cai no fallback de regex orgânico.
+    referral = entry.get("referral")
+    lead_origem = extract_lead_origin({}, {"referral": referral} if referral else {}, text_content or "")
+
+    # 1. Upsert contato — grava campos de origem só quando vêm preenchidos e
+    #    sem sobrescrever o que já existe (primeiro toque vence, via COALESCE).
     contato_result = db.execute(
         text("""
-            INSERT INTO public.crm_whatsapp_contatos (workspace_id, jid, telefone, nome, push_name, origem, created_at, updated_at)
-            VALUES (:ws, :jid, :tel, :nome, :push, 'meta', NOW(), NOW())
+            INSERT INTO public.crm_whatsapp_contatos (
+                workspace_id, jid, telefone, nome, push_name, origem, primeira_conversa_at,
+                campanha_origem, utm_source, utm_medium, utm_campaign,
+                meta_ad_id, meta_ctwa_clid, meta_headline, meta_body,
+                meta_source_url, meta_media_type, meta_image_url, meta_referral_json,
+                created_at, updated_at
+            )
+            VALUES (
+                :ws, :jid, :tel, :nome, :push, 'meta', NOW(),
+                :campanha, :utm_source, :utm_medium, :utm_campaign,
+                :meta_ad_id, :meta_ctwa_clid, :meta_headline, :meta_body,
+                :meta_source_url, :meta_media_type, :meta_image_url, :meta_referral_json,
+                NOW(), NOW()
+            )
             ON CONFLICT (workspace_id, jid) DO UPDATE SET
                 nome = COALESCE(EXCLUDED.nome, public.crm_whatsapp_contatos.nome),
                 push_name = COALESCE(EXCLUDED.push_name, public.crm_whatsapp_contatos.push_name),
+                campanha_origem = COALESCE(public.crm_whatsapp_contatos.campanha_origem, EXCLUDED.campanha_origem),
+                utm_source = COALESCE(public.crm_whatsapp_contatos.utm_source, EXCLUDED.utm_source),
+                utm_medium = COALESCE(public.crm_whatsapp_contatos.utm_medium, EXCLUDED.utm_medium),
+                utm_campaign = COALESCE(public.crm_whatsapp_contatos.utm_campaign, EXCLUDED.utm_campaign),
+                meta_ad_id = COALESCE(public.crm_whatsapp_contatos.meta_ad_id, EXCLUDED.meta_ad_id),
+                meta_ctwa_clid = COALESCE(public.crm_whatsapp_contatos.meta_ctwa_clid, EXCLUDED.meta_ctwa_clid),
+                meta_headline = COALESCE(public.crm_whatsapp_contatos.meta_headline, EXCLUDED.meta_headline),
+                meta_body = COALESCE(public.crm_whatsapp_contatos.meta_body, EXCLUDED.meta_body),
+                meta_source_url = COALESCE(public.crm_whatsapp_contatos.meta_source_url, EXCLUDED.meta_source_url),
+                meta_media_type = COALESCE(public.crm_whatsapp_contatos.meta_media_type, EXCLUDED.meta_media_type),
+                meta_image_url = COALESCE(public.crm_whatsapp_contatos.meta_image_url, EXCLUDED.meta_image_url),
+                meta_referral_json = COALESCE(public.crm_whatsapp_contatos.meta_referral_json, EXCLUDED.meta_referral_json),
                 updated_at = NOW()
             RETURNING id
         """),
@@ -4671,6 +4702,18 @@ def _processar_mensagem_meta(db: Session, canal: CanalEntrada, entry: dict) -> N
             "tel": wa_id,
             "nome": push_name or wa_id,
             "push": push_name,
+            "campanha": lead_origem.get("campanha_origem"),
+            "utm_source": lead_origem.get("utm_source"),
+            "utm_medium": lead_origem.get("utm_medium"),
+            "utm_campaign": lead_origem.get("utm_campaign"),
+            "meta_ad_id": lead_origem.get("meta_ad_id"),
+            "meta_ctwa_clid": lead_origem.get("meta_ctwa_clid"),
+            "meta_headline": lead_origem.get("meta_headline"),
+            "meta_body": lead_origem.get("meta_body"),
+            "meta_source_url": lead_origem.get("meta_source_url"),
+            "meta_media_type": lead_origem.get("meta_media_type"),
+            "meta_image_url": lead_origem.get("meta_image_url"),
+            "meta_referral_json": lead_origem.get("meta_referral_json"),
         },
     )
     contato_id = contato_result.scalar()
