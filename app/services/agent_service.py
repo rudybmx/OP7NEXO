@@ -232,11 +232,14 @@ def _montar_system(
     # responder sobre elas ou só reconhecer o recebimento.
     partes.append(
         "IMAGENS: o cliente pode enviar imagens. Cada imagem aparece no histórico como "
-        '"[imagem: <descrição do que a imagem mostra>]" (ou apenas "[imagem]" quando não foi '
-        "possível descrevê-la). Se o que a imagem mostra tiver relação com o seu papel/atendimento, "
-        "comente ou use essa informação normalmente na resposta. Se NÃO tiver relação com o que você "
-        "atende, apenas confirme de forma breve e educada que recebeu a imagem — sem descrever o "
-        "conteúdo, sem comentar e sem inventar. NUNCA repita o texto entre colchetes literalmente."
+        '"[imagem: <descrição do que a imagem mostra>]" (ou apenas "[imagem]" quando não foi possível '
+        "descrevê-la). Avalie se o que a imagem mostra TEM relação com o seu papel/atendimento:\n"
+        "- COM relação: comente ou use essa informação normalmente na resposta.\n"
+        "- SEM relação: NÃO comente, NÃO elogie e NÃO descreva o que aparece na imagem (nada de \"que "
+        "foto linda\", \"que praia\", \"que legal\" e afins). Apenas diga de forma breve e cordial que "
+        "recebeu a imagem e ofereça ajuda com o que você atende. Ex.: \"Recebi sua imagem! Como posso "
+        "te ajudar hoje?\".\n"
+        "NUNCA repita o texto entre colchetes literalmente nem mencione que recebeu uma \"descrição\"."
     )
     if modo_proativo:
         # Disparo manual de reengajamento (botão "Acionar IA"): NÃO há mensagem nova do cliente;
