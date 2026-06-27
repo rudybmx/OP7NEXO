@@ -1193,8 +1193,13 @@ export function PainelChat({ conversa, mensagens, onTogglePainel, painelAberto, 
                         const isMidiaText = msg.mediaKind != null && /^[\[(]?(mídia|midia)[\])]?$/i.test(body)
                         // Áudio: o conteudo é a TRANSCRIÇÃO — não aparece inline, vai para o chevron.
                         const ehAudio = (msg.midias ?? []).some(m => m.tipo === 'audio')
-                        if (!msg.conteudo || (temMidia && isPlaceholder) || isMidiaText || ehAudio) return null
-                        return <div style={{ whiteSpace: 'pre-wrap' }}>{renderConteudoComMencoes(msg.conteudo, msg.mentionedNames)}</div>
+                        // Imagem: o conteudo carrega a DESCRIÇÃO de IA ("[imagem: ...]" / "[imagem]"), só
+                        // para o agente. Remove o marcador e mostra o resto — o caption real do cliente,
+                        // quando houver (foto + legenda); se sobrar vazio (foto sem legenda), não renderiza.
+                        const ehImagem = (msg.midias ?? []).some(m => m.tipo === 'image')
+                        const bodyImagem = ehImagem ? body.replace(/\s*\[imagem(?::[^\]]*)?\]/gi, '').trim() : body
+                        if (!msg.conteudo || (temMidia && isPlaceholder) || isMidiaText || ehAudio || (ehImagem && !bodyImagem)) return null
+                        return <div style={{ whiteSpace: 'pre-wrap' }}>{renderConteudoComMencoes(ehImagem ? bodyImagem : msg.conteudo, msg.mentionedNames)}</div>
                       })()}
                       <div style={{
                         fontSize: 10,
