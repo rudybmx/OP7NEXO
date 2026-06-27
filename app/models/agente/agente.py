@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -47,6 +47,12 @@ class Agente(Base):
     )
     # 'dentro' = responde nas janelas de agente_horarios; 'fora' (plantão) = responde FORA delas.
     horario_modo: Mapped[str] = mapped_column(String(10), nullable=False, default="dentro")
+    # Vínculo a um MODELO (template). Quando setado, o prompt efetivo vem do modelo com estas
+    # `variaveis` substituídas (herança da inteligência central) — ver agent_service._prompt_efetivo.
+    modelo_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agente_modelos.id", ondelete="SET NULL"), nullable=True
+    )
+    variaveis: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

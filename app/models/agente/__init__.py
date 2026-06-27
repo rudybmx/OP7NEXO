@@ -6,6 +6,7 @@ from app.models.agente.agente_canal import AgenteCanal
 from app.models.agente.agente_diretrizes_workspace import AgenteDiretrizesWorkspace
 from app.models.agente.agente_habilidade import AgenteHabilidade
 from app.models.agente.agente_horario import AgenteHorario
+from app.models.agente.agente_modelo import AgenteModelo
 from app.models.agente.agente_prompt import AgentePrompt
 from app.models.agente.agente_uso_token import AgenteUsoToken
 from app.models.agente.llm_provider import LlmProvider
@@ -21,6 +22,7 @@ __all__ = [
     "AgenteDiretrizesWorkspace",
     "AgenteHabilidade",
     "AgenteHorario",
+    "AgenteModelo",
     "AgentePrompt",
     "AgenteUsoToken",
     "LlmProvider",

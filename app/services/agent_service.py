@@ -28,8 +28,27 @@ from app.services import paineis_automacao
 log = logging.getLogger(__name__)
 
 
+_VAR_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
+
+
+def _aplicar_variaveis(template: str, variaveis: dict | None) -> str:
+    """Substitui os placeholders {{chave}} de um prompt_template pelos valores em `variaveis`.
+    Placeholder sem valor correspondente vira "" (some do texto)."""
+    vars_ = variaveis or {}
+    return _VAR_RE.sub(lambda m: str(vars_.get(m.group(1), "")).strip(), template)
+
+
 def _prompt_efetivo(db: Session, agente: Agente) -> str:
-    """Prompt publicado mais recente; se não houver, o rascunho mais recente."""
+    """Prompt efetivo do agente. Se vinculado a um MODELO (`modelo_id`), HERDA o `prompt_template`
+    do modelo com as `variaveis` do agente substituídas (inteligência central — melhorar o modelo
+    propaga a todos os agentes vinculados). Senão, usa o AgentePrompt publicado (ou rascunho)."""
+    modelo_id = getattr(agente, "modelo_id", None)
+    if modelo_id:
+        from app.models.agente import AgenteModelo
+
+        modelo = db.get(AgenteModelo, modelo_id)
+        if modelo and (modelo.prompt_template or "").strip():
+            return _aplicar_variaveis(modelo.prompt_template, getattr(agente, "variaveis", None))
     pub = (
         db.query(AgentePrompt)
         .filter(AgentePrompt.agente_id == agente.id, AgentePrompt.status == "publicado")
