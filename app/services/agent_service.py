@@ -241,6 +241,12 @@ def _montar_system(
         "te ajudar hoje?\".\n"
         "NUNCA repita o texto entre colchetes literalmente nem mencione que recebeu uma \"descrição\"."
     )
+    # ESTILO (sempre presente): humaniza o texto no WhatsApp — sem o "travessão de IA".
+    partes.append(
+        "ESTILO DE ESCRITA (WhatsApp): escreva como uma pessoa real — frases curtas e diretas, "
+        "linguagem natural. NUNCA use travessão (— ou –) na resposta; em vez de travessão, use ponto "
+        "final ou quebra de linha. Evite tom formal/robótico."
+    )
     if modo_proativo:
         # Disparo manual de reengajamento (botão "Acionar IA"): NÃO há mensagem nova do cliente;
         # o agente deve INICIAR. A "mensagem atual" no prompt do usuário é uma diretriz interna —
@@ -1109,11 +1115,24 @@ def _handoff(db: Session, conversa, agente: Agente, *, canal_id, score, tokens, 
     _publish(conversa, tipo="conversation.refresh")
 
 
+_DASH_RE = re.compile(r"[ \t]*[—–―‒][ \t]*")
+
+
+def _sanitizar_resposta(texto: str | None) -> str:
+    """Remove o "travessão de IA" das respostas ao cliente: troca em/en/horizontal/figure-dash
+    (— – ― ‒) por quebra de linha (mais humano no WhatsApp); preserva o hífen "-". Defesa em
+    profundidade — o prompt já instrui a não usar travessão; isto é a garantia no envio."""
+    if not texto:
+        return texto or ""
+    return _DASH_RE.sub("\n", texto)
+
+
 def _enviar_e_persistir(db: Session, conversa, canal, agente: Agente, *, texto: str, score) -> bool:
     """Envia `texto` pelo canal e, se enviado, persiste a mensagem outbound + atualiza os campos
     neutros da conversa (ultima_mensagem/last_outbound_at/ai_respondido/ai_score_confianca). NÃO toca
     em ai_escalado/ai_handoff_motivo/ai_ativo nem dá commit — quem chama decide (envio normal limpa a
     marcação; handoff-falante escala) e commita. Retorna True se enviou."""
+    texto = _sanitizar_resposta(texto)
     enviado, evo_msg_id = _enviar_resposta(conversa, canal, texto)
     if not enviado:
         return False

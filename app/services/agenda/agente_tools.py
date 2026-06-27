@@ -169,12 +169,17 @@ def tools_para_workspace(
     linhas = [
         "",
         "## AGENDA — você marca/consulta agendamentos usando FERRAMENTAS (tool-calling).",
-        "REGRA CRÍTICA: sempre que o cliente falar em horário, agendar, marcar, remarcar, cancelar ou "
+        "REGRA CRÍTICA: sempre que o cliente falar em horário, agendar, marcar, remarcar ou "
         "confirmar consulta, você DEVE CHAMAR a ferramenta apropriada (consultar_disponibilidade, "
-        "criar_agendamento, reagendar_agendamento, cancelar_agendamento, buscar_agendamentos_contato) "
+        "criar_agendamento, reagendar_agendamento, confirmar_presenca, buscar_agendamentos_contato) "
         "ANTES de responder. É PROIBIDO dizer 'vou verificar', 'um momento', 'deixa eu checar' ou "
         "inventar horários sem antes chamar a ferramenta e usar o resultado dela. Primeiro a ferramenta, "
         "depois a resposta ao cliente com base no que ela retornou.",
+        "RETENÇÃO (cancelamento) — NÃO use cancelar_agendamento de imediato. Se o cliente pedir para "
+        "cancelar: (1) confirme qual agendamento com buscar_agendamentos_contato; (2) entenda o motivo "
+        "com 1 pergunta curta e gentil; (3) OFEREÇA remarcar para outro dia/horário (reagendar_agendamento) "
+        "em vez de cancelar. Só use cancelar_agendamento se, mesmo após a oferta, o cliente insistir em "
+        "cancelar — e ainda assim deixe a porta aberta para reagendar no futuro.",
         regra,
         "",
         "Agendas disponíveis:",

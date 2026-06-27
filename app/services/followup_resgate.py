@@ -119,11 +119,12 @@ def gerar_mensagem_resgate(
 
 def _enviar(db: Session, conversa: Conversa, canal: CanalEntrada | None, agente: Agente, texto: str) -> tuple[bool, str | None]:
     """Envia + persiste. Retorna (ok, erro)."""
-    from app.services.agent_service import _enviar_resposta
+    from app.services.agent_service import _enviar_resposta, _sanitizar_resposta
     if not texto:
         return False, "mensagem vazia gerada pela IA"
     if canal is None:
         return False, "conversa sem canal"
+    texto = _sanitizar_resposta(texto)
     try:
         enviado, evo_id = _enviar_resposta(conversa, canal, texto)
     except Exception as exc:  # noqa: BLE001
